@@ -18,6 +18,9 @@
         "main": [
             "net.sievert.modularmobai.ModularMobAiMod"
         ],
+        "client": [
+            "net.sievert.modularmobai.ModularMobAiClient"
+        ],
         "fabric-gametest": [
             "net.sievert.modularmobai.gametest.FabricGameTests"
         ]
