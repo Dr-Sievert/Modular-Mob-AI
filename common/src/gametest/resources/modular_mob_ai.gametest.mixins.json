@@ -1,0 +1,16 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "net.sievert.modularmobai.gametest.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "GameTestBatchFactoryMixin",
+    "GameTestServerMixin",
+    "VillagerMixin"
+  ],
+  "client": [],
+  "server": [],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

@@ -1,0 +1,506 @@
+plugins {
+    id 'multiloader-common'
+}
+
+configurations {
+    commonJava{
+        canBeResolved = true
+    }
+    commonResources{
+        canBeResolved = true
+    }
+}
+
+dependencies {
+    compileOnly(project(':common')) {
+        capabilities {
+            requireCapability "$group:$mod_id"
+        }
+    }
+    commonJava project(path: ':common', configuration: 'commonJava')
+    commonResources project(path: ':common', configuration: 'commonResources')
+}
+
+tasks.named('compileJava', JavaCompile) {
+    dependsOn(configurations.commonJava)
+    source(configurations.commonJava)
+}
+
+processResources {
+    dependsOn(configurations.commonResources)
+    from(configurations.commonResources)
+}
+
+tasks.named('javadoc', Javadoc).configure {
+    dependsOn(configurations.commonJava)
+    source(configurations.commonJava)
+}
+
+tasks.named('sourcesJar', Jar) {
+    dependsOn(configurations.commonJava)
+    from(configurations.commonJava)
+    dependsOn(configurations.commonResources)
+    from(configurations.commonResources)
+}
+
+// The game test source set mirrors the main one: the loader project compiles the common project's game test sources
+// alongside its own, so tests are written once in common and run on every loader. It is a development only source set, so
+// nothing here reaches the published jar.
+sourceSets {
+    gametest {
+        compileClasspath += sourceSets.main.compileClasspath + sourceSets.main.output
+        runtimeClasspath += sourceSets.main.runtimeClasspath + sourceSets.main.output
+    }
+}
+
+configurations {
+    gametestImplementation.extendsFrom implementation
+    gametestRuntimeOnly.extendsFrom runtimeOnly
+    commonGametestJava {
+        canBeResolved = true
+    }
+    commonGametestResources {
+        canBeResolved = true
+    }
+}
+
+dependencies {
+    commonGametestJava project(path: ':common', configuration: 'commonGametestJava')
+    commonGametestResources project(path: ':common', configuration: 'commonGametestResources')
+
+    // The common game test sources are compiled into this project by adding them to compileGametestJava, which the IDE has
+    // no way to model, so it cannot resolve anything declared in them. These two dependencies give it the compiled common
+    // classes to resolve against instead, mirroring the compileOnly dependency the main source set already carries. Both
+    // are compile only, so the classes this project builds from the shared sources stay the only copy at runtime.
+    gametestCompileOnly(project(':common')) {
+        capabilities {
+            requireCapability "$group:$mod_id"
+        }
+    }
+    gametestCompileOnly project(path: ':common', configuration: 'commonGametestClasses')
+}
+
+tasks.named('compileGametestJava', JavaCompile) {
+    dependsOn(configurations.commonGametestJava)
+    source(configurations.commonGametestJava)
+}
+
+tasks.named('processGametestResources', ProcessResources) {
+    dependsOn(configurations.commonGametestResources)
+    from(configurations.commonGametestResources)
+}
+
+// Runs the game test suite across several worker processes at once. The server ticks its tests on a single thread, so one
+// process only ever uses one core no matter how many arenas are live in it; real parallelism has to come from running
+// several servers side by side. Each worker is handed an interleaved slice of the arenas, its own game directory, and a
+// file to write its durations to, and the results are combined back into one summary when they have all finished.
+//
+//   gradlew :neoforge:runGametestParallel
+//   gradlew :fabric:runGametestParallel -Pworkers=8
+afterEvaluate {
+
+    def runTask = tasks.findByName('runGametest') ?: tasks.findByName('runGameTestServer')
+
+    if (runTask == null) {
+
+        return
+    }
+
+    tasks.register('runGametestParallel') {
+
+        group = 'modular mob ai'
+        description = 'Runs the game test suite across several worker processes at once.'
+
+        // The single process run task prepares everything a worker needs, so this borrows its dependencies without
+        // running it.
+        dependsOn runTask.taskDependencies
+
+        doLast {
+
+            // How many workers to start. Splitting a run only pays while a worker has more testing to do than starting
+            // up: booting Minecraft costs roughly half a minute before a worker runs its first arena, and that is paid by
+            // every worker at once. Too many workers and the run is mostly startup; too few and the cores sit idle.
+            //
+            // Rather than guess, this measures. Every run records how long startup took and how fast a worker got through
+            // its arenas, and the next run sizes itself from those numbers, aiming to keep startup to about a third of the
+            // whole run: each worker should spend at least twice its startup time actually testing.
+            //
+            // The very first run on a machine has nothing to go on and starts conservatively. Delete the calibration file
+            // to measure again, or pass -Pworkers=N to override it entirely.
+            def requestedArenas = (providers.gradleProperty('arenas').getOrElse('')) as String
+            def cores = Runtime.runtime.availableProcessors()
+            def workerCeiling = Math.max(1, Math.min(16, cores.intdiv(2)))
+            def calibrationFile = layout.buildDirectory.file('gametest-calibration.properties').get().asFile
+
+            def calibration = new Properties()
+
+            if (calibrationFile.isFile()) {
+
+                calibrationFile.withInputStream { calibration.load(it) }
+            }
+
+            def bootSeconds = (calibration.getProperty('bootSeconds') ?: '') as String
+            def arenaRate = (calibration.getProperty('arenasPerWorkerSecond') ?: '') as String
+            def lastArenas = (calibration.getProperty('arenas') ?: '') as String
+
+            def defaultWorkers
+            def sizing
+
+            if (!bootSeconds.isEmpty() && !arenaRate.isEmpty() && !lastArenas.isEmpty()) {
+
+                def boot = Double.parseDouble(bootSeconds)
+                def rate = Double.parseDouble(arenaRate)
+                // The count this run was asked for, when given, beats the one the last run happened to use.
+                def arenas = requestedArenas.isEmpty() ? Integer.parseInt(lastArenas) : Integer.parseInt(requestedArenas)
+
+                // Testing time per worker is (arenas / workers) / rate, and we want that to be at least twice the startup,
+                // which rearranges to this.
+                def ideal = arenas / (rate * 2.0d * boot)
+
+                defaultWorkers = Math.max(1, Math.min(workerCeiling, (int) Math.round(ideal)))
+                sizing = String.format(Locale.ROOT,
+                        "measured %.0f s startup and %.1f arenas/second per worker, sizing for %,d arenas %s",
+                        boot, rate, arenas, requestedArenas.isEmpty() ? "carried over from the last run" : "asked for by this run")
+            }
+
+            else {
+
+                defaultWorkers = Math.max(1, Math.min(4, cores.intdiv(8)))
+                sizing = 'no measurements yet, starting conservatively'
+            }
+
+            def workers = (providers.gradleProperty('workers').getOrElse(String.valueOf(defaultWorkers))) as int
+            def heap = providers.gradleProperty('workerHeap').getOrElse('2G')
+
+            if (workers < 1) {
+
+                throw new GradleException("workers must be at least one")
+            }
+
+            def javaExe = runTask.javaLauncher.get().executablePath.asFile.absolutePath
+
+            def jvmArgs = []
+            jvmArgs += runTask.jvmArgs
+            runTask.jvmArgumentProviders.each { jvmArgs += it.asArguments() }
+            runTask.systemProperties.each { key, value -> jvmArgs += "-D${key}=${value}".toString() }
+
+            def programArgs = []
+            programArgs += runTask.args
+            runTask.argumentProviders.each { programArgs += it.asArguments() }
+
+            // Loom keeps the run classpath on the task, where it can simply be read. ModDevGradle instead assembles it
+            // while the task is running, so there is nothing on the task to read: there it is the game test runtime
+            // classpath plus the small launcher jar named by the argument file that sits beside the virtual machine one.
+            def classpath = runTask.classpath.files
+            def classpathArgs = []
+
+            if (!classpath.isEmpty()) {
+
+                classpathArgs += '-cp'
+                classpathArgs += classpath.join(File.pathSeparator)
+            }
+
+            else {
+
+                def entries = []
+
+                jvmArgs.findAll { it.startsWith('@') && it.endsWith('RunVmArgs.txt') }.each { vmArgFile ->
+
+                    def candidate = new File(vmArgFile.substring(1).replace('RunVmArgs.txt', 'RunClasspath.txt'))
+
+                    if (candidate.isFile()) {
+
+                        // An argument file holding '-classpath' and then the launcher jar, with its separators doubled.
+                        def doubled = File.separator + File.separator
+                        candidate.readLines().drop(1).each { entries += it.trim().replace(doubled, File.separator) }
+                    }
+                }
+
+                entries += sourceSets.gametest.runtimeClasspath.files.collect { it.absolutePath }
+                entries = entries.findAll { !it.isEmpty() }.unique()
+
+                if (entries.isEmpty()) {
+
+                    throw new GradleException("Could not work out the run classpath for ${runTask.path}")
+                }
+
+                classpathArgs += '-cp'
+                classpathArgs += entries.join(File.pathSeparator)
+            }
+
+
+            def root = layout.buildDirectory.dir('gametest-parallel').get().asFile
+
+            // A run that was cancelled or crashed leaves its workers behind: they are separate processes and nothing stops
+            // them when the build does. On Windows they also keep their log files open, so the directory below cannot even
+            // be cleared until they are gone. Their process ids are written when they start, so they can be cleaned up
+            // here. The file lives outside the directory being deleted so it survives to be read.
+            def pidFile = layout.buildDirectory.file('gametest-parallel-pids.txt').get().asFile
+
+            if (pidFile.isFile()) {
+
+                pidFile.readLines().each { line ->
+
+                    def pid = line.trim()
+
+                    if (pid.isEmpty()) {
+
+                        return
+                    }
+
+                    try {
+
+                        ProcessHandle.of(pid as long).ifPresent { handle ->
+
+                            // A process id gets reused eventually, so only ever stop one that is still a java process.
+                            def command = handle.info().command().orElse('')
+
+                            if (handle.isAlive() && command.toLowerCase(Locale.ROOT).endsWith('java.exe') || command.endsWith('/java')) {
+
+                                logger.lifecycle("Stopping a game test worker left behind by an earlier run (pid ${pid})")
+                                handle.destroyForcibly()
+                                handle.onExit().get(15, java.util.concurrent.TimeUnit.SECONDS)
+                            }
+                        }
+                    }
+
+                    catch (Exception ignored) {
+
+                        // Already gone, or not ours to stop.
+                    }
+                }
+
+                pidFile.delete()
+            }
+
+            // Windows can hold a handle open for a moment after the process dies, so the clear gets a few attempts.
+            for (int attempt = 0; root.exists() && attempt < 10; attempt++) {
+
+                root.deleteDir()
+
+                if (root.exists()) {
+
+                    Thread.sleep(500)
+                }
+            }
+
+            if (root.exists()) {
+
+                throw new GradleException("Could not clear ${root}; something still has files open in it")
+            }
+
+            root.mkdirs()
+
+            def started = System.nanoTime()
+            def processes = []
+
+            for (int worker = 0; worker < workers; worker++) {
+
+                // Two servers cannot share a world directory, and both loaders take the game directory from the working
+                // directory, so each worker simply runs in its own.
+                def dir = new File(root, "worker-${worker}")
+                dir.mkdirs()
+
+                def stats = new File(dir, 'durations.txt')
+
+                def command = [javaExe]
+                command += jvmArgs
+
+                // Appended last so they win over anything the run configuration already set.
+                command += "-Xmx${heap}".toString()
+                if (providers.gradleProperty('arenas').isPresent()) {
+
+                    command += "-Dmodular_mob_ai.gametest.arenas=${providers.gradleProperty('arenas').get()}".toString()
+                }
+
+                command += "-Dmodular_mob_ai.gametest.shardIndex=${worker}".toString()
+                command += "-Dmodular_mob_ai.gametest.shardCount=${workers}".toString()
+                command += "-Dmodular_mob_ai.gametest.statsFile=${stats.absolutePath}".toString()
+
+                if (providers.gradleProperty('capture').isPresent()) {
+
+                    command += "-Dmodular_mob_ai.gametest.capture=${new File(dir, providers.gradleProperty('capture').get()).absolutePath}".toString()
+                }
+                command += "-Dfabric-api.gametest.report-file=${new File(dir, 'report.xml').absolutePath}".toString()
+
+                command += classpathArgs
+                command += runTask.mainClass.get()
+                command += programArgs
+
+                def builder = new ProcessBuilder(command as String[])
+                builder.directory(dir)
+                builder.redirectErrorStream(true)
+                builder.redirectOutput(new File(dir, 'log.txt'))
+
+                processes += [worker: worker, process: builder.start(), stats: stats, dir: dir]
+            }
+
+            // Recorded so that a run which never gets to finish can still be cleaned up by the next one.
+            pidFile.parentFile.mkdirs()
+            pidFile.text = processes.collect { it.process.pid() }.join(System.lineSeparator())
+
+            logger.lifecycle("Started ${workers} game test workers (${sizing}) under ${root}")
+
+            // Each worker publishes how far it has got beside its durations file. Summing those gives the progress of the
+            // run as a whole, reported every tenth so a long run says something while it works.
+            def progressAt = 10
+
+            while (processes.any { it.process.isAlive() }) {
+
+                Thread.sleep(2000)
+
+                def done = 0L
+                def expected = 0L
+
+                processes.each { entry ->
+
+                    def progress = new File(entry.dir, entry.stats.name + '.progress')
+
+                    if (progress.isFile()) {
+
+                        def parts = progress.text.trim().split(/\s+/)
+
+                        if (parts.length == 2) {
+
+                            done += parts[0] as long
+                            expected += parts[1] as long
+                        }
+                    }
+                }
+
+                // A worker only publishes once its first arena finishes, so early on the summed expectation covers just the
+                // workers that have started reporting. Using it as the denominator makes the run look further along than
+                // it is, so the count this run was asked for wins whenever it is known.
+                def total = requestedArenas.isEmpty() ? expected : requestedArenas as long
+
+                if (total <= 0L) {
+
+                    continue
+                }
+
+                def percent = Math.min(100L, (done * 100L).intdiv(total))
+
+                if (percent >= progressAt) {
+
+                    def elapsed = (System.nanoTime() - started) / 1_000_000_000.0d
+
+                    logger.lifecycle(String.format(Locale.ROOT,
+                            "  %d%% - %,d of %,d arenas after %.0f s", percent, done, total, elapsed))
+
+                    progressAt = (percent.intdiv(10) as int) * 10 + 10
+                }
+            }
+
+            def failed = []
+
+            processes.each { entry ->
+
+                def code = entry.process.waitFor()
+
+                if (code != 0) {
+
+                    failed += "worker ${entry.worker} exited with ${code} (${new File(entry.dir, 'log.txt')})"
+                }
+            }
+
+            // Every worker has exited, so there is nothing left for the next run to clean up.
+            pidFile.delete()
+
+            def seconds = (System.nanoTime() - started) / 1_000_000_000.0d
+
+            // Combined from the raw durations, since a minimum, maximum and average cannot be recovered from per worker
+            // summaries.
+            // Every worker writes the durations it recorded, then its own server side totals as comment lines. Combining
+            // has to happen on the raw values: a minimum, maximum and average cannot be recovered from per worker summaries.
+            def durations = []
+            def serverTicks = 0L
+            def testSeconds = []
+
+            processes.each { entry ->
+
+                if (!entry.stats.exists()) {
+
+                    return
+                }
+
+                entry.stats.eachLine { line ->
+
+                    def trimmed = line.trim()
+
+                    if (trimmed.startsWith('#serverTicks')) {
+
+                        serverTicks += trimmed.split(/\s+/)[1] as long
+                    }
+
+                    else if (trimmed.startsWith('#seconds')) {
+
+                        testSeconds += Double.parseDouble(trimmed.split(/\s+/)[1])
+                    }
+
+                    else if (!trimmed.isEmpty() && !trimmed.startsWith('#')) {
+
+                        durations += trimmed as long
+                    }
+                }
+            }
+
+            if (!durations.isEmpty()) {
+
+                def arenaTicks = durations.sum() as long
+                def average = arenaTicks / (double) durations.size()
+                def configuredBatch = (providers.gradleProperty('batchSize').getOrElse('0')) as int
+                def slots = Math.min(configuredBatch > 0 ? configuredBatch as long : 50L, durations.size() as long)
+
+                def fmt = { double ticks -> String.format(Locale.ROOT, "%7.1f ticks (%5.2f seconds)", ticks, ticks / 20.0d) }
+
+                println "========= Villager time to death over ${durations.size()} runs, ${workers} workers ========="
+                println "  minimum      " + fmt(durations.min() as double)
+                println "  maximum      " + fmt(durations.max() as double)
+                println "  average      " + fmt(average)
+
+                if (serverTicks > 0L) {
+
+                    def dead = 1.0d - arenaTicks / (double) (serverTicks * slots)
+
+                    println String.format(Locale.ROOT, "  server ticks %,d in %.2f s", serverTicks, seconds)
+                    println String.format(Locale.ROOT, "  arena ticks  %,d (%,.1f per second)", arenaTicks, arenaTicks / seconds)
+                    println String.format(Locale.ROOT, "  dead ticks   %.1f%% of %,d batch slots", dead * 100.0d, slots)
+                }
+
+                println "=" * 60
+            }
+
+
+            // Record what this run cost so the next one can size itself. Startup is what the wall clock has left over
+            // once the longest worker stopped testing, since the workers boot alongside each other.
+            if (!durations.isEmpty() && !testSeconds.isEmpty()) {
+
+                def longestTest = testSeconds.max() as double
+                def meanTest = testSeconds.sum() / (double) testSeconds.size()
+                def observedBoot = Math.max(1.0d, seconds - longestTest)
+                def observedRate = (durations.size() / (double) workers) / Math.max(0.001d, meanTest)
+
+                def measured = new Properties()
+                measured.setProperty('bootSeconds', String.format(Locale.ROOT, "%.2f", observedBoot))
+                measured.setProperty('arenasPerWorkerSecond', String.format(Locale.ROOT, "%.3f", observedRate))
+                measured.setProperty('arenas', String.valueOf(durations.size()))
+                measured.setProperty('workers', String.valueOf(workers))
+
+                calibrationFile.parentFile.mkdirs()
+                calibrationFile.withOutputStream { measured.store(it, 'Measured by runGametestParallel; delete to measure again') }
+
+                def suggested = Math.max(1, Math.min(workerCeiling,
+                        (int) Math.round(durations.size() / (observedRate * 2.0d * observedBoot))))
+
+                println String.format(Locale.ROOT,
+                        "  next run      will use %d workers (%.0f s startup, %.1f arenas/second per worker)",
+                        suggested, observedBoot, observedRate)
+            }
+
+            if (!failed.isEmpty()) {
+
+                throw new GradleException("Game test workers failed:\n  " + failed.join("\n  "))
+            }
+        }
+    }
+}
