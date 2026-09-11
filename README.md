@@ -1,37 +1,58 @@
-# MultiLoader Template
+# Modular Mob AI
 
-This project provides a Gradle project template that can compile Minecraft mods for multiple modloaders using a common project for the sources. This project does not require any third party libraries or dependencies. If you have any questions or want to discuss the project, please join our [Discord](https://discord.myceliummod.network).
+A neural network brain for Minecraft mobs. The network runs inside the game, in plain Java, one batched forward pass per
+tick for every mob on the same weights. It is trained offline in PyTorch from what the game recorded, and the new weights
+are swapped in without the game restarting. Right now it learns one thing: to beat a vindicator one on one, out in the
+open on natural terrain.
 
-## Getting Started
+## Layout
 
-### IntelliJ IDEA
-This guide will show how to import the MultiLoader Template into IntelliJ IDEA. The setup process is roughly equivalent to setting up the modloaders independently and should be very familiar to anyone who has worked with their MDKs.
+```
+mod/          the Minecraft mod: the whole Gradle build, one project per loader
+  common/       everything both loaders share: the agent, its brain, the network runtime, the fights
+  fabric/       Fabric entry points
+  neoforge/     NeoForge entry points
+trainer/      the PyTorch trainer (see trainer/README.md)
+scripts/      what to run from a terminal
+docs/         how the pieces fit, the file formats both sides share, and machine stability notes
+runs/         training runs: weights, rollouts, logs, checkpoints (not in git)
+```
 
-1. Clone or download this repository to your computer.
-2. Configure the project by setting the properties in the `gradle.properties` file. You will also need to change the `rootProject.name`  property in `settings.gradle`, this should match the folder name of your project, or else IDEA may complain.
-3. Open the template's root folder as a new project in IDEA. This is the folder that contains this README.md file and the gradlew executable.
-4. If your default JVM/JDK is not Java 21 you will encounter an error when opening the project. This error is fixed by going to `File > Settings > Build, Execution, Deployment > Build Tools > Gradle > Gradle JVM` and changing the value to a valid Java 21 JVM. You will also need to set the Project SDK to Java 21. This can be done by going to `File > Project Structure > Project SDK`. Once both have been set open the Gradle tab in IDEA and click the refresh button to reload the project.
-5. Open your Run/Debug Configurations. Under the `Application` category there should now be options to run Fabric and NeoForge projects. Select one of the client options and try to run it.
-6. Assuming you were able to run the game in step 5 your workspace should now be set up.
+## From a terminal
 
-### Eclipse
-While it is possible to use this template in Eclipse it is not recommended. During the development of this template multiple critical bugs and quirks related to Eclipse were found at nearly every level of the required build tools. While we continue to work with these tools to report and resolve issues support for projects like these are not there yet. For now Eclipse is considered unsupported by this project. The development cycle for build tools is notoriously slow so there are no ETAs available.
+```
+scripts\setup.ps1      once: Java 21, the trainer's Python environment, then the parity check
+scripts\test.ps1       20 fights with the scripted brain, the quick "is anything broken" check (-Terrain for real ground)
+scripts\parity.ps1     the game's forward pass against PyTorch's, in seconds
+scripts\train.ps1      10,000 battles on natural terrain, all the machine can run; resumes where it left off
+scripts\watch.ps1      live progress of a run, in a second terminal
+scripts\eval.ps1       a trained network's win rate, no exploration
+scripts\stop.ps1       stop a run and anything it left behind
+```
 
-## Development Guide
-When using this template the majority of your mod should be developed in the `common` project. The `common` project is compiled against the vanilla game and is used to hold code that is shared between the different loader-specific versions of your mod. The `common` project has no knowledge or access to ModLoader specific code, apis, or concepts. Code that requires something from a specific loader must be done through the project that is specific to that loader, such as the `fabric` or `neoforge` projects.
+Each script says what it takes at the top; most have `-Run`, and `train.ps1` has `-Battles`, `-Workers` and
+`-Device cpu`. Read [docs/README.md](docs/README.md) before long runs on this PC.
 
-Loader specific projects such as the `fabric` and `neoforge` project are used to load the `common` project into the game. These projects also define code that is specific to that loader. Loader specific projects can access all the code in the `common` project. It is important to remember that the `common` project can not access code from loader specific projects.
+## Development
+The mod follows the MultiLoader layout: almost everything lives in `mod/common`, which is compiled against the vanilla game
+and knows nothing of either loader. `mod/fabric` and `mod/neoforge` load it and hold the little that is loader specific,
+such as registration and the per level tick hook that drives the agents. Common code can never reach into a loader
+project.
+
+The Gradle build is `mod/`: open that folder in IntelliJ IDEA with Java 21 as both the Gradle JVM and the project SDK, or
+run `mod\gradlew.bat -p mod <task>` from the root. The Fabric and NeoForge run configurations appear under `Application`
+once Gradle has synced.
 
 ## Game Tests
 Game tests live in a `gametest` source set that sits next to `main` in every project. Like the main sources, the tests are
-written once in `minecraft/common/src/gametest` and compiled into each loader project, so a single test runs on both Fabric and
+written once in `mod/common/src/gametest` and compiled into each loader project, so a single test runs on both Fabric and
 NeoForge. The whole game test framework is vanilla, only the registration of a test holder is loader specific.
 
 | Path | Holds |
 | --- | --- |
-| `minecraft/common/src/gametest` | The test framework, the utilities, the game test mixins, and the tests themselves. |
-| `minecraft/fabric/src/gametest` | The `fabric-gametest` entry point and the Fabric implementation of the game test services. |
-| `minecraft/neoforge/src/gametest` | The `@GameTestHolder` entry point and the NeoForge implementation of the game test services. |
+| `mod/common/src/gametest` | The test framework, the utilities, the game test mixins, the tests, and `tools/BrainTool`. |
+| `mod/fabric/src/gametest` | The `fabric-gametest` entry point and the Fabric implementation of the game test services. |
+| `mod/neoforge/src/gametest` | The `@GameTestHolder` entry point and the NeoForge implementation of the game test services. |
 
 Run them headless, which boots a server, runs every test, and exits:
 
@@ -40,19 +61,25 @@ gradlew :fabric:runGametest
 gradlew :neoforge:runGameTestServer
 ```
 
-Fabric writes a JUnit report to `minecraft/fabric/build/gametest/report.xml`. The normal client and server runs also load the game
+Fabric writes a JUnit report to `mod/fabric/build/gametest/report.xml`. The normal client and server runs also load the game
 test source set, so tests can be driven by hand in a dev world with `/test runall`.
 
+Which brain drives the agents is chosen when the game starts: the scripted fighter by default, or a trained network with
+`-Pbrain=neural -PbrainWeights=runs/default/weights/000100.mbw`, which is what `scripts\eval.ps1` does.
+
 ### Writing a test
-Add a class under `minecraft/common/src/gametest/java/net/sievert/modularmobai/gametest/tests`, annotate it with `@GameTestGroup`, and
+Add a class under `mod/common/src/gametest/java/net/sievert/modularmobai/gametest/tests`, annotate it with `@GameTestGroup`, and
 list it in `ModularMobAiGameTests`. Each `@GameTest` method resolves its structure as `<namespace>:gametest/<path>/<template>`, so
 `@GameTest(template = "arena")` in a group with no path loads
-`minecraft/common/src/gametest/resources/data/modular_mob_ai/structure/gametest/arena.nbt`. Those structures only need to declare
+`mod/common/src/gametest/resources/data/modular_mob_ai/structure/gametest/arena.nbt`. Those structures only need to declare
 the size of the region the test owns; building the scenery inside it is the test's job.
 
-Tests must not import loader specific code. Anything a test needs from a loader goes through `GameTestServices`, which
-mirrors the `Services` lookup the main source set uses, with the implementations living in each loader's game test source
-set.
+Tests must not import loader specific code; only the registration of the test holder lives in each loader's game test
+source set.
+
+A run plays one suite, chosen with `-Psuite`: `arena`, the agent against a vindicator in a closed nine block box on a flat
+world, which boots in seconds; `terrain`, the same fight out in the open on natural ground, which is what training uses;
+or `baseline`, the villager against vindicator throughput benchmark with no agent in it.
 
 ### Tuning a run
 `GameTestTuning` holds the knobs that control how a suite is executed. Every default there is the setting that measured

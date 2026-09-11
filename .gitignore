@@ -5,6 +5,10 @@ bin
 .metadata
 .classpath
 .project
+.eclipse
+
+# vscode / cursor
+.vscode
 
 # idea
 out
@@ -21,6 +25,7 @@ build
 # other
 eclipse
 run
+# training runs at the root, and the loaders' own run folders
 runs
 
 # python

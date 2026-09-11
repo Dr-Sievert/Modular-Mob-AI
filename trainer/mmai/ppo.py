@@ -1,0 +1,593 @@
+"""PPO over recorded rollouts.
+
+One iteration is one policy: the game plays under iteration N's weights, writes down what it did, and this learns from
+exactly that and exports iteration N+1. Nothing is ever learned from a policy that has already moved on, which is what
+being on-policy means and what the clipped objective assumes.
+
+Learning from a recording rather than from a live socket means the hidden states are not lying around to be reused, so
+the first thing an update does is replay the policy the game acted with over the observations it recorded, from the memory
+each segment started with. That replay is also a continuous check on the parity between the two sides: the log
+probabilities it works out should match the ones the game wrote down to within float noise, and if they ever stop
+matching, something about the network has drifted apart and every ratio in the update is wrong.
+"""
+
+from __future__ import annotations
+
+import os
+import time
+from dataclasses import asdict, dataclass
+from pathlib import Path
+
+import numpy as np
+import torch
+from torch import Tensor
+
+from . import log
+from .model import Actor, Critic, PolicyHeads, RewardScaler, RunningNormalizer
+from .rollout import Segment, pack_by_rows
+from .schema import Schema
+from .weights import export as export_weights
+
+logger = log.get("ppo")
+
+
+@dataclass
+class Config:
+    # How much experience one policy collects before it is updated, in steps across every worker. The game is told this
+    # number too: each worker takes its share and then waits for the next weights.
+    rollout_steps: int = 16384
+
+    # How long a chunk the recurrent network is trained through. Longer remembers more, costs more, and pads more.
+    seq_len: int = 32
+
+    # Chunks per minibatch. With seq_len 32 this is 2048 steps per gradient.
+    minibatch_chunks: int = 64
+    epochs: int = 4
+
+    learning_rate: float = 3e-4
+    gamma: float = 0.99
+    gae_lambda: float = 0.95
+    clip: float = 0.2
+    value_coef: float = 0.5
+    entropy_coef: float = 0.01
+    max_grad_norm: float = 0.5
+
+    # Stop an update early once the policy has moved this far from the one that collected the data. Past this the clipped
+    # objective stops meaning anything and an update can wreck a policy in one go.
+    target_kl: float = 0.02
+
+    # Rewards are divided by the running spread of the return, so the value loss stays the same size whatever the reward
+    # is measured in. Off for a task whose rewards are already near unit scale.
+    scale_rewards: bool = True
+
+    # The network the game runs: 634 -> h1 -> GRU hidden -> h3 -> 19 logits. The hidden width is the agent's memory and
+    # the middle of the tick budget; the encoder is wide because the observation is.
+    h1: int = 256
+    hidden: int = 128
+    h3: int = 128
+
+    # The critic, which never leaves this side and so costs the game nothing.
+    critic_width: int = 256
+
+    obs_clip: float = 10.0
+
+    # An iteration this small is not worth a gradient; the weights are carried over unchanged and the data with them.
+    min_steps: int = 512
+
+    # Padded rows per replay batch, which is the only thing here that grows with segment length.
+    replay_rows: int = 131072
+
+    checkpoint_every: int = 25
+
+    device: str = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # The most of the GPU's memory this process may take. Past physical memory Windows quietly spills into system memory
+    # and everything slows to a crawl; with a ceiling, running out is an error that says so, and the update falls back to
+    # the CPU instead. An update here needs about a gigabyte, so half a 16 GB card is room to spare.
+    gpu_memory_fraction: float = 0.5
+
+    # CPU threads for torch. The workers sit idle while an update runs, so the update may have a fair share of the cores.
+    threads: int = 8
+
+    seed: int = 0
+
+
+@dataclass
+class Replayed:
+    """What the replay recovered for one segment, all of it on the CPU and aligned to its steps."""
+
+    hidden_in: np.ndarray
+    memory: np.ndarray
+    values: np.ndarray
+    bootstrap: float
+    log_probs: np.ndarray
+    rewards: np.ndarray
+    advantages: np.ndarray
+    returns: np.ndarray
+
+
+class Trainer:
+    def __init__(self, config: Config, schema: Schema) -> None:
+        self.config = config
+        self.schema = schema
+
+        torch.manual_seed(config.seed)
+        np.random.seed(config.seed)
+        torch.set_num_threads(max(1, config.threads))
+
+        self.device = torch.device(config.device)
+
+        if self.device.type == "cuda":
+            # The memory calls below want to know which card, so plain "cuda" is pinned to the current one.
+            if self.device.index is None:
+                self.device = torch.device("cuda", torch.cuda.current_device())
+
+            free, total = torch.cuda.mem_get_info(self.device)
+            torch.cuda.set_per_process_memory_fraction(config.gpu_memory_fraction, self.device)
+
+            logger.info(
+                "%s: %.1f of %.1f GB free, this process capped at %.1f GB",
+                torch.cuda.get_device_name(self.device),
+                free / 2**30,
+                total / 2**30,
+                config.gpu_memory_fraction * total / 2**30,
+            )
+
+            if free < 2 * 2**30:
+                logger.warning("under 2 GB of GPU memory is free; something else is using the card and updates may be slow")
+
+        self.heads = PolicyHeads(schema.heads)
+        self.actor = Actor.for_schema(schema, config.h1, config.hidden, config.h3, config.obs_clip).to(self.device)
+        self.critic = Critic(schema.obs_dim, config.hidden, config.critic_width).to(self.device)
+
+        self.optimizer = torch.optim.Adam(
+            list(self.actor.parameters()) + list(self.critic.parameters()), lr=config.learning_rate, eps=1e-5
+        )
+
+        self.normalizer = RunningNormalizer(schema.obs_dim)
+        self.normalizer.into(self.actor)
+        self.reward_scaler = RewardScaler(config.gamma)
+
+        self.iteration = 0
+        self.total_steps = 0
+        self.started = time.time()
+
+        # Episodes straddle iterations, so their totals are kept here until they end.
+        self.episodes: dict[tuple[int, int], list[float]] = {}
+
+        self.finished_returns: list[float] = []
+        self.finished_lengths: list[float] = []
+        self.finished_wins = 0
+
+        logger.info(
+            "%s, critic %d wide, learning on %s",
+            self.actor.topology.describe(),
+            config.critic_width,
+            self.device,
+        )
+
+    # -----------------------------------------------------------------------------------------------------------
+    # One iteration
+    # -----------------------------------------------------------------------------------------------------------
+
+    def update(self, segments: list[Segment]) -> dict:
+        """Learns from one iteration's shards. Returns the figures for the log line."""
+
+        started = time.time()
+        steps = sum(segment.steps for segment in segments)
+        self.total_steps += steps
+
+        scaled = self._scale(segments)
+
+        try:
+            replayed = self._replay(segments, scaled)
+            batch = self._chunks(segments, replayed)
+            stats = self._learn(batch)
+
+        except RuntimeError as failure:
+            if self.device.type == "cpu" or "cuda" not in str(failure).lower():
+                raise
+
+            logger.error("the %s device failed during an update: %s", self.device, str(failure).splitlines()[0])
+            logger.error("carrying on from the CPU; check the GPU before trusting it again")
+
+            self._fall_back_to_cpu()
+
+            replayed = self._replay(segments, scaled)
+            batch = self._chunks(segments, replayed)
+            stats = self._learn(batch)
+
+        # The statistics move after the update, never before it: the log probabilities the game recorded were worked out
+        # behind the ones it was given, and shifting them first would make every ratio in this update a lie.
+        self._refresh_normalizer(segments)
+
+        drift = max((float(np.abs(replayed[index].log_probs - segments[index].log_probs).max())
+                     for index in range(len(segments)) if segments[index].steps > 0), default=0.0)
+
+        if drift > 1e-3:
+            logger.warning(
+                "log probabilities drifted by %.2e from what the game recorded; the two sides disagree about the network",
+                drift,
+            )
+
+        vram = 0.0
+
+        if self.device.type == "cuda":
+            vram = torch.cuda.max_memory_allocated(self.device) / 2**30
+            torch.cuda.reset_peak_memory_stats(self.device)
+
+        stats.update({"steps": steps, "drift": drift, "seconds": time.time() - started, "vram": vram})
+        return stats
+
+    def _scale(self, segments: list[Segment]) -> list[np.ndarray]:
+        """Rewards as the critic sees them, and the episode totals as the game paid them."""
+
+        scaled = []
+
+        for segment in segments:
+            totals = self.episodes.setdefault(segment.key, [0.0, 0.0])
+
+            if segment.new:
+                totals[0] = 0.0
+                totals[1] = 0.0
+
+            totals[0] += float(segment.rewards.sum())
+            totals[1] += segment.steps
+
+            values = np.empty(segment.steps, dtype=np.float32)
+
+            for step in range(segment.steps):
+                last = step == segment.steps - 1
+                reward = float(segment.rewards[step])
+
+                values[step] = (
+                    self.reward_scaler.scale(segment.key, reward, segment.done and last)
+                    if self.config.scale_rewards
+                    else reward
+                )
+
+            if segment.done:
+                self.finished_returns.append(totals[0])
+                self.finished_lengths.append(totals[1])
+
+                # A win is the only way to end a fight with a positive terminal reward.
+                if float(segment.rewards[-1]) > 0.0:
+                    self.finished_wins += 1
+
+                del self.episodes[segment.key]
+                self.reward_scaler.forget(segment.key)
+
+            scaled.append(values)
+
+        return scaled
+
+    @torch.no_grad()
+    def _replay(self, segments: list[Segment], scaled: list[np.ndarray]) -> list[Replayed]:
+        """Runs the policy the game acted with back over what it saw, to recover the memory and the values."""
+
+        config = self.config
+        replayed: list[Replayed | None] = [None] * len(segments)
+
+        self.actor.eval()
+        self.critic.eval()
+
+        for group in pack_by_rows(segments, config.replay_rows):
+            width = max(segments[index].obs.shape[0] for index in group)
+
+            obs = torch.zeros(len(group), width, self.schema.obs_dim)
+            actions = torch.zeros(len(group), width, self.schema.act_dim)
+            hidden = torch.zeros(len(group), config.hidden)
+
+            for row, index in enumerate(group):
+                segment = segments[index]
+                length = segment.obs.shape[0]
+
+                obs[row, :length] = torch.from_numpy(segment.obs)
+                actions[row, : segment.steps] = torch.from_numpy(segment.actions)
+                hidden[row] = torch.from_numpy(segment.h0)
+
+            obs = obs.to(self.device)
+            actions = actions.to(self.device)
+            hidden = hidden.to(self.device)
+
+            logits, memory = self.actor(obs, hidden)
+            values = self.critic(self.actor.normalise(obs), memory)
+            log_probs = self.heads.log_prob(self.heads.distributions(logits, self.actor.log_std, obs), actions)
+
+            memory = memory.cpu().numpy()
+            values = values.cpu().numpy()
+            log_probs = log_probs.cpu().numpy()
+            starts = hidden.cpu().numpy()
+
+            for row, index in enumerate(group):
+                segment = segments[index]
+                steps = segment.steps
+
+                # The memory going into a step is the memory coming out of the one before it.
+                hidden_in = np.concatenate([starts[row : row + 1], memory[row, : steps - 1]], axis=0)
+
+                # Nothing follows a fight that ended; one that was only cut off is worth whatever the critic says.
+                bootstrap = 0.0 if segment.done else float(values[row, steps])
+
+                advantages, returns = self._advantages(scaled[index], values[row, :steps], bootstrap, segment.done)
+
+                replayed[index] = Replayed(
+                    hidden_in=hidden_in,
+                    memory=memory[row, :steps].copy(),
+                    values=values[row, :steps].copy(),
+                    bootstrap=bootstrap,
+                    log_probs=log_probs[row, :steps].copy(),
+                    rewards=scaled[index],
+                    advantages=advantages,
+                    returns=returns,
+                )
+
+        return [item for item in replayed if item is not None]
+
+    def _advantages(self, rewards: np.ndarray, values: np.ndarray, bootstrap: float, done: bool):
+        """Generalised advantage estimation over one segment."""
+
+        config = self.config
+        steps = rewards.shape[0]
+        advantages = np.zeros(steps, dtype=np.float32)
+        running = 0.0
+
+        for step in reversed(range(steps)):
+            last = step == steps - 1
+            following = bootstrap if last else float(values[step + 1])
+            carries = 0.0 if (last and done) else 1.0
+
+            delta = float(rewards[step]) + config.gamma * following * carries - float(values[step])
+            running = delta + config.gamma * config.gae_lambda * carries * running
+            advantages[step] = running
+
+        return advantages, advantages + values
+
+    def _chunks(self, segments: list[Segment], replayed: list[Replayed]) -> dict[str, Tensor]:
+        """Cuts the segments into fixed length chunks, each remembering the memory it starts from."""
+
+        length = self.config.seq_len
+
+        obs, hidden_in, memory, actions, log_probs, advantages, returns, values, mask = [], [], [], [], [], [], [], [], []
+
+        for segment, data in zip(segments, replayed):
+            for start in range(0, segment.steps, length):
+                end = min(start + length, segment.steps)
+                size = end - start
+                pad = length - size
+
+                def padded(array: np.ndarray) -> np.ndarray:
+                    piece = array[start:end]
+
+                    if pad == 0:
+                        return piece
+
+                    return np.concatenate([piece, np.zeros((pad,) + piece.shape[1:], dtype=piece.dtype)])
+
+                obs.append(padded(segment.obs[: segment.steps]))
+                actions.append(padded(segment.actions))
+                log_probs.append(padded(segment.log_probs))
+                hidden_in.append(data.hidden_in[start])
+                memory.append(padded(data.memory))
+                advantages.append(padded(data.advantages))
+                returns.append(padded(data.returns))
+                values.append(padded(data.values))
+                mask.append(np.concatenate([np.ones(size, dtype=bool), np.zeros(pad, dtype=bool)]))
+
+        def stacked(arrays: list[np.ndarray]) -> Tensor:
+            return torch.from_numpy(np.stack(arrays)).to(self.device)
+
+        return {
+            "obs": stacked(obs),
+            "hidden": stacked(hidden_in),
+            "memory": stacked(memory),
+            "actions": stacked(actions),
+            "log_probs": stacked(log_probs),
+            "advantages": stacked(advantages),
+            "returns": stacked(returns),
+            "values": stacked(values),
+            "mask": stacked(mask),
+        }
+
+    def _learn(self, batch: dict[str, Tensor]) -> dict:
+        config = self.config
+
+        valid = batch["mask"]
+        advantages = batch["advantages"]
+        mean = advantages[valid].mean()
+        spread = advantages[valid].std() + 1e-8
+        advantages = (advantages - mean) / spread
+
+        chunks = int(batch["obs"].shape[0])
+        policy_losses, value_losses, entropies, clip_fractions, approximate_kls = [], [], [], [], []
+        epochs_run = 0
+
+        self.actor.train()
+        self.critic.train()
+
+        for _ in range(config.epochs):
+            order = torch.randperm(chunks, device=self.device)
+            epoch_kls = []
+
+            for start in range(0, chunks, config.minibatch_chunks):
+                rows = order[start : start + config.minibatch_chunks]
+
+                obs = batch["obs"][rows]
+                mask = valid[rows]
+                old_log_probs = batch["log_probs"][rows]
+                old_values = batch["values"][rows]
+
+                logits, _ = self.actor(obs, batch["hidden"][rows])
+                distributions = self.heads.distributions(logits, self.actor.log_std, obs)
+
+                log_probs = self.heads.log_prob(distributions, batch["actions"][rows])
+                entropy = self.heads.entropy(distributions)
+
+                # The critic reads the memory the policy had at the time, recovered once by the replay and held still for
+                # the whole update, so no gradient of the value loss ever reaches the policy's features.
+                values = self.critic(self.actor.normalise(obs), batch["memory"][rows])
+
+                ratio = (log_probs - old_log_probs).exp()
+                chunk_advantages = advantages[rows]
+
+                unclipped = ratio * chunk_advantages
+                clipped = ratio.clamp(1.0 - config.clip, 1.0 + config.clip) * chunk_advantages
+                policy_loss = -torch.min(unclipped, clipped)[mask].mean()
+
+                # The value head is clipped the same way the policy is, so one update cannot move an estimate further
+                # than the data it was fitted on can justify.
+                target = batch["returns"][rows]
+                bounded = old_values + (values - old_values).clamp(-config.clip, config.clip)
+                value_loss = 0.5 * torch.max((values - target) ** 2, (bounded - target) ** 2)[mask].mean()
+
+                entropy_bonus = entropy[mask].mean()
+                loss = policy_loss + config.value_coef * value_loss - config.entropy_coef * entropy_bonus
+
+                self.optimizer.zero_grad(set_to_none=True)
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(
+                    list(self.actor.parameters()) + list(self.critic.parameters()), config.max_grad_norm
+                )
+                self.optimizer.step()
+
+                with torch.no_grad():
+                    policy_losses.append(policy_loss.item())
+                    value_losses.append(value_loss.item())
+                    entropies.append(entropy_bonus.item())
+                    clip_fractions.append(((ratio - 1.0).abs() > config.clip)[mask].float().mean().item())
+                    kl = ((ratio - 1.0) - (log_probs - old_log_probs))[mask].mean().item()
+                    approximate_kls.append(kl)
+                    epoch_kls.append(kl)
+
+            epochs_run += 1
+
+            if config.target_kl > 0.0 and float(np.mean(epoch_kls)) > config.target_kl:
+                break
+
+        self.actor.eval()
+        self.critic.eval()
+
+        return {
+            "policy": float(np.mean(policy_losses)),
+            "value": float(np.mean(value_losses)),
+            "entropy": float(np.mean(entropies)),
+            "clip": float(np.mean(clip_fractions)),
+            "kl": float(np.mean(approximate_kls)),
+            "epochs": epochs_run,
+            "chunks": chunks,
+        }
+
+    def _refresh_normalizer(self, segments: list[Segment]) -> None:
+        if not segments:
+            return
+
+        rows = np.concatenate([segment.obs for segment in segments])
+        self.normalizer.update(torch.from_numpy(rows))
+        self.normalizer.into(self.actor)
+
+    def _fall_back_to_cpu(self) -> None:
+        self.device = torch.device("cpu")
+        self.config.device = "cpu"
+
+        self.actor.to(self.device)
+        self.critic.to(self.device)
+        self.optimizer = torch.optim.Adam(
+            list(self.actor.parameters()) + list(self.critic.parameters()),
+            lr=self.config.learning_rate,
+            eps=1e-5,
+        )
+
+    # -----------------------------------------------------------------------------------------------------------
+    # Episode figures
+    # -----------------------------------------------------------------------------------------------------------
+
+    def forget_rounds(self, through: int) -> None:
+        """Drops every running total kept for agents of rounds that have finished."""
+
+        for key in [key for key in self.episodes if key[0] <= through]:
+            del self.episodes[key]
+
+        for key in [key for key in self.reward_scaler.returns if key[0] <= through]:
+            self.reward_scaler.forget(key)
+
+    def take_episode_stats(self) -> tuple[list[float], list[float], int]:
+        """Returns and empties the finished episode figures, so each line reports only what happened since the last."""
+
+        returns, lengths, wins = self.finished_returns, self.finished_lengths, self.finished_wins
+        self.finished_returns = []
+        self.finished_lengths = []
+        self.finished_wins = 0
+        return returns, lengths, wins
+
+    def report(self, stats: dict) -> None:
+        returns, lengths, wins = self.take_episode_stats()
+        episodes = len(returns)
+
+        logger.info(
+            "iteration %5d  steps %11s  episodes %5d  win %5.1f%%  return %+7.3f  length %6.1f  |  "
+            "pi %+.4f  v %.4f  ent %.3f  clip %.3f  kl %.4f  ep %d  |  drift %.1e  %s %4.1fs  vram %.2fG  |  %6.1fm",
+            self.iteration,
+            f"{self.total_steps:,}",
+            episodes,
+            100.0 * wins / max(1, episodes),
+            float(np.mean(returns)) if returns else float("nan"),
+            float(np.mean(lengths)) if lengths else float("nan"),
+            stats["policy"],
+            stats["value"],
+            stats["entropy"],
+            stats["clip"],
+            stats["kl"],
+            stats["epochs"],
+            stats["drift"],
+            self.device.type,
+            stats["seconds"],
+            stats["vram"],
+            (time.time() - self.started) / 60.0,
+        )
+
+    # -----------------------------------------------------------------------------------------------------------
+    # Weights and checkpoints
+    # -----------------------------------------------------------------------------------------------------------
+
+    def export(self, path: Path, iteration: int) -> Path:
+        return export_weights(path, self.actor, self.schema.schema_id, iteration)
+
+    def save(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(".tmp")
+
+        torch.save(
+            {
+                "config": asdict(self.config),
+                "schema_id": self.schema.schema_id,
+                "actor": self.actor.state_dict(),
+                "critic": self.critic.state_dict(),
+                "optimizer": self.optimizer.state_dict(),
+                "normalizer": self.normalizer.state_dict(),
+                "reward_scaler": self.reward_scaler.state_dict(),
+                "iteration": self.iteration,
+                "total_steps": self.total_steps,
+            },
+            temporary,
+        )
+
+        os.replace(temporary, path)
+
+    def load(self, path: Path) -> None:
+        state = torch.load(path, map_location=self.device, weights_only=False)
+
+        if state["schema_id"] != self.schema.schema_id:
+            raise ValueError(
+                f"{path} was trained against schema {state['schema_id']:08x} and the game is running "
+                f"{self.schema.schema_id:08x}"
+            )
+
+        self.actor.load_state_dict(state["actor"])
+        self.critic.load_state_dict(state["critic"])
+        self.optimizer.load_state_dict(state["optimizer"])
+        self.normalizer.load_state_dict(state["normalizer"])
+        self.reward_scaler.load_state_dict(state["reward_scaler"])
+        self.iteration = state["iteration"]
+        self.total_steps = state["total_steps"]
+
+        logger.info("carrying on from %s at iteration %d", path, self.iteration)
