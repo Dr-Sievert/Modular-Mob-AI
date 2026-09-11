@@ -1,15 +1,18 @@
 # Measures a trained network: fights on its most likely actions, no exploration, nothing recorded for training.
 #
-#   scripts\eval.ps1                          the newest weights of run 'default', on natural terrain
+#   scripts\eval.ps1                          the newest weights of run 'default', 2,000 fights on natural terrain
 #   scripts\eval.ps1 -Run wide -Iteration 400
-#   scripts\eval.ps1 -Arenas 1000 -Suite arena
+#   scripts\eval.ps1 -Arenas 400 -Suite arena
+#
+# Starting the workers costs the same however many fights follow, and 2,000 fights put the win rate within about a
+# point either way, where 400 leave it within two and a half.
 #   scripts\eval.ps1 -ReplayEvery 10          replays of one fight in ten per worker, in runs\eval-<run>-<iteration>\replays
 
 param(
     [string] $Run = 'default',
     [int] $Iteration = -1,
-    [int] $Arenas = 200,
-    [int] $Workers = 2,
+    [int] $Arenas = 2000,
+    [int] $Workers = 4,
     [ValidateSet('terrain', 'arena')] [string] $Suite = 'terrain',
     [int] $ReplayEvery = 0
 )

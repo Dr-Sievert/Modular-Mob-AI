@@ -62,6 +62,35 @@ public class GameTestServerMixin {
         }
     }
 
+    // The terrain suite waits for its first site as soon as the tests have started, in the same tick, so the wait counts
+    // as starting up rather than as testing, which it would once the tick was over.
+    @Inject(
+            method = "tickServer",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/gametest/framework/GameTestServer;startTests(Lnet/minecraft/server/level/ServerLevel;)V",
+                    shift = At.Shift.AFTER
+            )
+    )
+    private void modular_mob_ai$awaitFirstSite(BooleanSupplier hasTimeLeft, CallbackInfo ci) {
+
+        if (GameTestTuning.naturalTerrain()) {
+
+            TerrainSites.awaitFirstSite(((MinecraftServer) (Object) this).overworld());
+        }
+    }
+
+    // The terrain suite's sites are generated a couple at a time while fights run on the ones already there. Every tick
+    // hands the sites that have finished to the fights and asks for the next ones.
+    @Inject(method = "tickServer", at = @At("TAIL"))
+    private void modular_mob_ai$generateTerrain(BooleanSupplier hasTimeLeft, CallbackInfo ci) {
+
+        if (GameTestTuning.naturalTerrain()) {
+
+            TerrainSites.tick(((MinecraftServer) (Object) this).overworld());
+        }
+    }
+
     // Fires the moment the suite finishes: the server stops its own stopwatch here and logs its summary right after.
     // Hooking the shutdown callback instead was tried first and was unreliable, because the process can exit before that
     // callback runs; this point is on the same thread as the summary, so it always fires.
@@ -83,6 +112,23 @@ public class GameTestServerMixin {
                 this.modular_mob_ai$ticks,
                 (System.nanoTime() - this.modular_mob_ai$startedAt) / 1_000_000_000.0D
         );
+    }
+
+    // At the same moment the terrain suite writes down where its sites were, so the build can keep the world it generated
+    // for the workers after this one.
+    @Inject(
+            method = "tickServer",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lcom/google/common/base/Stopwatch;stop()Lcom/google/common/base/Stopwatch;"
+            )
+    )
+    private void modular_mob_ai$reportTerrain(BooleanSupplier hasTimeLeft, CallbackInfo ci) {
+
+        if (GameTestTuning.naturalTerrain()) {
+
+            TerrainSites.finish();
+        }
     }
 
     // The progress bar carries one character per test, so at ten thousand arenas it is a ten thousand character line,
@@ -137,8 +183,9 @@ public class GameTestServerMixin {
     }
 
     // The framework picks a random corner for its plots at the height of a flat world's floor, which on real terrain is
-    // somewhere deep under a random ocean. For the terrain suite the plots go under the fight sites instead, and choosing
-    // those sites is what starts the world generating them.
+    // somewhere deep under a random ocean that would have to be generated first. For the terrain suite the plots go deep
+    // under the spawn instead, which is loaded already, and this is also where the fight sites are chosen and start
+    // generating.
     @ModifyArg(
             method = "startTests",
             at = @At(

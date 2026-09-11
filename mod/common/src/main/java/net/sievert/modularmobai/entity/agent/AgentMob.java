@@ -294,16 +294,22 @@ public class AgentMob extends PathfinderMob {
             strafe *= slowdown;
         }
 
+        // travel() moves the entity at whatever speed was last set rather than reading the attribute itself, and nothing
+        // sets it for a mob with no navigation running. It has to be set before the inputs and not after them: on a mob,
+        // setSpeed also writes the speed into the forward input, which is how the vanilla move control walks a mob along
+        // its path, so setting it last would throw the brain's forward input away and leave the agent creeping ahead
+        // whatever it asked for. It comes after the sprint, since sprinting is a modifier on the attribute read here.
+        this.setSpeed((float) this.getAttributeValue(Attributes.MOVEMENT_SPEED));
+
         this.setZza(forward);
         this.setXxa(strafe);
 
-        // travel() moves the entity at whatever speed was last set rather than reading the attribute itself, and nothing
-        // sets it for a mob with no navigation running.
-        this.setSpeed((float) this.getAttributeValue(Attributes.MOVEMENT_SPEED));
+        // Held jump goes through whenever it is held, the way a player's space bar does, and vanilla works out from where
+        // the body is what that means: a jump off the ground, swimming up through water, climbing a ladder. Passed on
+        // only while standing on something, it left an agent in deep water with no way back up, and it drowned.
+        boolean lifted = this.onGround() || this.isInLiquid() || this.onClimbable();
 
-        boolean grounded = this.onGround();
-
-        if (this.controls.jump && grounded) {
+        if (this.controls.jump) {
 
             // Going through the jump control rather than setJumping, because that control ticks after this method and
             // would otherwise overwrite the flag before the jump is read.
@@ -312,9 +318,20 @@ public class AgentMob extends PathfinderMob {
 
         this.executed.moveForward = forward;
         this.executed.moveStrafe = strafe;
-        this.executed.jumped = this.controls.jump && grounded;
+        this.executed.jumped = this.controls.jump && lifted;
         this.executed.sprinting = sprint;
         this.executed.sneaking = sneak;
+    }
+
+    /**
+     * How hard the agent can steer in the air, which is a player's figure rather than a mob's. Vanilla gives every mob the
+     * same fixed amount, and a player a little more while sprinting, which is what makes a sprint jump carry; without it
+     * the agent's sprint jumps fall short of the ones it is meant to learn to match.
+     */
+    @Override
+    protected float getFlyingSpeed() {
+
+        return this.isSprinting() ? 0.025999999F : 0.02F;
     }
 
     private void applyUse() {
@@ -546,6 +563,7 @@ public class AgentMob extends PathfinderMob {
                 && this.getMainHandItem().getItem() instanceof SwordItem;
 
         float total = damage + bonus;
+        float healthBefore = target instanceof LivingEntity living ? living.getHealth() : 0.0F;
 
         if (!target.hurt(source, total)) {
 
@@ -586,7 +604,10 @@ public class AgentMob extends PathfinderMob {
 
         if (target instanceof LivingEntity hurt && this.episode != null && this.episode.pays(hurt)) {
 
-            this.episode.reward().damageDealt(total, hurt.getMaxHealth());
+            // What the swing took off rather than what it swung for, the same as damage taken is counted: a finishing
+            // blow pays only the health that was left, so hitting harder than a kill needs earns nothing extra and a kill
+            // is worth one health bar however it was done.
+            this.episode.reward().damageDealt(Math.max(0.0F, healthBefore - hurt.getHealth()), hurt.getMaxHealth());
         }
 
         this.executed.attackDamage = total;

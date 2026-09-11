@@ -59,8 +59,9 @@ foreach ($loader in 'fabric', 'neoforge') {
     }
 }
 
-# The Gradle process driving a run, if it is still waiting on them.
-$pattern = if ($Run) { "runTraining.*-Prun=$Run(\s|$)" } else { 'runTraining|recordDemonstrations' }
+# The Gradle client driving a run, if it is still waiting on them. The build itself runs in Gradle's daemon, which
+# cancels it once its client is gone and then stays up for the next one.
+$pattern = if ($Run) { "(runTraining|recordDemonstrations).*-Prun=$Run(\s|$)" } else { 'runTraining|recordDemonstrations' }
 
 Get-CimInstance Win32_Process -Filter "Name='java.exe'" | Where-Object { $_.CommandLine -match 'GradleWrapperMain' -and $_.CommandLine -match $pattern } | ForEach-Object {
 

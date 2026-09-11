@@ -145,6 +145,10 @@ afterEvaluate {
 
     runTask.doLast { reportReplays() }
 
+    // Who the agents fight, for trying them against something other than a vindicator: -Popponent=minecraft:skeleton. Set
+    // on the single process run like the replay properties, so every worker runArenas starts copies it from there.
+    runTask.systemProperty('modular_mob_ai.gametest.opponent', providers.gradleProperty('opponent').getOrElse(''))
+
     // The small tool that lives in the game test sources. It touches nothing of the game, so it runs as a plain Java
     // program in a second rather than booting a server: the observation layout the training side builds a network from,
     // and the parity check between this build's forward pass and PyTorch's.
@@ -169,6 +173,139 @@ afterEvaluate {
         if (code != 0) {
 
             throw new GradleException("The brain tool failed: ${toolArguments.join(' ')}")
+        }
+    }
+
+    // Generating the terrain is most of what starting a worker on natural terrain costs, and a world generated once can be
+    // fought in again. So every such worker's world is kept in runs/terrain/<minecraft version>, and later workers start
+    // from one of those, reading their fight sites from disk instead of generating them: the least used first, each at
+    // most terrainUses times. A world that has been used up is dropped, and while the pool is short of terrainPool
+    // worlds, one worker of every run generates a fresh one, so the terrain keeps changing. A world is about 60 MB;
+    // -PterrainPool=0 turns the pool off.
+    def terrainPool = new File(new File(new File(repositoryRoot, 'runs'), 'terrain'), project.property('minecraft_version') as String)
+    def terrainPoolSize = Integer.parseInt(providers.gradleProperty('terrainPool').getOrElse('8'))
+    def terrainUses = Integer.parseInt(providers.gradleProperty('terrainUses').getOrElse('8'))
+
+    def readProperties = { File file ->
+
+        def properties = new Properties()
+
+        if (file.isFile()) {
+
+            file.withInputStream { properties.load(it) }
+        }
+
+        return properties
+    }
+
+    // Only the parts of a world that hold its chunks. The test server writes fresh level data every time, and the saved
+    // list of forced chunks would have the next worker load every site at once. Optionally only some of its region files.
+    def copyWorld = { File from, File to, Closure wanted = { String name -> true } ->
+
+        ['region', 'entities', 'poi'].each { part ->
+
+            def source = new File(from, part)
+
+            if (source.isDirectory()) {
+
+                def target = new File(to, part)
+                target.mkdirs()
+
+                source.eachFile { file ->
+
+                    if (wanted(file.name)) {
+
+                        java.nio.file.Files.copy(file.toPath(), new File(target, file.name).toPath(),
+                                java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                    }
+                }
+            }
+        }
+    }
+
+    // The region files around the world's origin, which hold the spawn area the server loads before anything else. Every
+    // test world has the same seed, so these are the same in all of them.
+    def spawnRegions = { String name -> name ==~ /r\.(-1|0)\.(-1|0)\.mca/ }
+
+    // The kept worlds, least used first and, among those, the longest unused.
+    def keptTerrain = {
+
+        def worlds = (terrainPool.listFiles() ?: []).findAll { new File(it, 'world.properties').isFile() }
+
+        return worlds.collect { dir -> [dir: dir, properties: readProperties(new File(dir, 'world.properties'))] }.sort { a, b ->
+
+            (a.properties.getProperty('uses', '0') as int) <=> (b.properties.getProperty('uses', '0') as int)
+                    ?: new File(a.dir, 'world.properties').lastModified() <=> new File(b.dir, 'world.properties').lastModified()
+        }
+    }
+
+    // After a round: every kept world a worker used counts one more use and goes once it is used up; one that was not
+    // finished when the worker got it goes back with the sites the worker added; a world a worker generated fresh joins
+    // the pool. Each worker says in terrain.properties where its sites were and how many it had ready by the end.
+    def keepTerrain = { List workers ->
+
+        workers.each { entry ->
+
+            def report = readProperties(new File(entry.dir, 'terrain.properties'))
+            def sites = (report.getProperty('sites') ?: '0') as int
+            def world = new File(entry.dir, 'world')
+            def healthy = entry.process.exitValue() == 0 && sites > 0
+
+            // Only ever a saving for the runs after this one, so a world that cannot be kept, say because another run
+            // has its files open, is let go rather than failing this run.
+            try {
+
+                if (entry.kept != null) {
+
+                    def properties = entry.kept.properties
+                    def uses = (properties.getProperty('uses', '0') as int) + 1
+
+                    if (uses >= terrainUses) {
+
+                        entry.kept.dir.deleteDir()
+                        return
+                    }
+
+                    if (healthy && sites > (properties.getProperty('sites', '0') as int)) {
+
+                        copyWorld(world, entry.kept.dir)
+                        properties.setProperty('sites', String.valueOf(sites))
+                    }
+
+                    properties.setProperty('uses', String.valueOf(uses))
+                    new File(entry.kept.dir, 'world.properties').withOutputStream { properties.store(it, null) }
+                }
+
+                else if (healthy && report.getProperty('x') != null && report.getProperty('z') != null) {
+
+                    def dir = new File(terrainPool, "${report.getProperty('x')}_${report.getProperty('z')}")
+                    dir.mkdirs()
+                    copyWorld(world, dir)
+
+                    // Written last, so a world only counts as kept once all of it is there.
+                    def properties = new Properties()
+                    ['x', 'z', 'sites'].each { properties.setProperty(it, report.getProperty(it)) }
+                    properties.setProperty('uses', '1')
+                    new File(dir, 'world.properties').withOutputStream { properties.store(it, null) }
+                }
+            }
+
+            catch (IOException exception) {
+
+                logger.lifecycle("Could not keep the terrain of worker ${entry.worker}: ${exception}")
+            }
+        }
+
+        // Over the limit, the most used go first, and of those the least finished.
+        def worlds = keptTerrain().sort { a, b ->
+
+            (b.properties.getProperty('uses', '0') as int) <=> (a.properties.getProperty('uses', '0') as int)
+                    ?: (a.properties.getProperty('sites', '0') as int) <=> (b.properties.getProperty('sites', '0') as int)
+        }
+
+        while (worlds.size() > terrainPoolSize) {
+
+            worlds.remove(0).dir.deleteDir()
         }
     }
 
@@ -310,8 +447,9 @@ afterEvaluate {
         // How the workers start and share the machine. A Minecraft server spends its first seconds compiling and loading
         // on every core it can see, and generates terrain on all of them after that, so each is shown its share of the
         // cores rather than all of them: the same total work, without a dozen servers fighting over every core at once.
-        // Starting them a few seconds apart keeps their boots from landing on the same instant.
-        def staggerSeconds = Integer.parseInt(providers.gradleProperty('workerStagger').getOrElse('3'))
+        // Starting them a second apart keeps their boots from landing on the same instant. It was three, but every second
+        // of it is paid once per worker by every run, and two servers booting side by side measured no slower than one.
+        def staggerSeconds = Integer.parseInt(providers.gradleProperty('workerStagger').getOrElse('1'))
         def cpuSetting = providers.gradleProperty('workerCpus').getOrElse('auto')
         def workerCpus = cpuSetting == 'auto' ? Math.max(2, cores.intdiv(workers)) : Integer.parseInt(cpuSetting)
 
@@ -472,6 +610,25 @@ afterEvaluate {
         pidFile.parentFile.mkdirs()
         pidFile.text = ''
 
+        // Worlds earlier workers generated, for as many of these as the pool has; the rest generate their own. While the
+        // pool is short of worlds, one worker of every run generates a fresh one to add to it, or the pool would never grow
+        // past the number of workers and those few worlds would all be used up at once.
+        def suite = (extraProperties['modular_mob_ai.gametest.suite'] ?: providers.gradleProperty('suite').getOrElse('')) as String
+        def pooled = suite == 'terrain' && terrainPoolSize > 0
+        def keptWorlds = pooled ? keptTerrain() : []
+        def poolShort = keptWorlds.size() < terrainPoolSize
+        def spawnSource = keptWorlds.isEmpty() ? null : keptWorlds.first().dir
+
+        keptWorlds = keptWorlds.take(Math.max(0, workers - (pooled && poolShort ? 1 : 0)))
+
+        if (pooled) {
+
+            def generating = workers - keptWorlds.size()
+
+            logger.lifecycle("Terrain: ${keptWorlds.size()} of ${workers} workers start from a world kept in ${terrainPool}, "
+                    + "${generating} generate${generating == 1 ? 's' : ''} a new one")
+        }
+
         for (int worker = 0; worker < workers; worker++) {
 
             if (worker > 0 && staggerSeconds > 0) {
@@ -541,6 +698,46 @@ afterEvaluate {
 
             extraProperties.each { name, value -> command += "-D${name}=${value}".toString() }
 
+            def kept = keptWorlds.isEmpty() ? null : keptWorlds.remove(0)
+
+            if (kept != null) {
+
+                try {
+
+                    copyWorld(kept.dir, new File(dir, 'world'))
+                    command += "-Dmodular_mob_ai.gametest.keptTerrain=${['x', 'z', 'sites'].collect { kept.properties.getProperty(it) }.join(',')}".toString()
+                }
+
+                catch (IOException exception) {
+
+                    // Another run dropped it in the meantime, most likely. This worker generates its own instead.
+                    logger.lifecycle("Could not copy the terrain in ${kept.dir}, worker ${worker} generates its own: ${exception}")
+                    new File(dir, 'world').deleteDir()
+                    kept = null
+                }
+            }
+
+            // A worker generating a new world still gets the spawn area another worker generated, which the server loads
+            // before it does anything else.
+            if (kept == null && spawnSource != null) {
+
+                try {
+
+                    copyWorld(spawnSource, new File(dir, 'world'), spawnRegions)
+                }
+
+                catch (IOException exception) {
+
+                    // Only a head start: the server generates the spawn area itself.
+                    new File(dir, 'world').deleteDir()
+                }
+            }
+
+            if (pooled) {
+
+                command += "-Dmodular_mob_ai.gametest.terrainFile=${new File(dir, 'terrain.properties').absolutePath}".toString()
+            }
+
             command += "-Dfabric-api.gametest.report-file=${new File(dir, 'report.xml').absolutePath}".toString()
 
             command += classpathArgs
@@ -568,7 +765,7 @@ afterEvaluate {
                 }
             }
 
-            processes += [worker: worker, process: process, stats: stats, dir: dir]
+            processes += [worker: worker, process: process, stats: stats, dir: dir, kept: kept]
 
             // Recorded as each one starts, so a run cancelled in the middle of starting them can still be cleaned up by
             // the next one.
@@ -585,7 +782,9 @@ afterEvaluate {
 
         while (processes.any { it.process.isAlive() }) {
 
-            Thread.sleep(2000)
+            // Every two seconds, or at once when a worker exits, so the last one to finish is not left for up to two
+            // seconds of the wall clock.
+            processes.find { it.process.isAlive() }?.process?.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)
             checkHealth()
 
             // A worker that stops while the rest carry on either finished its share early or fell over. Only a nonzero
@@ -667,6 +866,11 @@ afterEvaluate {
 
         // Every worker has exited, so there is nothing left for the next run to clean up.
         pidFile.delete()
+
+        if (pooled) {
+
+            keepTerrain(processes)
+        }
 
         def seconds = (System.nanoTime() - started) / 1_000_000_000.0d
 
@@ -858,14 +1062,17 @@ afterEvaluate {
         }
     }
 
-    // Records the scripted fighter at work, for a network to learn to copy before reinforcement learning takes over. The
-    // record lands in the run's demos folder; `train.py imitate` learns from it.
+    // Records what the scripted fighter would do, for a network to learn to copy before reinforcement learning takes over.
+    // Without -Pstudent the scripted fighter drives, and its record replaces demos/teacher. With -Pstudent a copy drives
+    // and the scripted fighter labels every tick of it, into the next demos/round-N; those rounds add up rather than
+    // replace each other. `train.py imitate` learns from everything under demos.
     //
     //   gradlew :fabric:recordDemonstrations -Prun=imitate -Parenas=1000
+    //   gradlew :fabric:recordDemonstrations -Prun=imitate -Parenas=1000 -Pstudent=runs/imitate/weights/000000.mbw
     tasks.register('recordDemonstrations') {
 
         group = 'modular mob ai'
-        description = 'Records the scripted fighter, for a network to learn to copy.'
+        description = 'Records the scripted fighter, or a copy of it corrected by it, for a network to learn to copy.'
         dependsOn runTask.taskDependencies
         dependsOn 'gametestClasses'
 
@@ -873,21 +1080,53 @@ afterEvaluate {
 
             def runName = providers.gradleProperty('run').getOrElse('imitate')
             def runDirectory = new File(new File(repositoryRoot, 'runs'), runName)
-            def demonstrations = new File(runDirectory, 'demos')
+            def student = providers.gradleProperty('student').map { fromRepositoryRoot(it) }.getOrNull()
 
-            demonstrations.deleteDir()
+            if (student != null && !student.isFile()) {
+
+                throw new GradleException("No weights at ${student}")
+            }
+
+            def demonstrations
+
+            if (student == null) {
+
+                demonstrations = new File(runDirectory, 'demos/teacher')
+                demonstrations.deleteDir()
+            }
+
+            else {
+
+                int round = 1
+
+                while (new File(runDirectory, "demos/round-${round}").exists()) {
+
+                    round++
+                }
+
+                demonstrations = new File(runDirectory, "demos/round-${round}")
+                logger.lifecycle("${student.name} drives, the scripted fighter labels it, into ${demonstrations}")
+            }
+
             demonstrations.mkdirs()
 
             // The trainer builds its network from the layout, so it goes in with the record.
             brainTool(['schema', new File(runDirectory, 'schema.json').absolutePath])
 
-            // A worker that falls over only loses its own share of the record; the rest is still worth learning from. The
-            // noise pushes the teacher off target now and then, so the record shows how it gets back.
-            runArenas('scripted', 16, [
+            def properties = [
                     'modular_mob_ai.gametest.suite'        : providers.gradleProperty('suite').getOrElse('terrain'),
                     'modular_mob_ai.demonstrations'        : demonstrations.absolutePath,
                     'modular_mob_ai.demonstrations.noise'  : providers.gradleProperty('demonstrationNoise').getOrElse('0.2')
-            ], null, { int worker -> }, null, runName)
+            ]
+
+            if (student != null) {
+
+                properties['modular_mob_ai.brain.weights'] = student.absolutePath
+            }
+
+            // A worker that falls over only loses its own share of the record; the rest is still worth learning from. The
+            // noise pushes the driver off target now and then, so the record shows how to get back.
+            runArenas(student == null ? 'scripted' : 'neural', 16, properties, null, { int worker -> }, null, runName)
         }
     }
 

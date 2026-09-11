@@ -11,7 +11,7 @@
 # Learning happens every -RolloutSteps steps of experience across all workers (an iteration): the workers pause, the
 # trainer runs a few epochs of PPO over exactly that experience, the new weights swap in, and the fights carry on. The
 # battles are fought in rounds of -RoundSize, each with fresh worker processes, so a worker that crashes costs at most
-# the rest of its round.
+# the rest of its round. Starting workers takes minutes, so a round is large enough to make that a small share of it.
 #
 # Each worker fights -Slots battles at once, on a quarter again as many terrain sites, in a -Heap sized heap. A worker
 # is bound by its one server thread, so the machine's memory, not its cores, decides how many run. Twenty five slots in
@@ -21,7 +21,7 @@
 param(
     [string] $Run = 'default',
     [int] $Battles = 10000,
-    [int] $RoundSize = 10000,
+    [int] $RoundSize = 50000,
     [int] $Workers = 0,
     [int] $Slots = 25,
     [string] $Heap = '1G',

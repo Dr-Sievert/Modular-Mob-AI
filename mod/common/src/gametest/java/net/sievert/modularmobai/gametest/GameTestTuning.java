@@ -167,16 +167,6 @@ public final class GameTestTuning {
     }
 
     /**
-     * Whether a run writes its world to disk. Off unless asked for: nothing ever reads a game test world back, since the
-     * next run clears the folder it was in, and saving it costs the server thread on every tick while the tests run and
-     * then again for every chunk as the server stops. Turn it on for a run whose world is meant to be kept.
-     */
-    public static boolean saveWorld() {
-
-        return Boolean.getBoolean("modular_mob_ai.gametest.saveWorld");
-    }
-
-    /**
      * Where the terrain suite puts its fight sites, as a seed; zero, the default, lets every run pick somewhere new. The
      * world's own seed never changes, so a fixed one here puts every run on the same ground, which is what comparing
      * two builds needs: one run in a forest and the next in the mountains differ by more than most changes do.
@@ -194,6 +184,24 @@ public final class GameTestTuning {
 
             return 0L;
         }
+    }
+
+    /**
+     * The world an earlier worker generated, when the build copied one in for the terrain suite: where its fight sites
+     * are and how many of them it generated, as {@code x,z,sites}. Null when this worker finds a place for its sites and
+     * generates them itself.
+     */
+    public static String keptTerrain() {
+
+        final String property = System.getProperty("modular_mob_ai.gametest.keptTerrain");
+        return property == null || property.isBlank() ? null : property.trim();
+    }
+
+    /** Where the terrain suite writes down which sites it fought on, for the build to keep the world; null for nowhere. */
+    public static String terrainFile() {
+
+        final String property = System.getProperty("modular_mob_ai.gametest.terrainFile");
+        return property == null || property.isBlank() ? null : property.trim();
     }
 
     private static int intProperty(String name, int fallback) {

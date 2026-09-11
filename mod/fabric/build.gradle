@@ -80,7 +80,6 @@ loom {
             vmArg("-Dmodular_mob_ai.gametest.reusePlots=${providers.gradleProperty('reusePlots').getOrElse('')}")
             vmArg("-Dmodular_mob_ai.gametest.terrainSeed=${providers.gradleProperty('terrainSeed').getOrElse('')}")
             vmArg("-Dmodular_mob_ai.gametest.sites=${providers.gradleProperty('sites').getOrElse('')}")
-            vmArg("-Dmodular_mob_ai.gametest.saveWorld=${providers.gradleProperty('saveWorld').getOrElse('')}")
 
             // Name a file to write the per tick dataset; a relative path lands in the run directory.
             vmArg("-Dmodular_mob_ai.gametest.capture=${providers.gradleProperty('capture').getOrElse('')}")

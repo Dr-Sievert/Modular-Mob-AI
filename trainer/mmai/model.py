@@ -99,11 +99,25 @@ INITIAL_LOG_STD = -1.0
 MIN_LOG_STD = -2.5
 MAX_LOG_STD = 0.0
 
+# Aim gets far less, as (start, least, most). Movement can wander at a third of full deflection and still get
+# somewhere, but on aim that is a random jerk of about 22 degrees every tick, and no swing lands through it: the copy of
+# the scripted fighter won 63% of its fights taking its most likely action and about 1% sampling. These are 0.10, 0.03
+# and 0.20 of full deflection, about 6, 2 and 12 degrees a tick.
+AIM_LOG_STD = (-2.3, -3.5, -1.6)
+
+# Where a copy of a teacher starts instead: 0.14 of full deflection on movement, 0.05 on aim. A copy already knows what
+# to do, and reinforcement learning improves whatever policy it samples from. At the spreads above, the copy of the
+# scripted fighter won 90% of its fights on its most likely action and under half of them sampling, and training made the
+# noisy version better at the expense of the one that gets deployed, which fell to 85%.
+COPY_LOG_STD = -2.0
+COPY_AIM_LOG_STD = -3.0
+
 
 class Actor(nn.Module):
     """The exported network: normalise, encode, remember, decide."""
 
-    def __init__(self, topology: Topology, obs_clip: float = 10.0) -> None:
+    def __init__(self, topology: Topology, obs_clip: float = 10.0, aim: tuple[int, ...] = ()) -> None:
+        """:param aim: which spreads belong to aim controls, which explore far less than the rest"""
         super().__init__()
 
         self.topology = topology
@@ -121,14 +135,37 @@ class Actor(nn.Module):
         # task rather than per situation, and shrinks as the policy commits. It starts at a third of full deflection,
         # not all of it: at full deflection the aim swings up to sixty degrees a tick at random, the crosshair never
         # settles on anything, and no swing ever lands for the policy to learn from.
-        self.log_std = nn.Parameter(torch.full((topology.std_dim,), INITIAL_LOG_STD))
+        start = torch.full((topology.std_dim,), INITIAL_LOG_STD)
+        least = torch.full((topology.std_dim,), MIN_LOG_STD)
+        most = torch.full((topology.std_dim,), MAX_LOG_STD)
+
+        for index in aim:
+            start[index], least[index], most[index] = AIM_LOG_STD
+
+        self.aim = aim
+        self.log_std = nn.Parameter(start)
+
+        # Not saved with the weights: they are settings of the training, not something it learned.
+        self.register_buffer("least_log_std", least, persistent=False)
+        self.register_buffer("most_log_std", most, persistent=False)
 
         self._init()
 
-    def bound_spread(self) -> None:
-        """Keeps exploration between a sliver and full deflection. The entropy bonus alone would keep widening it."""
+    def narrow_spread(self) -> None:
+        """Sets the spread a copy of a teacher starts reinforcement learning from; see COPY_LOG_STD."""
         with torch.no_grad():
-            self.log_std.clamp_(MIN_LOG_STD, MAX_LOG_STD)
+            start = torch.full_like(self.log_std, COPY_LOG_STD)
+
+            for index in self.aim:
+                start[index] = COPY_AIM_LOG_STD
+
+            self.log_std.copy_(start)
+
+    def bound_spread(self) -> None:
+        """Keeps exploration between a sliver and a ceiling. The entropy bonus alone would keep widening it, and does
+        most when nothing is working yet, which is exactly when a wider spread makes things worse."""
+        with torch.no_grad():
+            self.log_std.copy_(torch.maximum(torch.minimum(self.log_std, self.most_log_std), self.least_log_std))
 
     def _init(self) -> None:
         for module in (self.fc1, self.fc2):
@@ -147,7 +184,15 @@ class Actor(nn.Module):
 
     @staticmethod
     def for_schema(schema: Schema, h1: int, hidden: int, h3: int, obs_clip: float = 10.0) -> "Actor":
-        return Actor(Topology(schema.obs_dim, h1, hidden, h3, schema.logit_dim, schema.std_dim), obs_clip)
+        aim = tuple(
+            head.std + i
+            for head in schema.heads
+            if head.kind == CONTINUOUS
+            for i in range(head.size)
+            if schema.action_names[head.action + i].startswith("aim")
+        )
+
+        return Actor(Topology(schema.obs_dim, h1, hidden, h3, schema.logit_dim, schema.std_dim), obs_clip, aim)
 
     def normalise(self, raw_obs: Tensor) -> Tensor:
         """The same three operations in the same order as the game: subtract, divide, clamp."""
@@ -236,8 +281,10 @@ class RunningNormalizer:
         return {"mean": self.mean, "var": self.var, "count": self.count}
 
     def load_state_dict(self, state: dict) -> None:
-        self.mean = state["mean"]
-        self.var = state["var"]
+        # The statistics live on the CPU, where the rows they are updated from arrive. A checkpoint loaded straight onto
+        # the GPU would otherwise put them there, and the first update after resuming would mix the two.
+        self.mean = state["mean"].cpu()
+        self.var = state["var"].cpu()
         self.count = state["count"]
 
 

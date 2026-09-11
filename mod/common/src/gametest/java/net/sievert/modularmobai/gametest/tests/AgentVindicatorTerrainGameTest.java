@@ -6,10 +6,8 @@ import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
-import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.MobSpawnType;
-import net.minecraft.world.entity.monster.Vindicator;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.sievert.modularmobai.arena.Episode;
@@ -17,6 +15,7 @@ import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 import net.sievert.modularmobai.gametest.GameTestGroup;
 import net.sievert.modularmobai.gametest.GameTestTuning;
+import net.sievert.modularmobai.gametest.Opponents;
 import net.sievert.modularmobai.gametest.RepeatGameTest;
 import net.sievert.modularmobai.gametest.replay.FightRecorder;
 import net.sievert.modularmobai.gametest.terrain.TerrainSites;
@@ -30,7 +29,8 @@ import net.sievert.modularmobai.gametest.util.TestDurationStats;
  * for the test is only bookkeeping, far underground; nothing happens in it.
  *
  * <p>A fight lasts until one of them is dead or a minute has passed, which is a loss. What the agent is paid only counts
- * damage done to the vindicator, so hitting anything else the terrain throws up earns nothing.
+ * damage done to the vindicator, so hitting anything else the terrain throws up earns nothing. A run can put another mob
+ * in the vindicator's place, see {@link Opponents}.
  *
  * <p>The framework runs its tests in batches and starts a batch only when the last test of the one before has finished,
  * so one fight that runs the clock out holds forty nine finished slots empty for most of a minute. Fights here are not
@@ -97,7 +97,7 @@ public class AgentVindicatorTerrainGameTest {
 
         private TerrainSites.Site site;
         private AgentMob agent;
-        private Vindicator vindicator;
+        private Mob opponent;
         private Episode episode;
         private long started;
 
@@ -127,7 +127,8 @@ public class AgentVindicatorTerrainGameTest {
                         return;
                     }
 
-                    // Every usable site can be busy for a moment when much of the lattice is water; the fight waits.
+                    // No site may be free: early on most are still being generated, and later every usable one can be
+                    // busy for a moment when much of the lattice is water. The fight waits.
                     this.site = TerrainSites.claim(this.level);
                     this.holding = this.site == null;
 
@@ -144,7 +145,7 @@ public class AgentVindicatorTerrainGameTest {
                         this.replay.tick();
                     }
 
-                    if (!this.agent.isAlive() || !this.vindicator.isAlive() || this.helper.getTick() - this.started >= FIGHT_TICKS) {
+                    if (!this.agent.isAlive() || !this.opponent.isAlive() || this.helper.getTick() - this.started >= FIGHT_TICKS) {
 
                         this.decide();
                         this.phase = Phase.ENDING;
@@ -157,7 +158,7 @@ public class AgentVindicatorTerrainGameTest {
                     // brain would never hear how the fight ended.
                     if (this.agent.brain().isFinished() || this.agent.isRemoved()) {
 
-                        TerrainSites.release(this.level, this.site, this.agent, this.vindicator);
+                        TerrainSites.release(this.level, this.site, this.agent, this.opponent);
                         this.phase = Phase.IDLE;
                     }
                 }
@@ -171,33 +172,34 @@ public class AgentVindicatorTerrainGameTest {
 
             // Facing roughly towards each other, as two fighters who have just noticed one another would.
             float agentYaw = yawTowards(this.site.agent(), this.site.opponent()) + Mth.nextFloat(this.level.getRandom(), -45.0F, 45.0F);
-            float vindicatorYaw = yawTowards(this.site.opponent(), this.site.agent());
+            float opponentYaw = yawTowards(this.site.opponent(), this.site.agent());
 
             this.agent = ModEntities.trainingAgent().create(this.level);
-            this.vindicator = EntityType.VINDICATOR.create(this.level);
+            this.opponent = Opponents.create(this.level);
 
-            if (this.agent == null || this.vindicator == null) {
+            if (this.agent == null || this.opponent == null) {
 
                 throw new IllegalStateException("Could not create the fighters");
             }
 
             place(this.agent, this.site.agent(), agentYaw);
-            place(this.vindicator, this.site.opponent(), vindicatorYaw);
+            place(this.opponent, this.site.opponent(), opponentYaw);
 
-            // What spawning on its own would do, including handing it the iron axe it is supposed to carry.
-            this.vindicator.finalizeSpawn(this.level, this.level.getCurrentDifficultyAt(this.site.opponent()), MobSpawnType.EVENT, null);
+            // What spawning on its own would do, including handing it what it fights with: the iron axe a vindicator is
+            // supposed to carry, a skeleton's bow, a pillager's crossbow.
+            this.opponent.finalizeSpawn(this.level, this.level.getCurrentDifficultyAt(this.site.opponent()), MobSpawnType.EVENT, null);
 
             this.level.addFreshEntity(this.agent);
-            this.level.addFreshEntity(this.vindicator);
+            this.level.addFreshEntity(this.opponent);
 
-            this.vindicator.setTarget(this.agent);
+            this.opponent.setTarget(this.agent);
 
             this.agent.setHotbarItem(0, new ItemStack(Items.IRON_SWORD));
-            this.agent.startEpisode(new Episode(FIGHT_TICKS, this.site.bounds(), this.vindicator));
+            this.agent.startEpisode(new Episode(FIGHT_TICKS, this.site.bounds(), this.opponent));
 
             this.episode = this.agent.episode();
             this.started = this.helper.getTick();
-            this.replay = FightRecorder.start(this.agent, this.vindicator);
+            this.replay = FightRecorder.start(this.agent, this.opponent);
 
             return Phase.FIGHTING;
         }
@@ -209,7 +211,7 @@ public class AgentVindicatorTerrainGameTest {
          */
         private void decide() {
 
-            boolean won = !this.vindicator.isAlive() && this.agent.isAlive();
+            boolean won = !this.opponent.isAlive() && this.agent.isAlive();
 
             if (won) {
 

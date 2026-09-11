@@ -23,6 +23,7 @@ import net.sievert.modularmobai.brain.schema.ObservationSchema;
  *   -Dmodular_mob_ai.brain=scripted                                   the hand written fighter, needs nothing
  *   -Dmodular_mob_ai.brain=scripted -Dmodular_mob_ai.demonstrations=DIR   the same, writing down what it does
  *   -Dmodular_mob_ai.brain=neural -Dmodular_mob_ai.brain.weights=X    a trained network, most likely action
+ *   ... and -Dmodular_mob_ai.demonstrations=DIR                       the same, the scripted fighter labelling each tick
  *   -Dmodular_mob_ai.brain=neural -Dmodular_mob_ai.training.run=DIR   a network being trained; see {@link TrainingRun}
  * </pre>
  *
@@ -114,11 +115,12 @@ public final class Brains {
                     throw new IllegalArgumentException("A neural brain needs weights: set modular_mob_ai.brain.weights");
                 }
 
-                // Recording a trained network at work, to see what it actually does rather than what it was taught.
+                // A copy of the scripted fighter at work, with the scripted fighter saying what it would have done instead.
                 String demonstrations = property("modular_mob_ai.demonstrations", "");
+                float noise = Float.parseFloat(property("modular_mob_ai.demonstrations.noise", "0"));
 
                 yield demonstrations.isEmpty() ? network(Path.of(weights))
-                        : new DemonstrationBrain(network(Path.of(weights)), Path.of(demonstrations), 0.0F);
+                        : new DemonstrationBrain(network(Path.of(weights)), new ScriptedBrain(), Path.of(demonstrations), noise);
             }
 
             default -> throw new IllegalArgumentException("Unknown brain '" + kind + "'; expected scripted or neural. "
