@@ -189,10 +189,11 @@ public final class TerrainSites {
 
     /**
      * Where the framework's plots go: deep under the spawn, far from any site. The server loads the seven by seven chunks
-     * around the spawn before anything else, and fifty plots fill exactly those: eight to a row, nine blocks wide with
-     * five between, each with the few blocks the framework clears around it. The plots force their chunks loaded one at a
-     * time, with the server waiting on each, so anywhere else they waited for terrain to be generated first: under the
-     * first site they held up the first fight, and kept the ground between it and its neighbours ticking.
+     * around the spawn before anything else, and fifty plots, as many as run at once, fill exactly those: eight to a row,
+     * nine blocks wide with five between, each with the few blocks the framework clears around it. More spill over into
+     * chunks that have to be loaded first. The plots force their chunks loaded one at a time, with the server waiting on
+     * each, so anywhere else they waited for terrain to be generated: under the first site they held up the first fight,
+     * and kept the ground between it and its neighbours ticking.
      */
     private static BlockPos plots(ServerLevel level) {
 
