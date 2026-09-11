@@ -294,12 +294,15 @@ public class AgentMob extends PathfinderMob {
             strafe *= slowdown;
         }
 
+        // travel() moves the entity at whatever speed was last set rather than reading the attribute itself, and nothing
+        // sets it for a mob with no navigation running. It has to be set before the inputs and not after them: on a mob,
+        // setSpeed also writes the speed into the forward input, which is how the vanilla move control walks a mob along
+        // its path, so setting it last would throw the brain's forward input away and leave the agent creeping ahead
+        // whatever it asked for. It comes after the sprint, since sprinting is a modifier on the attribute read here.
+        this.setSpeed((float) this.getAttributeValue(Attributes.MOVEMENT_SPEED));
+
         this.setZza(forward);
         this.setXxa(strafe);
-
-        // travel() moves the entity at whatever speed was last set rather than reading the attribute itself, and nothing
-        // sets it for a mob with no navigation running.
-        this.setSpeed((float) this.getAttributeValue(Attributes.MOVEMENT_SPEED));
 
         boolean grounded = this.onGround();
 
