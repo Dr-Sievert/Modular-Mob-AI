@@ -4,7 +4,7 @@
 
 ```
 scripts\test.ps1                 20 fights in the closed arena with the scripted fighter
-scripts\test.ps1 -Mechanics      the item and block rules against a player's numbers
+scripts\test.ps1 -Mechanics      the item and block rules against a player's numbers, and what the agent sees of them
 scripts\test.ps1 -Play           the agent in a real game: networks in the jar, /mmai, sides, Infinity loadouts
 scripts\parity.ps1               Java forward pass against PyTorch's, after touching brain\nn or the model
 ```
@@ -12,7 +12,7 @@ scripts\parity.ps1               Java forward pass against PyTorch's, after touc
 | Check | Pass looks like | Proves |
 | --- | --- | --- |
 | `test.ps1` | `All 20 required tests passed`; every fight 54 ticks | the observation, the body and the scripted fighter still work; the 54 ticks are deterministic, so any change in them is a behaviour change |
-| `test.ps1 -Mechanics` | `All 19 required tests passed` | bows, crossbows, shields, axes, mining, placing, use slowdown and damage payment follow a player's rules |
+| `test.ps1 -Mechanics` | `All 23 required tests passed` | bows, crossbows, shields, axes, mining, placing, use slowdown and damage payment follow a player's rules, what the observation says about a use and about what is shot at the agent, and the teacher getting itself out of powder snow |
 | `test.ps1 -Play` | `All 17 required tests passed`, and `Loaded the mod's jar, modular_mob_ai/models/vs-copy.mbw from iteration 650` | what [playing.md](playing.md) promises: the bundled networks load and drive an agent, the commands, saving, sides and friendly fire, the Infinity loadouts |
 | `parity.ps1` | logits agree to about 1e-6 | the game runs exactly the network PyTorch trained |
 
@@ -51,6 +51,9 @@ Each test sets up one situation and checks the numbers a player would get:
 | mining tests | the player's break formula: iron shovel on dirt 3 ticks, hand on stone 151 ticks, iron pickaxe on stone 8 |
 | `placingUsesABlockUpAndNeverBuildsIntoAnything`, `placedBlocksFaceAsForAPlayer` | placing |
 | `swordBlowIsPaidOnceAndOnlyOnTheOpponent` | damage payment |
+| `useProgressIsTheItemsOwnCharge` | the echo's use charge: a bow's power curve, a crossbow's wind, nothing with the hands free |
+| `onlyShotsComingAtTheAgentTakeASlot` | an arrow on its way takes a slot with a kind of its own; one crossing, one lying still and the agent's own take none, and the mob keeps slot zero |
+| `theTeacherGetsOutOfPowderSnow`, `theTeacherBreaksOutOfPowderSnow` | the scripted fighter, with a zombie to fight, walks out of one block of powder snow and breaks its way out of a patch three wide |
 
 Ammo: the agent's bow and crossbow loadouts carry 64 finite arrows, one used per shot, and arrows aren't picked back up.
 That covers a 60-second fight, since a full-draw shot takes 20 ticks. Vanilla skeletons and pillagers never run out.

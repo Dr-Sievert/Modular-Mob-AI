@@ -44,6 +44,7 @@ scripts\test.ps1 -Play                 the agent in a real game (jar networks, /
 scripts\play.ps1                       the dev client, agents on the best network in models\; -Model, -Weights, -Loader
 scripts\terrain.ps1                    once per machine before any training: the terrain library a run fights on
 scripts\train.ps1 -Run <name>          train (resumes); see docs/training.md for -FromCopy, -Workers and the rest
+scripts\dagger.ps1 -Run <name>         record a round of the teacher's answers to that run's own best network
 scripts\watch.ps1                      live dashboard of every run, one line each
 scripts\stop.ps1 -Run <name>           stop one run (bare stop.ps1 stops every run on the machine)
 scripts\eval.ps1 -Weights models\vs-copy\best.mbw     win rate of a network, 2,000 fights

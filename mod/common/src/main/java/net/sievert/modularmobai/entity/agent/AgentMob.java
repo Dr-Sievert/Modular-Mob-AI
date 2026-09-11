@@ -600,6 +600,38 @@ public class AgentMob extends PathfinderMob {
         boolean using = this.isUsingItem();
         this.executed.using = using && this.getUsedItemHand() == InteractionHand.MAIN_HAND;
         this.executed.usingOffhand = using && this.getUsedItemHand() == InteractionHand.OFF_HAND;
+        this.executed.useProgress = using ? this.useProgress() : 0.0F;
+    }
+
+    /**
+     * How far the item in use has charged, as a player sees it: the pull of a bow's string, the fill of a crossbow's
+     * charge bar, or how much of an ordinary use has run. Every number is the item's own, so nothing here decides how long
+     * anything takes.
+     *
+     * <p>A bow gives back the power its arrow would leave at rather than the plain fraction of the twenty ticks, because
+     * power is what the draw is for and it is not linear in the time: half the draw is a third of the power. A crossbow
+     * gives the fraction of its wind, since a wind is all or nothing and what matters is how much is left. Anything else,
+     * food and a shield included, gives how much of its use duration has passed, which for a shield is nearly nothing
+     * however long it is held: a shield does not charge, and the raised flag already says it is up.
+     */
+    private float useProgress() {
+
+        ItemStack stack = this.getUseItem();
+        int ticks = this.getTicksUsingItem();
+
+        if (stack.getItem() instanceof BowItem) {
+
+            return BowItem.getPowerForTime(ticks);
+        }
+
+        if (stack.getItem() instanceof CrossbowItem) {
+
+            return Math.min(1.0F, ticks / (float) Math.max(1, CrossbowItem.getChargeDuration(stack, this)));
+        }
+
+        int duration = stack.getUseDuration(this);
+
+        return duration <= 0 ? 0.0F : Math.min(1.0F, ticks / (float) duration);
     }
 
     private boolean wantsToUse(InteractionHand hand) {
