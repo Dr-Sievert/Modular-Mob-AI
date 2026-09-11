@@ -41,6 +41,8 @@ import net.sievert.modularmobai.arena.Loadout;
 import net.sievert.modularmobai.brain.Brain;
 import net.sievert.modularmobai.brain.BrainStep;
 import net.sievert.modularmobai.brain.schema.ActionSchema;
+import net.sievert.modularmobai.brain.schema.AgentObservation;
+import net.sievert.modularmobai.brain.schema.ObservationSchema;
 import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 import net.sievert.modularmobai.entity.agent.MobControls;
@@ -86,6 +88,9 @@ public class AgentMechanicsGameTest {
     private static final int HAND_ON_DIRT_IN_THE_AIR = 76;
     private static final int HAND_ON_STONE = 151;
     private static final int IRON_PICKAXE_ON_STONE = 8;
+
+    /** Where the echo carries how far a use has charged; see AgentObservation#writeEcho. */
+    private static final int ECHO_USE_PROGRESS = 19;
 
     // ---------------------------------------------------------------------------------------------------------------
     // Bows
@@ -912,6 +917,196 @@ public class AgentMechanicsGameTest {
         float paid = episode.reward().episodeTotal();
 
         helper.assertTrue(Math.abs(paid - owed) < 1.0E-5F, "The agent was paid " + paid + " for " + lost + " health, not " + owed);
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // What the agent sees of its own use, and of what is shot at it
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * The charge of whatever is in use, as the echo carries it. It is the item's own reckoning and not a count of ticks: a
+     * bow reads the power its arrow would leave at, which is not linear in the draw, and a crossbow the fraction of its
+     * wind that is in. Both reach one at the moment letting go is worth it, which is what lets a fighter work either
+     * without knowing which it holds, and both read nothing with the hands free.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 160)
+    public static void useProgressIsTheItemsOwnCharge(GameTestHelper helper) {
+
+        AgentMob agent = agent(helper, new BlockPos(4, 2, 2), 0.0F, 0.0F);
+        Loadout.BOW.equip(agent);
+
+        // A draw starts on the tick after the press, so a step's number is one more than the ticks drawn by then.
+        int crossbowFrom = 40;
+
+        run(helper, tick -> {
+
+            agent.controls().use = tick < 21 || tick >= crossbowFrom && tick < crossbowFrom + 26;
+
+            if (tick == 1) {
+
+                helper.assertTrue(agent.isUsingItem(), "The bow is being drawn");
+                charged(helper, agent, 0.0F, "a draw of no ticks");
+            }
+
+            // A player's bow: the power of a draw of t ticks is (f * f + 2f) / 3 for f = t / 20, capped at one.
+            if (tick == 11) {
+
+                charged(helper, agent, 0.4166667F, "half a draw");
+            }
+
+            if (tick == 21) {
+
+                charged(helper, agent, 1.0F, "a full draw");
+            }
+
+            if (tick == 23) {
+
+                helper.assertFalse(agent.isUsingItem(), "The bow is let go");
+                charged(helper, agent, 0.0F, "empty hands");
+
+                Loadout.CROSSBOW.equip(agent);
+            }
+
+            // A crossbow winds in twenty five ticks and its charge is the plain fraction of them.
+            if (tick == crossbowFrom + 11) {
+
+                charged(helper, agent, 10.0F / 25.0F, "ten ticks of a wind");
+            }
+
+            if (tick == crossbowFrom + 26) {
+
+                charged(helper, agent, 1.0F, "a full wind");
+                return true;
+            }
+
+            return false;
+        });
+    }
+
+    /** What the echo says the charge is, straight out of the observation the network reads, and out of the record behind it. */
+    private static void charged(GameTestHelper helper, AgentMob agent, float expected, String what) {
+
+        float[] observation = new float[ObservationSchema.OBS_DIM];
+        AgentObservation.write(agent, agent.brain().enemySlots(), observation, 0);
+
+        float echoed = observation[ObservationSchema.ECHO_OFFSET + ECHO_USE_PROGRESS];
+
+        helper.assertTrue(Math.abs(agent.executed().useProgress - expected) < 1.0E-4F,
+                "The body made " + what + " out to be charged " + agent.executed().useProgress + ", not " + expected);
+        helper.assertTrue(Math.abs(echoed - expected) < 1.0E-4F,
+                "The echo carries " + echoed + " for " + what + ", not " + expected);
+    }
+
+    /**
+     * Only a shot actually coming at the agent takes an enemy slot, and never one a body wants. Four arrows are put in the
+     * air at once: one on its way to the agent, one crossing well wide of it, one lying still where it fell, and one the
+     * agent fired itself. Exactly the first of them is worth knowing about.
+     *
+     * <p>The mob keeps the slot it had. That is the whole point of the rule: a network that learned to fight whatever is
+     * nearest would turn and swing at an arrow a block away while the skeleton that fired it stood off and shot again.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 120)
+    public static void onlyShotsComingAtTheAgentTakeASlot(GameTestHelper helper) {
+
+        AgentMob agent = agent(helper, new BlockPos(4, 2, 2), 0.0F, 0.0F);
+        Mob shooter = helper.spawnWithNoFreeWill(EntityType.SKELETON, new BlockPos(4, 2, 6));
+
+        // Bounded, so the arenas either side of this one are not in the agent's view; see AgentVindicatorGameTest.
+        agent.startEpisode(new Episode(FIGHT_TICKS, bounds(helper), shooter));
+        Loadout.BOW.equip(agent);
+
+        Arrow[] arrows = new Arrow[4];
+
+        run(helper, tick -> {
+
+            if (tick == 2) {
+
+                helper.assertTrue(agent.brain().enemySlots().occupant(0) == shooter, "The skeleton never took a slot");
+
+                // Straight at the agent, four blocks off, and slow enough to still be in the air a moment later.
+                arrows[0] = shoot(helper, shooter, 4.5D, 3.0D, 6.5D, 0.0D, 0.0D, -0.5D);
+
+                // Across the arena rather than at it: it would pass three blocks wide, which nothing could hit from.
+                arrows[1] = shoot(helper, shooter, 1.5D, 3.0D, 6.5D, 0.5D, 0.0D, 0.0D);
+
+                // Lying where it fell, which is where an arrow spends most of its life.
+                arrows[2] = shoot(helper, shooter, 6.5D, 3.0D, 5.5D, 0.0D, 0.0D, 0.0D);
+
+                // The agent's own, on its way to the skeleton. Nobody flinches at their own arrow.
+                arrows[3] = shoot(helper, agent, 4.5D, 3.0D, 3.5D, 0.0D, 0.0D, 0.5D);
+                return false;
+            }
+
+            if (tick == 4) {
+
+                helper.assertTrue(agent.brain().enemySlots().occupant(0) == shooter, "The arrows pushed the skeleton out of its slot");
+
+                int slot = slotOf(agent, arrows[0]);
+                helper.assertTrue(slot > 0, "The arrow on its way to the agent took no slot");
+
+                for (int other = 1; other < arrows.length; other++) {
+
+                    helper.assertTrue(slotOf(agent, arrows[other]) < 0,
+                            "An arrow that was crossing, still or the agent's own took slot " + slotOf(agent, arrows[other]));
+                }
+
+                helper.assertValueEqual(agent.brain().enemySlots().inRangeCount(), 1, "bodies in range");
+
+                float[] observation = new float[ObservationSchema.OBS_DIM];
+                AgentObservation.write(agent, agent.brain().enemySlots(), observation, 0);
+
+                int at = ObservationSchema.enemyOffset(slot);
+
+                helper.assertTrue(observation[at + ObservationSchema.ENEMY_PRESENT] > 0.5F, "The arrow's slot reads empty");
+                helper.assertTrue(AgentObservation.isProjectileKind(observation[at + ObservationSchema.ENEMY_KIND]),
+                        "The arrow reads as a body, kind " + observation[at + ObservationSchema.ENEMY_KIND]);
+                helper.assertValueEqual(observation[at + ObservationSchema.ENEMY_HEALTH], 0.0F, "an arrow's health");
+                helper.assertValueEqual(observation[at + ObservationSchema.ENEMY_MAIN_HAND], 0.0F, "what an arrow holds");
+                helper.assertValueEqual(observation[at + ObservationSchema.ENEMY_SWINGING], 0.0F, "an arrow swinging");
+
+                int mob = ObservationSchema.enemyOffset(0);
+
+                helper.assertTrue(observation[mob + ObservationSchema.ENEMY_KIND] == AgentObservation.KIND_MONSTER,
+                        "The skeleton stopped reading as a monster");
+                return true;
+            }
+
+            return false;
+        });
+    }
+
+    /** An arrow in the air from wherever, with whatever velocity, as if somebody had loosed it. */
+    private static Arrow shoot(GameTestHelper helper, Mob shooter, double x, double y, double z, double vx, double vy, double vz) {
+
+        Vec3 at = helper.absoluteVec(new Vec3(x, y, z));
+        Arrow arrow = new Arrow(helper.getLevel(), at.x, at.y, at.z, new ItemStack(Items.ARROW), null);
+
+        arrow.setOwner(shooter);
+        arrow.setDeltaMovement(vx, vy, vz);
+        helper.getLevel().addFreshEntity(arrow);
+
+        return arrow;
+    }
+
+    /** Which of the agent's enemy slots this entity holds, or -1 for none. */
+    private static int slotOf(AgentMob agent, Arrow arrow) {
+
+        for (int slot = 0; slot < ObservationSchema.ENEMY_SLOTS; slot++) {
+
+            if (agent.brain().enemySlots().occupant(slot) == arrow) {
+
+                return slot;
+            }
+        }
+
+        return -1;
+    }
+
+    /** The plot this test owns, with a little slack: the box an agent in it is allowed to see into. */
+    private static AABB bounds(GameTestHelper helper) {
+
+        return new AABB(Vec3.atLowerCornerOf(helper.absolutePos(BlockPos.ZERO)),
+                Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(9, 9, 9)))).inflate(1.0D);
     }
 
     // ---------------------------------------------------------------------------------------------------------------

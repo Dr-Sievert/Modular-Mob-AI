@@ -3,9 +3,11 @@ package net.sievert.modularmobai.brain.schema;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.util.Mth;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.monster.Enemy;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.item.AxeItem;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.BowItem;
@@ -148,7 +150,12 @@ public final class AgentObservation {
         out[at + 16] = echo.usedOnBlock ? 1.0F : 0.0F;
         out[at + 17] = echo.selectedSlot / (float) (MobControls.HOTBAR_SIZE - 1);
         out[at + 18] = echo.swappedWeapon ? 1.0F : 0.0F;
-        // out[at + 19] is spare, so that adding one more echoed field does not move every block after it.
+
+        // The slot the layout kept spare, which is what lets this go in without moving a single number after it. A drawn
+        // weapon is the one thing the agent does that takes many ticks to pay off, and nothing else in the observation says
+        // how far along one is: the using flags say a bow is drawn but not whether letting go now would send an arrow or a
+        // dart. A network that never pressed use reads zero here, exactly as it read the spare.
+        out[at + 19] = echo.useProgress;
     }
 
     private static void writeEnemies(AgentMob agent, EnemySlots slots, float[] out, int base, float sin, float cos) {
@@ -157,7 +164,7 @@ public final class AgentObservation {
 
         for (int slot = 0; slot < ObservationSchema.ENEMY_SLOTS; slot++) {
 
-            LivingEntity enemy = slots.occupant(slot);
+            Entity enemy = slots.occupant(slot);
 
             if (enemy == null) {
 
@@ -181,10 +188,9 @@ public final class AgentObservation {
             out[at + ObservationSchema.ENEMY_VELOCITY_UP] = (float) (velocity.y / VELOCITY_SCALE);
             out[at + ObservationSchema.ENEMY_VELOCITY_RIGHT] = (float) (right(velocity.x, velocity.z, sin, cos) / VELOCITY_SCALE);
 
-            out[at + ObservationSchema.ENEMY_HEALTH] = enemy.getHealth() / Math.max(1.0F, enemy.getMaxHealth());
-
             // Where the enemy is looking relative to the line between us, so that facing away and facing straight at the
-            // agent are told apart without the network having to work out world directions.
+            // agent are told apart without the network having to work out world directions. An arrow has no head to turn:
+            // its rotation is the way it is flying, which is exactly as useful in the same slot.
             float bearing = (float) Mth.atan2(-delta.x, delta.z);
             float facing = Mth.wrapDegrees(enemy.getYHeadRot()) * DEGREES_TO_RADIANS - bearing;
             out[at + ObservationSchema.ENEMY_FACING_SIN] = Mth.sin(facing);
@@ -192,11 +198,18 @@ public final class AgentObservation {
             out[at + ObservationSchema.ENEMY_PITCH] = enemy.getXRot() / 90.0F;
 
             out[at + ObservationSchema.ENEMY_KIND] = entityKind(enemy);
-            out[at + ObservationSchema.ENEMY_MAIN_HAND] = itemKind(enemy.getMainHandItem());
-            out[at + ObservationSchema.ENEMY_OFF_HAND] = itemKind(enemy.getOffhandItem());
-            out[at + ObservationSchema.ENEMY_SWINGING] = enemy.swinging ? 1.0F : 0.0F;
-            out[at + ObservationSchema.ENEMY_USING] = enemy.isUsingItem() ? 1.0F : 0.0F;
             out[at + ObservationSchema.ENEMY_SPRINTING] = enemy.isSprinting() ? 1.0F : 0.0F;
+
+            // What only a body has. A projectile is left at zero for all of it: no health, no hands, no swing and nothing
+            // in use, which is the plain truth about an arrow and is why its kind is off the ladder the bodies are on.
+            if (enemy instanceof LivingEntity living) {
+
+                out[at + ObservationSchema.ENEMY_HEALTH] = living.getHealth() / Math.max(1.0F, living.getMaxHealth());
+                out[at + ObservationSchema.ENEMY_MAIN_HAND] = itemKind(living.getMainHandItem());
+                out[at + ObservationSchema.ENEMY_OFF_HAND] = itemKind(living.getOffhandItem());
+                out[at + ObservationSchema.ENEMY_SWINGING] = living.swinging ? 1.0F : 0.0F;
+                out[at + ObservationSchema.ENEMY_USING] = living.isUsingItem() ? 1.0F : 0.0F;
+            }
         }
     }
 
@@ -362,63 +375,113 @@ public final class AgentObservation {
     }
 
     /**
-     * A coarse category rather than an item id, because an id is a number with no order to it and the loadout is fixed
-     * anyway. This only has to be fine enough to tell a weapon from a shield from something to eat.
+     * What a hotbar slot or a hand reads as: a coarse category rather than an item id, because an id is a number with no
+     * order to it and the loadout is fixed anyway. This only has to be fine enough to tell a weapon from a shield from
+     * something to eat.
+     *
+     * <p>A bow and a crossbow share one category, since both are a drawn ranged weapon and one more category would buy a
+     * distinction the body already makes: a crossbow answers a release by loading and a bow by firing, which is what
+     * {@link net.sievert.modularmobai.brain.ScriptedBrain} tells them apart by. Naming the categories rather than
+     * returning the fractions in place is what lets anything reading the observation ask what a slot holds without
+     * writing the same eighths down a second time.
      */
+    public static final float ITEM_NONE = 0.0F;
+    public static final float ITEM_SWORD = 1.0F / 8.0F;
+    public static final float ITEM_AXE = 2.0F / 8.0F;
+    public static final float ITEM_SHIELD = 3.0F / 8.0F;
+    public static final float ITEM_RANGED = 4.0F / 8.0F;
+    public static final float ITEM_FOOD = 5.0F / 8.0F;
+    public static final float ITEM_BLOCK = 6.0F / 8.0F;
+    public static final float ITEM_OTHER = 7.0F / 8.0F;
+
+    /** Half the gap between two categories, which is how close a reading has to be to count as one of them. */
+    public static final float ITEM_TOLERANCE = 1.0F / 16.0F;
+
+    /** Whether a hotbar slot or a hand reads as one particular category. */
+    public static boolean isItem(float reading, float kind) {
+
+        return Math.abs(reading - kind) < ITEM_TOLERANCE;
+    }
+
     private static float itemKind(ItemStack stack) {
 
         if (stack.isEmpty()) {
 
-            return 0.0F;
+            return ITEM_NONE;
         }
 
         Item item = stack.getItem();
 
         if (item instanceof SwordItem) {
 
-            return 1.0F / 8.0F;
+            return ITEM_SWORD;
         }
 
         if (item instanceof AxeItem) {
 
-            return 2.0F / 8.0F;
+            return ITEM_AXE;
         }
 
         if (item instanceof ShieldItem) {
 
-            return 3.0F / 8.0F;
+            return ITEM_SHIELD;
         }
 
         if (item instanceof BowItem || item instanceof CrossbowItem) {
 
-            return 4.0F / 8.0F;
+            return ITEM_RANGED;
         }
 
         if (stack.has(DataComponents.FOOD)) {
 
-            return 5.0F / 8.0F;
+            return ITEM_FOOD;
         }
 
         if (item instanceof BlockItem) {
 
-            return 6.0F / 8.0F;
+            return ITEM_BLOCK;
         }
 
-        return 7.0F / 8.0F;
+        return ITEM_OTHER;
     }
 
-    private static float entityKind(LivingEntity entity) {
+    /**
+     * Something shot at the agent, which is the one thing in an enemy slot that is not a body. Below zero rather than
+     * anywhere on the ladder the bodies share, because it is not more or less of anything they are: half the numbers in
+     * the slot mean nothing for an arrow, and a network that treated one as a very weak monster would walk up and try to
+     * swing at it. Every body's own kind is at least half a unit away from this, and a slot with nothing in it is all
+     * zeroes with the present flag off, so there is no reading this by accident either.
+     */
+    public static final float KIND_PROJECTILE = -0.25F;
+
+    public static final float KIND_AGENT = 0.25F;
+    public static final float KIND_PLAYER = 0.5F;
+    public static final float KIND_MONSTER = 0.75F;
+    public static final float KIND_OTHER = 1.0F;
+
+    /** Whether an occupied enemy slot holds something shot rather than a body, which is the whole of what below zero means. */
+    public static boolean isProjectileKind(float kind) {
+
+        return kind < 0.0F;
+    }
+
+    private static float entityKind(Entity entity) {
+
+        if (entity instanceof Projectile) {
+
+            return KIND_PROJECTILE;
+        }
 
         if (entity instanceof AgentMob) {
 
-            return 0.25F;
+            return KIND_AGENT;
         }
 
         if (entity instanceof Player) {
 
-            return 0.5F;
+            return KIND_PLAYER;
         }
 
-        return entity instanceof Enemy ? 0.75F : 1.0F;
+        return entity instanceof Enemy ? KIND_MONSTER : KIND_OTHER;
     }
 }

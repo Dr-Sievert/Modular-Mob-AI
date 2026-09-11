@@ -530,7 +530,10 @@ public final class ScriptedBrain implements Brain {
         return pressed && speed < 0.02F;
     }
 
-    /** The offset of the closest occupied enemy slot, or -1 when nothing is in view. */
+    /**
+     * The offset of the closest body in an enemy slot, or -1 when nothing is in view. A slot can also hold something shot
+     * at the agent, and an arrow a block away is nearer than whatever fired it: what to fight is only ever a body.
+     */
     private static int nearestEnemy(float[] o, int obs) {
 
         int best = -1;
@@ -540,7 +543,8 @@ public final class ScriptedBrain implements Brain {
 
             int at = obs + ObservationSchema.enemyOffset(slot);
 
-            if (o[at + ObservationSchema.ENEMY_PRESENT] < 0.5F) {
+            if (o[at + ObservationSchema.ENEMY_PRESENT] < 0.5F
+                    || AgentObservation.isProjectileKind(o[at + ObservationSchema.ENEMY_KIND])) {
 
                 continue;
             }

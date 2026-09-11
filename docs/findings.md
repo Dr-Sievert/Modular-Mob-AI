@@ -26,6 +26,23 @@ are deliberate.
 - **The machine blue-screened under load (2026-09-11).** The i7-14700KF was on microcode 0x11F, below Intel's fix for
   13th and 14th gen instability (0x12B). A BIOS update (A.K0, microcode 0x137) fixed it; crashes since are code bugs.
 
+## Perception
+
+- **The layout had one spare slot left in it, and a drawn weapon needed it.** Nothing in the observation said how far a
+  use had charged, so a network holding a bow could not tell a full draw from a tick of one. The echo's twentieth field
+  was kept spare for exactly this; filling it moved nothing, so `schema.json` is byte for byte what it was (id
+  `3e475bda`) and every published network still loads.
+  - The number is the item's own, not a count of ticks: a bow's is the power its arrow would leave at, which is not
+    linear in the draw, and a crossbow's is the fraction of its wind. Both reach one at the moment letting go is worth
+    it, so one rule works for either without knowing which is held.
+- **An arrow must never become the nearest enemy.** Putting shots into the enemy slots is the only place they could go,
+  and a slot is where "what to fight" is read from: a skeleton twelve blocks off with an arrow a block from the agent
+  would have the agent turning to swing at the arrow. So bodies hold their slots against every projectile, a body
+  arriving evicts a projectile before anything alive, and the teacher's nearest enemy skips them outright.
+- **Only a shot that is coming is worth a slot.** Most arrows in a fight are lying in the grass or flying past: one
+  earns a slot while it is moving, while the agent is ahead of it, and while its line would pass within a block and a
+  half. Without that, slots filled with litter.
+
 ## Mechanics (a player's rules, and bugs that broke them)
 
 - **Forward movement did nothing before commit c38efe9.** Vanilla's `Mob.setSpeed` also writes the forward input, and it
