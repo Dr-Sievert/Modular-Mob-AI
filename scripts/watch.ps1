@@ -179,11 +179,16 @@ function Show-Run {
     if ($evaluated.Count -gt 0) {
 
         $lines.Add('')
-        $lines.Add(('{0,9} {1,7} {2,8} {3,8}' -f 'evaluated', 'fights', 'win %', 'timeouts'))
+        # Every fight ends one of three ways: the vindicator died, the agent died, or the clock ran out with both standing.
+        $lines.Add(('{0,9} {1,7} {2,7} {3,7} {4,10}' -f 'evaluated', 'fights', 'won %', 'lost %', 'timeout %'))
 
         foreach ($row in $evaluated | Select-Object -Last 6) {
 
-            $lines.Add(('{0,9} {1,7} {2,8:N1} {3,8}{4}' -f $row.iteration, $row.fights, (100 * [double]$row.win_rate), $row.timeouts,
+            $fights = [Math]::Max(1, [int]$row.fights)
+            $lost = [int]$row.fights - [int]$row.wins - [int]$row.timeouts
+
+            $lines.Add(('{0,9} {1,7} {2,7:N1} {3,7:N1} {4,10:N1}{5}' -f $row.iteration, $row.fights, (100 * [int]$row.wins / $fights),
+                    (100 * $lost / $fights), (100 * [int]$row.timeouts / $fights),
                     $(if ($row.best -eq '1') { '   <- best, in best.mbw' } else { '' })))
         }
     }
