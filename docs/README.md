@@ -44,8 +44,14 @@ Training fights are one agent against one vindicator on natural terrain, generat
 water, whatever is there. Each fight owns an 80 by 80 block site of open ground with no walls, and sites sit 128 blocks
 apart. The chunks between sites never tick entities, so anything that walks off its site stops there and the fight ends
 the way any stalled fight does, as a loss when the minute runs out. The sites are placed once per worker on land, found by
-asking the world generator for biomes rather than generating anything, and are generated in the background as the worker
-starts. `gametest/terrain/TerrainSites` holds all of it.
+asking the world generator for biomes rather than generating anything, and are generated a couple at a time while fights
+already run on the first ones. `gametest/terrain/TerrainSites` holds all of it.
+
+Generating 64 sites takes a worker about a minute and a half, so the build keeps the worlds workers generated, in
+`runs/terrain/<minecraft version>`, about 60 MB each. A later worker gets one of those and reads its sites from disk in
+seconds: the least used world first, each at most 8 times (`terrainUses`) before it is dropped. The pool holds 8 worlds
+(`terrainPool`, 0 turns it off), and while it is short of that, one worker of every run generates a fresh one to add, so
+the terrain keeps changing. Delete the folder to start over.
 
 A fight ends when either dies, or after 1200 ticks, a minute, which is a loss.
 
@@ -164,7 +170,7 @@ build does with the machine:
 | `maxWorkers` | 16 | Workers in a training round, cut down to what the cores and the free memory hold. |
 | `memoryReserve` | 3 | GB left for everything else when deciding how many workers fit, at heap plus one GB each. |
 | `workerCpus` | auto | Cores each server sees: the machine's share per worker, so a dozen servers never fight over every core. |
-| `workerStagger` | 3 | Seconds between starting workers, so boot bursts do not land on the same instant. |
+| `workerStagger` | 1 | Seconds between starting workers, so boot bursts do not land on the same instant. |
 | `memoryFloor` | 1.5 | GB of free memory below which the workers are stopped rather than left to swap. |
 
 The trainer caps itself at half the GPU's memory, so it can never spill into system memory and crawl, and an update that

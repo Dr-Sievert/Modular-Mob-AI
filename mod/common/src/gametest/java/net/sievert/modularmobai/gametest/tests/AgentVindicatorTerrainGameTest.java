@@ -127,7 +127,8 @@ public class AgentVindicatorTerrainGameTest {
                         return;
                     }
 
-                    // Every usable site can be busy for a moment when much of the lattice is water; the fight waits.
+                    // No site may be free: early on most are still being generated, and later every usable one can be
+                    // busy for a moment when much of the lattice is water. The fight waits.
                     this.site = TerrainSites.claim(this.level);
                     this.holding = this.site == null;
 

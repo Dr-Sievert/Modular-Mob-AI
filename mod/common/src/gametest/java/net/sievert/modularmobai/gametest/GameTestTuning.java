@@ -155,6 +155,24 @@ public final class GameTestTuning {
         return "terrain".equals(suite());
     }
 
+    /**
+     * The world an earlier worker generated, when the build copied one in for the terrain suite: where its fight sites
+     * are and how many of them it generated, as {@code x,z,sites}. Null when this worker finds a place for its sites and
+     * generates them itself.
+     */
+    public static String keptTerrain() {
+
+        final String property = System.getProperty("modular_mob_ai.gametest.keptTerrain");
+        return property == null || property.isBlank() ? null : property.trim();
+    }
+
+    /** Where the terrain suite writes down which sites it fought on, for the build to keep the world; null for nowhere. */
+    public static String terrainFile() {
+
+        final String property = System.getProperty("modular_mob_ai.gametest.terrainFile");
+        return property == null || property.isBlank() ? null : property.trim();
+    }
+
     private static int intProperty(String name, int fallback) {
 
         final String property = System.getProperty("modular_mob_ai.gametest." + name);

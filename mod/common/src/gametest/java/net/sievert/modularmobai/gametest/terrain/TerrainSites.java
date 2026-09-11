@@ -1,6 +1,10 @@
 package net.sievert.modularmobai.gametest.terrain;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -32,7 +36,7 @@ import net.sievert.modularmobai.gametest.GameTestTuning;
  *
  * <p>The game test framework lays its plots out a few blocks apart, which suits fights inside boxes and not fights in the
  * open, where a fighter can wander into the neighbouring one. So the plots the framework places are only bookkeeping, deep
- * underground, and each fight is put on its own site instead: a lattice of sites a long way apart, each eighty blocks
+ * under the spawn, and each fight is put on its own site instead: a lattice of sites a long way apart, each eighty blocks
  * across and kept loaded and ticking. There are no walls. The chunks between sites never tick entities, so anything that
  * walks off its site simply stops there, the fight cannot finish, and it ends the way any stalled fight does: a loss on
  * time. No two fights can ever reach each other.
@@ -41,6 +45,12 @@ import net.sievert.modularmobai.gametest.GameTestTuning;
  * out round robin. There are more sites than fights run at once, so a site is only ever handed out again after the fight
  * on it has finished and been cleaned up. The terrain stays as the generator left it: fights move nothing but
  * themselves, and what they drop is swept up after them.
+ *
+ * <p>Generating the lattice is most of what starting a worker costs, so fights do not wait for all of it. The sites are
+ * generated a couple at a time, in order, and each one is handed out as soon as it is ready, while the rest are still
+ * being generated behind it. Better still, the build keeps the worlds workers generated and hands them to later workers,
+ * whose lattice then goes where the earlier one put it and is read from disk in seconds; see {@link #start}. Since
+ * fights leave the ground as they found it, a kept world is the same terrain the generator made.
  */
 public final class TerrainSites {
 
@@ -56,7 +66,11 @@ public final class TerrainSites {
     private static final int RADIUS_CHUNKS = 2;
     private static final int SIZE = (2 * RADIUS_CHUNKS + 1) * 16;
 
-    /** Blocks between site centres: eight chunks, so three chunks of dead ground separate one fight from the next. */
+    /**
+     * Blocks between site centres: eight chunks, so three chunks of dead ground separate one fight from the next. The
+     * worlds kept in runs/terrain were generated for this layout; delete them after changing it, or workers generate the
+     * new sites anyway, only slower.
+     */
     private static final int SPACING = 128;
     private static final int COLUMNS = 8;
 
@@ -67,6 +81,17 @@ public final class TerrainSites {
      * eighty sites did not fit in a gigabyte and a half of heap.
      */
     private static final int COUNT = 64;
+
+    /**
+     * Sites the world generator works on at once. Asked for all at once, every site came out of the generator at about
+     * the same moment, a minute and a half in: it takes every chunk it has been asked for through each stage before the
+     * next, so the first fight waited for the last site. Two at a time keeps its threads busy while the first site is
+     * ready within seconds.
+     *
+     * <p>Sites an earlier worker generated are only read from disk, which is quick, and quickest all together: the first
+     * two come on their own, so the first fight is not held up, and the rest are asked for as soon as one is ready.
+     */
+    private static final int GENERATING = 2;
 
     /** Tries at a site, each from a different spot near its centre, before it is written off as water or cliff. */
     private static final int PLACEMENT_TRIES = 4;
@@ -100,6 +125,19 @@ public final class TerrainSites {
     private static final boolean[] swept = new boolean[COUNT];
     private static final boolean[] unusable = new boolean[COUNT];
 
+    /** Sites whose chunks have been asked for, always the first so many; the rest wait their turn. */
+    private static int requested;
+
+    /** How many of the sites, from the first, an earlier worker already generated in the world this one was given. */
+    private static int keptSites;
+
+    /** Sites whose chunks are all loaded and ticking. Only these are handed out. */
+    private static final boolean[] ready = new boolean[COUNT];
+    private static int readyCount;
+
+    /** When the lattice was chosen, so the log can say how long its sites took. */
+    private static long startedAt;
+
     /** Sites with a fight on them right now. Fights end at different times, so the free ones are not simply the next. */
     private static final boolean[] inUse = new boolean[COUNT];
 
@@ -124,44 +162,147 @@ public final class TerrainSites {
     }
 
     /**
-     * Chooses where the lattice goes and starts the world generating it, before any fight asks for a site. Returns where
-     * the framework's own plots should go, which is under the lattice and out of the way.
+     * Chooses where the lattice goes, before any fight asks for a site, and returns where the framework's own plots
+     * should go, see {@link #plots}. The sites are only asked for once the plots are in place, by {@link #awaitFirstSite}:
+     * the framework waits on every chunk the plots cover, and a site asked for first would be generated ahead of those
+     * chunks and hold the plots up.
+     *
+     * <p>When the build copied in a world an earlier worker generated, the lattice goes where that one was, and its sites
+     * are read from disk rather than generated.
      */
     public static synchronized BlockPos start(ServerLevel level) {
 
         if (origin == null) {
 
-            origin = chooseOrigin(level);
+            BlockPos kept = keptOrigin();
 
-            // Asked for all at once, so the generator works through them on every thread it has. The level's own
-            // setChunkForced would generate each one on the spot, one after another, which for sixteen hundred chunks is
-            // most of a minute of the server standing still; the ticket underneath it only asks.
-            for (int site = 0; site < COUNT; site++) {
+            origin = kept != null ? kept : chooseOrigin(level);
+            startedAt = System.nanoTime();
 
-                BlockPos centre = centre(site);
-                int chunkX = centre.getX() >> 4;
-                int chunkZ = centre.getZ() >> 4;
-
-                for (int dx = -RADIUS_CHUNKS; dx <= RADIUS_CHUNKS; dx++) {
-
-                    for (int dz = -RADIUS_CHUNKS; dz <= RADIUS_CHUNKS; dz++) {
-
-                        level.getChunkSource().updateChunkForced(new ChunkPos(chunkX + dx, chunkZ + dz), true);
-                    }
-                }
-            }
-
-            Constants.LOG.info("Terrain arenas: {} sites from {} in {}", COUNT, origin.toShortString(),
-                    level.getBiome(origin).unwrapKey().map(key -> key.location().toString()).orElse("an unnamed biome"));
+            Constants.LOG.info("Terrain arenas: {} sites from {} in {}{}", COUNT, origin.toShortString(),
+                    level.getBiome(origin).unwrapKey().map(key -> key.location().toString()).orElse("an unnamed biome"),
+                    kept != null ? ", generated by an earlier worker" : "");
         }
 
-        return new BlockPos(origin.getX(), level.getMinBuildHeight() + 5, origin.getZ());
+        return plots(level);
     }
 
     /**
-     * The next free site, with somewhere to stand for the agent and for its opponent, or null when every usable site has
-     * a fight on it; the caller tries again a tick later. Blocks until the site's chunks exist, which is only ever a wait
-     * the first time round.
+     * Where the framework's plots go: deep under the spawn, far from any site. The server loads the seven by seven chunks
+     * around the spawn before anything else, and fifty plots, as many as run at once, fill exactly those: eight to a row,
+     * nine blocks wide with five between, each with the few blocks the framework clears around it. More spill over into
+     * chunks that have to be loaded first. The plots force their chunks loaded one at a time, with the server waiting on
+     * each, so anywhere else they waited for terrain to be generated: under the first site they held up the first fight,
+     * and kept the ground between it and its neighbours ticking.
+     */
+    private static BlockPos plots(ServerLevel level) {
+
+        ChunkPos spawn = new ChunkPos(level.getSharedSpawnPos());
+
+        return new BlockPos(spawn.getMinBlockX() - 3 * 16 + 2, level.getMinBuildHeight() + 5, spawn.getMinBlockZ() - 3 * 16 + 3);
+    }
+
+    /**
+     * Writes down where the lattice was and how many of its sites were ready, once the suite is over, so the build can
+     * keep this world for the workers after it. Nothing when the build did not ask.
+     */
+    public static synchronized void finish() {
+
+        String path = GameTestTuning.terrainFile();
+
+        if (path == null || origin == null) {
+
+            return;
+        }
+
+        try {
+
+            Files.writeString(Path.of(path),
+                    String.format(Locale.ROOT, "x=%d%nz=%d%nsites=%d%n", origin.getX(), origin.getZ(), readyCount));
+        }
+
+        catch (IOException exception) {
+
+            Constants.LOG.warn("Could not write {}: {}", path, exception.toString());
+        }
+    }
+
+    /**
+     * Whether nobody keeps this world once the worker exits: no pool asked for it, or it came from the pool with every
+     * site already generated, so the kept copy has all of it already. Saving such a world only writes files that are
+     * deleted before the next run.
+     */
+    public static synchronized boolean throwaway() {
+
+        return GameTestTuning.terrainFile() == null || keptSites >= COUNT;
+    }
+
+    /**
+     * Keeps the lattice coming: marks the sites the generator has finished as ready for fights, and asks for the next in
+     * their place. Called every server tick rather than only when a fight wants a site, so generating carries on while
+     * every slot is busy.
+     */
+    public static synchronized void tick(ServerLevel level) {
+
+        if (origin == null || readyCount == COUNT) {
+
+            return;
+        }
+
+        for (int site = 0; site < requested; site++) {
+
+            if (!ready[site] && loaded(level, centre(site))) {
+
+                ready[site] = true;
+                readyCount++;
+
+                if (readyCount == 1 || readyCount == COUNT) {
+
+                    Constants.LOG.info("Terrain arenas: {} ready after {} s", readyCount == 1 ? "first site" : "all " + COUNT + " sites",
+                            String.format(Locale.ROOT, "%.1f", (System.nanoTime() - startedAt) / 1.0E9D));
+                }
+            }
+        }
+
+        while (requested < COUNT) {
+
+            boolean onDisk = requested < keptSites;
+
+            if (onDisk ? readyCount == 0 && requested >= GENERATING : requested - readyCount >= GENERATING) {
+
+                break;
+            }
+
+            force(level, centre(requested++));
+        }
+    }
+
+    /**
+     * Asks for the first sites and waits until the first one's chunks are there. Called once, as the tests start. No fight
+     * can start before a site is ready, and a server ticking on empty in the meantime leaves the chunk work only it can do
+     * waiting between ticks: the first site of a new world took twice as long. Loading a chunk this way has the server do
+     * that work until the chunk is there. A chunk only ticks entities once the two chunks around it are loaded as well,
+     * so those are waited for too; what is left takes a tick or two.
+     */
+    public static synchronized void awaitFirstSite(ServerLevel level) {
+
+        tick(level);
+
+        BlockPos centre = centre(0);
+        int reach = RADIUS_CHUNKS + 2;
+
+        for (int dx = -reach; dx <= reach; dx++) {
+
+            for (int dz = -reach; dz <= reach; dz++) {
+
+                level.getChunk((centre.getX() >> 4) + dx, (centre.getZ() >> 4) + dz);
+            }
+        }
+    }
+
+    /**
+     * The next free site, with somewhere to stand for the agent and for its opponent, or null when every usable site that
+     * is ready has a fight on it; the caller tries again a tick later. Never waits for the world generator.
      */
     @Nullable
     public static synchronized Site claim(ServerLevel level) {
@@ -177,13 +318,12 @@ public final class TerrainSites {
 
             int index = next++ % COUNT;
 
-            if (unusable[index] || inUse[index]) {
+            if (!ready[index] || unusable[index] || inUse[index]) {
 
                 continue;
             }
 
             BlockPos centre = centre(index);
-            load(level, centre);
 
             if (!swept[index]) {
 
@@ -241,7 +381,12 @@ public final class TerrainSites {
         return new AABB(minX, level.getMinBuildHeight(), minZ, minX + SIZE, level.getMaxBuildHeight(), minZ + SIZE);
     }
 
-    private static void load(ServerLevel level, BlockPos centre) {
+    /**
+     * Asks for a site's chunks to be kept loaded and ticking. The level's own setChunkForced would generate each one on
+     * the spot, one after another, with the server standing still; the ticket underneath it only asks, and the generator
+     * works through them on every thread it has.
+     */
+    private static void force(ServerLevel level, BlockPos centre) {
 
         int chunkX = centre.getX() >> 4;
         int chunkZ = centre.getZ() >> 4;
@@ -250,9 +395,31 @@ public final class TerrainSites {
 
             for (int dz = -RADIUS_CHUNKS; dz <= RADIUS_CHUNKS; dz++) {
 
-                level.getChunk(chunkX + dx, chunkZ + dz);
+                level.getChunkSource().updateChunkForced(new ChunkPos(chunkX + dx, chunkZ + dz), true);
             }
         }
+    }
+
+    /** Whether every chunk of a site is loaded, with its entities, and ticking, which is when a fight can go on it. */
+    private static boolean loaded(ServerLevel level, BlockPos centre) {
+
+        int chunkX = centre.getX() >> 4;
+        int chunkZ = centre.getZ() >> 4;
+
+        for (int dx = -RADIUS_CHUNKS; dx <= RADIUS_CHUNKS; dx++) {
+
+            for (int dz = -RADIUS_CHUNKS; dz <= RADIUS_CHUNKS; dz++) {
+
+                ChunkPos chunk = new ChunkPos(chunkX + dx, chunkZ + dz);
+
+                if (!level.isPositionEntityTicking(chunk.getWorldPosition()) || !level.areEntitiesLoaded(chunk.toLong())) {
+
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -361,6 +528,36 @@ public final class TerrainSites {
                 && level.getFluidState(feet.above()).isEmpty();
 
         return solid && clear ? feet : null;
+    }
+
+    /**
+     * Takes up the world the build copied in, if it did: the lattice goes where the earlier worker put it, and the sites it
+     * generated are known to be on disk. Returns where the lattice goes, or null when there is no such world.
+     */
+    @Nullable
+    private static BlockPos keptOrigin() {
+
+        String given = GameTestTuning.keptTerrain();
+
+        if (given == null) {
+
+            return null;
+        }
+
+        try {
+
+            String[] parts = given.split(",");
+
+            keptSites = Mth.clamp(Integer.parseInt(parts[2].trim()), 0, COUNT);
+            return new BlockPos(Integer.parseInt(parts[0].trim()), 64, Integer.parseInt(parts[1].trim()));
+        }
+
+        catch (RuntimeException exception) {
+
+            Constants.LOG.warn("Ignoring kept terrain that is not x,z,sites: {}", given);
+            keptSites = 0;
+            return null;
+        }
     }
 
     /**
