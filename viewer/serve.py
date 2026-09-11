@@ -28,6 +28,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import socket
 import socketserver
 import sys
@@ -339,7 +340,17 @@ def running_port():
             if info.get('app') == APP and same_path(info.get('root', ''), ROOT):
                 if info.get('version', 1) >= VERSION:
                     return port
-                print('An older replay viewer is running on port %d; starting a new one. Close the old window when done.' % port)
+                # An older build of this same viewer for this same repository: it is replaced rather than left running
+                # beside the new one, where every later start would find it again and say so. The oldest builds do not
+                # say who they are, and are left alone.
+                if info.get('pid'):
+                    try:
+                        os.kill(int(info['pid']), signal.SIGTERM)
+                        print('Stopped an older replay viewer on port %d.' % port)
+                        continue
+                    except (OSError, ValueError):
+                        pass
+                print('An older replay viewer is running on port %d; starting a new one. Close its window when done.' % port)
         except (OSError, ValueError):
             pass
     return None
