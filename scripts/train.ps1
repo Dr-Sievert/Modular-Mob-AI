@@ -6,7 +6,12 @@
 #   scripts\train.ps1 -Workers 2 -Device cpu    lighter on the machine
 #   scripts\train.ps1 -Run wide -Extra '--entropy-coef 0.003'
 #   scripts\train.ps1 -ReplayEvery 50           replays of more fights in runs\<run>\replays, 0 for none
+#   scripts\train.ps1 -Run vindicator -FromCopy a run that starts from scripts\imitate.ps1's copy, see -FromCopy
 #   scripts\compare.ps1                         two runs side by side instead, see there
+#
+# Every checkpoint is played by the workers on its most likely action, in one fight in ten, and the best so far is kept
+# as runs\<run>\best.mbw, with the history in runs\<run>\eval.csv. The run stops on its own once evaluation says it has
+# stopped getting better, or reached the target, or after -Battles, whichever comes first.
 #
 # Learning happens every -RolloutSteps steps of experience across all workers (an iteration): the workers pause, the
 # trainer runs a few epochs of PPO over exactly that experience, the new weights swap in, and the fights carry on. The
@@ -29,6 +34,13 @@ param(
     [ValidateSet('cuda', 'cpu')] [string] $Device = 'cuda',
     [ValidateSet('terrain', 'arena')] [string] $Suite = 'terrain',
     [int] $ReplayEvery = 200,
+
+    # For a run that starts from a copy of the scripted fighter. Twice reinforcement learning made such a copy worse: a
+    # policy near its best has little to gain from a critic that has not yet learned the fight, and much to lose. So it
+    # learns from four times the experience per update, in smaller and more carefully bounded steps, lets the critic
+    # learn alone for longer first, explores less, and is pulled back towards the teacher's own answers throughout.
+    [switch] $FromCopy,
+
     [string] $Extra = ''
 )
 
@@ -46,6 +58,16 @@ $workerArguments = if ($Workers -gt 0) { @("-Pworkers=$Workers", "-PmaxWorkers=$
 
 $directory = Get-RunDirectory $Run
 Write-Host "Training run '$Run' in $directory on $Suite, $(if ($Battles -gt 0) { "$Battles battles" } else { 'until stopped' }). Watch with: scripts\watch.ps1 -Run $Run"
+
+if ($FromCopy) {
+
+    if (-not $PSBoundParameters.ContainsKey('RolloutSteps')) {
+
+        $RolloutSteps = 65536
+    }
+
+    $Extra = "--learning-rate 5e-5 --clip 0.1 --target-kl 0.01 --critic-warmup 30 --entropy-coef 0.001 --teacher-weight 0.5 $Extra"
+}
 
 Invoke-Gradle (@(
     ':fabric:runTraining',

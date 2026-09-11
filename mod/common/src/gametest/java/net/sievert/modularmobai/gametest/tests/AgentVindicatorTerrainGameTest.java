@@ -13,6 +13,7 @@ import net.minecraft.world.item.Items;
 import net.sievert.modularmobai.arena.Episode;
 import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.entity.agent.AgentMob;
+import net.sievert.modularmobai.gametest.Evaluation;
 import net.sievert.modularmobai.gametest.GameTestGroup;
 import net.sievert.modularmobai.gametest.GameTestTuning;
 import net.sievert.modularmobai.gametest.Opponents;
@@ -103,6 +104,9 @@ public class AgentVindicatorTerrainGameTest {
 
         /** Whether the fight just decided ran out the clock, which the site is told when it is handed back. */
         private boolean timedOut;
+
+        /** The frozen weights this fight is played with instead of the training brain, or null for a training fight. */
+        private Evaluation.Assignment evaluation;
 
         /** The fight being written down for watching later, or null when this one is not. */
         private FightRecorder replay;
@@ -200,6 +204,15 @@ public class AgentVindicatorTerrainGameTest {
             this.agent.setHotbarItem(0, new ItemStack(Items.IRON_SWORD));
             this.agent.startEpisode(new Episode(FIGHT_TICKS, this.site.bounds(), this.opponent));
 
+            // Handed its brain before the driver ever steps it, so the training brain never sees this agent at all and
+            // nothing of the fight reaches what it learns from.
+            this.evaluation = Evaluation.next();
+
+            if (this.evaluation != null) {
+
+                this.agent.brain().use(this.evaluation.brain());
+            }
+
             this.episode = this.agent.episode();
             this.started = this.helper.getTick();
             this.replay = FightRecorder.start(this.agent, this.opponent);
@@ -230,6 +243,12 @@ public class AgentVindicatorTerrainGameTest {
             // Every slot started in the same batch, so any slot's own tick count is the server's since then.
             TIME_TO_RESOLVE.record(this.helper.getTick() - this.started,
                     won ? TestDurationStats.Outcome.WIN : TestDurationStats.Outcome.LOSS, this.helper.getTick());
+
+            if (this.evaluation != null) {
+
+                Evaluation.record(this.evaluation, won ? "win" : this.timedOut ? "timeout" : "loss", this.helper.getTick() - this.started);
+                this.evaluation = null;
+            }
 
             // After the reward above, so the replay's last tick carries what the ending paid.
             if (this.replay != null) {

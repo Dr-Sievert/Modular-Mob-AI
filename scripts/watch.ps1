@@ -150,8 +150,39 @@ function Show-Run {
             }
 
             $lines.Add('')
-            $lines.Add(('Win rate over the last 25 iterations: {0:N1}%{1}' -f $now, $trend))
+            $lines.Add(('Training win rate over the last 25 iterations: {0:N1}% (while exploring){1}' -f $now, $trend))
         }
+    }
+
+    # Evaluation: each checkpoint on its most likely action, which is the fighter the run would ship.
+    $table = Join-Path $directory 'eval.csv'
+    $evaluated = @(Import-Csv $table -ErrorAction SilentlyContinue)
+
+    if ($evaluated.Count -gt 0) {
+
+        $lines.Add('')
+        $lines.Add(('{0,9} {1,7} {2,8} {3,8}' -f 'evaluated', 'fights', 'win %', 'timeouts'))
+
+        foreach ($row in $evaluated | Select-Object -Last 6) {
+
+            $lines.Add(('{0,9} {1,7} {2,8:N1} {3,8}{4}' -f $row.iteration, $row.fights, (100 * [double]$row.win_rate), $row.timeouts,
+                    $(if ($row.best -eq '1') { '   <- best, in best.mbw' } else { '' })))
+        }
+    }
+
+    $target = Get-Content (Join-Path $directory 'eval\target') -ErrorAction SilentlyContinue
+
+    if ($target) {
+
+        $lines.Add("Evaluating iteration $target now")
+    }
+
+    $finished = Get-Content (Join-Path $directory 'finished') -ErrorAction SilentlyContinue
+
+    if ($finished) {
+
+        $lines.Add('')
+        $lines.Add("DONE: $finished. The round under way finishes, then the run stops.")
     }
 
     # Anything the trainer complained about recently.

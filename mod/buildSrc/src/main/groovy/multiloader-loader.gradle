@@ -1209,6 +1209,11 @@ afterEvaluate {
             def statusFile = new File(runDirectory, 'trainer.status')
             statusFile.delete()
 
+            // Written by the training side once evaluation says the run has got as good as it is going to. A run started
+            // again is carried on, so whatever an earlier one decided goes.
+            def finishedFile = new File(runDirectory, 'finished')
+            finishedFile.delete()
+
             def trainer = builder.start()
 
             trainerPidFile.parentFile.mkdirs()
@@ -1294,7 +1299,7 @@ afterEvaluate {
 
             try {
 
-                for (int round = 1; (rounds <= 0 || round <= rounds) && (battles <= 0 || fought < battles); round++) {
+                for (int round = 1; (rounds <= 0 || round <= rounds) && (battles <= 0 || fought < battles) && !finishedFile.isFile(); round++) {
 
                     def iteration = waitForTrainer(round - 1)
                     def thisRound = battles > 0 ? Math.min(perRound, battles - fought) : perRound
@@ -1341,6 +1346,12 @@ afterEvaluate {
                 // The last round's final shards are still being learned from. Stopping the training process now would
                 // throw that away, so it is given until it says it has finished with them.
                 def learned = waitForTrainer(lastRound)
+
+                if (finishedFile.isFile()) {
+
+                    logger.lifecycle("Evaluation says the run is done: ${finishedFile.text.trim()}. The best weights are in ${new File(runDirectory, 'best.mbw')}")
+                }
+
                 logger.lifecycle("Training finished after ${fought} battles: the latest weights are iteration ${learned} in ${runDirectory}")
             }
 

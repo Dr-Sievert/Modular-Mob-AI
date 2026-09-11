@@ -29,6 +29,9 @@ from .weights import EXTENSION as WEIGHT_EXTENSION
 
 STATUS_FILE = "trainer.status"
 
+# Written once the run has got as good as it is going to; see RunDirectory.finish.
+FINISHED_FILE = "finished"
+
 WAITING = "waiting"
 TRAINING = "training"
 
@@ -193,6 +196,12 @@ class RunDirectory:
     # -----------------------------------------------------------------------------------------------------------
     # Status
     # -----------------------------------------------------------------------------------------------------------
+
+    def finish(self, reason: str) -> None:
+        """Says the run has got as good as it is going to, so the build starts no more rounds. The build clears it when a
+        run starts, so a finished run can still be carried on by hand."""
+
+        (self.path / FINISHED_FILE).write_text(reason + "\n", encoding="utf-8")
 
     def status(self, state: str, iteration: int, rounds_done: int) -> None:
         """Says what this side is doing. The build waits on this before starting another round of arenas."""

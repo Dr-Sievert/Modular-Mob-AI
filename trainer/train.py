@@ -24,9 +24,12 @@ from pathlib import Path
 
 import torch
 
+import numpy as np
+
 from mmai import log
+from mmai.evaluate import Evaluator
 from mmai.ppo import Config, Trainer
-from mmai.rollout import ShardHeader, read_shard
+from mmai.rollout import ShardHeader, read_header, read_shard
 from mmai.run import TRAINING, WAITING, RunDirectory, Workers
 from mmai.schema import Schema
 
@@ -118,7 +121,35 @@ def main() -> None:
     # Anything left in the folder was collected by a run that is no longer going, which makes it off-policy by now.
     run.clear_rollouts()
 
+    if config.teacher_weight > 0.0:
+        trainer.set_teacher(sample_teacher(run.path / "demos", schema, config.teacher_rows))
+
     loop(run, trainer, config, schema, arguments.keep_weights)
+
+
+def sample_teacher(demos: Path, schema: Schema, rows: int) -> list:
+    """Fights from the run's record of its teacher, taken evenly from every round of it up to about so many steps. Read a
+    shard at a time: the whole record of a copy corrected three times is several gigabytes."""
+
+    paths = sorted(demos.rglob("*.mbr"))
+
+    if not paths:
+        raise SystemExit(f"a pull towards the teacher needs its record, and there is none in {demos}")
+
+    total = sum(read_header(path).steps for path in paths)
+    share = min(1.0, rows / max(1, total))
+    random = np.random.default_rng(0)
+    kept = []
+
+    for path in paths:
+        header, segments = read_shard(path)
+
+        if header.schema_id != schema.schema_id:
+            raise SystemExit(f"{path.name} was recorded against a different layout")
+
+        kept.extend(segment for segment in segments if random.random() < share)
+
+    return kept
 
 
 def imitate(run: RunDirectory, trainer: Trainer, schema: Schema, demos: Path, epochs: int) -> None:
@@ -185,6 +216,9 @@ def loop(run: RunDirectory, trainer: Trainer, config: Config, schema: Schema, ke
     carried = []
     forgotten = 0
 
+    evaluator = Evaluator(run, config.checkpoint_every, config.eval_fights, config.eval_patience, config.eval_target)
+    done = False
+
     while True:
         iteration = trainer.iteration
 
@@ -224,6 +258,15 @@ def loop(run: RunDirectory, trainer: Trainer, config: Config, schema: Schema, ke
         trainer.export(run.weights_file(trainer.iteration), trainer.iteration)
         run.drop_rollouts(iteration)
         run.prune_weights(trainer.iteration, keep_weights, config.checkpoint_every)
+
+        # Done is said once, and the round under way is still learned from to its end: the build only stops starting
+        # new ones, and the workers already fighting wait on this side for their next weights.
+        reason = evaluator.update(trainer.iteration)
+
+        if reason and not done:
+            done = True
+            logger.info("done: %s; the best weights are in %s", reason, evaluator.best_file)
+            run.finish(reason)
 
         # A round whose workers have all left will never send another step, so whatever is still held for its agents is
         # only taking up memory. Over a run of thousands of rounds that adds up.

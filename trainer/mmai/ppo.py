@@ -96,6 +96,21 @@ class Config:
     # critic caught up. Zero for a run from scratch, where there is nothing to protect.
     critic_warmup: int = 0
 
+    # How hard every update pulls the policy back towards the teacher it was copied from, zero for a run with no teacher.
+    # Started from a 90% copy, reinforcement learning twice made the fighter it would ship worse: advantages from a critic
+    # that has not yet learned the fight are mostly noise, and a policy near its best has little to gain and everything to
+    # lose from following noise. Pulled back towards the teacher's own answers, recorded in the run's demos, the policy
+    # only moves where the fights clearly say so. Scored the way the copy was, on up to teacher_rows of its steps.
+    teacher_weight: float = 0.0
+    teacher_rows: int = 262144
+
+    # Evaluation: every checkpoint is played by the workers on its most likely action, eval_fights times, see
+    # evaluate.py. The run is done once one wins eval_target of its fights, or once eval_patience checkpoints in a row
+    # have not beaten the best.
+    eval_fights: int = 500
+    eval_patience: int = 10
+    eval_target: float = 0.995
+
 
 @dataclass
 class Replayed:
@@ -170,6 +185,11 @@ class Trainer:
         self.finished_returns: list[float] = []
         self.finished_lengths: list[float] = []
         self.finished_wins = 0
+
+        # The teacher's record, for the pull back towards it; empty unless the run has one, see set_teacher.
+        self.teacher: list[Segment] = []
+        self.teacher_groups: list[list[int]] = []
+        self.teacher_press_weight: Tensor | None = None
 
         logger.info(
             "%s, critic %d wide, learning on %s",
@@ -411,7 +431,7 @@ class Trainer:
         advantages = (advantages - mean) / spread
 
         chunks = int(batch["obs"].shape[0])
-        policy_losses, value_losses, entropies, clip_fractions, approximate_kls = [], [], [], [], []
+        policy_losses, value_losses, entropies, clip_fractions, approximate_kls, teacher_losses = [], [], [], [], [], []
         epochs_run = 0
 
         self.actor.train()
@@ -458,6 +478,18 @@ class Trainer:
                 else:
                     loss = policy_loss + config.value_coef * value_loss - config.entropy_coef * entropy_bonus
 
+                    # The pull back towards the teacher: however noisy this update's advantages are, the policy cannot
+                    # wander far from what the teacher does without paying for it, and where the fights clearly say
+                    # otherwise the advantages still win.
+                    if config.teacher_weight > 0.0 and self.teacher_groups:
+                        group = self.teacher_groups[int(np.random.randint(len(self.teacher_groups)))]
+                        teacher_obs, teacher_targets, teacher_mask = self._teacher_batch(self.teacher, group)
+                        teacher_logits, _ = self.actor(teacher_obs, torch.zeros(teacher_obs.shape[0], config.hidden, device=self.device))
+                        teacher_loss = -self._teacher_log_prob(
+                            teacher_logits, teacher_obs, teacher_targets, self.teacher_press_weight)[teacher_mask].mean()
+                        loss = loss + config.teacher_weight * teacher_loss
+                        teacher_losses.append(teacher_loss.item())
+
                 self.optimizer.zero_grad(set_to_none=True)
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(
@@ -489,6 +521,7 @@ class Trainer:
             "entropy": float(np.mean(entropies)),
             "clip": float(np.mean(clip_fractions)),
             "kl": float(np.mean(approximate_kls)),
+            "teacher": float(np.mean(teacher_losses)) if teacher_losses else 0.0,
             "epochs": epochs_run,
             "chunks": chunks,
         }
@@ -515,22 +548,8 @@ class Trainer:
         parameters = [parameter for name, parameter in self.actor.named_parameters() if name != "log_std"]
         optimizer = torch.optim.Adam(parameters, lr=learning_rate)
         groups = pack_by_rows(segments, batch_rows)
-
-        # The copy is scored with one spread for every continuous control, whatever each explores with afterwards. A
-        # narrower spread divides that control's error by its square, and with aim exploring at a tenth of full
-        # deflection its error would count fourteen times over and crowd out learning when to swing.
-        scoring_log_std = torch.full_like(self.actor.log_std, INITIAL_LOG_STD)
-        continuous = [head for head in self.schema.heads if head.kind == "continuous"]
+        press_weight = self._press_weight(segments)
         buttons = next(head for head in self.schema.heads if head.kind == "binary")
-
-        # A button the teacher presses on one tick in twenty-five is learned as "never press it" by a plain likelihood:
-        # never swinging is right ninety six times in a hundred. Presses are weighted up to make them count, but only a
-        # little: weighted too far, the copy swings whenever in doubt, every swing restarts the cooldown, and a fighter
-        # that never waits for a full strength hit loses every fight.
-        pressed = np.concatenate([segment.actions[:, buttons.action : buttons.action + buttons.size] for segment in segments])
-        rate = (pressed > 0.5).mean(axis=0)
-        press_weight = torch.from_numpy(np.where(rate > 0.0, np.clip((1.0 - rate) / np.maximum(rate, 1e-9), 1.0, 3.0), 1.0))
-        press_weight = press_weight.to(torch.float32).to(self.device)
 
         self.actor.train()
 
@@ -540,40 +559,9 @@ class Trainer:
             losses, swings_caught, swings, false_swings, quiet = [], 0.0, 0.0, 0.0, 0.0
 
             for group_index in order:
-                group = groups[group_index]
-                width = max(segments[index].steps for index in group)
-
-                obs = torch.zeros(len(group), width, self.schema.obs_dim)
-                targets = torch.zeros(len(group), width, self.schema.act_dim)
-                mask = torch.zeros(len(group), width, dtype=torch.bool)
-
-                for row, index in enumerate(group):
-                    segment = segments[index]
-                    obs[row, : segment.steps] = torch.from_numpy(segment.obs[: segment.steps])
-                    targets[row, : segment.steps] = torch.from_numpy(segment.actions)
-                    mask[row, : segment.steps] = True
-
-                for head in continuous:
-                    targets[..., head.action : head.action + head.size].clamp_(-0.95, 0.95)
-
-                obs, targets, mask = obs.to(self.device), targets.to(self.device), mask.to(self.device)
-
-                logits, _ = self.actor(obs, torch.zeros(len(group), config.hidden, device=self.device))
-                distributions = self.heads.distributions(logits, scoring_log_std, obs)
-
-                log_prob = None
-
-                for head, distribution in distributions:
-                    if head.kind == "binary":
-                        taken = targets[..., head.action : head.action + head.size]
-                        weight = torch.where(taken > 0.5, press_weight, torch.ones_like(press_weight))
-                        piece = (distribution.log_prob(taken) * weight).sum(-1)
-                    else:
-                        piece = self.heads.log_prob([(head, distribution)], targets)
-
-                    log_prob = piece if log_prob is None else log_prob + piece
-
-                loss = -log_prob[mask].mean()
+                obs, targets, mask = self._teacher_batch(segments, groups[group_index])
+                logits, _ = self.actor(obs, torch.zeros(obs.shape[0], config.hidden, device=self.device))
+                loss = -self._teacher_log_prob(logits, obs, targets, press_weight)[mask].mean()
 
                 optimizer.zero_grad(set_to_none=True)
                 loss.backward()
@@ -605,6 +593,83 @@ class Trainer:
         self.actor.eval()
         self.actor.narrow_spread()
         logger.info("the copy explores with a spread of %s", self.actor.log_std.detach().exp().cpu().numpy().round(3))
+
+    def set_teacher(self, segments: list[Segment]) -> None:
+        """Keeps a record of the teacher, taken at random up to so many rows, for the pull back towards it in every
+        update; see Config.teacher_weight."""
+
+        order = np.random.default_rng(self.config.seed).permutation(len(segments))
+        kept, rows = [], 0
+
+        for index in order:
+            if rows >= self.config.teacher_rows:
+                break
+
+            kept.append(segments[index])
+            rows += segments[index].steps
+
+        self.teacher = kept
+        self.teacher_groups = pack_by_rows(kept, 4096)
+        self.teacher_press_weight = self._press_weight(kept)
+        logger.info("pulling towards the teacher with weight %.2f, from %d of its fights, %s steps",
+                    self.config.teacher_weight, len(kept), f"{rows:,}")
+
+    def _press_weight(self, segments: list[Segment]) -> Tensor:
+        """How much more a press of each button counts than not pressing it, in copying the teacher.
+
+        A button the teacher presses on one tick in twenty-five is learned as "never press it" by a plain likelihood:
+        never swinging is right ninety six times in a hundred. Presses are weighted up to make them count, but only a
+        little: weighted too far, the copy swings whenever in doubt, every swing restarts the cooldown, and a fighter that
+        never waits for a full strength hit loses every fight.
+        """
+        buttons = next(head for head in self.schema.heads if head.kind == "binary")
+        pressed = np.concatenate([segment.actions[:, buttons.action : buttons.action + buttons.size] for segment in segments])
+        rate = (pressed > 0.5).mean(axis=0)
+        weight = np.where(rate > 0.0, np.clip((1.0 - rate) / np.maximum(rate, 1e-9), 1.0, 3.0), 1.0)
+        return torch.from_numpy(weight).to(torch.float32).to(self.device)
+
+    def _teacher_batch(self, segments: list[Segment], group: list[int]) -> tuple[Tensor, Tensor, Tensor]:
+        """A group of recorded fights, whole and padded to the longest, as observations, actions and a mask. Continuous
+        targets are pulled in from the very edge, where a tanh can only reach by growing without bound."""
+
+        width = max(segments[index].steps for index in group)
+        obs = torch.zeros(len(group), width, self.schema.obs_dim)
+        targets = torch.zeros(len(group), width, self.schema.act_dim)
+        mask = torch.zeros(len(group), width, dtype=torch.bool)
+
+        for row, index in enumerate(group):
+            segment = segments[index]
+            obs[row, : segment.steps] = torch.from_numpy(segment.obs[: segment.steps])
+            targets[row, : segment.steps] = torch.from_numpy(segment.actions)
+            mask[row, : segment.steps] = True
+
+        for head in self.schema.heads:
+            if head.kind == "continuous":
+                targets[..., head.action : head.action + head.size].clamp_(-0.95, 0.95)
+
+        return obs.to(self.device), targets.to(self.device), mask.to(self.device)
+
+    def _teacher_log_prob(self, logits: Tensor, obs: Tensor, targets: Tensor, press_weight: Tensor) -> Tensor:
+        """How likely the policy makes what the teacher did, per step.
+
+        Scored with one spread for every continuous control, whatever each explores with. A narrower spread divides that
+        control's error by its square, and with aim exploring at a tenth of full deflection its error would count
+        fourteen times over and crowd out learning when to swing.
+        """
+        scoring_log_std = torch.full_like(self.actor.log_std, INITIAL_LOG_STD)
+        log_prob = None
+
+        for head, distribution in self.heads.distributions(logits, scoring_log_std, obs):
+            if head.kind == "binary":
+                taken = targets[..., head.action : head.action + head.size]
+                weight = torch.where(taken > 0.5, press_weight, torch.ones_like(press_weight))
+                piece = (distribution.log_prob(taken) * weight).sum(-1)
+            else:
+                piece = self.heads.log_prob([(head, distribution)], targets)
+
+            log_prob = piece if log_prob is None else log_prob + piece
+
+        return log_prob
 
     def _refresh_normalizer(self, segments: list[Segment]) -> None:
         if not segments:
@@ -673,6 +738,10 @@ class Trainer:
             stats["vram"],
             (time.time() - self.started) / 60.0,
         )
+
+        # Said on its own line rather than added to the one above, which scripts\watch.ps1 reads field by field.
+        if self.config.teacher_weight > 0.0 and stats.get("teacher"):
+            logger.info("iteration %5d  teacher loss %+.4f", self.iteration, stats["teacher"])
 
     # -----------------------------------------------------------------------------------------------------------
     # Weights and checkpoints
