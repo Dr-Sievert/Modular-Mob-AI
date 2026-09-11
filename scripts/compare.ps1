@@ -1,9 +1,10 @@
 # Two runs side by side, to see where each lands: one starts from a copy of the scripted fighter, corrected until it
 # fights nearly as well (scripts\imitate.ps1), the other from nothing. Both then learn by reinforcement on the same
-# terrain, at the same time, on half the machine each.
+# terrain, at the same time, the copy on twice the workers by default since it is the one closer to done.
 #
 #   scripts\compare.ps1                                  from the copy in runs\vindicator4, until each is done
 #   scripts\compare.ps1 -Copy vindicator5 -Battles 500000
+#   scripts\compare.ps1 -CopyWorkers 4 -ScratchWorkers 4      an even split
 #
 # Both run in the background, so this returns once they have started. Watch them in two terminals:
 #   scripts\watch.ps1 -Run <prefix>-copy
@@ -19,7 +20,8 @@ param(
     [string] $Prefix = 'vs',
     [int] $Battles = 0,
     [int] $ScratchBattles = 3000000,
-    [int] $WorkersEach = 4
+    [int] $CopyWorkers = 6,
+    [int] $ScratchWorkers = 3
 )
 
 . "$PSScriptRoot\_common.ps1"
@@ -57,24 +59,24 @@ if (-not (Test-Path (Join-Path $fromCopy 'state.pt'))) {
     New-Item -ItemType Junction -Path (Join-Path $fromCopy 'demos') -Target (Join-Path $source 'demos') | Out-Null
 }
 
-function Start-Run([string] $Name, [string] $Arguments) {
+function Start-Run([string] $Name, [int] $Workers, [string] $Arguments) {
 
     $directory = Get-RunDirectory $Name
     New-Item -ItemType Directory -Force $directory | Out-Null
 
     # Everything goes into the console log, for when something needs looking into; watch.ps1 is the view to follow it by.
-    $command = "& '$PSScriptRoot\train.ps1' -Run $Name -Workers $WorkersEach -Full $Arguments *> '$directory\console.log'"
+    $command = "& '$PSScriptRoot\train.ps1' -Run $Name -Workers $Workers -Full $Arguments *> '$directory\console.log'"
     Start-Process powershell.exe -ArgumentList @('-NoProfile', '-Command', $command) -WindowStyle Hidden | Out-Null
 
     Write-Host "Started '$Name'; its build output goes to $directory\console.log"
 }
 
-Start-Run "$Prefix-copy" "-FromCopy -Battles $Battles"
+Start-Run "$Prefix-copy" $CopyWorkers "-FromCopy -Battles $Battles"
 
 # The second waits for the first to get past its own checks, so they do not write the same files at the same moment.
 Start-Sleep -Seconds 30
 
-Start-Run "$Prefix-scratch" "-Battles $ScratchBattles -Extra '--eval-patience 1000000'"
+Start-Run "$Prefix-scratch" $ScratchWorkers "-Battles $ScratchBattles -Extra '--eval-patience 1000000'"
 
 Write-Host ''
 Write-Host 'Both are running in the background. Watch them with:'
