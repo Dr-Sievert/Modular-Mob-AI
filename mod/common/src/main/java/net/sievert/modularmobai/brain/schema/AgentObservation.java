@@ -14,8 +14,11 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.ShieldItem;
 import net.minecraft.world.item.SwordItem;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.phys.Vec3;
@@ -195,7 +198,7 @@ public final class AgentObservation {
      * one vertical column at a time and resolves the chunk once per column, which is eighty one lookups, and holds onto
      * the last one because a nine wide box spans at most two chunks in each direction.
      *
-     * <p>A cell is {@link #SOLID} when something in it stops a body, {@link #FLUID} when it holds water or lava and
+     * <p>A cell is {@link #SOLID} when something in it stops a body, or traps it, {@link #FLUID} when it holds water and
      * nothing solid, and empty otherwise. Grass, flowers and anything else a body walks through are empty: counted as
      * solid, as they once were, every meadow read as a wall at foot height all the way round, and a river as solid
      * ground, and neither a step that needs a jump nor water that needs swimming could be told from them.
@@ -248,15 +251,29 @@ public final class AgentObservation {
         }
     }
 
-    /** What one terrain cell holds, as {@link #writeTerrain} describes. Both lookups are cached by the block state. */
+    /**
+     * What one terrain cell holds, as {@link #writeTerrain} describes. Both lookups are cached by the block state.
+     *
+     * <p>A few blocks stop nothing and still catch a body: powder snow swallows it and freezes it to death, a sweet berry
+     * bush or a cobweb holds it nearly still and the bush tears at it, and lava burns. Read as empty they looked like open
+     * ground, and agents walked into them and died there, so they read as solid: somewhere a body cannot go.
+     */
     private static float cell(ChunkAccess chunk, BlockState state) {
 
-        if (!state.getCollisionShape(chunk, SCRATCH).isEmpty()) {
+        if (!state.getCollisionShape(chunk, SCRATCH).isEmpty() || state.is(Blocks.POWDER_SNOW)
+                || state.is(Blocks.SWEET_BERRY_BUSH) || state.is(Blocks.COBWEB)) {
 
             return SOLID;
         }
 
-        return state.getFluidState().isEmpty() ? EMPTY : FLUID;
+        FluidState fluid = state.getFluidState();
+
+        if (fluid.is(FluidTags.LAVA)) {
+
+            return SOLID;
+        }
+
+        return fluid.isEmpty() ? EMPTY : FLUID;
     }
 
     // -----------------------------------------------------------------------------------------------------------

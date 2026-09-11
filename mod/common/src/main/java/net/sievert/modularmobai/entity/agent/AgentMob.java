@@ -2,6 +2,7 @@ package net.sievert.modularmobai.entity.agent;
 
 import org.jetbrains.annotations.Nullable;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.NonNullList;
 import net.minecraft.nbt.CompoundTag;
@@ -34,6 +35,7 @@ import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
@@ -435,11 +437,30 @@ public class AgentMob extends PathfinderMob {
         if (target != null) {
 
             this.executed.attackHit = this.resolveAttack(target, strength);
+            this.resetAttackStrengthTicker();
+            return;
         }
 
-        // A player's cooldown restarts whether the swing landed or not, so a miss is a real cost and aiming is a skill
-        // rather than a formality.
-        this.resetAttackStrengthTicker();
+        BlockHitResult aimed = this.pickAimedBlock();
+
+        if (aimed.getType() == HitResult.Type.MISS) {
+
+            // A player's swing at thin air restarts the cooldown, so a miss is a real cost and aiming is a skill rather
+            // than a formality.
+            this.resetAttackStrengthTicker();
+            return;
+        }
+
+        // A player's swing at a block starts breaking it instead, and costs no cooldown. Whatever breaks at a touch is gone
+        // there and then: grass, ferns, flowers. An agent that could not do this stood in an old spruce forest swinging
+        // ninety times at the fern between it and a vindicator, and never landed a blow.
+        BlockPos pos = aimed.getBlockPos();
+        BlockState state = this.level().getBlockState(pos);
+
+        if (!state.isAir() && state.getDestroySpeed(this.level(), pos) == 0.0F) {
+
+            this.level().destroyBlock(pos, false, this);
+        }
     }
 
     private void trackMainHandForCooldown() {
