@@ -108,18 +108,26 @@ them.
 
 The league suite (`-Psuite=league`, `scripts\train.ps1 -Suite league`) is the same fight on the same sites against a
 different opponent every time, with a different loadout:
-- 26 mobs (`gametest/league/Roster`, which also says why the rest are left out): zombie, husk, drowned, zombie villager,
+- 37 mobs (`gametest/league/Roster`, which also says why the rest are left out): zombie, husk, drowned, zombie villager,
   skeleton, stray, bogged, wither skeleton, spider, cave spider, creeper, vindicator, pillager, witch, ravager, enderman,
-  silverfish, endermite, slime, magma cube, zombified piglin, piglin, piglin brute, hoglin, zoglin, breeze. Each gets its
-  own finalizeSpawn, is grown up, kept from zombifying and, for a slime, made its biggest, and is made to go for the
-  agent every tick it has let go: as its target, angered, or in its brain's memory. Slimes and breezes treat the agent
-  as a player (`SlimeInvoker`, `BreezeMixin`).
+  silverfish, endermite, slime, magma cube, zombified piglin, piglin, piglin brute, hoglin, zoglin, breeze, evoker,
+  blaze, ghast, phantom, vex, bee, wolf, polar bear, iron golem, snow golem, warden. Each gets its own finalizeSpawn, is
+  grown up, kept from zombifying and, for a slime, made its biggest, and is made to go for the agent every tick it has
+  let go: as its target, angered, or in its brain's memory. Slimes and breezes treat the agent as a player
+  (`SlimeInvoker`, `BreezeMixin`); a bee never counts as having stung, or it would die of its own sting (`BeeMixin`); a
+  snow golem is given fire resistance, or a warm biome would melt it.
+- Whatever flies starts in the air over its spawn spot, which always has open sky: a ghast 8 blocks up, a phantom 6, a
+  vex 3, a blaze and a bee 2. A flyer cannot be reached in melee at all, which is what the bow and crossbow loadouts are
+  for. An evoker's vexes are taken into the fight as it calls them, and swept up with it.
+- The warden is a benchmark, not a lesson: nothing beats it and the reward cannot pay for escaping, so its share of the
+  training fights is capped at 0.2% (`Roster.Member.trainingCap`, written into `roster.csv`). It stays fully rated.
 - The scripted fighter and frozen checkpoints of the run, as another agent with a brain of its own on its most likely
   action, so only the agent's steps are recorded.
 - 10 loadouts (`gametest/league/Loadouts`, armed with `arena/Loadout`): iron, stone and diamond swords, an axe, a sword
   with iron armour, sword or axe with a shield, a bow, a crossbow, a sword with a bow behind it.
-- League fights happen at midnight with mob griefing off: no undead burn, spiders stay hostile, no crater stays in a kept
-  world. A creeper that blows itself up without killing the agent is a draw, which pays as a loss.
+- League fights happen at midnight, clear and with mob griefing off: no undead burn, spiders stay hostile, rain neither
+  hurts a blaze or a snow golem nor teleports an enderman, and no crater stays in a kept world. A creeper that blows
+  itself up without killing the agent is a draw, which pays as a loss.
 
 The trainer decides who the agent meets and rates everyone (`trainer/mmai/league.py`). Training fights are shared by the
 agent's chance against each opponent times its complement, from its recent fights and filled in from the ratings, with
@@ -131,7 +139,7 @@ the checkpoint's evaluation, so best weights and the end of the run work as on t
 
 | File (`runs/<run>/league/`) | Written by | Holds |
 | --- | --- | --- |
-| `roster.csv` | each worker as it starts | `opponent,kind`: the mobs and the scripted fighter it fields |
+| `roster.csv` | each worker as it starts | `opponent,kind,cap`: the mobs and the scripted fighter it fields, and the largest share of the training fights each may take (1 for no cap) |
 | `results/wNN.csv` | each worker, a line a fight | `iteration,kind,opponent,loadout,opponent_loadout,outcome,ticks,cause`; kind `train` or `eval`, outcome `win`, `loss`, `timeout` or `draw`, cause what the agent died of when it died |
 | `matchmaking.csv` | the trainer, every iteration | `opponent,share,chance,rating,fights`: each opponent's share of the training fights, which the workers draw from |
 | `ratings.csv` | the trainer | every player's rating and rated record |

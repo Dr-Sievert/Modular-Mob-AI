@@ -26,6 +26,22 @@ are deliberate.
 - **The machine blue-screened under load (2026-09-11).** The i7-14700KF was on microcode 0x11F, below Intel's fix for
   13th and 14th gen instability (0x12B). A BIOS update (A.K0, microcode 0x137) fixed it; crashes since are code bugs.
 
+## The league's opponents
+
+- **Some mobs kill themselves, and the agent was paid for it.** Each of these hands over a win nobody fought for, and a
+  rating built on those says nothing:
+  - a **bee** dies of its own sting: after stinging once its aiStep rolls for death every five ticks, which over a minute
+    it passes about three times in four, and its attack goal never runs again either. In the league a bee never counts as
+    having stung (`BeeMixin`), so it keeps fighting for as long as the agent lets it;
+  - a **snow golem** melts a heart a tick in any biome warm enough to rain, which is a third of the terrain library. It is
+    given fire resistance for good, which is what that damage goes through.
+- **The weather is worth switching off.** A fresh world starts clear, but a worker fights for hours of game time and the
+  first storm changes the fight for everything the weather touches: rain hurts a blaze and a snow golem, and teleports an
+  enderman. League fights now hold it clear along with the time of day.
+- **An evoker's vexes were swept away as wildlife.** The sweep that clears what the world generator put down takes
+  anything living that no fight spawned, and an evoker's only real attack is entities it summons mid fight. They are taken
+  into the fight as they appear, and the site's own cleanup takes them at the end, since the wildlife sweep cannot.
+
 ## Mechanics (a player's rules, and bugs that broke them)
 
 - **Forward movement did nothing before commit c38efe9.** Vanilla's `Mob.setSpeed` also writes the forward input, and it

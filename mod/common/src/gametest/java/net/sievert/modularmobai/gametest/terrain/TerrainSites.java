@@ -705,10 +705,17 @@ public final class TerrainSites {
         return true;
     }
 
+    /**
+     * Everything a finished fight left on its site: what it dropped and what is still in the air, and anything living the
+     * fight brought that was not one of the fighters handed back. An evoker's vexes are the case that needs the last one:
+     * they are part of the fight, so the sweep for wildlife spares them, and nothing else would ever take them away. The
+     * sweep for wildlife cannot do it either, since a vex still fighting has to survive that.
+     */
     private static void sweep(ServerLevel level, AABB box) {
 
         List<Entity> leftovers = level.getEntitiesOfClass(Entity.class, box, entity ->
-                entity instanceof ItemEntity || entity instanceof ExperienceOrb || entity instanceof Projectile);
+                entity instanceof ItemEntity || entity instanceof ExperienceOrb || entity instanceof Projectile
+                        || (entity instanceof LivingEntity && entity.getTags().contains(TAG)));
 
         leftovers.forEach(Entity::discard);
     }

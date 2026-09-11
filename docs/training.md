@@ -118,10 +118,12 @@ Every field of `Config` in `trainer/mmai/ppo.py` is an option, as `--field-name 
 
 ### The league: `-Suite league` and `scripts\league.ps1`
 
-A league run fights 26 mobs, the scripted fighter and frozen checkpoints of itself, with a loadout drawn every fight; see
+A league run fights 37 mobs, the scripted fighter and frozen checkpoints of itself, with a loadout drawn every fight; see
 [architecture.md](architecture.md#the-league). Matchmaking sends training fights where the agent wins about half the
 time; evaluation fights are drawn evenly and rated. A checkpoint is judged on 1,000 evaluation fights over the mobs and
-the scripted fighter, and the run is done after ten judged checkpoints in a row without a new best.
+the scripted fighter, and the run is done after ten judged checkpoints in a row without a new best. An opponent the
+workers cap, which today is only the warden, takes no more than its cap of the training fights however even the fight
+looks, and is rated on as many evaluation fights as any other.
 
 ```
 scripts\train.ps1 -Run league -Suite league -Seed vs-copy     start one from vs-copy's best, run until done

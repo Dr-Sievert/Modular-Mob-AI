@@ -3,7 +3,7 @@
 A neural-network brain for Minecraft mobs. A player-shaped mob, the **agent**, is driven every tick by a small network
 running inside the game in plain Java. The network is trained offline with PyTorch PPO from what the game recorded.
 Today it beats a vindicator one on one on natural terrain (about 99.8%). Bows, crossbows, shields, axes, mining and
-placing work under a player's rules. An ELO league against most vanilla mobs is being built.
+placing work under a player's rules. An ELO league against every vanilla mob that fights fair is being built.
 
 Read these before changing anything:
 

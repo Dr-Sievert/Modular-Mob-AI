@@ -9,6 +9,7 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.MobSpawnType;
+import net.minecraft.world.phys.AABB;
 import net.sievert.modularmobai.arena.Episode;
 import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.entity.agent.AgentMob;
@@ -199,8 +200,13 @@ public class AgentLeagueGameTest {
                 throw new IllegalStateException("Could not create the fighters for " + this.matchup.opponent());
             }
 
+            // Whatever flies starts that far up in the air, which a site's open sky always leaves clear, and the fight's own
+            // patch of sky grows by as much, so an opponent that climbs from there is still something the agent can see.
+            int height = this.matchup.mob() != null ? this.matchup.mob().height() : 0;
+            AABB bounds = height > 0 ? this.site.bounds().expandTowards(0.0D, height, 0.0D) : this.site.bounds();
+
             place(this.agent, this.site.agent(), agentYaw);
-            place(this.opponent, this.site.opponent(), opponentYaw);
+            place(this.opponent, this.site.opponent().above(height), opponentYaw);
 
             if (this.opponent instanceof Mob mob && this.matchup.mob() != null) {
 
@@ -215,7 +221,7 @@ public class AgentLeagueGameTest {
             this.level.addFreshEntity(this.opponent);
 
             this.matchup.loadout().equip(this.agent);
-            this.agent.startEpisode(new Episode(FIGHT_TICKS, this.site.bounds(), this.opponent));
+            this.agent.startEpisode(new Episode(FIGHT_TICKS, bounds, this.opponent));
 
             if (evaluation != null) {
 
@@ -226,7 +232,7 @@ public class AgentLeagueGameTest {
 
                 // Its own fight, bounded the same, against the agent; what it is paid goes nowhere, since nothing records it.
                 this.matchup.opponentLoadout().equip(other);
-                other.startEpisode(new Episode(FIGHT_TICKS, this.site.bounds(), this.agent));
+                other.startEpisode(new Episode(FIGHT_TICKS, bounds, this.agent));
                 other.brain().use(this.matchup.brain());
             }
 

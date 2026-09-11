@@ -117,8 +117,13 @@ public final class League {
     private static final Map<String, Tally> loadoutTallies = new LinkedHashMap<>();
 
     /**
-     * Midnight for good, and no mob griefing, once per process as the first league fight starts. See {@link Roster} for
-     * why: the undead would burn at noon, and a creeper's crater would stay in a kept world.
+     * Midnight for good, clear weather and no mob griefing, once per process as the first league fight starts. See
+     * {@link Roster} for why: the undead would burn at noon, rain would hurt a blaze and a snow golem and teleport an
+     * enderman, and a creeper's crater would stay in a kept world.
+     *
+     * <p>The weather is worth turning off rather than trusting: a freshly generated world starts clear, but a worker
+     * fights for hours of game time, and the first storm to roll in would be a different fight for every mob the weather
+     * touches, for as long as it lasted.
      */
     public static synchronized void prepareWorld(ServerLevel level) {
 
@@ -130,11 +135,14 @@ public final class League {
         prepared = true;
 
         level.getGameRules().getRule(GameRules.RULE_DAYLIGHT).set(false, level.getServer());
+        level.getGameRules().getRule(GameRules.RULE_WEATHER_CYCLE).set(false, level.getServer());
         level.getGameRules().getRule(GameRules.RULE_MOBGRIEFING).set(false, level.getServer());
         level.setDayTime(MIDNIGHT);
+        level.setWeatherParameters(0, 0, false, false);
 
-        Constants.LOG.info("League fights: {} mobs, the scripted fighter{}, {} loadouts; midnight for good, no mob griefing",
-                Roster.fielded().size(), directory != null ? " and the run's checkpoints" : "", Loadouts.enabled().size());
+        Constants.LOG.info("League fights: {} mobs, the scripted fighter{}, {} loadouts; midnight and clear for good, no mob "
+                + "griefing", Roster.fielded().size(), directory != null ? " and the run's checkpoints" : "",
+                Loadouts.enabled().size());
     }
 
     /** The pairing for the next fight, which is an evaluation when it is handed one. */
@@ -398,17 +406,21 @@ public final class League {
         }
     }
 
-    /** Tells the trainer who this build fields, so it can weigh them before any of them has fought. */
+    /**
+     * Tells the trainer who this build fields, so it can weigh them before any of them has fought, and how large a share of
+     * the training fights each may take: one that cannot be beaten at all, the warden, has that capped here rather than in
+     * the trainer, since it is the mob that knows, see {@link Roster.Member#trainingCap}.
+     */
     private static void writeRoster() throws IOException {
 
-        StringBuilder out = new StringBuilder("opponent,kind\n");
+        StringBuilder out = new StringBuilder("opponent,kind,cap\n");
 
         for (Roster.Member member : Roster.fielded()) {
 
-            out.append(member.name()).append(",mob\n");
+            out.append(String.format(Locale.ROOT, "%s,mob,%.5f\n", member.name(), member.trainingCap()));
         }
 
-        out.append(SCRIPTED).append(",scripted\n");
+        out.append(SCRIPTED).append(",scripted,1.00000\n");
 
         Path target = directory.resolve("roster.csv");
         Path temporary = directory.resolve(String.format(Locale.ROOT, "roster.w%02d.tmp", worker));

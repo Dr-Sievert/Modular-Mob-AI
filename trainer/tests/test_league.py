@@ -12,7 +12,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from mmai.league import League, Ratings, checkpoint_name, expected, pool, shares, win_chance
+from mmai.league import League, Ratings, capped, checkpoint_name, expected, pool, shares, win_chance
 from mmai.ppo import Config
 from mmai.run import RunDirectory
 
@@ -120,6 +120,32 @@ class MatchmakingTest(unittest.TestCase):
 
         self.assertEqual(shares({}, floor=0.25), {})
 
+    def test_a_cap_holds_an_opponent_down_and_the_rest_take_what_it_gave_up(self):
+        result = shares({"warden": 0.5, "zombie": 0.5, "creeper": 0.5}, floor=0.25, caps={"warden": 0.002})
+
+        self.assertAlmostEqual(result["warden"], 0.002)
+        self.assertAlmostEqual(result["zombie"], result["creeper"])
+        self.assertAlmostEqual(sum(result.values()), 1.0)
+
+    def test_an_uncapped_opponent_under_its_cap_is_left_alone(self):
+        plain = shares({"warden": 0.02, "zombie": 0.5}, floor=0.25)
+        held = shares({"warden": 0.02, "zombie": 0.5}, floor=0.25, caps={"warden": 0.5, "zombie": 1.0})
+
+        self.assertEqual(plain, held)
+
+    def test_capping_everyone_spends_less_than_all_the_fights(self):
+        result = capped({"a": 0.5, "b": 0.5}, {"a": 0.1, "b": 0.1})
+
+        self.assertAlmostEqual(result["a"], 0.1)
+        self.assertAlmostEqual(sum(result.values()), 0.2)
+
+    def test_what_one_cap_gives_up_does_not_push_another_over_its_own(self):
+        result = capped({"a": 0.6, "b": 0.3, "c": 0.1}, {"a": 0.1, "b": 0.35})
+
+        self.assertAlmostEqual(result["a"], 0.1)
+        self.assertAlmostEqual(result["b"], 0.35)
+        self.assertAlmostEqual(sum(result.values()), 1.0)
+
     def test_the_chance_is_the_record_filled_in_by_the_guess(self):
         self.assertAlmostEqual(win_chance(0.0, 0.0, 0.7, 10.0), 0.7)
         self.assertAlmostEqual(win_chance(90.0, 100.0, 0.2, 10.0), (90.0 + 2.0) / 110.0)
@@ -184,6 +210,19 @@ class LeagueTest(unittest.TestCase):
         self.assertEqual(set(rows), {"zombie", "creeper", "scripted", checkpoint_name(0), checkpoint_name(25), checkpoint_name(50)})
         self.assertAlmostEqual(sum(rows.values()), 1.0, places=4)
         self.assertAlmostEqual(sum(rows[checkpoint_name(number)] for number in (0, 25, 50)), self.config.league_self_play, places=4)
+
+    def test_a_capped_opponent_takes_no_more_than_its_cap_and_is_still_drawn_for_evaluation(self):
+        (self.run.path / "league" / "roster.csv").write_text(
+            "opponent,kind,cap\nzombie,mob,1.00000\nwarden,mob,0.00200\nscripted,scripted,1.00000\n", encoding="utf-8")
+
+        league = League(self.run, self.config)
+        league.update(50)
+
+        rows = {row[0]: float(row[1]) for row in self.read("matchmaking.csv")}
+
+        self.assertLessEqual(rows["warden"], 0.002)
+        self.assertGreater(rows["warden"], 0.0)
+        self.assertGreater(rows["zombie"], rows["warden"])
 
     def test_an_opponent_always_beaten_is_met_less_than_an_even_one(self):
         self.results(0, *[f"50,train,zombie,sword,-,win,100" for _ in range(60)])

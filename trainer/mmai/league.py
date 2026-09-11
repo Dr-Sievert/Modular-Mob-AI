@@ -5,7 +5,7 @@ with a different loadout from one fight to the next; the game's gametest/league 
 every fight. This side reads them, keeps an Elo rating for every player, decides who the agent meets next, and writes
 all of it down:
 
-    runs/RUN/league/roster.csv          written by the workers: the mobs and the scripted fighter they field
+    runs/RUN/league/roster.csv          written by the workers: the mobs and the scripted fighter they field, and the cap on each
     runs/RUN/league/results/wNN.csv     appended by each worker: iteration,kind,opponent,loadout,opponent_loadout,outcome,ticks,cause
     runs/RUN/league/matchmaking.csv     written here: each opponent's share of the training fights, and why
     runs/RUN/league/ratings.csv         written here: every player's rating, best first
@@ -28,6 +28,12 @@ filled in from the ratings while there are few; an opponent's weight is that cha
 at an even fight. A floor of the fights is spread evenly, so an opponent the agent always beats, or never does, still
 comes round. Self play gets a share of its own, weighed the same way over a pool of checkpoints: the newest few, and the
 rest spaced out over the run so far, so the agent has to keep beating what it used to be as well as what it is.
+
+An opponent may also come with a cap on its share, which the workers write into roster.csv beside it, since the game is
+what knows: the warden cannot be beaten at all, the reward has no way to pay for getting away alive from one, and the
+floor alone would still hand it its even share of the fights. A cap holds it down to a fraction of that and gives what it
+gave up to the opponents there is something to learn from. Nothing caps the evaluation draw, so a capped opponent is
+rated on as many fights as any other.
 
 When a league run is done is not decided here. A checkpoint's fights against the mobs and the scripted fighter also go
 into the run's evaluation, drawn evenly across them, and evaluate.py keeps the best and stops the run once ten judged
@@ -192,11 +198,12 @@ def win_chance(wins: float, fights: float, guess: float, guess_weight: float) ->
     return (wins + guess_weight * guess) / (fights + guess_weight)
 
 
-def shares(chances: dict[str, float], floor: float) -> dict[str, float]:
+def shares(chances: dict[str, float], floor: float, caps: dict[str, float] | None = None) -> dict[str, float]:
     """Each opponent's share of a group's fights, adding up to one.
 
     Weighed by chance times its complement, which is largest for an even fight and nothing for a certain one, and a
-    floor spread evenly so every opponent keeps coming round however the fights against it go.
+    floor spread evenly so every opponent keeps coming round however the fights against it go. Caps, where the workers
+    named any, hold an opponent down to at most its own share of the fights.
     """
 
     if not chances:
@@ -207,9 +214,45 @@ def shares(chances: dict[str, float], floor: float) -> dict[str, float]:
     even = 1.0 / len(chances)
 
     if total <= 0.0:
-        return {name: even for name in chances}
+        return capped({name: even for name in chances}, caps or {})
 
-    return {name: (1.0 - floor) * weight / total + floor * even for name, weight in weights.items()}
+    return capped({name: (1.0 - floor) * weight / total + floor * even for name, weight in weights.items()}, caps or {})
+
+
+def capped(group: dict[str, float], caps: dict[str, float]) -> dict[str, float]:
+    """The same shares with every cap honoured, what the capped ones gave up going to the rest in proportion.
+
+    Spreading what one gave up can push another over its own cap, so this goes round again until nothing is over, which
+    takes at most one pass per opponent. If every one of them ends up capped the shares add up to less than one, which
+    costs nothing: the workers draw from the shares in proportion, whatever they come to.
+    """
+
+    result = dict(group)
+    held: set[str] = set()
+
+    for _ in range(len(result)):
+        over = [name for name, share in result.items() if name not in held and share > caps.get(name, 1.0)]
+
+        if not over:
+            return result
+
+        spare = 0.0
+
+        for name in over:
+            spare += result[name] - caps[name]
+            result[name] = caps[name]
+            held.add(name)
+
+        free = {name: share for name, share in result.items() if name not in held}
+        loose = sum(free.values())
+
+        if loose <= 0.0:
+            return result
+
+        for name, share in free.items():
+            result[name] = share + spare * share / loose
+
+    return result
 
 
 def pool(checkpoints: list[int], size: int, recent: int) -> list[int]:
@@ -323,6 +366,11 @@ class League:
         self.shares: dict[str, float] = {}
         self.chances: dict[str, float] = {}
 
+        # What the workers say about each opponent they field: what kind of thing it is, and the largest share of the
+        # training fights it may take. Read afresh from roster.csv every iteration, so nothing of it is saved.
+        self.kinds: dict[str, str] = {}
+        self.caps: dict[str, float] = {}
+
         self._resume()
 
     # -------------------------------------------------------------------------------------------------------------
@@ -334,10 +382,12 @@ class League:
             record[0] *= self.config.league_decay
             record[1] *= self.config.league_decay
 
+        # Read before the results, so a fight against an opponent nobody has rated yet is filed under the kind the workers
+        # say it is rather than the fallback: a player keeps the kind it was first entered under.
+        roster = self._roster()
+
         for row in self._read():
             self._take(*row)
-
-        roster = self._roster()
 
         # Nobody to weigh until a worker has said who it fields; until then the workers go round all of them evenly.
         if roster:
@@ -404,10 +454,15 @@ class League:
         if checkpoint_iteration(name) is not None:
             return "checkpoint"
 
-        return "scripted" if name == SCRIPTED else "mob"
+        if name == SCRIPTED:
+            return "scripted"
+
+        return self.kinds.get(name, "mob")
 
     def _roster(self) -> list[str]:
-        """The mobs and the scripted fighter the workers field, as they last said."""
+        """The mobs and the scripted fighter the workers field, as they last said, with what kind each is and the largest
+        share of the training fights it may take. A build that says neither leaves both at what they always were: a mob,
+        with no cap on it."""
 
         file = self.folder / "roster.csv"
 
@@ -417,7 +472,23 @@ class League:
         except OSError:
             return []
 
-        return [line.split(",")[0].strip() for line in lines if line.strip()]
+        names = []
+
+        for line in lines:
+            if not line.strip():
+                continue
+
+            parts = [part.strip() for part in line.split(",")]
+            names.append(parts[0])
+            self.kinds[parts[0]] = parts[1] if len(parts) > 1 and parts[1] else "mob"
+
+            try:
+                self.caps[parts[0]] = float(parts[2]) if len(parts) > 2 and parts[2] else 1.0
+
+            except ValueError:
+                self.caps[parts[0]] = 1.0
+
+        return names
 
     def _pool(self, iteration: int) -> list[str]:
         """The checkpoints the agent meets, of those whose weights are still on disk; the trainer keeps every one."""
@@ -443,7 +514,7 @@ class League:
 
         self_play = self.config.league_self_play if checkpoints else 0.0
 
-        fixed = shares({name: chances[name] for name in roster}, self.config.league_floor)
+        fixed = shares({name: chances[name] for name in roster}, self.config.league_floor, self.caps)
         frozen = shares({name: chances[name] for name in checkpoints}, self.config.league_floor)
 
         self.chances = chances
