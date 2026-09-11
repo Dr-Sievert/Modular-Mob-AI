@@ -29,6 +29,18 @@ to copy a hand-written fighter first, then improve the copy with reinforcement l
 
    All of it is decided from the observation and a little state per agent, which the network has 128 numbers of memory
    for; see the class comment for what that state is and why every bit of it is checked against the body.
+
+   It also chooses how to throw each blow, since vanilla gives one swing three shapes and allows at most one of them:
+   - **into a hazard** wherever it can line one up. The knockback goes exactly along the agent's own look, so a hazard
+     directly behind the target is somewhere the target can be pushed, and the ground kills it. It searches the reachable
+     spots for one that puts agent, target and hazard on a line, and sprints into the blow from there. Lava, fire, magma
+     and the edge of a drop nothing survives all count, which is what the terrain grid's hazard mark is for;
+   - **for the knockback** otherwise, whenever what is in front of it is worth having further off: a reach longer than a
+     man's, empty hands that have not swung, or health already spent. A sprint is forward only, so it is never asked for
+     while backing away;
+   - **for the critical**, half again the damage, when neither applies, by leaving the ground exactly as many ticks ahead
+     of a full cooldown as a jump spends coming down. An earlier attempt guessed that gap; this one reads the cooldown's
+     own rate off two ticks of the observation, so it holds for a sword and an axe alike.
 2. **Imitation**, with `scripts\imitate.ps1 -Run <copy>`:
    - It records the teacher's fights with its movement and aim pushed off by noise (DART, 0.1 of full deflection), so
      the record includes getting back on target.

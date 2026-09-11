@@ -58,6 +58,15 @@ are deliberate.
   snow, 1 berry bush. Hazards now read above solid, so networks trained before still treat them as walls. The bottom
   layer also marks drops deeper than 8 blocks. The fixed teacher dies of such causes 6 times in 20,000, and
   `gametest/util/DeathCauses` logs every one with its position and biome.
+- **One swing, three shapes, pick one.** Sprinting into a blow adds a point of knockback; falling into it adds half again
+  the damage and only counts if the fighter is not sprinting; standing still with a sword sweeps, and either of the other
+  two cancels that. So a fighter chooses per blow, and there is no swing that both crits and knocks back.
+  - **A sprint needs no reset here.** A player has to let the key go and press it again, because the blow cancels the
+    sprint. The agent's body reads the sprint control fresh every tick, so asking for it on the tick of the swing is the
+    whole of it.
+  - **The knockback is thrown along the agent's own look**, which is what makes a hazard behind the target reachable: the
+    push is `-(sin yaw, -cos yaw)` normalised, which is the agent's forward. A mob the ground kills still counts as the
+    agent's win.
 - **Air control is a player's:** 0.026 while sprinting.
 - **Paid by the health actually removed**, so overkill on a nearly dead vindicator pays no more.
 - **Placing was broken** before the mechanics work: blocks always faced north, and wall-mounted blocks and axe use

@@ -39,9 +39,24 @@ import net.sievert.modularmobai.entity.agent.MobControls;
  * tree in the way, it used to stand behind the trunk and sidestep while the target walked round it, and neither landed a
  * blow for the whole minute.
  *
- * <p>It does not jump for criticals. Timed from the observation alone, the fall rarely lined up with the target walking
- * into reach, one hit in ten landed as one, and it won no more fights for trying; that is left for training to find.
- * Nor does it sprint into its swings: the extra knockback did not keep the target away any longer than a plain hit.
+ * <h2>How a blow is thrown</h2>
+ *
+ * <p>Vanilla gives one swing three shapes and lets a fighter pick at most one of them. Sprinting into it adds a point of
+ * knockback; falling into it adds half again the damage, and only if the fighter is not sprinting; standing still with a
+ * sword sweeps everything else in reach, and either of the other two cancels that. So every blow is a choice, and this
+ * one chooses:
+ *
+ * <ul>
+ *   <li><b>Into a hazard.</b> The push goes exactly along the agent's own look, so a hazard directly behind the target is
+ *       a hazard the target can be knocked into, and the ground kills it. That is the best blow there is against the
+ *       league's heaviest, and it is what the terrain grid's hazard mark is for: lava, fire, magma, and the edge of a drop
+ *       nothing survives.</li>
+ *   <li><b>For the knockback</b> otherwise, whenever what is in front of the agent is worth having further off: a reach
+ *       longer than a man's, empty hands that have not swung yet, or health already spent.</li>
+ *   <li><b>For the critical</b> when none of that applies, by leaving the ground exactly as many ticks ahead of a full
+ *       cooldown as a jump spends coming down. An earlier attempt at this guessed that gap and gave it up; this one reads
+ *       the cooldown's own rate off two ticks of the observation, so it holds for a sword and an axe alike.</li>
+ * </ul>
  *
  * <h2>Everything else it carries</h2>
  *
@@ -140,6 +155,56 @@ public final class ScriptedBrain implements Brain {
 
     /** Slower than this, in the observation's velocity units, a target is standing still rather than coming. */
     private static final float STILL_SPEED = 0.1F;
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // How a blow is thrown: knockback, a critical, or into a hazard
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * A blow thrown while sprinting carries a whole point of extra knockback, which is half a block of impulse and about a
+     * block and a half of travel once the target's own momentum is spent. A sprint only ever lasts the tick it is asked
+     * for here, since the body reads the control fresh every tick and the blow itself cancels the sprint, so every blow is
+     * its own sprint and there is nothing to reset: a player has to let the key go and press it again, and the agent's
+     * equivalent is simply asking for it on the tick it swings.
+     *
+     * <p>Vanilla only lets a sprint start while pushing forward, so a sprint blow is also a step forward. That is what it
+     * costs: the fighter closes on the target as it hits, and the knockback has to pay for that as well.
+     */
+    private static final float SPRINT_BLOW_FORWARD = 1.0F;
+
+    /**
+     * A critical is worth half again as much damage, which against a vindicator's twenty four health is three blows
+     * instead of four, and vanilla only grants one to a body that is falling, is not on the ground and is not sprinting.
+     * So a critical and a sprint blow are two ways to throw the same swing, never one blow with both.
+     *
+     * <p>An earlier attempt at this timed the jump by the clock and gave it up: the fall rarely lined up with the target
+     * walking into reach, one hit in ten landed as a critical, and it won no more fights (see docs/findings.md). What is
+     * different here is that the cooldown is not guessed. The observation says how far it has recovered, and the rate it
+     * recovers at is the difference between two ticks of that, so the fighter knows how many ticks from a full swing it
+     * is, whatever it is holding, and jumps exactly that far ahead of one.
+     */
+    private static final int CRIT_JUMP_EARLIEST = 7;
+    private static final int CRIT_JUMP_LATEST = 9;
+
+    /**
+     * A player's jump is in the air for about twelve ticks and its fall distance only rises once it is past the top,
+     * around the seventh, which is the window a critical can land in. Asking again inside that window would do nothing
+     * anyway, since a jump only leaves the ground.
+     */
+    private static final int CRIT_JUMP_COOLDOWN = 14;
+
+    /** Below this a difference in the cooldown between two ticks is noise rather than the rate it recovers at. */
+    private static final float STRENGTH_RATE_FLOOR = 0.01F;
+
+    /**
+     * How far past the target a hazard can be and still be somewhere a sprint blow puts it. A point of extra knockback is
+     * half a block of impulse, and what the target keeps of it carries it about a block and a half further, so two and a
+     * half blocks is the far edge of what one blow reaches and a little to spare for a target already walking that way.
+     */
+    private static final double HAZARD_PUSH = 2.5D;
+
+    /** How finely the ground beyond the target is walked while looking for somewhere it could be knocked into. */
+    private static final double HAZARD_STEP = 0.25D;
 
     /** The scale the observation puts velocities on, so the numbers in the enemy block come back as blocks a tick. */
     private static final double VELOCITY_SCALE = 0.5D;
@@ -303,6 +368,13 @@ public final class ScriptedBrain implements Brain {
         /** Whether it is walking away from something it takes for a lit creeper, which it does until it is well clear. */
         private boolean fleeing;
 
+        /** The attack cooldown last tick, and how much of it comes back in a tick, which is one over the weapon's delay. */
+        private float lastStrength;
+        private float strengthRate;
+
+        /** Ticks since it jumped for a critical, so it does not ask again while it is still in the air. */
+        private int sinceJump = CRIT_JUMP_COOLDOWN;
+
         /** The brain step this was last asked about, so an agent nothing ever finished can be let go of. */
         private long seen;
 
@@ -321,6 +393,9 @@ public final class ScriptedBrain implements Brain {
             this.longReach = 0;
             Arrays.fill(this.holdingBack, (byte) 0);
             this.fleeing = false;
+            this.lastStrength = 0.0F;
+            this.strengthRate = 0.0F;
+            this.sinceJump = CRIT_JUMP_COOLDOWN;
         }
 
         /** Nothing in sight: a draw is cancelled by the slot it is held in going away, and there is nothing to flee. */
@@ -461,6 +536,8 @@ public final class ScriptedBrain implements Brain {
         int echo = obs + ObservationSchema.ECHO_OFFSET;
         boolean swungIntoBlock = o[echo + ECHO_ATTACKED] > 0.5F && o[echo + ECHO_HIT] < 0.5F && strength >= FULL_STRENGTH;
 
+        time(me, strength);
+
         boolean clear = !swungIntoBlock && !blocked(o, obs, CENTRE, 0, CENTRE, targetX, targetEye, targetZ);
 
         // What it is carrying, and so what it can do about whatever is in front of it.
@@ -524,9 +601,21 @@ public final class ScriptedBrain implements Brain {
         int start = state(CENTRE, 0, CENTRE);
         int next = start;
 
-        if (fleeing || distance < backOff) {
+        boolean retreating = fleeing || distance < backOff;
+
+        // Somewhere to stand that puts a hazard directly behind the target, which turns one blow into the whole fight.
+        // Every such spot is already inside the band with a clear line, so wanting one never argues with the footwork.
+        int shove = retreating ? -1 : this.hazardSpot(o, obs, distance, targetX, targetEye, targetZ);
+        boolean linedUp = shove == start;
+
+        if (retreating) {
 
             next = this.retreat(o, obs, targetX, targetZ);
+        }
+
+        else if (shove >= 0) {
+
+            next = shove;
         }
 
         else if (distance > CLOSE_IN_RANGE || !clear) {
@@ -558,15 +647,242 @@ public final class ScriptedBrain implements Brain {
         // swung while anything is in use, not even on the tick it is let go, so a fighter holding one up has no attack.
         boolean busy = this.hold(me, o, a, obs, act, slot, target, distance, strength, incomingDistance(o, obs), fleeing);
 
+        if (busy) {
+
+            return;
+        }
+
+        // Whether this blow wants to carry knockback rather than the damage a critical adds. A hazard behind the target is
+        // the whole fight; a reach longer than a man's, empty hands that have not swung yet, and health already gone are
+        // each a reason to want whatever is in front of the agent further away than it is. Never while backing away, since
+        // a sprint is forward only: a player cannot sprint out of a fight either.
+        boolean shoving = !retreating
+                && (linedUp || me.reachesFar(slot) || mayExplode || o[self + ObservationSchema.SELF_HEALTH] < 1.0F);
+
         // Swinging wide costs the whole cooldown, so the swing waits until the target is actually in front of it. It also
         // waits for the cooldown to come all the way back: damage goes with the square of it, so a swing at nine tenths
         // does barely more than five of a sword's six, and a vindicator then takes five hits instead of four. A swing
         // that meets a block on the way costs nothing, as a player's does, and clears grass and ferns out of the way, so a
         // line the grid says is blocked is no reason to hold back; it only decides where to walk.
-        if (!busy && distance <= SWING_RANGE && strength >= FULL_STRENGTH && Math.abs(yawError) < SWING_CONE_DEGREES) {
+        boolean aimed = distance <= SWING_RANGE && Math.abs(yawError) < SWING_CONE_DEGREES;
+
+        if (aimed && strength >= FULL_STRENGTH) {
 
             a[act + ActionSchema.ATTACK] = 1.0F;
+
+            if (shoving) {
+
+                // A sprint is forward only, so the blow steps into the target as it lands. Full deflection, since anything
+                // short of four fifths is not a sprint at all.
+                a[act + ActionSchema.MOVE_FORWARD] = SPRINT_BLOW_FORWARD;
+                a[act + ActionSchema.SPRINT] = 1.0F;
+            }
+
+            return;
         }
+
+        // Not sprinting, not shoving, and the cooldown is a jump's fall away from full: leave the ground now and the swing
+        // lands while falling, which is a critical. Nothing is given up for it, since the swing was not ready anyway.
+        if (!shoving && aimed && grounded && this.jumpsForCrit(me, strength)) {
+
+            a[act + ActionSchema.JUMP] = 1.0F;
+            a[act + ActionSchema.SPRINT] = 0.0F;
+            me.sinceJump = 0;
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // Timing a blow by the cooldown
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * Keeps track of how fast the attack cooldown comes back, which is one over the delay of whatever is held and is the
+     * difference between two ticks of it. Nothing else says it: an axe takes twenty ticks to a sword's twelve and a half,
+     * and the observation carries how far the cooldown has recovered but never how long that takes.
+     */
+    private static void time(Fighter me, float strength) {
+
+        float risen = strength - me.lastStrength;
+
+        if (risen > STRENGTH_RATE_FLOOR && strength < 1.0F) {
+
+            me.strengthRate = risen;
+        }
+
+        me.lastStrength = strength;
+        me.sinceJump = Math.min(CRIT_JUMP_COOLDOWN, me.sinceJump + 1);
+    }
+
+    /**
+     * Whether now is the tick to leave the ground so that the swing lands on the way down. A player's jump is about twelve
+     * ticks in the air and its fall distance only rises past the seventh, so the swing has to be ready somewhere in that
+     * window and not before it: jump too early and the fighter is back on the ground with the cooldown still short, too
+     * late and the swing goes out flat footed.
+     */
+    private static boolean jumpsForCrit(Fighter me, float strength) {
+
+        if (me.strengthRate <= 0.0F || me.sinceJump < CRIT_JUMP_COOLDOWN) {
+
+            return false;
+        }
+
+        double ticks = (1.0D - strength) / me.strengthRate;
+
+        return ticks >= CRIT_JUMP_EARLIEST && ticks <= CRIT_JUMP_LATEST;
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // Knocking something into a hazard
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * Somewhere to stand from which a sprint blow sends the target into something that will finish it: lava, fire, a magma
+     * block, or the edge of a drop the grid marks as one nothing survives. A mob the ground kills is still the agent's
+     * win, and against the league's heaviest, a hundred health behind three quarters knockback resistance, it is worth far
+     * more than the four blows it saves against a vindicator.
+     *
+     * <p>The push goes exactly along the agent's own look, since that is how vanilla throws it, and the agent looks at what
+     * it is fighting. So lining up is a matter of standing where the agent, the target and the hazard fall on one line,
+     * which is what this searches the reachable spots for.
+     *
+     * @return the first step towards such a spot, the spot the agent already stands on when it is one, or -1 for none
+     */
+    private int hazardSpot(float[] o, int obs, float distance, double targetX, double targetEye, double targetZ) {
+
+        // Two cheap questions before the expensive one. The search over the grid is the costliest thing this brain does and
+        // it already runs once or twice a tick, so it is not run a third time for a target too far off for any spot in the
+        // band to reach, or on ground with nothing on it that could hurt anybody.
+        if (distance > SWING_RANGE + (float) HAZARD_PUSH || !anyHazard(o, obs)) {
+
+            return -1;
+        }
+
+        int reached = this.search(o, obs, false);
+        int best = -1;
+        int bestDepth = Integer.MAX_VALUE;
+
+        for (int i = 0; i < reached; i++) {
+
+            int s = this.queue[i];
+
+            if (this.dropped[s] || this.depth[s] >= bestDepth) {
+
+                continue;
+            }
+
+            int x = s % X;
+            int level = s / (X * Z) - 1;
+            int z = (s / X) % Z;
+
+            double across = Math.hypot(targetX - (x + 0.5D), targetZ - (z + 0.5D));
+            double reach = Math.hypot(across, targetEye - (FEET + level + EYE_HEIGHT));
+
+            // Only ever from inside the band it fights in anyway: a spot it would have to walk out of reach to take is a
+            // spot that costs more than the blow is worth.
+            if (reach < BACK_OFF_RANGE || reach > SWING_RANGE - 0.1D || across < 0.5D) {
+
+                continue;
+            }
+
+            if (!hazardBeyond(o, obs, targetX, targetEye, targetZ, (targetX - (x + 0.5D)) / across,
+                    (targetZ - (z + 0.5D)) / across)) {
+
+                continue;
+            }
+
+            if (blocked(o, obs, x, level, z, targetX, targetEye, targetZ)) {
+
+                continue;
+            }
+
+            best = s;
+            bestDepth = this.depth[s];
+        }
+
+        return best < 0 ? -1 : this.firstStep(best);
+    }
+
+    /**
+     * Whether the ground just past the target, along the way it would be pushed, is somewhere a body does not come back
+     * from. Walked a quarter block at a time out to as far as one blow carries.
+     *
+     * <p>Two things count. A hazard where the target's own feet or body would end up is one: lava, fire, a magma block, a
+     * cactus. Nothing under it out to the bottom of the grid is the other, with the bottom cell itself marked a hazard,
+     * which is how the grid says a fall from there is more than eight blocks or ends in something worse; that is a ravine,
+     * and it is what the terrain has most of.
+     */
+    private static boolean hazardBeyond(float[] o, int obs, double targetX, double targetEye, double targetZ,
+            double dx, double dz) {
+
+        // Which row of the grid the target's feet are in, taken as a body of the agent's own height, which everything in
+        // the league is within a block of. The row below is checked as well, so half a block either way changes nothing.
+        int feet = Mth.clamp((int) Math.floor(targetEye - EYE_HEIGHT), 1, ObservationSchema.TERRAIN_Y - 1);
+
+        for (double t = HAZARD_STEP; t <= HAZARD_PUSH; t += HAZARD_STEP) {
+
+            int x = (int) Math.floor(targetX + dx * t);
+            int z = (int) Math.floor(targetZ + dz * t);
+
+            if (x < 0 || z < 0 || x >= X || z >= Z) {
+
+                return false;
+            }
+
+            if (cell(o, obs, x, feet, z) >= AgentObservation.HAZARD) {
+
+                return true;
+            }
+
+            if (cell(o, obs, x, feet, z) >= AgentObservation.SOLID) {
+
+                // A wall between the target and the hazard: the push stops there, whatever is behind it.
+                return false;
+            }
+
+            if (cell(o, obs, x, feet - 1, z) >= AgentObservation.HAZARD) {
+
+                return true;
+            }
+
+            if (nothingUnder(o, obs, x, feet, z)) {
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** Whether anything in the grid at all hurts a body, which is the one thing worth searching the ground for a line on. */
+    private static boolean anyHazard(float[] o, int obs) {
+
+        for (int cell = 0; cell < ObservationSchema.TERRAIN_SIZE; cell++) {
+
+            if (o[obs + ObservationSchema.TERRAIN_OFFSET + cell] >= AgentObservation.HAZARD) {
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether a column is open all the way from under the target's feet to the bottom of the grid, with that bottom cell
+     * marked a hazard. The bottom row is two blocks under the agent's own feet and reads as a hazard when what is below it
+     * is a fall of more than eight blocks or something that kills: that is the one thing in the grid that says a ravine.
+     */
+    private static boolean nothingUnder(float[] o, int obs, int x, int feet, int z) {
+
+        for (int y = feet - 1; y > 0; y--) {
+
+            if (cell(o, obs, x, y, z) >= AgentObservation.SOLID) {
+
+                return false;
+            }
+        }
+
+        return cell(o, obs, x, 0, z) >= AgentObservation.HAZARD;
     }
 
     // ---------------------------------------------------------------------------------------------------------------
