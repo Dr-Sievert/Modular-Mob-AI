@@ -8,7 +8,7 @@ Start with [architecture.md](architecture.md); the rest are how-tos.
 | [training.md](training.md) | train: the pipeline that works (teacher, imitation, PPO from the copy, evaluation), every script, parameter and trainer option, the run folder, the machine, troubleshooting |
 | [testing.md](testing.md) | check a change: the arena and mechanics suites, evaluation, the parity check, running and writing game tests |
 | [models.md](models.md) | find, publish and use the trained networks kept in git |
-| [playing.md](playing.md) | start the game with a model, spawn agents, give them loadouts, set allies and enemies (in progress) |
+| [playing.md](playing.md) | start the game with a model, spawn agents, give them loadouts and brains, set allies and enemies, every `/mmai` command, the config and the networks the jar carries |
 | [viewer.md](viewer.md) | watch recorded fights in 2D and 3D, and delete replays |
 | [replay-format.md](replay-format.md) | read or write replay files |
 | [findings.md](findings.md) | know what was learned the hard way before changing something that looks odd |

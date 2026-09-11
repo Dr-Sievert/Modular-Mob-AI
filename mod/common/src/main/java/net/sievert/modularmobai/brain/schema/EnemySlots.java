@@ -5,11 +5,8 @@ import java.util.List;
 import org.jetbrains.annotations.Nullable;
 
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.Mob;
-import net.minecraft.world.entity.monster.Enemy;
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
-import net.sievert.modularmobai.entity.agent.AgentMob;
+import net.sievert.modularmobai.allegiance.Allegiance;
 
 /**
  * Hands each opponent a fixed place in the observation and keeps it there.
@@ -78,14 +75,16 @@ public final class EnemySlots {
     /**
      * What counts as an enemy: monsters, players, other agents, and anything that has chosen this agent as its target.
      * Cows, villagers and the rest of what lives on real terrain are left out, so they never push a real threat out of a
-     * slot or teach the agent to square up to a sheep.
+     * slot or teach the agent to square up to a sheep. Teams come first: an ally never takes a slot, whatever it is, and
+     * a member of another team always does. See {@link Allegiance#isEnemy}, which is the whole rule.
+     *
+     * <p>This is the one place the agent's enemies are chosen. Only what holds a slot is described in the observation,
+     * so an ally standing next to the agent is not in it at all, and the enemy slots, the nearest one the scripted
+     * fighter goes for included, only ever hold the other side.
      */
     static boolean hostile(LivingEntity owner, LivingEntity other) {
 
-        return other instanceof Enemy
-                || other instanceof Player
-                || other instanceof AgentMob
-                || (other instanceof Mob mob && mob.getTarget() == owner);
+        return Allegiance.isEnemy(owner, other);
     }
 
     private void expireLeases(LivingEntity owner, double viewSq) {
@@ -99,7 +98,10 @@ public final class EnemySlots {
                 continue;
             }
 
-            if (!occupant.isAlive() || occupant.isRemoved()) {
+            // One that has come over to the agent's side, or can no longer be fought at all, a player gone creative, is let
+            // go at once rather than held while it stays close. Nothing else is: a wolf that stops targeting the agent is
+            // still a wolf that just bit it.
+            if (!occupant.isAlive() || occupant.isRemoved() || Allegiance.allied(owner, occupant) || !owner.canAttack(occupant)) {
 
                 this.occupants[slot] = null;
                 continue;
@@ -185,6 +187,20 @@ public final class EnemySlots {
     public int inRangeCount() {
 
         return this.inRangeCount;
+    }
+
+    /** Whether no slot is held: nothing in view, and nothing that only just stepped out of it. */
+    public boolean isEmpty() {
+
+        for (LivingEntity occupant : this.occupants) {
+
+            if (occupant != null) {
+
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public void clear() {

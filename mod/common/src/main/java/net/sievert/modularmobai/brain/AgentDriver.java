@@ -57,7 +57,7 @@ public final class AgentDriver {
 
             if (state.brain() == null) {
 
-                state.use(Brains.defaultBrain());
+                state.use(Brains.forAgent(agent));
             }
 
             this.batches.computeIfAbsent(state.brain(), AgentBatch::new).add(agent);

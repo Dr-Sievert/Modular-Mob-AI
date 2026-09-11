@@ -6,6 +6,7 @@ import java.util.function.Predicate;
 import org.jetbrains.annotations.Nullable;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.core.NonNullList;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
@@ -16,6 +17,7 @@ import net.minecraft.tags.FluidTags;
 import net.minecraft.util.Mth;
 import net.minecraft.world.ContainerHelper;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.DifficultyInstance;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.effect.MobEffectUtil;
@@ -27,8 +29,10 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.MobSpawnType;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.Pose;
+import net.minecraft.world.entity.SpawnGroupData;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.control.LookControl;
@@ -47,6 +51,7 @@ import net.minecraft.world.item.component.ChargedProjectiles;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.ServerLevelAccessor;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.GameMasterBlock;
 import net.minecraft.world.level.block.LevelEvent;
@@ -58,8 +63,15 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
+import net.sievert.modularmobai.Config;
+import net.sievert.modularmobai.Constants;
+import net.sievert.modularmobai.allegiance.Allegiance;
 import net.sievert.modularmobai.arena.Episode;
+import net.sievert.modularmobai.arena.Loadout;
+import net.sievert.modularmobai.arena.Loadouts;
+import net.sievert.modularmobai.brain.Brain;
 import net.sievert.modularmobai.brain.BrainState;
+import net.sievert.modularmobai.brain.Brains;
 import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.mixin.ProjectileWeaponItemInvoker;
 
@@ -85,6 +97,10 @@ public class AgentMob extends PathfinderMob {
 
     private static final String TAG_HOTBAR = "Hotbar";
     private static final String TAG_SELECTED_SLOT = "SelectedSlot";
+
+    // Not "Brain": vanilla already saves every living entity's own Brain, its memories, under that key.
+    private static final String TAG_BRAIN_NAME = "BrainName";
+    private static final String TAG_LOADOUT = "Loadout";
 
     private static final float DEGREES_TO_RADIANS = (float) (Math.PI / 180.0D);
 
@@ -153,6 +169,18 @@ public class AgentMob extends PathfinderMob {
      */
     private final boolean training;
 
+    /**
+     * The brain this agent was given by name, see Brains#named, which it keeps through saving. Null follows whatever the
+     * game's default is; see Brains#forAgent. The brain itself is never saved, only this, since weights are shared and
+     * found again by name.
+     */
+    @Nullable
+    private String brainName;
+
+    /** The loadout it was last armed with by name, for /mmai info. What it carries is the hotbar, saved as it stands. */
+    @Nullable
+    private String loadoutName;
+
     public AgentMob(EntityType<? extends PathfinderMob> type, Level level) {
 
         super(type, level);
@@ -211,6 +239,41 @@ public class AgentMob extends PathfinderMob {
         return this.brain;
     }
 
+    /** The name of the brain this agent was given, or null when it follows the game's default. */
+    @Nullable
+    public String brainName() {
+
+        return this.brainName;
+    }
+
+    /**
+     * Gives the agent a brain of its own by name, kept through saving, or with null hands it back to the game's default.
+     * The name is resolved here and now, so one that leads nowhere is refused before anything about the agent changes,
+     * and the agent starts on its new brain with a fresh memory.
+     *
+     * @throws IllegalArgumentException for a name that is no brain; see Brains#named
+     */
+    public void setBrainName(@Nullable String name) {
+
+        Brain chosen = name == null ? null : Brains.named(name);
+
+        this.brainName = name == null ? null : name.trim();
+        this.brain.use(chosen);
+    }
+
+    @Nullable
+    public String loadoutName() {
+
+        return this.loadoutName;
+    }
+
+    /** Arms the agent with a loadout and remembers its name. */
+    public void equip(Loadout loadout) {
+
+        loadout.equip(this);
+        this.loadoutName = loadout.name();
+    }
+
     @Nullable
     public Episode episode() {
 
@@ -265,11 +328,12 @@ public class AgentMob extends PathfinderMob {
      * where the damage lands (see LivingEntityMixin), the one place every kind of it passes through, so nothing is paid
      * twice. What is paid is what came off, the same as damage taken is counted: a finishing blow pays only the health
      * that was left, so hitting harder than a kill needs earns nothing extra and a kill is worth one health bar however it
-     * was done.
+     * was done. Hurting an ally is never paid, whatever the episode pays for; with friendly fire on, it still happens.
      */
     public void dealtDamage(LivingEntity target, float healthRemoved) {
 
-        if (this.episode != null && target != this && healthRemoved > 0.0F && this.episode.pays(target)) {
+        if (this.episode != null && target != this && healthRemoved > 0.0F && this.episode.pays(target)
+                && !Allegiance.allied(this, target)) {
 
             this.episode.reward().damageDealt(healthRemoved, target.getMaxHealth());
         }
@@ -311,6 +375,7 @@ public class AgentMob extends PathfinderMob {
 
         boolean wasSprinting = this.isSprinting();
 
+        this.idleWhenAlone();
         this.applySelectedSlot();
         this.applyAim();
         this.applyMovement();
@@ -323,6 +388,36 @@ public class AgentMob extends PathfinderMob {
         this.attackStrengthTicker++;
         this.trackMainHandForCooldown();
         this.itemCooldowns.tick();
+    }
+
+    /**
+     * An agent out in a real game with nobody in view stands where it is, swimming up in water as any mob does, whatever
+     * its brain said, and meets its next opponent with a fresh memory.
+     *
+     * <p>A network has only ever been trained with an opponent in view from its first tick to its last, so what it does
+     * with nobody there is anything at all, and a walk off into the distance is typical: by the time something worth
+     * fighting turned up it would be out of sight. Standing still keeps it where it was put, and restarting its memory
+     * means the next fight begins the way every training fight began. The brain is still asked every tick, so the moment
+     * anything takes a slot in its view it is acting on it.
+     *
+     * <p>Only out in the world. An arena always has an opponent, and a mechanics test drives its training agent with
+     * nobody about on purpose.
+     */
+    private void idleWhenAlone() {
+
+        if (this.training || this.episode != null || !this.brain.enemySlots().isEmpty()) {
+
+            return;
+        }
+
+        int slot = this.controls.selectedSlot;
+
+        this.controls.clear();
+        this.controls.selectedSlot = slot;
+        this.controls.jump = this.isInWater() && this.getFluidHeight(FluidTags.WATER) > this.getFluidJumpThreshold()
+                || this.isInLava();
+
+        this.brain.restart();
     }
 
     private void applySelectedSlot() {
@@ -1333,6 +1428,16 @@ public class AgentMob extends PathfinderMob {
 
         tag.put(TAG_HOTBAR, hotbarTag);
         tag.putInt(TAG_SELECTED_SLOT, this.selectedSlot);
+
+        if (this.brainName != null) {
+
+            tag.putString(TAG_BRAIN_NAME, this.brainName);
+        }
+
+        if (this.loadoutName != null) {
+
+            tag.putString(TAG_LOADOUT, this.loadoutName);
+        }
     }
 
     @Override
@@ -1340,13 +1445,70 @@ public class AgentMob extends PathfinderMob {
 
         super.readAdditionalSaveData(tag);
 
-        if (tag.contains(TAG_HOTBAR, Tag.TAG_COMPOUND)) {
+        boolean saved = tag.contains(TAG_HOTBAR, Tag.TAG_COMPOUND);
+
+        if (saved) {
 
             ContainerHelper.loadAllItems(tag.getCompound(TAG_HOTBAR), this.hotbar, this.registryAccess());
         }
 
         this.selectedSlot = Mth.clamp(tag.getInt(TAG_SELECTED_SLOT), 0, MobControls.HOTBAR_SIZE - 1);
         this.syncMainHand();
+
+        // Kept as it was saved and not checked here: a world can name a network this game does not have, and the agent
+        // should still have it back once the network is. The driver finds it by name, and falls back while it cannot.
+        if (tag.contains(TAG_BRAIN_NAME, Tag.TAG_STRING)) {
+
+            String name = tag.getString(TAG_BRAIN_NAME).trim();
+
+            this.brainName = name.isEmpty() ? null : name;
+            this.brain.use(null);
+        }
+
+        if (tag.contains(TAG_LOADOUT, Tag.TAG_STRING)) {
+
+            this.loadoutName = tag.getString(TAG_LOADOUT);
+
+            // A save always carries the hotbar, which is the loadout as it now stands, arrows spent and shield worn, and
+            // must never be armed afresh on every load. Only a tag with a loadout and no hotbar, which is a /summon asking
+            // for one, is armed with it here.
+            if (!saved) {
+
+                this.armWith(this.loadoutName, this.registryAccess());
+            }
+        }
+    }
+
+    /**
+     * An agent that arrives the way any mob does, hatched from an egg, dispensed, or summoned with no tag, comes armed with
+     * the config's loadout rather than empty handed, and right handed as a player is and as every agent in training was.
+     * The arenas never come through here; they arm their own.
+     */
+    @Override
+    public SpawnGroupData finalizeSpawn(ServerLevelAccessor level, DifficultyInstance difficulty, MobSpawnType spawnType,
+            @Nullable SpawnGroupData spawnGroupData) {
+
+        SpawnGroupData data = super.finalizeSpawn(level, difficulty, spawnType, spawnGroupData);
+
+        this.setLeftHanded(false);
+
+        if (!this.training && this.carriesNothing()) {
+
+            this.armWith(Config.loadout(), level.registryAccess());
+        }
+
+        return data;
+    }
+
+    private boolean carriesNothing() {
+
+        return this.hotbar.stream().allMatch(ItemStack::isEmpty) && this.getOffhandItem().isEmpty();
+    }
+
+    private void armWith(String name, HolderLookup.Provider registries) {
+
+        Loadouts.byName(name, registries).ifPresentOrElse(this::equip, () -> Constants.LOG.warn(
+                "There is no loadout '{}' to arm an agent with; there are {}", name, String.join(", ", Loadouts.names())));
     }
 
     public boolean isTraining() {
@@ -1356,12 +1518,23 @@ public class AgentMob extends PathfinderMob {
 
     /**
      * A training agent is kept alive by the arena that spawned it rather than by distance to a player, since a game test
-     * has no players in it. The shipped one despawns like any other mob.
+     * has no players in it. The shipped one never despawns either, see {@link #requiresCustomPersistence}.
      */
     @Override
     public boolean removeWhenFarAway(double distance) {
 
         return !this.training && super.removeWhenFarAway(distance);
+    }
+
+    /**
+     * The agent in a real game never despawns. Nothing spawns it on its own, so every one was put there on purpose, with
+     * a brain and a loadout someone chose, and walking away should not lose it. Being persistent this way also keeps it
+     * out of the mob cap, so a crowd of agents never stops animals from spawning.
+     */
+    @Override
+    public boolean requiresCustomPersistence() {
+
+        return !this.training || super.requiresCustomPersistence();
     }
 
     /**

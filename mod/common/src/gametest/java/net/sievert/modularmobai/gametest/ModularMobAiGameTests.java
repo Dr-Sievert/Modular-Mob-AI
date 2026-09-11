@@ -7,6 +7,7 @@ import net.sievert.modularmobai.gametest.tests.AgentLeagueGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentMechanicsGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentVindicatorGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentVindicatorTerrainGameTest;
+import net.sievert.modularmobai.gametest.tests.PlayGameTest;
 import net.sievert.modularmobai.gametest.tests.TerrainLibraryGameTest;
 import net.sievert.modularmobai.gametest.tests.VillagerVindicatorGameTest;
 
@@ -32,6 +33,9 @@ public class ModularMobAiGameTests {
 
             // The agent's body against a player's rules, one rule at a time: no fights, a minute or so all told.
             case "mechanics" -> new Class<?>[] {AgentMechanicsGameTest.class};
+
+            // The agent in a real game: networks by name, /mmai, sides and the loadouts that keep a bow firing.
+            case "play" -> new Class<?>[] {PlayGameTest.class};
 
             // No fights either: generates the terrain library the terrain suite reads its sites from.
             case "library" -> new Class<?>[] {TerrainLibraryGameTest.class};

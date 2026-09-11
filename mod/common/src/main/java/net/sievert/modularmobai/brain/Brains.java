@@ -2,17 +2,28 @@ package net.sievert.modularmobai.brain;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 
+import org.jetbrains.annotations.Nullable;
+
+import net.minecraft.gametest.framework.GameTestServer;
+import net.minecraft.server.MinecraftServer;
+import net.sievert.modularmobai.Config;
 import net.sievert.modularmobai.Constants;
 import net.sievert.modularmobai.brain.nn.WeightFile;
 import net.sievert.modularmobai.brain.nn.WeightSet;
 import net.sievert.modularmobai.brain.schema.ObservationSchema;
+import net.sievert.modularmobai.entity.agent.AgentMob;
 
 /**
  * Where brains come from. Each one is built once and shared by every agent it drives.
@@ -25,9 +36,14 @@ import net.sievert.modularmobai.brain.schema.ObservationSchema;
  *   -Dmodular_mob_ai.brain=neural -Dmodular_mob_ai.brain.weights=X    a trained network, most likely action
  *   ... and -Dmodular_mob_ai.demonstrations=DIR                       the same, the scripted fighter labelling each tick
  *   -Dmodular_mob_ai.brain=neural -Dmodular_mob_ai.training.run=DIR   a network being trained; see {@link TrainingRun}
+ *   -Dmodular_mob_ai.brain=NAME                                       anything {@link #named} takes, such as vs-copy
  * </pre>
  *
  * A run with nothing set falls back to the scripted fighter, which is what keeps the game tests runnable on their own.
+ *
+ * <p>That is the whole story for the training agent. An agent met in a real game can also carry a brain of its own, by
+ * name, which it keeps through saving; one that has none follows the properties above when the game was started with
+ * any, and otherwise the config file, whose default is the best network the mod's jar carries. See {@link #forAgent}.
  */
 public final class Brains {
 
@@ -40,8 +56,22 @@ public final class Brains {
      */
     private static Brain fallback;
 
+    /** What an agent in a real game runs on when it has no brain of its own and the game was started without one. */
+    @Nullable
+    private static Brain worldDefault;
+
+    @Nullable
+    private static ScriptedBrain scripted;
+
     private static final Map<Path, NeuralBrain> NETWORKS = new HashMap<>();
+    private static final Map<String, NeuralBrain> BUNDLED = new HashMap<>();
     private static final List<Brain> CREATED = new ArrayList<>();
+
+    /** What each brain handed out by name is called, for /mmai info and the log. */
+    private static final Map<Brain, String> LABELS = new IdentityHashMap<>();
+
+    /** Names an agent carried that could not be loaded here, each reported once rather than on every agent. */
+    private static final Set<String> REPORTED = new HashSet<>();
 
     public static synchronized Brain defaultBrain() {
 
@@ -71,11 +101,10 @@ public final class Brains {
             try {
 
                 WeightSet loaded = WeightFile.read(path, ObservationSchema.schemaId());
-                Constants.LOG.info("Loaded {} from iteration {}: {}", loaded.id(), loaded.iteration(), loaded.topology());
+                Constants.LOG.info("Loaded {} from iteration {}: {}", path, loaded.iteration(), loaded.topology());
 
-                NeuralBrain brain = NeuralBrain.deployed(loaded);
-                CREATED.add(brain);
-                return brain;
+                return created(NeuralBrain.deployed(loaded), path.getFileName() + " from " + path.getParent()
+                        + ", iteration " + loaded.iteration());
             }
 
             catch (IOException exception) {
@@ -83,6 +112,258 @@ public final class Brains {
                 throw new UncheckedIOException(exception);
             }
         });
+    }
+
+    /** A network the mod's jar carries, most likely action, shared like any other. See {@link Models}. */
+    public static synchronized NeuralBrain bundled(String name) {
+
+        NeuralBrain known = BUNDLED.get(name);
+
+        if (known != null) {
+
+            return known;
+        }
+
+        try {
+
+            byte[] bytes = Models.bundledBytes(name);
+
+            if (bytes == null) {
+
+                throw new IllegalArgumentException("The mod's jar carries no network called '" + name + "'");
+            }
+
+            WeightSet loaded = WeightFile.read(bytes, name + WeightFile.EXTENSION, Models.bundledSource(name), ObservationSchema.schemaId());
+            Constants.LOG.info("Loaded {} from iteration {}: {}", Models.bundledSource(name), loaded.iteration(), loaded.topology());
+
+            NeuralBrain brain = created(NeuralBrain.deployed(loaded), name + " (in the mod's jar), iteration " + loaded.iteration());
+            BUNDLED.put(name, brain);
+            return brain;
+        }
+
+        catch (IOException exception) {
+
+            throw new UncheckedIOException(exception);
+        }
+    }
+
+    /** The hand written fighter, one shared by every agent that was given it by name. */
+    public static synchronized ScriptedBrain scripted() {
+
+        if (scripted == null) {
+
+            scripted = created(new ScriptedBrain(), "scripted");
+        }
+
+        return scripted;
+    }
+
+    /**
+     * A brain by the name a command, a save, the config or a system property gives it:
+     *
+     * <pre>
+     *   scripted      the hand written fighter
+     *   best          the best network the mod's jar carries, by the win rate the repository recorded for it
+     *   NAME          a network by name, from a models folder if one has it and otherwise from the jar, see {@link Models}
+     *   FILE.mbw      a weight file, absolute or relative to the game directory
+     * </pre>
+     *
+     * Everything that names the same network gets the same brain, so every agent on it shares one forward pass however
+     * it was named: {@code best}, {@code vs-copy} and the path of the file both of them lead to all end up in one batch.
+     *
+     * @throws IllegalArgumentException for a name that leads nowhere, saying what there is instead
+     * @throws UncheckedIOException     for weights that are there but cannot be read, or were trained on another layout
+     */
+    public static synchronized Brain named(String name) {
+
+        String spec = name.trim();
+        String lower = spec.toLowerCase(Locale.ROOT);
+
+        if (lower.equals("scripted")) {
+
+            return scripted();
+        }
+
+        if (lower.equals("best")) {
+
+            String best = Models.best();
+
+            if (best == null) {
+
+                throw new IllegalArgumentException("The mod's jar carries no trained network, so there is no best one");
+            }
+
+            spec = best;
+        }
+
+        if (lower.endsWith(WeightFile.EXTENSION)) {
+
+            Path file = Config.resolve(spec);
+
+            if (!Files.isRegularFile(file)) {
+
+                throw new IllegalArgumentException("There is no weight file at " + file);
+            }
+
+            return network(file);
+        }
+
+        if (!Models.validName(spec)) {
+
+            throw new IllegalArgumentException("'" + spec + "' is not a brain: give scripted, best, a network's name or a "
+                    + WeightFile.EXTENSION + " file");
+        }
+
+        Path onDisk = Models.onDisk(spec);
+
+        if (onDisk != null) {
+
+            return network(onDisk);
+        }
+
+        if (Models.bundled().contains(spec)) {
+
+            return bundled(spec);
+        }
+
+        throw new IllegalArgumentException("There is no network called '" + spec + "'. There are: " + String.join(", ", known()));
+    }
+
+    /** Every name {@link #named} takes without a path, in the order a command offers them. */
+    public static List<String> known() {
+
+        TreeSet<String> networks = new TreeSet<>(Models.bundled());
+        networks.addAll(Models.onDiskNames());
+
+        List<String> names = new ArrayList<>(List.of("scripted"));
+
+        if (Models.best() != null) {
+
+            names.add("best");
+        }
+
+        names.addAll(networks);
+        return names;
+    }
+
+    /**
+     * What an agent runs on when the driver first meets it.
+     *
+     * <ol>
+     *   <li>The brain it was given by name, which it keeps through saving, if that can be loaded here. One that cannot,
+     *       a network another game had and this one lacks, falls through to the next, and is reported once.
+     *   <li>For the training agent, whatever the game was started with, see {@link #defaultBrain}: the arenas and the
+     *       training workers are never touched by the config.
+     *   <li>For an agent in a real game, whatever the game was started with too, when it was started with anything;
+     *       that is how scripts\play.ps1 drives every agent in a development client with the network it was given.
+     *       Otherwise the config's brain, best unless someone changed it.
+     * </ol>
+     */
+    public static synchronized Brain forAgent(AgentMob agent) {
+
+        String own = agent.brainName();
+
+        if (own != null) {
+
+            try {
+
+                return named(own);
+            }
+
+            catch (RuntimeException exception) {
+
+                if (REPORTED.add(own)) {
+
+                    Constants.LOG.warn("An agent's brain '{}' cannot be loaded here, so it gets the default instead: {}", own,
+                            exception.getMessage());
+                }
+            }
+        }
+
+        return agent.isTraining() ? defaultBrain() : worldDefault();
+    }
+
+    /**
+     * What drives an agent in a real game that has no brain of its own: whatever the game was started with, when that
+     * was anything, and otherwise the config's brain. A config naming something that cannot be loaded is reported and
+     * leaves the agents to the scripted fighter, rather than leaving them standing still or the game refusing to start.
+     */
+    public static synchronized Brain worldDefault() {
+
+        if (!property("modular_mob_ai.brain", "").isEmpty()) {
+
+            return defaultBrain();
+        }
+
+        if (worldDefault == null) {
+
+            String configured = Config.brain();
+
+            try {
+
+                worldDefault = named(configured);
+            }
+
+            catch (RuntimeException exception) {
+
+                Constants.LOG.error("The config's brain '{}' cannot be loaded, so agents get the scripted fighter: {}",
+                        configured, exception.getMessage());
+                worldDefault = scripted();
+            }
+        }
+
+        return worldDefault;
+    }
+
+    /**
+     * Called by each loader once a server is up: loads what agents in this world run on by default, and says so in the
+     * log, so a config naming something that cannot be loaded shows at the start rather than when the first agent turns
+     * up, and the log says which network is driving before anyone asks. Game test servers, which are the arenas and
+     * every training worker, are left alone: none of this applies there, and a training brain starts when its first
+     * agent does.
+     */
+    public static void serverStarted(MinecraftServer server) {
+
+        if (server instanceof GameTestServer) {
+
+            return;
+        }
+
+        try {
+
+            Constants.LOG.info("Agents with no brain of their own run on {}", describe(worldDefault()));
+        }
+
+        catch (RuntimeException exception) {
+
+            Constants.LOG.error("Agents with no brain of their own have nothing they can run on", exception);
+        }
+    }
+
+    /** What a brain is, for a person: which network and iteration, or the scripted fighter. */
+    public static synchronized String describe(@Nullable Brain brain) {
+
+        if (brain == null) {
+
+            return "none yet";
+        }
+
+        String label = LABELS.get(brain);
+
+        if (label != null) {
+
+            return label;
+        }
+
+        return brain instanceof NeuralBrain network ? network.weights().id() + ", iteration " + network.weights().iteration()
+                : brain.getClass().getSimpleName();
+    }
+
+    private static <T extends Brain> T created(T brain, String label) {
+
+        CREATED.add(brain);
+        LABELS.put(brain, label);
+        return brain;
     }
 
     private static Brain fromProperties() {
@@ -123,8 +404,22 @@ public final class Brains {
                         : new DemonstrationBrain(network(Path.of(weights)), new ScriptedBrain(), Path.of(demonstrations), noise);
             }
 
-            default -> throw new IllegalArgumentException("Unknown brain '" + kind + "'; expected scripted or neural. "
-                    + "The remote brain is gone: networks run inside the game now, see docs/README.md");
+            // Anything else names a brain the way a command does, a network by name or a weight file, so a game can be
+            // started with -Dmodular_mob_ai.brain=vs-copy. What names nothing is still a mistake worth stopping for.
+            default -> {
+
+                try {
+
+                    yield named(property("modular_mob_ai.brain", ""));
+                }
+
+                catch (IllegalArgumentException exception) {
+
+                    throw new IllegalArgumentException("Unknown brain '" + kind + "'; expected scripted, neural or a network: "
+                            + exception.getMessage() + ". The remote brain is gone: networks run inside the game now, see "
+                            + "docs/architecture.md", exception);
+                }
+            }
         };
     }
 
@@ -146,7 +441,12 @@ public final class Brains {
 
         CREATED.clear();
         NETWORKS.clear();
+        BUNDLED.clear();
+        LABELS.clear();
+        REPORTED.clear();
         fallback = null;
+        worldDefault = null;
+        scripted = null;
     }
 
     /** The build always sets these, passing an empty string through for anything the user left out. */

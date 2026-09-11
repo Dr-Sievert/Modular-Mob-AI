@@ -16,7 +16,7 @@ import net.sievert.modularmobai.brain.schema.EnemySlots;
  */
 public final class BrainState {
 
-    /** Null until the first tick, when the driver fills in whatever the game was started with. */
+    /** Null until the first tick, when the driver fills in the agent's own or the game's default, see Brains#forAgent. */
     @Nullable
     private Brain brain;
 
@@ -34,9 +34,9 @@ public final class BrainState {
 
     /**
      * Hands the agent to a different brain. Its memory belonged to the old one and means nothing to the new one, so it
-     * starts again from nothing, exactly as a fresh episode would.
+     * starts again from nothing, exactly as a fresh episode would. Null leaves the choice to the driver's next tick.
      */
-    public void use(Brain replacement) {
+    public void use(@Nullable Brain replacement) {
 
         if (replacement != this.brain) {
 
@@ -82,6 +82,15 @@ public final class BrainState {
     void finish() {
 
         this.finished = true;
+    }
+
+    /**
+     * Forgets what the agent remembered, so that its next step is a first one, with the same brain and the same view.
+     * The driver zeroes the memory of an agent on its first step, so nothing else has to be cleared.
+     */
+    public void restart() {
+
+        this.steps = 0;
     }
 
     /** Back to the start of an episode, with the same brain. */

@@ -45,19 +45,28 @@ public final class WeightFile {
      */
     public static WeightSet read(Path path, int expectedSchemaId) throws IOException {
 
-        byte[] bytes = Files.readAllBytes(path);
-        String name = path.getFileName().toString();
+        return read(Files.readAllBytes(path), path.getFileName().toString(), path.toAbsolutePath().toString(), expectedSchemaId);
+    }
+
+    /**
+     * The same, for a file's bytes that came from somewhere other than a path of their own, such as a network the mod's
+     * jar carries.
+     *
+     * @param name   what the weights are called in logs, their {@link WeightSet#id()}
+     * @param source where they came from, for the message when they are refused
+     */
+    public static WeightSet read(byte[] bytes, String name, String source, int expectedSchemaId) throws IOException {
 
         if (bytes.length < HEADER_BYTES) {
 
-            throw refuse(path, "is " + bytes.length + " bytes, shorter than the header");
+            throw refuse(source, "is " + bytes.length + " bytes, shorter than the header");
         }
 
         for (int index = 0; index < MAGIC.length; index++) {
 
             if (bytes[index] != MAGIC[index]) {
 
-                throw refuse(path, "is not a weight file");
+                throw refuse(source, "is not a weight file");
             }
         }
 
@@ -68,14 +77,14 @@ public final class WeightFile {
 
         if (version != VERSION) {
 
-            throw refuse(path, "is format version " + version + " and this build reads version " + VERSION);
+            throw refuse(source, "is format version " + version + " and this build reads version " + VERSION);
         }
 
         int schemaId = buffer.getInt();
 
         if (schemaId != expectedSchemaId) {
 
-            throw refuse(path, String.format(Locale.ROOT,
+            throw refuse(source, String.format(Locale.ROOT,
                     "was trained against schema %08x but the game is running schema %08x. The observation or action "
                             + "layout has changed since; these weights cannot drive it", schemaId, expectedSchemaId));
         }
@@ -86,7 +95,7 @@ public final class WeightFile {
 
         if (topology.hash() != storedHash) {
 
-            throw refuse(path, "has a topology hash that does not match its own dimensions, so the header is corrupt");
+            throw refuse(source, "has a topology hash that does not match its own dimensions, so the header is corrupt");
         }
 
         float obsClip = buffer.getFloat();
@@ -95,14 +104,14 @@ public final class WeightFile {
 
         if (count != topology.size()) {
 
-            throw refuse(path, "holds " + count + " parameters but " + topology + " needs " + topology.size());
+            throw refuse(source, "holds " + count + " parameters but " + topology + " needs " + topology.size());
         }
 
         long expectedLength = HEADER_BYTES + 4L * count;
 
         if (bytes.length != expectedLength) {
 
-            throw refuse(path, "is " + bytes.length + " bytes but its header says " + expectedLength);
+            throw refuse(source, "is " + bytes.length + " bytes but its header says " + expectedLength);
         }
 
         float[] params = new float[count];
@@ -112,20 +121,20 @@ public final class WeightFile {
 
             if (!Float.isFinite(params[index])) {
 
-                throw refuse(path, "holds a non finite parameter at index " + index);
+                throw refuse(source, "holds a non finite parameter at index " + index);
             }
         }
 
         if (!(obsClip > 0.0F) || !Float.isFinite(obsClip)) {
 
-            throw refuse(path, "has an observation clip of " + obsClip);
+            throw refuse(source, "has an observation clip of " + obsClip);
         }
 
         return new WeightSet(name, schemaId, iteration, topology, obsClip, params);
     }
 
-    private static IOException refuse(Path path, String reason) {
+    private static IOException refuse(String source, String reason) {
 
-        return new IOException("Refusing to load " + path.toAbsolutePath() + ": it " + reason);
+        return new IOException("Refusing to load " + source + ": it " + reason);
     }
 }

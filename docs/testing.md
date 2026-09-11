@@ -5,6 +5,7 @@
 ```
 scripts\test.ps1                 20 fights in the closed arena with the scripted fighter
 scripts\test.ps1 -Mechanics      the item and block rules against a player's numbers
+scripts\test.ps1 -Play           the agent in a real game: networks in the jar, /mmai, sides, Infinity loadouts
 scripts\parity.ps1               Java forward pass against PyTorch's, after touching brain\nn or the model
 ```
 
@@ -12,9 +13,11 @@ scripts\parity.ps1               Java forward pass against PyTorch's, after touc
 | --- | --- | --- |
 | `test.ps1` | `All 20 required tests passed`; every fight 54 ticks | the observation, the body and the scripted fighter still work; the 54 ticks are deterministic, so any change in them is a behaviour change |
 | `test.ps1 -Mechanics` | `All 19 required tests passed` | bows, crossbows, shields, axes, mining, placing, use slowdown and damage payment follow a player's rules |
+| `test.ps1 -Play` | `All 17 required tests passed`, and `Loaded the mod's jar, modular_mob_ai/models/vs-copy.mbw from iteration 650` | what [playing.md](playing.md) promises: the bundled networks load and drive an agent, the commands, saving, sides and friendly fire, the Infinity loadouts |
 | `parity.ps1` | logits agree to about 1e-6 | the game runs exactly the network PyTorch trained |
 
-Each boots a headless server in seconds, and all three need only Java (parity also needs the trainer's Python).
+Each boots a headless server in seconds, and all of them need only Java (parity also needs the trainer's Python).
+`test.ps1 -Loader neoforge` runs a suite on NeoForge instead of Fabric.
 
 ## More
 
@@ -51,6 +54,30 @@ Each test sets up one situation and checks the numbers a player would get:
 
 Ammo: the agent's bow and crossbow loadouts carry 64 finite arrows, one used per shot, and arrows aren't picked back up.
 That covers a 60-second fight, since a full-draw shot takes 20 ticks. Vanilla skeletons and pillagers never run out.
+Real play gets `bow_infinity` and `crossbow_infinity` instead, one arrow that Infinity never uses up; see
+[playing.md](playing.md) for why.
+
+## The play suite (`gametest/tests/PlayGameTest`)
+
+The agent as a player meets it, one test at a time: its agents have no arena bounding their view, and 32 blocks reach
+into the tests either side, so the suite runs its tests one after another on one plot, cleared between them
+(`GameTestTuning.soloTests`).
+
+| Test | Checks |
+| --- | --- |
+| `networksInTheJarLoadByName` | the build put the networks in the jar; `best`, a name and `scripted` load; bad names and paths are refused |
+| `worldAgentFightsOnTheBundledNetwork` | a playable agent on `best` goes for a zombie and hurts it |
+| `aloneAnAgentStandsStill` | with nobody in view an agent stands still whatever its brain says, and moves once a zombie turns up |
+| `spawnCommandMakesAnArmedAgentOnItsBrain`, `bareSpawnArmsWithTheConfigsLoadout` | `/mmai spawn`: loadout, brain, position, never despawning; `default` |
+| `spawnCommandWorksFromAFunction` | the same from a data pack's function or a command block: a function's permission, relative coordinates |
+| `loadoutCommandArmsAgentsAndMobs`, `brainCommandRefusesWhatLeadsNowhere` | `/mmai loadout` on an agent and a zombie; `/mmai brain` and its refusals |
+| `agentKeepsBrainAndLoadoutThroughSaving` | brain name, loadout name and the hotbar as it stands survive saving; `/summon` with `Loadout` and `BrainName` |
+| `onlyEnemiesAreInTheView` | an ally never takes an enemy slot; one set against the agent does, on the next tick |
+| `alliesNeverFightAndEnemiesDo` | two scripted agents after `/mmai ally` leave each other alone for 100 ticks; after `/mmai enemy` they fight |
+| `mobsOnOpposingTeamsFight`, `mobsOnOneTeamLeaveEachOtherAlone` | a zombie and a vindicator on opposing teams fight; an iron golem and a zombie on one team don't |
+| `agentFightsTheOtherSideWhateverItIs` | the agent ignores a cow until the cow is on the other side |
+| `friendlyFireOffSparesTheSide` | an agent's blow on an ally does nothing with friendly fire off, and lands with it on |
+| `infinityBowNeverRunsOut`, `infinityCrossbowNeverRunsOut` | three shots, two bolts, the one arrow still there; the training loadouts keep 64 |
 
 ## Game tests directly
 
@@ -65,7 +92,7 @@ mod\gradlew.bat -p mod :fabric:runGametestParallel -Psuite=terrain -Parenas=2000
 
 | Property | What it does |
 | --- | --- |
-| `suite` | `arena` (closed box), `terrain` (natural ground, what training uses), `mechanics`, `baseline` (villager against vindicator, no agent) |
+| `suite` | `arena` (closed box), `terrain` (natural ground, what training uses), `league` (terrain, a new opponent every fight), `mechanics`, `play`, `baseline` (villager against vindicator, no agent) |
 | `arenas`, `workers`, `batchSize` | fights, worker processes, fights at once per worker |
 | `brain`, `brainWeights` | `scripted` (default) or `neural` with a `.mbw` file |
 | `replayEvery`, `replayRun` | record one fight in N, into `runs\<replayRun>\replays` |
@@ -84,8 +111,10 @@ game-test source set, so tests can be run by hand in a dev world with `/test run
    A structure only declares the size of the region; building the scenery is the test's job.
 3. Tests must not import loader-specific code.
 
-Arm fighters with `arena/Loadout.java`: `Loadout.BOW.equip(agent)`. The presets are sword, sword_shield, axe_shield, bow
-and crossbow.
+Arm fighters with `arena/Loadout.java`: `Loadout.BOW.equip(agent)`. The presets are `sword`, `sword_and_shield`,
+`axe_and_shield`, `bow` and `crossbow`; `arena/Loadouts.byName(name, level.registryAccess())` also has `bow_infinity` and
+`crossbow_infinity`. Put fighters on sides with `allegiance/Allegiance`: `Allegiance.side(a, b)`, then `Allegiance.disband`
+the team when the test is done, since teams outlive it. See [playing.md](playing.md), "From code".
 
 ### Development only
 

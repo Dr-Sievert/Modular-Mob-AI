@@ -1,15 +1,20 @@
 package net.sievert.modularmobai;
 
 import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;
 import net.fabricmc.fabric.api.object.builder.v1.entity.FabricDefaultAttributeRegistry;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.SpawnEggItem;
 import net.sievert.modularmobai.brain.AgentDriver;
+import net.sievert.modularmobai.brain.Brains;
+import net.sievert.modularmobai.command.AgentCommands;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.item.ModItems;
@@ -18,6 +23,8 @@ public class ModularMobAiMod implements ModInitializer {
 
     @Override
     public void onInitialize() {
+
+        Config.load(FabricLoader.getInstance().getGameDir(), FabricLoader.getInstance().getConfigDir());
 
         ModEntities.setAgentMob(Registry.register(
                 BuiltInRegistries.ENTITY_TYPE,
@@ -46,5 +53,10 @@ public class ModularMobAiMod implements ModInitializer {
 
         // Every agent in a level gets its actions at the start of the level's tick, before any entity moves.
         ServerTickEvents.START_WORLD_TICK.register(AgentDriver::tick);
+
+        CommandRegistrationCallback.EVENT.register((dispatcher, registries, environment) -> AgentCommands.register(dispatcher));
+
+        // The log says which network drives the agents as soon as a world is open.
+        ServerLifecycleEvents.SERVER_STARTED.register(Brains::serverStarted);
     }
 }
