@@ -227,6 +227,39 @@ afterEvaluate {
     // test world has the same seed, so these are the same in all of them.
     def spawnRegions = { String name -> name ==~ /r\.(-1|0)\.(-1|0)\.mca/ }
 
+    // The terrain library: fight sites generated once and kept, which a terrain worker reads its sites from instead of
+    // generating any ground itself, see TerrainLibrary. Built by buildTerrainLibrary (scripts\terrain.ps1). A worker uses
+    // it whenever there is one, unless -PterrainLibrary=false; without one, workers generate their own as they always
+    // did, with the pool of kept worlds above.
+    def terrainLibrary = new File(terrainPool, 'library')
+    def libraryIndex = new File(terrainLibrary, 'library.properties')
+    def libraryWanted = providers.gradleProperty('terrainLibrary').getOrElse('true').toBoolean()
+
+    // Every region file of the library, linked into a worker's world rather than copied: a worker only ever reads them,
+    // and a link costs nothing however big the library is, which a copy per worker per round would not. Copied where the
+    // file system has no links. Only the chunks: the library's entities, the animals the generator put down, stay
+    // behind, so a worker's sites start with no wildlife at all.
+    def linkLibrary = { File world ->
+
+        def target = new File(world, 'region')
+        target.mkdirs()
+
+        new File(terrainLibrary, 'region').eachFile { file ->
+
+            def link = new File(target, file.name).toPath()
+
+            try {
+
+                java.nio.file.Files.createLink(link, file.toPath())
+            }
+
+            catch (UnsupportedOperationException | IOException ignored) {
+
+                java.nio.file.Files.copy(file.toPath(), link, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            }
+        }
+    }
+
     // The kept worlds, least used first and, among those, the longest unused.
     def keptTerrain = {
 
@@ -614,8 +647,14 @@ afterEvaluate {
         // pool is short of worlds, one worker of every run generates a fresh one to add to it, or the pool would never grow
         // past the number of workers and those few worlds would all be used up at once.
         def suite = (extraProperties['modular_mob_ai.gametest.suite'] ?: providers.gradleProperty('suite').getOrElse('')) as String
-        def pooled = suite == 'terrain' && terrainPoolSize > 0
+        def onLibrary = suite == 'terrain' && libraryWanted && libraryIndex.isFile()
+        def pooled = suite == 'terrain' && terrainPoolSize > 0 && !onLibrary
         def keptWorlds = pooled ? keptTerrain() : []
+
+        if (onLibrary) {
+
+            logger.lifecycle("Terrain: every worker reads its sites from the terrain library in ${terrainLibrary}")
+        }
         def poolShort = keptWorlds.size() < terrainPoolSize
         def spawnSource = keptWorlds.isEmpty() ? null : keptWorlds.first().dir
 
@@ -700,7 +739,13 @@ afterEvaluate {
 
             def kept = keptWorlds.isEmpty() ? null : keptWorlds.remove(0)
 
-            if (kept != null) {
+            if (onLibrary) {
+
+                linkLibrary(new File(dir, 'world'))
+                command += "-Dmodular_mob_ai.gametest.library=${libraryIndex.absolutePath}".toString()
+            }
+
+            else if (kept != null) {
 
                 try {
 
@@ -1035,6 +1080,98 @@ afterEvaluate {
 
             runArenas(providers.gradleProperty('brain').getOrElse(''), 16)
             reportReplays()
+        }
+    }
+
+    // Builds the terrain library: workers that fight nothing, each generating its share of -PlibrarySites sites in blocks
+    // of its own, checking each site for somewhere to start a fight, and keeping their chunks; then their worlds and
+    // indexes are put together into one library. Vanilla generates most of a chunk one task at a time, so a builder gets
+    // through about half a site a second whatever else the machine has free, and -Pworkers builders share the work. The
+    // new library replaces the old one only once it is whole; workers already running on the old one keep their links to
+    // its files, which stay on disk for as long as they do.
+    //
+    //   gradlew :fabric:buildTerrainLibrary -PlibrarySites=2048 -Pworkers=4 -PworkerHeap=2G
+    tasks.register('buildTerrainLibrary') {
+
+        group = 'modular mob ai'
+        description = 'Generates the terrain library, the fight sites terrain workers read instead of generating ground.'
+        dependsOn runTask.taskDependencies
+
+        doLast {
+
+            def label = 'terrain-library'
+            def building = new File(terrainPool, 'library-building')
+            def region = new File(building, 'region')
+
+            building.deleteDir()
+            region.mkdirs()
+
+            // Each builder writes its index into its own folder, where a relative path lands.
+            def result = runArenas('scripted', 16, [
+                    'modular_mob_ai.gametest.suite'       : 'library',
+                    'modular_mob_ai.gametest.library'     : 'library.properties',
+                    'modular_mob_ai.gametest.librarySites': providers.gradleProperty('librarySites').getOrElse('2048')
+            ], null, null, '1', label)
+
+            // One index for all of them: their blocks one after another, and each one's unusable points moved along by
+            // the points of the blocks before its own.
+            def blocks = []
+            def unusable = []
+            def layoutLines = null
+
+            for (int builder = 0; builder < result.workers; builder++) {
+
+                def worker = layout.buildDirectory.dir("training/${label}/worker-${builder}").get().asFile
+                def built = readProperties(new File(worker, 'library.properties'))
+                def world = new File(worker, 'world/region')
+
+                if (built.isEmpty() || !world.isDirectory()) {
+
+                    throw new GradleException("Builder ${builder} did not finish its part of the terrain library; see ${new File(worker, 'log.txt')}")
+                }
+
+                def columns = built.getProperty('columns') as int
+                def rows = built.getProperty('rows') as int
+                def offset = blocks.size() * columns * rows
+
+                layoutLines = "spacing=${built.getProperty('spacing')}\ncolumns=${columns}\nrows=${rows}\n"
+
+                for (int block = 0; built.containsKey("block.${block}".toString()); block++) {
+
+                    blocks += built.getProperty("block.${block}".toString())
+                }
+
+                built.getProperty('unusable', '').split(',').findAll { !it.trim().isEmpty() }.each { unusable += (it.trim() as int) + offset }
+
+                // Blocks lie far apart, so their region files never coincide; the spawn area's do, and are the same in
+                // every world, so the first builder's are kept. Moved where the drive allows, copied otherwise.
+                world.eachFile { file ->
+
+                    def target = new File(region, file.name)
+
+                    if (!target.exists() && !file.renameTo(target)) {
+
+                        java.nio.file.Files.copy(file.toPath(), target.toPath())
+                    }
+                }
+            }
+
+            def text = new StringBuilder(layoutLines)
+            blocks.eachWithIndex { block, index -> text.append("block.${index}=${block}\n") }
+            text.append("unusable=${unusable.join(',')}\n")
+            new File(building, 'library.properties').text = text.toString()
+
+            terrainLibrary.deleteDir()
+
+            if (!building.renameTo(terrainLibrary)) {
+
+                throw new GradleException("Could not move the new terrain library into ${terrainLibrary}; it is in ${building}")
+            }
+
+            def size = (new File(terrainLibrary, 'region').listFiles() ?: []).sum { it.length() } ?: 0L
+
+            logger.lifecycle(String.format(Locale.ROOT, "Terrain library: %.0f MB in %s; terrain workers read their sites from it now",
+                    size / 1048576.0d, terrainLibrary))
         }
     }
 

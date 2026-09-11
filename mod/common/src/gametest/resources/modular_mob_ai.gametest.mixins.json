@@ -9,6 +9,7 @@
     "GameTestServerMixin",
     "LevelMixin",
     "MinecraftServerMixin",
+    "RegionFileStorageMixin",
     "ServerChunkCacheMixin",
     "ServerLevelMixin",
     "VillagerMixin"

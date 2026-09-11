@@ -20,7 +20,8 @@ public class MinecraftServerMixin {
     @Inject(method = "stopServer", at = @At("HEAD"), cancellable = true)
     private void modular_mob_ai$skipSavingThrowawayTerrain(CallbackInfo ci) {
 
-        if ((Object) this instanceof GameTestServer && GameTestTuning.naturalTerrain() && TerrainSites.throwaway()) {
+        if ((Object) this instanceof GameTestServer && GameTestTuning.naturalTerrain() && !GameTestTuning.buildingLibrary()
+                && TerrainSites.throwaway()) {
 
             Constants.LOG.info("Stopping without saving the world: nobody keeps it");
             ci.cancel();

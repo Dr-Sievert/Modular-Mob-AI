@@ -131,7 +131,10 @@ public final class GameTestTuning {
      */
     public static int terrainSites() {
 
-        return Math.max(1, intProperty("sites", Math.max(concurrentTests() + 1, concurrentTests() * 64 / 50)));
+        // Every site the terrain library hands out is one a fight can start on, so it only takes one or two to spare.
+        int fallback = library() != null ? concurrentTests() + 2 : Math.max(concurrentTests() + 1, concurrentTests() * 64 / 50);
+
+        return Math.max(1, intProperty("sites", fallback));
     }
 
     public static int ticksPerSecond() {
@@ -153,7 +156,9 @@ public final class GameTestTuning {
      * Which fights to run: {@code arena}, the agent against a vindicator in a closed nine block box on a flat world, which
      * boots in seconds and is the quick check; or {@code terrain}, the same fight out in the open on natural ground,
      * which is what training uses. {@code mechanics} runs no fights at all, only short tests of the agent's body against a
-     * player's rules, in the arena's box.
+     * player's rules, in the arena's box. {@code library} runs no fights either: it generates fight sites and keeps them,
+     * the terrain library the terrain suite reads its sites from instead of generating them, see
+     * {@link net.sievert.modularmobai.gametest.terrain.TerrainLibrary}.
      */
     public static String suite() {
 
@@ -164,7 +169,29 @@ public final class GameTestTuning {
     /** Whether the world has to be generated as a normal one rather than flat, which the terrain suite needs. */
     public static boolean naturalTerrain() {
 
-        return "terrain".equals(suite());
+        return "terrain".equals(suite()) || buildingLibrary();
+    }
+
+    /** Whether this process builds the terrain library rather than fighting. */
+    public static boolean buildingLibrary() {
+
+        return "library".equals(suite());
+    }
+
+    /**
+     * The terrain library's index, when the build linked a library into this worker's world: the terrain suite then
+     * takes every site from it, already generated, and never generates any ground itself. Null otherwise.
+     */
+    public static String library() {
+
+        final String property = System.getProperty("modular_mob_ai.gametest.library");
+        return property == null || property.isBlank() ? null : property.trim();
+    }
+
+    /** How many sites the library suite generates. */
+    public static int librarySites() {
+
+        return Math.max(1, intProperty("librarySites", 2048));
     }
 
     /**

@@ -4,6 +4,7 @@ import java.util.function.BooleanSupplier;
 
 import net.minecraft.gametest.framework.GameTestServer;
 import net.minecraft.server.level.ServerLevel;
+import net.sievert.modularmobai.gametest.GameTestTuning;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -17,13 +18,15 @@ public abstract class ServerLevelMixin {
     // seems to have some. On the terrain suite that walk over thousands of chunks was an eighth of the server thread. The
     // server turns saving back on for every level before it shuts down, and a stopping server is no longer running, so a
     // world that is kept is still saved whole as the worker stops; MinecraftServerMixin skips that for one nobody keeps.
-    // Saving off also stops the chunk map unloading anything; ChunkMapMixin puts the unloading back.
+    // Saving off also stops the chunk map unloading anything; ChunkMapMixin puts the unloading back. Building the terrain
+    // library is the one time a game test world is saved as it goes: the library is the chunks it writes.
     @Inject(method = "tick", at = @At("HEAD"))
     private void modular_mob_ai$noSavingWhileTesting(BooleanSupplier hasTimeLeft, CallbackInfo ci) {
 
         final ServerLevel level = (ServerLevel) (Object) this;
 
-        if (!level.noSave && level.getServer() instanceof GameTestServer && level.getServer().isRunning()) {
+        if (!level.noSave && level.getServer() instanceof GameTestServer && level.getServer().isRunning()
+                && !GameTestTuning.buildingLibrary()) {
 
             level.noSave = true;
         }

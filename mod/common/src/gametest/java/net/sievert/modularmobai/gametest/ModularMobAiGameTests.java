@@ -6,6 +6,7 @@ import net.minecraft.gametest.framework.TestFunction;
 import net.sievert.modularmobai.gametest.tests.AgentMechanicsGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentVindicatorGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentVindicatorTerrainGameTest;
+import net.sievert.modularmobai.gametest.tests.TerrainLibraryGameTest;
 import net.sievert.modularmobai.gametest.tests.VillagerVindicatorGameTest;
 
 public class ModularMobAiGameTests {
@@ -27,6 +28,9 @@ public class ModularMobAiGameTests {
 
             // The agent's body against a player's rules, one rule at a time: no fights, a minute or so all told.
             case "mechanics" -> new Class<?>[] {AgentMechanicsGameTest.class};
+
+            // No fights either: generates the terrain library the terrain suite reads its sites from.
+            case "library" -> new Class<?>[] {TerrainLibraryGameTest.class};
 
             default -> new Class<?>[] {AgentVindicatorGameTest.class};
         };
