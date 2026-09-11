@@ -3,12 +3,16 @@
   "minVersion": "0.8",
   "package": "net.sievert.modularmobai.mixin",
   "refmap": "${mod_id}.refmap.json",
-  "compatibilityLevel": "JAVA_18",
-  "mixins": [],
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "AxeItemMixin",
+    "BlockItemMixin",
+    "LivingEntityMixin",
+    "ProjectileWeaponItemInvoker"
+  ],
   "client": [],
   "server": [],
   "injectors": {
     "defaultRequire": 1
   }
 }
-

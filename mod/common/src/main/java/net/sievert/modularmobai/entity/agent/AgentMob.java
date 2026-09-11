@@ -1,21 +1,28 @@
 package net.sievert.modularmobai.entity.agent;
 
+import java.util.List;
+import java.util.function.Predicate;
+
 import org.jetbrains.annotations.Nullable;
 
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
 import net.minecraft.core.NonNullList;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.util.Mth;
 import net.minecraft.world.ContainerHelper;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.effect.MobEffectUtil;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityDimensions;
+import net.minecraft.world.entity.EntityEvent;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
@@ -28,14 +35,24 @@ import net.minecraft.world.entity.ai.control.LookControl;
 import net.minecraft.world.entity.ai.control.MoveControl;
 import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.projectile.ProjectileUtil;
+import net.minecraft.world.item.BowItem;
+import net.minecraft.world.item.CrossbowItem;
+import net.minecraft.world.item.ItemCooldowns;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.ProjectileWeaponItem;
 import net.minecraft.world.item.SwordItem;
 import net.minecraft.world.item.UseAnim;
-import net.minecraft.world.item.context.UseOnContext;
+import net.minecraft.world.item.component.ChargedProjectiles;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.GameMasterBlock;
+import net.minecraft.world.level.block.LevelEvent;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
@@ -44,13 +61,22 @@ import net.minecraft.world.phys.Vec3;
 import net.sievert.modularmobai.arena.Episode;
 import net.sievert.modularmobai.brain.BrainState;
 import net.sievert.modularmobai.entity.ModEntities;
+import net.sievert.modularmobai.mixin.ProjectileWeaponItemInvoker;
 
 /**
  * A mob driven entirely from {@link MobControls}, shaped so that what a brain learns here transfers to fighting a player.
  *
- * <p>It has a player's reach, a player's attack cooldown, a player's hotbar and a player's rotation limits, but none of
- * the machinery a real player carries. Every tick it reads the intent buffer, applies it under vanilla's rules, and
- * writes down what actually happened in {@link ExecutedControls}.
+ * <p>It has a player's reach, a player's attack cooldown, a player's hotbar and a player's rotation limits, and it uses
+ * its items under a player's rules: bows and crossbows fire as a player's do, shields block and are knocked aside by
+ * axes, blocks break over time and go down where they are aimed. It has none of the rest of the machinery a real player
+ * carries. Every tick it reads the intent buffer, applies it under vanilla's rules, and writes down what actually
+ * happened in {@link ExecutedControls}.
+ *
+ * <p>Much of vanilla's item code only works for a {@link net.minecraft.world.entity.player.Player}: a bow only fires for
+ * one, a shield is only knocked aside for one, a block only cracks for one. Where that is so, the player's rule is written
+ * out here with the agent in the player's place, and the item's own code is still what does the work wherever it can
+ * be. What goes through a Player and nothing else, statistics, hunger, a block's own reaction to being broken by a
+ * player, is left out.
  *
  * <p>It never runs its own brain. The level's driver fills the intent buffer before this ticks, from the memory held in
  * {@link #brain()}; the entity only applies what it is given and reports what happened to its body.
@@ -67,6 +93,24 @@ public class AgentMob extends PathfinderMob {
      * resolves, which is what stops a held button placing a block on every single tick.
      */
     public static final int USE_INTERVAL = 4;
+
+    /**
+     * What an item in use leaves of the movement keys: a fifth, which a player's client takes off the keys themselves while
+     * a bow is drawn, a shield held up or something eaten.
+     */
+    private static final float USING_ITEM_MOVEMENT = 0.2F;
+
+    /** How long an axe knocks a raised shield aside for, every shield at once, as it does a player's. */
+    public static final int SHIELD_DISABLED_TICKS = 100;
+
+    /** How long a player's hand rests after a block has given way before the next one starts to crack. */
+    private static final int DESTROY_DELAY = 5;
+
+    /** A drawn bow's arrow speed at full power, a crossbow's bolt and firework, and the spread, all a player's. */
+    private static final float BOW_SPEED = 3.0F;
+    private static final float CROSSBOW_ARROW_SPEED = 3.15F;
+    private static final float CROSSBOW_FIREWORK_SPEED = 1.6F;
+    private static final float PLAYER_INACCURACY = 1.0F;
 
     /** A player's crouch, so the hitbox shrinks and the model ducks the way anyone watching the fight would expect. */
     private static final EntityDimensions CROUCHING_DIMENSIONS = EntityDimensions.scalable(0.6F, 1.5F).withEyeHeight(1.27F);
@@ -90,6 +134,19 @@ public class AgentMob extends PathfinderMob {
     /** Shared between the hands, as the client's is, so alternating them cannot interact twice as fast as a player can. */
     private int useCooldown;
 
+    /** Items that answer to nothing for a while, which for the agent means a shield an axe has just knocked aside. */
+    private ItemCooldowns itemCooldowns = new ItemCooldowns();
+
+    // The block being broken, kept the way a player's client keeps it: where it is, what it is being broken with, how far
+    // along it is, and which stage of the crack the rest of the world was last shown. No block is being broken while the
+    // position is null.
+    @Nullable
+    private BlockPos destroyPos;
+    private ItemStack destroyingItem = ItemStack.EMPTY;
+    private float destroyProgress;
+    private int destroyDelay;
+    private int destroyStage = -1;
+
     /**
      * Whether this is the training registration rather than the shipped one. Everything the brain sees and does is the
      * same either way; this only decides how the world treats the body when nobody is driving it.
@@ -111,8 +168,8 @@ public class AgentMob extends PathfinderMob {
 
     /**
      * Player shaped, so that what is learned here transfers to fighting a player rather than to fighting a mob with a
-     * mob's reach and speed. The last four are attributes vanilla only gives to players; without them the agent has no
-     * attack cooldown, no reach and no sweep.
+     * mob's reach and speed. Everything from the attack speed on is an attribute vanilla only gives to players: without
+     * them the agent has no attack cooldown, no reach and no sweep, and breaks blocks at no speed a player would know.
      */
     public static AttributeSupplier.Builder createAttributes() {
 
@@ -127,7 +184,10 @@ public class AgentMob extends PathfinderMob {
                 .add(Attributes.ENTITY_INTERACTION_RANGE, 3.0D)
                 .add(Attributes.BLOCK_INTERACTION_RANGE, 4.5D)
                 .add(Attributes.SWEEPING_DAMAGE_RATIO)
-                .add(Attributes.SNEAKING_SPEED);
+                .add(Attributes.SNEAKING_SPEED)
+                .add(Attributes.BLOCK_BREAK_SPEED)
+                .add(Attributes.MINING_EFFICIENCY)
+                .add(Attributes.SUBMERGED_MINING_SPEED);
     }
 
     @Override
@@ -168,6 +228,11 @@ public class AgentMob extends PathfinderMob {
         this.brain.reset();
         this.attackStrengthTicker = 0;
         this.useCooldown = 0;
+        this.itemCooldowns = new ItemCooldowns();
+        this.destroyPos = null;
+        this.destroyProgress = 0.0F;
+        this.destroyDelay = 0;
+        this.destroyStage = -1;
         this.episode = episode;
     }
 
@@ -175,6 +240,12 @@ public class AgentMob extends PathfinderMob {
     public int useCooldown() {
 
         return this.useCooldown;
+    }
+
+    /** Which items cannot be used yet, the way a player's cooldowns say it. */
+    public ItemCooldowns itemCooldowns() {
+
+        return this.itemCooldowns;
     }
 
     /** Damage that actually got through, which is what the reward is scaled against rather than the amount swung for. */
@@ -186,6 +257,21 @@ public class AgentMob extends PathfinderMob {
         if (this.episode != null) {
 
             this.episode.reward().damageTaken(amount, this.getMaxHealth());
+        }
+    }
+
+    /**
+     * Health the agent took off something, however it did it: a swing, an arrow, a crossbow bolt, a sweep. Called from
+     * where the damage lands (see LivingEntityMixin), the one place every kind of it passes through, so nothing is paid
+     * twice. What is paid is what came off, the same as damage taken is counted: a finishing blow pays only the health
+     * that was left, so hitting harder than a kill needs earns nothing extra and a kill is worth one health bar however it
+     * was done.
+     */
+    public void dealtDamage(LivingEntity target, float healthRemoved) {
+
+        if (this.episode != null && target != this && healthRemoved > 0.0F && this.episode.pays(target)) {
+
+            this.episode.reward().damageDealt(healthRemoved, target.getMaxHealth());
         }
     }
 
@@ -223,16 +309,20 @@ public class AgentMob extends PathfinderMob {
             this.useCooldown--;
         }
 
+        boolean wasSprinting = this.isSprinting();
+
         this.applySelectedSlot();
         this.applyAim();
         this.applyMovement();
-        this.applyUse();
-        this.applyAttack();
+        this.applyHands();
+        this.slowForItemUse(wasSprinting);
 
         // Vanilla resolves a player's attack from its packet before aiStep advances the cooldown and notices a change of
-        // weapon, so both of those happen after the controls above rather than before them.
+        // weapon, so both of those happen after the controls above rather than before them. A player's item cooldowns
+        // tick after it has moved, too.
         this.attackStrengthTicker++;
         this.trackMainHandForCooldown();
+        this.itemCooldowns.tick();
     }
 
     private void applySelectedSlot() {
@@ -285,8 +375,10 @@ public class AgentMob extends PathfinderMob {
         float strafe = this.controls.clampedStrafe();
 
         // Sprinting is forward only and cannot be combined with a crouch, which is what stops a player sprinting sideways
-        // or backwards out of a fight.
-        boolean sprint = this.controls.sprint && !sneak && forward >= MobControls.SPRINT_FORWARD_THRESHOLD;
+        // or backwards out of a fight. Nor can a sprint start while an item is in use, though one already running carries
+        // on through it, as a player's does.
+        boolean sprint = this.controls.sprint && !sneak && forward >= MobControls.SPRINT_FORWARD_THRESHOLD
+                && (!this.isUsingItem() || this.isSprinting());
         this.setSprinting(sprint);
 
         if (sneak) {
@@ -336,14 +428,88 @@ public class AgentMob extends PathfinderMob {
         return this.isSprinting() ? 0.025999999F : 0.02F;
     }
 
-    private void applyUse() {
+    /**
+     * An item in use takes the movement keys down to a fifth. A player's client does that to the keys before it moves,
+     * and it knows by then whether the use started or ended on this tick, so it is done here, once the hands have
+     * settled that, by rewriting what movement handed over.
+     */
+    private void slowForItemUse(boolean wasSprinting) {
 
-        this.applyUse(InteractionHand.MAIN_HAND, this.controls.use);
-        this.applyUse(InteractionHand.OFF_HAND, this.controls.useOffhand);
+        if (!this.isUsingItem()) {
+
+            return;
+        }
+
+        // Movement went first and could not know that a use was about to start, so a sprint it started on this very tick
+        // is taken back: none can start with an item in use.
+        if (this.isSprinting() && !wasSprinting) {
+
+            this.setSprinting(false);
+            this.executed.sprinting = false;
+
+            // Before the inputs, for the reason applyMovement gives.
+            this.setSpeed((float) this.getAttributeValue(Attributes.MOVEMENT_SPEED));
+        }
+
+        if (!this.isPassenger()) {
+
+            this.executed.moveForward *= USING_ITEM_MOVEMENT;
+            this.executed.moveStrafe *= USING_ITEM_MOVEMENT;
+        }
+
+        this.setZza(this.executed.moveForward);
+        this.setXxa(this.executed.moveStrafe);
+    }
+
+    /**
+     * Attack and use, in the order a player's client resolves them. An item in use is let go first if its button is up,
+     * and a tick that began with an item in use swallows the attack whole: nothing is struck, swung at or broken while a
+     * bow is drawn or a shield is up, and nothing new is started either. Otherwise the attack goes before the use, so a
+     * blow and a raised shield can land in the same tick, and last of all a held attack keeps working at whatever block
+     * it is on.
+     */
+    private void applyHands() {
+
+        boolean busy = this.isUsingItem();
+
+        if (busy && !this.wantsToUse(this.getUsedItemHand())) {
+
+            // Released rather than cancelled, so that a drawn bow actually fires.
+            this.releaseUsingItem();
+        }
+
+        if (!this.isUsingItem()) {
+
+            // What is under the aim, found once for the tick the way the game finds what is under a player's crosshair,
+            // and only looked for while attack is held. A use looks for itself, and only on the ticks it fires.
+            Entity aimedEntity = this.controls.attack ? this.pickAimedEntity() : null;
+            BlockHitResult aimedBlock = this.controls.attack && aimedEntity == null ? this.pickAimedBlock() : null;
+
+            boolean brokeAtTouch = false;
+
+            if (!busy) {
+
+                brokeAtTouch = this.applyAttack(aimedEntity, aimedBlock);
+                this.applyUse(InteractionHand.MAIN_HAND, this.controls.use);
+                this.applyUse(InteractionHand.OFF_HAND, this.controls.useOffhand);
+            }
+
+            // A block that broke at the touch has done its work for the tick, and a use that has just started keeps the
+            // hands busy.
+            if (!this.isUsingItem()) {
+
+                this.continueDestroying(brokeAtTouch ? null : aimedBlock);
+            }
+        }
 
         boolean using = this.isUsingItem();
         this.executed.using = using && this.getUsedItemHand() == InteractionHand.MAIN_HAND;
         this.executed.usingOffhand = using && this.getUsedItemHand() == InteractionHand.OFF_HAND;
+    }
+
+    private boolean wantsToUse(InteractionHand hand) {
+
+        return hand == InteractionHand.MAIN_HAND ? this.controls.use : this.controls.useOffhand;
     }
 
     /**
@@ -357,19 +523,9 @@ public class AgentMob extends PathfinderMob {
      */
     private void applyUse(InteractionHand hand, boolean wanted) {
 
-        if (!wanted) {
-
-            if (this.isUsingItem() && this.getUsedItemHand() == hand) {
-
-                // Released rather than cancelled, so that a drawn bow actually fires.
-                this.releaseUsingItem();
-            }
-
-            return;
-        }
-
-        // An item already being used keeps the hands busy, and a use that just fired has to wait its interval out.
-        if (this.isUsingItem() || this.useCooldown > 0) {
+        // An item already being used keeps the hands busy, a use that just fired has to wait its interval out, and a
+        // player cannot start using anything at all while it is breaking a block.
+        if (!wanted || this.isUsingItem() || this.useCooldown > 0 || this.destroyPos != null) {
 
             return;
         }
@@ -378,14 +534,17 @@ public class AgentMob extends PathfinderMob {
 
         ItemStack stack = this.getItemInHand(hand);
 
-        if (stack.isEmpty()) {
+        // An item that is cooling down, a shield an axe has just knocked aside, answers to nothing, on a block or alone.
+        if (stack.isEmpty() || this.itemCooldowns.isOnCooldown(stack.getItem())) {
 
             return;
         }
 
-        BlockHitResult aimed = this.pickAimedBlock();
+        // A mob under the aim takes a player's use before any block behind it, and since a mob only answers a player, the
+        // item is then left to act on its own: nothing is placed through a body.
+        BlockHitResult aimed = this.pickAimedEntity() == null ? this.pickAimedBlock() : null;
 
-        if (aimed.getType() != HitResult.Type.MISS) {
+        if (aimed != null && aimed.getType() != HitResult.Type.MISS) {
 
             InteractionResult result = stack.useOn(new AgentUseOnContext(this, hand, stack, aimed));
 
@@ -402,8 +561,28 @@ public class AgentMob extends PathfinderMob {
             }
         }
 
-        // Nothing took it, so the item acts on its own. Only items with a use animation answer to being held down, which
-        // covers shields, bows, food and potions; the rest go through Item#use, which takes a Player.
+        this.useOnItsOwn(hand, stack);
+    }
+
+    /**
+     * What an item does when nothing under the aim took the use, which vanilla decides in Item#use, a method that takes a
+     * Player. The bow and the crossbow are worked through as they are for a player. Everything else starts being used if
+     * it has a use animation, which covers shields, food and potions.
+     */
+    private void useOnItsOwn(InteractionHand hand, ItemStack stack) {
+
+        if (stack.getItem() instanceof CrossbowItem crossbow && CrossbowItem.isCharged(stack)) {
+
+            this.fireCrossbow(crossbow, hand, stack);
+            return;
+        }
+
+        // No arrow, no draw: a bow, or a crossbow with nothing to load, does not even come up.
+        if (stack.getItem() instanceof ProjectileWeaponItem && this.getProjectile(stack).isEmpty()) {
+
+            return;
+        }
+
         if (stack.getUseAnimation() != UseAnim.NONE) {
 
             this.startUsingItem(hand);
@@ -420,47 +599,47 @@ public class AgentMob extends PathfinderMob {
         return this.level().clip(new ClipContext(eye, end, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, this));
     }
 
-    private void applyAttack() {
+    /**
+     * A press of attack, which strikes whatever is under the aim: a mob is hit, a block starts to break, and thin air is
+     * swung at.
+     *
+     * @return whether the press broke a block outright, which a player's client takes as all the attack does that tick
+     */
+    private boolean applyAttack(@Nullable Entity target, @Nullable BlockHitResult aimed) {
 
         if (!this.controls.attack) {
 
-            return;
+            return false;
         }
 
         float strength = this.getAttackStrengthScale(0.5F);
         this.executed.attacked = true;
         this.executed.attackStrength = strength;
 
-        Entity target = this.pickAimedEntity();
         this.swing(InteractionHand.MAIN_HAND);
 
         if (target != null) {
 
             this.executed.attackHit = this.resolveAttack(target, strength);
             this.resetAttackStrengthTicker();
-            return;
+            return false;
         }
 
-        BlockHitResult aimed = this.pickAimedBlock();
-
-        if (aimed.getType() == HitResult.Type.MISS) {
+        if (aimed == null || aimed.getType() == HitResult.Type.MISS) {
 
             // A player's swing at thin air restarts the cooldown, so a miss is a real cost and aiming is a skill rather
             // than a formality.
             this.resetAttackStrengthTicker();
-            return;
+            return false;
         }
 
         // A player's swing at a block starts breaking it instead, and costs no cooldown. Whatever breaks at a touch is gone
         // there and then: grass, ferns, flowers. An agent that could not do this stood in an old spruce forest swinging
         // ninety times at the fern between it and a vindicator, and never landed a blow.
         BlockPos pos = aimed.getBlockPos();
-        BlockState state = this.level().getBlockState(pos);
+        this.startDestroyBlock(pos);
 
-        if (!state.isAir() && state.getDestroySpeed(this.level(), pos) == 0.0F) {
-
-            this.level().destroyBlock(pos, false, this);
-        }
+        return this.level().getBlockState(pos).isAir();
     }
 
     private void trackMainHandForCooldown() {
@@ -536,7 +715,7 @@ public class AgentMob extends PathfinderMob {
     /**
      * The damage, criticals, sweep and knockback a player's swing carries. Durability, statistics, hunger and the sounds
      * and particles are all left out: nothing here is watching or listening, and a suite of fifty thousand arenas pays
-     * for every one of them.
+     * for every one of them. What the blow is paid is worked out where it lands, see {@link #dealtDamage}.
      */
     private boolean resolveAttack(Entity target, float strength) {
 
@@ -584,7 +763,6 @@ public class AgentMob extends PathfinderMob {
                 && this.getMainHandItem().getItem() instanceof SwordItem;
 
         float total = damage + bonus;
-        float healthBefore = target instanceof LivingEntity living ? living.getHealth() : 0.0F;
 
         if (!target.hurt(source, total)) {
 
@@ -621,14 +799,6 @@ public class AgentMob extends PathfinderMob {
         if (this.level() instanceof ServerLevel server) {
 
             EnchantmentHelper.doPostAttackEffects(server, target, source);
-        }
-
-        if (target instanceof LivingEntity hurt && this.episode != null && this.episode.pays(hurt)) {
-
-            // What the swing took off rather than what it swung for, the same as damage taken is counted: a finishing
-            // blow pays only the health that was left, so hitting harder than a kill needs earns nothing extra and a kill
-            // is worth one health bar however it was done.
-            this.episode.reward().damageDealt(Math.max(0.0F, healthBefore - hurt.getHealth()), hurt.getMaxHealth());
         }
 
         this.executed.attackDamage = total;
@@ -677,6 +847,417 @@ public class AgentMob extends PathfinderMob {
                 EnchantmentHelper.doPostAttackEffects(server, other, source);
             }
         }
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // Bows and crossbows
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * Where a bow or a crossbow finds its ammunition, the way a player's does: in a hand first, the off hand before the
+     * main one, and otherwise the first stack in the hotbar that fits, which is all the inventory the agent has. The stack
+     * found is the one taken from, so an arrow fired is an arrow gone from where it lay.
+     */
+    @Override
+    public ItemStack getProjectile(ItemStack weapon) {
+
+        if (!(weapon.getItem() instanceof ProjectileWeaponItem projectileWeapon)) {
+
+            return ItemStack.EMPTY;
+        }
+
+        // Fireworks count here and only here: a crossbow loads one from a hand, but never goes looking for one.
+        ItemStack held = ProjectileWeaponItem.getHeldProjectile(this, projectileWeapon.getSupportedHeldProjectiles());
+
+        if (!held.isEmpty()) {
+
+            return held;
+        }
+
+        Predicate<ItemStack> ammunition = projectileWeapon.getAllSupportedProjectiles();
+
+        for (ItemStack stack : this.hotbar) {
+
+            if (ammunition.test(stack)) {
+
+                return stack;
+            }
+        }
+
+        return ItemStack.EMPTY;
+    }
+
+    /**
+     * Letting go of a drawn bow fires it, as BowItem#releaseUsing does for a player, the only one it fires for. Whatever
+     * else happens to the arrow is the bow's own doing: the power from how long it was drawn, a critical at full draw, the
+     * spread, the enchantments, and which arrow goes, tipped and spectral ones keeping what they carry. A crossbow needs
+     * nothing of the kind, since its release, which loads it, already works for anyone.
+     */
+    @Override
+    public void releaseUsingItem() {
+
+        if (this.useItem.getItem() instanceof BowItem bow && this.level() instanceof ServerLevel server) {
+
+            this.releaseBow(server, bow, this.useItem, this.getUseItemRemainingTicks());
+        }
+
+        super.releaseUsingItem();
+    }
+
+    private void releaseBow(ServerLevel server, BowItem bow, ItemStack stack, int timeLeft) {
+
+        ItemStack ammunition = this.getProjectile(stack);
+
+        if (ammunition.isEmpty()) {
+
+            return;
+        }
+
+        float power = BowItem.getPowerForTime(bow.getUseDuration(stack, this) - timeLeft);
+
+        // Let go almost at once, the string has too little in it to send anything.
+        if ((double) power < 0.1D) {
+
+            return;
+        }
+
+        List<ItemStack> arrows = ProjectileWeaponItemInvoker.modular_mob_ai$draw(stack, ammunition, this);
+
+        if (!arrows.isEmpty()) {
+
+            ((ProjectileWeaponItemInvoker) bow).modular_mob_ai$shoot(server, this, this.getUsedItemHand(), stack, arrows,
+                    power * BOW_SPEED, PLAYER_INACCURACY, power == 1.0F, null);
+        }
+
+        server.playSound(null, this.getX(), this.getY(), this.getZ(), SoundEvents.ARROW_SHOOT, this.getSoundSource(),
+                1.0F, 1.0F / (server.getRandom().nextFloat() * 0.4F + 1.2F) + power * 0.5F);
+    }
+
+    /**
+     * A loaded crossbow fires on the next use, as CrossbowItem#performShooting does for a player: at a player's speed and
+     * spread, every bolt a critical, which the item decides by asking whether the one shooting is a player. A mob's
+     * crossbow shoots slower, wider and without them, and the agent is not meant to be a mob about it.
+     */
+    private void fireCrossbow(CrossbowItem crossbow, InteractionHand hand, ItemStack stack) {
+
+        if (!(this.level() instanceof ServerLevel server)) {
+
+            return;
+        }
+
+        ChargedProjectiles loaded = stack.set(DataComponents.CHARGED_PROJECTILES, ChargedProjectiles.EMPTY);
+
+        if (loaded == null || loaded.isEmpty()) {
+
+            return;
+        }
+
+        float speed = loaded.contains(Items.FIREWORK_ROCKET) ? CROSSBOW_FIREWORK_SPEED : CROSSBOW_ARROW_SPEED;
+
+        ((ProjectileWeaponItemInvoker) crossbow).modular_mob_ai$shoot(server, this, hand, stack, loaded.getItems(), speed,
+                PLAYER_INACCURACY, true, null);
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // Shields
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * A raised shield already stops what comes at it from the front, for anything that holds one up. What vanilla keeps
+     * for players is the axe: a blow from one knocks the shield aside.
+     */
+    @Override
+    protected void blockUsingShield(LivingEntity attacker) {
+
+        super.blockUsingShield(attacker);
+
+        if (attacker.canDisableShield()) {
+
+            this.disableShield();
+        }
+    }
+
+    /** The shield drops, and no shield comes up again for five seconds. */
+    public void disableShield() {
+
+        this.itemCooldowns.addCooldown(Items.SHIELD, SHIELD_DISABLED_TICKS);
+        this.stopUsingItem();
+        this.level().broadcastEntityEvent(this, EntityEvent.SHIELD_DISABLED);
+    }
+
+    /**
+     * A shield wears as a player's does, by one more than the damage it stopped, once that is three or more, and it can
+     * break. A mob's shield never wears at all, and a fight against an axe is not the same fight without this.
+     *
+     * <p>Public because Fabric's access wideners make it so, and an override may not narrow it.
+     */
+    @Override
+    public void hurtCurrentlyUsedShield(float damage) {
+
+        if (!this.useItem.is(Items.SHIELD) || damage < 3.0F) {
+
+            return;
+        }
+
+        InteractionHand hand = this.getUsedItemHand();
+        this.useItem.hurtAndBreak(1 + Mth.floor(damage), this, LivingEntity.getSlotForHand(hand));
+
+        if (!this.useItem.isEmpty()) {
+
+            return;
+        }
+
+        if (hand == InteractionHand.MAIN_HAND) {
+
+            this.hotbar.set(this.selectedSlot, ItemStack.EMPTY);
+            this.syncMainHand();
+        }
+
+        else {
+
+            this.setItemSlot(EquipmentSlot.OFFHAND, ItemStack.EMPTY);
+        }
+
+        // Nothing is left to hold up. A player's client notices that a tick later and stops; the agent stops now.
+        this.stopUsingItem();
+        this.playSound(SoundEvents.SHIELD_BREAK, 0.8F, 0.8F + this.level().random.nextFloat() * 0.4F);
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // Breaking blocks
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * The first touch on a block, which is MultiPlayerGameMode#startDestroyBlock and the server's answer to it. A block
+     * that gives way at once is gone there and then: grass and flowers, and anything a strong enough tool breaks at a
+     * touch. Anything harder starts to crack. Touching another block abandons the one before, and touching the one
+     * already being broken changes nothing.
+     */
+    private void startDestroyBlock(BlockPos pos) {
+
+        if (!this.level().getWorldBorder().isWithinBounds(pos) || this.destroyPos != null && this.sameDestroyTarget(pos)) {
+
+            return;
+        }
+
+        this.stopDestroyBlock();
+
+        BlockState state = this.level().getBlockState(pos);
+
+        // Whatever a hit on a block sets off in the item doing the hitting. Nothing a sword carries does anything here.
+        if (this.level() instanceof ServerLevel server) {
+
+            EnchantmentHelper.onHitBlock(server, this.getMainHandItem(), this, this, EquipmentSlot.MAINHAND,
+                    Vec3.atCenterOf(pos), state, item -> this.onEquippedItemBroken(item, EquipmentSlot.MAINHAND));
+        }
+
+        float progress = this.getDestroyProgress(state, pos);
+
+        if (progress >= 1.0F) {
+
+            this.destroyBlock(pos);
+            return;
+        }
+
+        this.destroyPos = pos.immutable();
+        this.destroyingItem = this.getMainHandItem();
+        this.destroyProgress = 0.0F;
+        this.showDestroyStage(pos, (int) (progress * 10.0F));
+    }
+
+    /**
+     * What a held attack does to the block under the aim, as Minecraft#continueAttack and
+     * MultiPlayerGameMode#continueDestroyBlock have it: the block cracks a tick's worth further, and once it has cracked
+     * all the way it breaks. Anything else, letting go or looking away, abandons it and all its progress.
+     */
+    private void continueDestroying(@Nullable BlockHitResult aimed) {
+
+        if (aimed == null || aimed.getType() != HitResult.Type.BLOCK || this.level().getBlockState(aimed.getBlockPos()).isAir()) {
+
+            this.stopDestroyBlock();
+            return;
+        }
+
+        BlockPos pos = aimed.getBlockPos();
+
+        if (this.destroyDelay > 0) {
+
+            this.destroyDelay--;
+        }
+
+        else if (this.destroyPos == null || !this.sameDestroyTarget(pos)) {
+
+            this.startDestroyBlock(pos);
+        }
+
+        else {
+
+            // Added up a tick at a time in floats, as the client does, which is why stone by hand takes a player 151 ticks
+            // rather than the 150 the division suggests.
+            this.destroyProgress += this.getDestroyProgress(this.level().getBlockState(pos), pos);
+
+            if (this.destroyProgress >= 1.0F) {
+
+                this.showDestroyStage(pos, -1);
+                this.destroyPos = null;
+                this.destroyProgress = 0.0F;
+                this.destroyDelay = DESTROY_DELAY;
+                this.destroyBlock(pos);
+            }
+
+            else {
+
+                this.showDestroyStage(pos, (int) (this.destroyProgress * 10.0F));
+            }
+        }
+
+        // The press that started the tick has swung already.
+        if (!this.executed.attacked) {
+
+            this.swing(InteractionHand.MAIN_HAND);
+        }
+    }
+
+    /**
+     * Lets go of the block being broken: its progress is lost and its crack taken away.
+     *
+     * <p>A player's client restarts the attack cooldown here as well. That is left out on purpose: a swing that meets a
+     * block costs the agent nothing, the fights it has learned in depend on that, and changing it would be a change to the
+     * sword fight rather than to breaking blocks.
+     */
+    private void stopDestroyBlock() {
+
+        if (this.destroyPos == null) {
+
+            return;
+        }
+
+        this.showDestroyStage(this.destroyPos, -1);
+        this.destroyPos = null;
+        this.destroyProgress = 0.0F;
+    }
+
+    /** The same block, still being broken with the same tool, which is what a player's client keeps going with. */
+    private boolean sameDestroyTarget(BlockPos pos) {
+
+        return pos.equals(this.destroyPos) && ItemStack.isSameItemSameComponents(this.getMainHandItem(), this.destroyingItem);
+    }
+
+    /** Shows the rest of the world the crack, as the server does for a player's: only when its stage changes. */
+    private void showDestroyStage(BlockPos pos, int stage) {
+
+        if (stage != this.destroyStage) {
+
+            this.level().destroyBlockProgress(this.getId(), pos, stage);
+            this.destroyStage = stage;
+        }
+    }
+
+    /**
+     * ServerPlayerGameMode#destroyBlock with the agent in the player's place. What goes through a Player alone is left
+     * out: the block's own reaction to being broken by one, which melts ice into water, angers the bees of a nest and the
+     * piglins round a chest of gold, and the statistics. What is left is what the world sees: the block's particles and
+     * sound, the block gone, the tool worn, and the drops a player holding that tool would get, which is nothing at all
+     * from a block that needs the right tool and did not get it.
+     */
+    private void destroyBlock(BlockPos pos) {
+
+        Level level = this.level();
+        BlockState state = level.getBlockState(pos);
+
+        // The agent is nobody's operator.
+        if (state.getBlock() instanceof GameMasterBlock) {
+
+            return;
+        }
+
+        BlockEntity blockEntity = level.getBlockEntity(pos);
+
+        level.levelEvent(LevelEvent.PARTICLES_DESTROY_BLOCK, pos, Block.getId(state));
+        level.gameEvent(GameEvent.BLOCK_DESTROY, pos, GameEvent.Context.of(this, state));
+
+        boolean removed = level.removeBlock(pos, false);
+
+        if (removed) {
+
+            state.getBlock().destroy(level, pos, state);
+        }
+
+        ItemStack tool = this.getMainHandItem();
+        ItemStack used = tool.copy();
+        boolean harvests = this.hasCorrectToolForDrops(state);
+
+        tool.getItem().mineBlock(tool, level, state, pos, this);
+
+        if (removed && harvests) {
+
+            Block.dropResources(state, level, pos, blockEntity, this, used);
+        }
+    }
+
+    /** BlockState#getDestroyProgress with the agent as the player: how much of the block one tick's work breaks. */
+    private float getDestroyProgress(BlockState state, BlockPos pos) {
+
+        float hardness = state.getDestroySpeed(this.level(), pos);
+
+        // Bedrock, barriers and the like.
+        if (hardness == -1.0F) {
+
+            return 0.0F;
+        }
+
+        return this.getDestroySpeed(state) / hardness / (this.hasCorrectToolForDrops(state) ? 30.0F : 100.0F);
+    }
+
+    /**
+     * Player#getDestroySpeed: the held tool's speed on the block, with Efficiency, Haste and Mining Fatigue, and a fifth of
+     * it with the eyes under water or the feet off the ground. Aqua Affinity would lift the first of those, which it does
+     * through the attribute read here, from a helmet the agent has not got.
+     */
+    private float getDestroySpeed(BlockState state) {
+
+        float speed = this.getMainHandItem().getDestroySpeed(state);
+
+        if (speed > 1.0F) {
+
+            speed += (float) this.getAttributeValue(Attributes.MINING_EFFICIENCY);
+        }
+
+        if (MobEffectUtil.hasDigSpeed(this)) {
+
+            speed *= 1.0F + (float) (MobEffectUtil.getDigSpeedAmplification(this) + 1) * 0.2F;
+        }
+
+        if (this.hasEffect(MobEffects.DIG_SLOWDOWN)) {
+
+            speed *= switch (this.getEffect(MobEffects.DIG_SLOWDOWN).getAmplifier()) {
+
+                case 0 -> 0.3F;
+                case 1 -> 0.09F;
+                case 2 -> 0.0027F;
+                default -> 8.1E-4F;
+            };
+        }
+
+        speed *= (float) this.getAttributeValue(Attributes.BLOCK_BREAK_SPEED);
+
+        if (this.isEyeInFluid(FluidTags.WATER)) {
+
+            speed *= (float) this.getAttributeValue(Attributes.SUBMERGED_MINING_SPEED);
+        }
+
+        if (!this.onGround()) {
+
+            speed /= 5.0F;
+        }
+
+        return speed;
+    }
+
+    /** Whether the held item gets the block's drops, which without it a block that needs the right tool withholds. */
+    private boolean hasCorrectToolForDrops(BlockState state) {
+
+        return !state.requiresCorrectToolForDrops() || this.getMainHandItem().isCorrectToolForDrops(state);
     }
 
     // ---------------------------------------------------------------------------------------------------------------
@@ -791,39 +1372,6 @@ public class AgentMob extends PathfinderMob {
     protected int getBaseExperienceReward() {
 
         return this.training ? 0 : 5;
-    }
-
-    /**
-     * Supplies the three things a use context normally reads off the player it was given. Without this a block placed by
-     * the agent would always face north, because a context with no player has nothing else to go on.
-     */
-    private static final class AgentUseOnContext extends UseOnContext {
-
-        private final AgentMob agent;
-
-        private AgentUseOnContext(AgentMob agent, InteractionHand hand, ItemStack stack, BlockHitResult hit) {
-
-            super(agent.level(), null, hand, stack, hit);
-            this.agent = agent;
-        }
-
-        @Override
-        public Direction getHorizontalDirection() {
-
-            return this.agent.getDirection();
-        }
-
-        @Override
-        public float getRotation() {
-
-            return this.agent.getYRot();
-        }
-
-        @Override
-        public boolean isSecondaryUseActive() {
-
-            return this.agent.isShiftKeyDown();
-        }
     }
 
     /** Does nothing, so that the controller is the only thing writing the movement inputs. */
