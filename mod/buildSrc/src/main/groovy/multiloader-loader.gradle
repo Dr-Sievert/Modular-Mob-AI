@@ -292,11 +292,16 @@ afterEvaluate {
             }
         }
 
-        def worlds = keptTerrain()
+        // Over the limit, the most used go first, and of those the least finished.
+        def worlds = keptTerrain().sort { a, b ->
+
+            (b.properties.getProperty('uses', '0') as int) <=> (a.properties.getProperty('uses', '0') as int)
+                    ?: (a.properties.getProperty('sites', '0') as int) <=> (b.properties.getProperty('sites', '0') as int)
+        }
 
         while (worlds.size() > terrainPoolSize) {
 
-            worlds.remove(worlds.size() - 1).dir.deleteDir()
+            worlds.remove(0).dir.deleteDir()
         }
     }
 
