@@ -195,8 +195,8 @@ afterEvaluate {
     }
 
     // Only the parts of a world that hold its chunks. The test server writes fresh level data every time, and the saved
-    // list of forced chunks would have the next worker load every site at once.
-    def copyWorld = { File from, File to ->
+    // list of forced chunks would have the next worker load every site at once. Optionally only some of its region files.
+    def copyWorld = { File from, File to, Closure wanted = { String name -> true } ->
 
         ['region', 'entities', 'poi'].each { part ->
 
@@ -209,12 +209,19 @@ afterEvaluate {
 
                 source.eachFile { file ->
 
-                    java.nio.file.Files.copy(file.toPath(), new File(target, file.name).toPath(),
-                            java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                    if (wanted(file.name)) {
+
+                        java.nio.file.Files.copy(file.toPath(), new File(target, file.name).toPath(),
+                                java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                    }
                 }
             }
         }
     }
+
+    // The region files around the world's origin, which hold the spawn area the server loads before anything else. Every
+    // test world has the same seed, so these are the same in all of them.
+    def spawnRegions = { String name -> name ==~ /r\.(-1|0)\.(-1|0)\.mca/ }
 
     // The kept worlds, least used first and, among those, the longest unused.
     def keptTerrain = {
@@ -240,38 +247,48 @@ afterEvaluate {
             def world = new File(entry.dir, 'world')
             def healthy = entry.process.exitValue() == 0 && sites > 0
 
-            if (entry.kept != null) {
+            // Only ever a saving for the runs after this one, so a world that cannot be kept, say because another run
+            // has its files open, is let go rather than failing this run.
+            try {
 
-                def properties = entry.kept.properties
-                def uses = (properties.getProperty('uses', '0') as int) + 1
+                if (entry.kept != null) {
 
-                if (uses >= terrainUses) {
+                    def properties = entry.kept.properties
+                    def uses = (properties.getProperty('uses', '0') as int) + 1
 
-                    entry.kept.dir.deleteDir()
-                    return
+                    if (uses >= terrainUses) {
+
+                        entry.kept.dir.deleteDir()
+                        return
+                    }
+
+                    if (healthy && sites > (properties.getProperty('sites', '0') as int)) {
+
+                        copyWorld(world, entry.kept.dir)
+                        properties.setProperty('sites', String.valueOf(sites))
+                    }
+
+                    properties.setProperty('uses', String.valueOf(uses))
+                    new File(entry.kept.dir, 'world.properties').withOutputStream { properties.store(it, null) }
                 }
 
-                if (healthy && sites > (properties.getProperty('sites', '0') as int)) {
+                else if (healthy && report.getProperty('x') != null && report.getProperty('z') != null) {
 
-                    copyWorld(world, entry.kept.dir)
-                    properties.setProperty('sites', String.valueOf(sites))
+                    def dir = new File(terrainPool, "${report.getProperty('x')}_${report.getProperty('z')}")
+                    dir.mkdirs()
+                    copyWorld(world, dir)
+
+                    // Written last, so a world only counts as kept once all of it is there.
+                    def properties = new Properties()
+                    ['x', 'z', 'sites'].each { properties.setProperty(it, report.getProperty(it)) }
+                    properties.setProperty('uses', '1')
+                    new File(dir, 'world.properties').withOutputStream { properties.store(it, null) }
                 }
-
-                properties.setProperty('uses', String.valueOf(uses))
-                new File(entry.kept.dir, 'world.properties').withOutputStream { properties.store(it, null) }
             }
 
-            else if (healthy && report.getProperty('x') != null && report.getProperty('z') != null) {
+            catch (IOException exception) {
 
-                def dir = new File(terrainPool, "${report.getProperty('x')}_${report.getProperty('z')}")
-                dir.mkdirs()
-                copyWorld(world, dir)
-
-                // Written last, so a world only counts as kept once all of it is there.
-                def properties = new Properties()
-                ['x', 'z', 'sites'].each { properties.setProperty(it, report.getProperty(it)) }
-                properties.setProperty('uses', '1')
-                new File(dir, 'world.properties').withOutputStream { properties.store(it, null) }
+                logger.lifecycle("Could not keep the terrain of worker ${entry.worker}: ${exception}")
             }
         }
 
@@ -583,6 +600,7 @@ afterEvaluate {
         def pooled = suite == 'terrain' && terrainPoolSize > 0
         def keptWorlds = pooled ? keptTerrain() : []
         def poolShort = keptWorlds.size() < terrainPoolSize
+        def spawnSource = keptWorlds.isEmpty() ? null : keptWorlds.first().dir
 
         keptWorlds = keptWorlds.take(Math.max(0, workers - (pooled && poolShort ? 1 : 0)))
 
@@ -674,6 +692,22 @@ afterEvaluate {
                     logger.lifecycle("Could not copy the terrain in ${kept.dir}, worker ${worker} generates its own: ${exception}")
                     new File(dir, 'world').deleteDir()
                     kept = null
+                }
+            }
+
+            // A worker generating a new world still gets the spawn area another worker generated, which the server loads
+            // before it does anything else.
+            if (kept == null && spawnSource != null) {
+
+                try {
+
+                    copyWorld(spawnSource, new File(dir, 'world'), spawnRegions)
+                }
+
+                catch (IOException exception) {
+
+                    // Only a head start: the server generates the spawn area itself.
+                    new File(dir, 'world').deleteDir()
                 }
             }
 
