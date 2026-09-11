@@ -13,7 +13,7 @@ scripts\parity.ps1               Java forward pass against PyTorch's, after touc
 | --- | --- | --- |
 | `test.ps1` | `All 20 required tests passed`; every fight 54 ticks | the observation, the body and the scripted fighter still work; the 54 ticks are deterministic, so any change in them is a behaviour change |
 | `test.ps1 -Mechanics` | `All 19 required tests passed` | bows, crossbows, shields, axes, mining, placing, use slowdown and damage payment follow a player's rules |
-| `test.ps1 -Play` | `All 16 required tests passed`, and `Loaded the mod's jar, modular_mob_ai/models/vs-copy.mbw from iteration 650` | what [playing.md](playing.md) promises: the bundled networks load and drive an agent, the commands, saving, sides and friendly fire, the Infinity loadouts |
+| `test.ps1 -Play` | `All 17 required tests passed`, and `Loaded the mod's jar, modular_mob_ai/models/vs-copy.mbw from iteration 650` | what [playing.md](playing.md) promises: the bundled networks load and drive an agent, the commands, saving, sides and friendly fire, the Infinity loadouts |
 | `parity.ps1` | logits agree to about 1e-6 | the game runs exactly the network PyTorch trained |
 
 Each boots a headless server in seconds, and all of them need only Java (parity also needs the trainer's Python).
@@ -69,6 +69,7 @@ into the tests either side, so the suite runs its tests one after another on one
 | `worldAgentFightsOnTheBundledNetwork` | a playable agent on `best` goes for a zombie and hurts it |
 | `aloneAnAgentStandsStill` | with nobody in view an agent stands still whatever its brain says, and moves once a zombie turns up |
 | `spawnCommandMakesAnArmedAgentOnItsBrain`, `bareSpawnArmsWithTheConfigsLoadout` | `/mmai spawn`: loadout, brain, position, never despawning; `default` |
+| `spawnCommandWorksFromAFunction` | the same from a data pack's function or a command block: a function's permission, relative coordinates |
 | `loadoutCommandArmsAgentsAndMobs`, `brainCommandRefusesWhatLeadsNowhere` | `/mmai loadout` on an agent and a zombie; `/mmai brain` and its refusals |
 | `agentKeepsBrainAndLoadoutThroughSaving` | brain name, loadout name and the hotbar as it stands survive saving; `/summon` with `Loadout` and `BrainName` |
 | `onlyEnemiesAreInTheView` | an ally never takes an enemy slot; one set against the agent does, on the next tick |

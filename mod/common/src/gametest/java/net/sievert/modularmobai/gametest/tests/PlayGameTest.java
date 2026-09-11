@@ -181,6 +181,34 @@ public class PlayGameTest {
         helper.succeed();
     }
 
+    /**
+     * From a command block or a data pack's function, which run at the permission a function gets and with relative
+     * coordinates, /mmai spawn works the same.
+     */
+    @GameTest(template = ARENA)
+    public static void spawnCommandWorksFromAFunction(GameTestHelper helper) {
+
+        MinecraftServer server = helper.getLevel().getServer();
+        CommandSourceStack function = server.createCommandSourceStack()
+                .withLevel(helper.getLevel())
+                .withPosition(helper.absoluteVec(new Vec3(2.5D, 2.0D, 4.5D)))
+                .withPermission(2)
+                .withSuppressedOutput();
+
+        try {
+
+            server.getCommands().getDispatcher().execute("mmai spawn sword default ~2 ~ ~", function);
+        }
+
+        catch (CommandSyntaxException exception) {
+
+            throw new GameTestAssertException("/mmai spawn was refused from a function: " + exception.getMessage());
+        }
+
+        helper.assertValueEqual(helper.getEntities(ModEntities.agentMob()).size(), 1, "agents spawned from a function");
+        helper.succeed();
+    }
+
     /** A bare /mmai spawn arms the agent with the config's loadout, the sword unless someone changed it. */
     @GameTest(template = ARENA)
     public static void bareSpawnArmsWithTheConfigsLoadout(GameTestHelper helper) {
