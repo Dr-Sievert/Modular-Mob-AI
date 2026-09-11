@@ -1161,8 +1161,10 @@ afterEvaluate {
             brainTool(['schema', new File(runDirectory, 'schema.json').absolutePath])
 
             // A training process left behind by a cancelled run would write weights into the same folder, so it is
-            // stopped before another starts.
+            // stopped before another starts. One whose build is still going is not left behind: that run is training
+            // right now, and starting the same run a second time used to stop it dead, so this refuses instead.
             def trainerPidFile = layout.buildDirectory.file("training/${runName}-trainer.txt").get().asFile
+            def inProgress = null
 
             if (trainerPidFile.isFile()) {
 
@@ -1172,9 +1174,19 @@ afterEvaluate {
 
                         if (handle.isAlive() && handle.info().command().orElse('').toLowerCase(Locale.ROOT).contains('python')) {
 
-                            logger.lifecycle("Stopping a training process left behind by an earlier run (pid ${handle.pid()})")
-                            handle.destroyForcibly()
-                            handle.onExit().get(15, java.util.concurrent.TimeUnit.SECONDS)
+                            def owner = handle.parent().filter { it.isAlive() }.orElse(null)
+
+                            if (owner != null && owner.info().command().orElse('').toLowerCase(Locale.ROOT).contains('java')) {
+
+                                inProgress = handle.pid()
+                            }
+
+                            else {
+
+                                logger.lifecycle("Stopping a training process left behind by an earlier run (pid ${handle.pid()})")
+                                handle.destroyForcibly()
+                                handle.onExit().get(15, java.util.concurrent.TimeUnit.SECONDS)
+                            }
                         }
                     }
                 }
@@ -1182,6 +1194,12 @@ afterEvaluate {
                 catch (Exception ignored) {
 
                     // Already gone, or not ours to stop.
+                }
+
+                if (inProgress != null) {
+
+                    throw new GradleException("Run '${runName}' is already training (trainer pid ${inProgress}). Watch it with "
+                            + "scripts\\watch.ps1 -Run ${runName}, stop it with scripts\\stop.ps1 -Run ${runName}, or give this one another -Run name.")
                 }
 
                 trainerPidFile.delete()

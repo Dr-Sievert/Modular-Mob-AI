@@ -17,6 +17,7 @@ public abstract class ServerLevelMixin {
     // seems to have some. On the terrain suite that walk over thousands of chunks was an eighth of the server thread. The
     // server turns saving back on for every level before it shuts down, and a stopping server is no longer running, so a
     // world that is kept is still saved whole as the worker stops; MinecraftServerMixin skips that for one nobody keeps.
+    // Saving off also stops the chunk map unloading anything; ChunkMapMixin puts the unloading back.
     @Inject(method = "tick", at = @At("HEAD"))
     private void modular_mob_ai$noSavingWhileTesting(BooleanSupplier hasTimeLeft, CallbackInfo ci) {
 

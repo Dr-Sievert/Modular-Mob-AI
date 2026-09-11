@@ -14,7 +14,7 @@ param(
     [int] $Arenas = 2000,
     [int] $Workers = 8,
     [int] $Slots = 25,
-    [string] $Heap = '1G',
+    [string] $Heap = '1280M',
     [ValidateSet('terrain', 'arena')] [string] $Suite = 'terrain',
     [int] $ReplayEvery = 0
 )

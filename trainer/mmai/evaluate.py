@@ -138,9 +138,12 @@ class Evaluator:
             self.since_best += 1
             verdict = f"best is still iteration {self.best} at {100 * self.judged[self.best].rate:.1f}%"
 
+        fights = max(1, result.fights)
+        lost = result.fights - result.wins - result.timeouts
+
         logger.info(
-            "evaluation of iteration %d: won %.1f%% of %d fights, %d ran out the clock; %s",
-            iteration, 100 * result.rate, result.fights, result.timeouts, verdict,
+            "evaluation of iteration %d over %d fights: won %.1f%%, lost %.1f%%, timed out %.1f%%; %s",
+            iteration, result.fights, 100 * result.rate, 100 * lost / fights, 100 * result.timeouts / fights, verdict,
         )
         self._write_table()
 
