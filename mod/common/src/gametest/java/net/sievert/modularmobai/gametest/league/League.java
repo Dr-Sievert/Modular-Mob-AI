@@ -95,6 +95,21 @@ public final class League {
 
             return this.opposition == null ? 1 : this.opposition.mobs().size();
         }
+
+        /**
+         * How long this fight is given, and how far apart it starts. A fight against another agent keeps a melee fight's
+         * minute and a melee fight's ground whatever loadout the draw handed it, so what the scripted fighter and the
+         * checkpoints are rated on does not move under them.
+         */
+        public int ticks() {
+
+            return this.opposition == null ? Roster.MELEE_TICKS : this.opposition.ticks();
+        }
+
+        public int start() {
+
+            return this.opposition == null ? 0 : this.opposition.start();
+        }
     }
 
     /** The run's league folder, or null outside a training run or once something has gone wrong with it. */

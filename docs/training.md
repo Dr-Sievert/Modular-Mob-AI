@@ -48,6 +48,7 @@ Results so far (evaluated on the most likely action):
 ```
 scripts\terrain.ps1                       4,096 fight sites, on as much of the machine as fits
 scripts\terrain.ps1 -Sites 8192           more ground; about 0.8 MB and 1.5 s of one builder per site
+scripts\terrain.ps1 -Radius 3             bigger sites, 112 blocks across rather than 80
 ```
 
 Training on natural ground reads its sites from the library and generates nothing, so a run stops and says to build one
@@ -58,6 +59,12 @@ Generating cost two to three cores and a third more memory per worker, and memor
 - Workers hard-link its region files, so it is on disk once however many run, and nothing can write back to it.
 - Building a new one while training runs is safe: it replaces the old one only once it is whole.
 - Run it once per machine, and again whenever you want fresh ground.
+- `-Radius` is how much ground one site holds, in chunks either side of its centre: 2 (the default) is 80 blocks across,
+  3 is 112. It is the library's property, and the only way a fight gets more ground than 80 blocks; what a matchup can ask
+  for on its own is how far apart it starts and how much air it wants overhead. Each step up costs roughly the ratio of the
+  chunks a site holds, 49 against 25 from 2 to 3: about twice the disk, twice the build time and twice a worker's live
+  heap, so raise `-Heap` or drop `-Slots` with it. A run may use a library built for bigger sites; one built for smaller is
+  refused, with the `-Radius` to rebuild at.
 ## Scripts
 
 ### `scripts\train.ps1`: one run
@@ -80,6 +87,7 @@ scripts\train.ps1 -Run league -Suite league -Seed vs-copy     the league, from v
 | `-Workers` | 0 = auto | worker processes (game servers) |
 | `-Slots` | 25 | fights at once per worker |
 | `-Heap` | 1536M | heap per worker; it needs about 0.95 GB live, so 1 GB thrashes |
+| `-SiteRadius` | 2 | chunks either side of a fight site's centre: 2 is 80 blocks across, 3 is 112. No more than the terrain library was built for, and each step up roughly doubles a worker's live heap |
 | `-RolloutSteps` | 16384 (65536 with `-FromCopy`) | steps of experience per update (an iteration) |
 | `-Device` | cuda | `cpu` keeps the GPU out of it |
 | `-Suite` | terrain | `arena` is a closed 9-block box, for quick checks; `league` is every mob, the scripted fighter and the run's own checkpoints |

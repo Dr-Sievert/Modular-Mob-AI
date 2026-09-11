@@ -40,6 +40,12 @@ param(
     [int] $Workers = 0,
     [int] $Slots = 25,
     [string] $Heap = '1536M',
+
+    # How much ground one fight site holds, in chunks either side of its centre: two is the 80 blocks across every run so
+    # far has fought on, three is 112. It has to be no more than the terrain library was built for, scripts\terrain.ps1
+    # -Radius, and each step up roughly doubles a worker's live heap, so raise -Heap or drop -Slots with it.
+    [ValidateRange(1, 8)] [int] $SiteRadius = 2,
+
     [int] $RolloutSteps = 16384,
     [ValidateSet('cuda', 'cpu')] [string] $Device = 'cuda',
     [ValidateSet('terrain', 'arena', 'league')] [string] $Suite = 'terrain',
@@ -241,6 +247,7 @@ $arguments = (@(
     '-Prounds=0',
     "-PworkerHeap=$Heap",
     "-PbatchSize=$Slots",
+    "-PsiteRadius=$SiteRadius",
     "-ProlloutSteps=$RolloutSteps",
     "-PreplayEvery=$ReplayEvery",
     "-PtrainArgs=--device $Device $Extra".Trim()

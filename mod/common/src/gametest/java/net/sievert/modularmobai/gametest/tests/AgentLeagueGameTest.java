@@ -38,8 +38,10 @@ import net.sievert.modularmobai.gametest.util.TestDurationStats;
  * {@link net.sievert.modularmobai.gametest.league.Opposition}, or another agent: the scripted fighter, or a frozen
  * checkpoint of the network being trained, playing its most likely action with nothing recorded.
  *
- * <p>Otherwise this is {@link AgentVindicatorTerrainGameTest}: the same sites, the same minute, the same slots working
- * through one shared queue of fights, the same reward. What winning means is the one other difference. A fight is won
+ * <p>Otherwise this is {@link AgentVindicatorTerrainGameTest}: the same sites, the same slots working through one shared
+ * queue of fights, the same reward. How long a fight is given and how far apart it starts are the matchup's to say, since
+ * a shooting match across twenty blocks is not a melee across eight; the numbers and why are in
+ * {@link net.sievert.modularmobai.gametest.league.Roster}. What winning means is the one other difference. A fight is won
  * when every opponent's health is gone and the agent still stands, however it went, off a cliff or on the agent's sword.
  * An opponent that goes without its health gone, a creeper that blew itself up, is not beaten: the fight is a draw,
  * which pays what a loss on time does, since the agent did not win it.
@@ -54,9 +56,6 @@ import net.sievert.modularmobai.gametest.util.TestDurationStats;
  */
 @GameTestGroup
 public class AgentLeagueGameTest {
-
-    /** A minute of game time. */
-    private static final int FIGHT_TICKS = 1200;
 
     /** The framework's own limit on a whole slot, only there to catch a slot that has stopped working. */
     private static final int SLOT_TIMEOUT_TICKS = 50_000_000;
@@ -169,7 +168,7 @@ public class AgentLeagueGameTest {
                         this.holding = true;
                     }
 
-                    this.site = TerrainSites.claim(this.level, this.matchup.mobs());
+                    this.site = TerrainSites.claim(this.level, this.matchup.mobs(), this.matchup.start());
 
                     if (this.site != null) {
 
@@ -201,7 +200,7 @@ public class AgentLeagueGameTest {
                         this.struck |= opponent.getLastHurtByMob() == this.agent;
                     }
 
-                    if (!this.agent.isAlive() || this.beaten() || this.helper.getTick() - this.started >= FIGHT_TICKS) {
+                    if (!this.agent.isAlive() || this.beaten() || this.helper.getTick() - this.started >= this.matchup.ticks()) {
 
                         this.decide();
                         this.phase = Phase.ENDING;
@@ -292,7 +291,7 @@ public class AgentLeagueGameTest {
                     : List.of();
 
             this.matchup.loadout().equip(this.agent);
-            this.agent.startEpisode(new Episode(FIGHT_TICKS, bounds, this.opponents));
+            this.agent.startEpisode(new Episode(this.matchup.ticks(), bounds, this.opponents));
 
             if (this.evaluation != null) {
 
@@ -308,7 +307,7 @@ public class AgentLeagueGameTest {
                     // Its own fight, bounded the same, against the agent; what it is paid goes nowhere, since nothing
                     // records it.
                     this.matchup.opponentLoadout().equip(other);
-                    other.startEpisode(new Episode(FIGHT_TICKS, bounds, this.agent));
+                    other.startEpisode(new Episode(this.matchup.ticks(), bounds, this.agent));
                     other.brain().use(this.matchup.brain());
                 }
 

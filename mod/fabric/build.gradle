@@ -97,6 +97,10 @@ loom {
             vmArg("-Dmodular_mob_ai.gametest.terrainSeed=${providers.gradleProperty('terrainSeed').getOrElse('')}")
             vmArg("-Dmodular_mob_ai.gametest.sites=${providers.gradleProperty('sites').getOrElse('')}")
 
+            // How much ground a fight site holds, in chunks either side of its centre. The terrain library has to have been
+            // built for the same number, since it is what decides how much ground each of its sites holds.
+            vmArg("-Dmodular_mob_ai.gametest.siteRadius=${providers.gradleProperty('siteRadius').getOrElse('')}")
+
             // Name a file to write the per tick dataset; a relative path lands in the run directory.
             vmArg("-Dmodular_mob_ai.gametest.capture=${providers.gradleProperty('capture').getOrElse('')}")
 

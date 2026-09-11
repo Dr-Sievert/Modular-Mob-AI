@@ -152,6 +152,20 @@ public final class GameTestTuning {
         return Math.max(1, intProperty("sites", fallback));
     }
 
+    /**
+     * How much ground a fight site holds: chunks either side of its centre chunk, so two gives the eighty blocks across
+     * that every run so far has fought on. Ranged and flying fights want more room than that, and this is where it comes
+     * from, but it is one number for a whole run rather than something a matchup can ask for, for two reasons: a site's
+     * chunks are nearly all of a worker's memory, so growing them costs heap whether a fight needs the room or not, and
+     * the terrain library holds its sites at one size, so a run can only read back what a library was built for. Raising
+     * it means building the library again, {@code scripts\terrain.ps1 -Radius}, and giving each worker a larger heap or
+     * fewer slots; see {@link net.sievert.modularmobai.gametest.terrain.TerrainSites}.
+     */
+    public static int siteRadius() {
+
+        return Math.max(1, Math.min(8, intProperty("siteRadius", 2)));
+    }
+
     public static int ticksPerSecond() {
 
         return intProperty("ticksPerSecond", TICKS_PER_SECOND);

@@ -103,6 +103,20 @@ public record Opposition(String name, List<Roster.Member> mobs, Difficulty diffi
     }
 
     /**
+     * How long this fight is given, and how far apart it starts: whatever the mob on it that wants most asks for, since a
+     * squad with a skeleton in it is a shooting match whoever else is standing there.
+     */
+    public int ticks() {
+
+        return this.mobs.stream().mapToInt(Roster.Member::ticks).max().orElse(Roster.MELEE_TICKS);
+    }
+
+    public int start() {
+
+        return this.mobs.stream().mapToInt(Roster.Member::start).max().orElse(0);
+    }
+
+    /**
      * What this fight's mobs are spawned with, which is {@link Level#getCurrentDifficultyAt} with the rung's difficulty in
      * place of the level's own: the same day time, the same inhabited time and the same moon, since those are the fight's
      * ground and not its difficulty.

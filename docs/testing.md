@@ -95,6 +95,7 @@ mod\gradlew.bat -p mod :fabric:runGametestParallel -Psuite=terrain -Parenas=2000
 | `suite` | `arena` (closed box), `terrain` (natural ground, what training uses), `league` (terrain, a new opponent every fight), `mechanics`, `play`, `baseline` (villager against vindicator, no agent) |
 | `leagueOpponents`, `leagueLoadouts`, `leagueDifficulties` | league only: fewer opponents (`zombie,2x_zombie`), fewer loadouts, which rungs of the ladder a run with no trainer goes round (`easy,normal,hard`) |
 | `arenas`, `workers`, `batchSize` | fights, worker processes, fights at once per worker |
+| `sites`, `siteRadius` | fight sites laid out, and chunks either side of each one's centre (2 = 80 blocks across) |
 | `brain`, `brainWeights` | `scripted` (default) or `neural` with a `.mbw` file |
 | `replayEvery`, `replayRun` | record one fight in N, into `runs\<replayRun>\replays` |
 | `workerHeap` | heap per worker |

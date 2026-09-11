@@ -89,11 +89,17 @@ one place, where it lands (`LivingEntityMixin`), so arrows count the same as swi
 ## The fights
 
 Training fights are one agent against one vindicator on natural terrain, generated as a normal world. A fight ends when
-either fighter dies, or after 1200 ticks (a minute), which counts as a loss.
+either fighter dies, or after 1200 ticks (a minute), which counts as a loss. A league fight's clock is the matchup's; see
+the league below.
 
 Each worker runs 25 fights at once on a quarter again as many sites (32), plus 4 spares, all held by
 `gametest/terrain/TerrainSites`:
-- A site is 80 × 80 blocks (5 × 5 chunks). Sites sit on a lattice 128 blocks apart, 8 to a row.
+- A site is 80 × 80 blocks (5 × 5 chunks) and sites sit 128 blocks apart, 8 to a row: three chunks of dead ground between
+  one fight and the next, which is why nothing on one site can reach or see anything on another. Both follow one number,
+  `-PsiteRadius` (`scripts\train.ps1 -SiteRadius`, `scripts\terrain.ps1 -Radius`), which is chunks either side of a site's
+  centre. It is one size for a whole run, not per matchup: a site's chunks are nearly all of a worker's heap, and the
+  terrain library holds its sites at the size it was built for. A worker will read a library built for bigger sites and use
+  the inner part; a library built for smaller ones it refuses and says which `-Radius` to rebuild with.
 - A site is handed out with a place to stand for the agent and one for each of the other side, 7 to 11 blocks away, a
   squad's members within 3 blocks of each other.
 - Every fighter starts with open sky above it. Starts under canopies and mangrove roots lost 9.8% against 0.8%.
@@ -145,6 +151,13 @@ different opponent every time, with a different loadout:
   action, so only the agent's steps are recorded.
 - 10 loadouts (`gametest/league/Loadouts`, armed with `arena/Loadout`): iron, stone and diamond swords, an axe, a sword
   with iron armour, sword or axe with a shield, a bow, a crossbow, a sword with a bow behind it.
+- **Room and time per matchup** (`Roster.MELEE_TICKS` and its neighbours). A melee fight keeps the minute and the 7 to 11
+  blocks it always had. A fight against something that shoots from the ground (skeleton, stray, bogged, pillager, witch,
+  breeze, evoker, snow golem) gets 1,800 ticks and starts 20 blocks apart; something flying gets 2,400 and the same 20,
+  plus its air overhead. A squad takes whatever the mob on it that wants most asks for. A fight against another agent, the
+  scripted fighter or a checkpoint, keeps the melee minute whatever loadout it drew, so their ratings do not move. Ground
+  with no room for the wanted distance falls back to the ordinary one rather than losing the fight, and the clock is also
+  what the speed bonus is paid against, so fast means fast for the fight it was.
 - League fights happen at midnight, clear and with mob griefing off: no undead burn, spiders stay hostile, rain neither
   hurts a blaze or a snow golem nor teleports an enderman, and no crater stays in a kept world. A creeper that blows
   itself up without killing the agent is a draw, which pays as a loss.

@@ -130,6 +130,28 @@ public final class Roster {
     private static final int VEX_HEIGHT = 3;
     private static final int HOVER_HEIGHT = 2;
 
+    /**
+     * How long a fight against each kind of opponent is given, and how far apart it starts.
+     *
+     * <p>A melee fight is over in a few hundred ticks or it is not going to happen, and a minute has always been the clock.
+     * A fight against something that shoots is a different shape: the agent has to cross the ground while it is being shot
+     * at, and if it has a bow of its own there are twenty ticks in every shot, so ninety seconds. Something that flies
+     * cannot be reached at all until the agent shoots, and a ghast drifts as it fires, so two minutes.
+     *
+     * <p>Room matters for the same reason. Melee starts seven to eleven blocks apart, which is a couple of seconds of
+     * walking. Twenty is a bow's own range and far enough that the agent has to cover ground under fire, or kite something
+     * away, without either fighter ever being near the edge of the site. More room than the site holds is not a matchup's
+     * to ask for, see {@link net.sievert.modularmobai.gametest.GameTestTuning#siteRadius()}.
+     *
+     * <p>The clock is also what fast and slow are paid against, so a win in six hundred ticks pays more of the speed bonus
+     * in a two minute fight than in a one minute one. That is the intended reading: fast for the fight it was.
+     */
+    public static final int MELEE_TICKS = 1200;
+    private static final int RANGED_TICKS = 1800;
+    private static final int FLYING_TICKS = 2400;
+    private static final int MELEE_START = 0;
+    private static final int RANGED_START = 20;
+
     /** How far from an evoker its vexes are looked for, which is well inside its own site and nowhere near the next. */
     private static final double VEX_REACH = 16.0D;
 
@@ -153,21 +175,36 @@ public final class Roster {
      * @param name        what it is called in the results and the ratings: the entity's own name
      * @param spawnData   what its finalizeSpawn is handed, or null for what it would pick itself
      * @param height      how far above the ground it starts, for whatever flies; zero for whatever walks
+     * @param ticks        how long a fight against it is given
+     * @param start       how far away it starts, or zero for the ordinary seven to eleven blocks
      * @param trainingCap the largest share of a run's training fights it may take, 1 for no cap at all
      */
     public record Member(String name, EntityType<? extends Mob> type, @Nullable Supplier<SpawnGroupData> spawnData,
-                         Preparation preparation, Provocation provocation, int height, double trainingCap) {
+                         Preparation preparation, Provocation provocation, int height, int ticks, int start,
+                         double trainingCap) {
 
-        /** The same mob, starting that far up in the air. */
+        /**
+         * The same mob, starting that far up in the air, with a flyer's clock and a flyer's room: it cannot be reached in
+         * melee at all, so the fight is a shooting match or it is nothing.
+         */
         public Member flyingAt(int height) {
 
-            return new Member(this.name, this.type, this.spawnData, this.preparation, this.provocation, height, this.trainingCap);
+            return new Member(this.name, this.type, this.spawnData, this.preparation, this.provocation, height, FLYING_TICKS,
+                    RANGED_START, this.trainingCap);
+        }
+
+        /** The same mob with a shooting match's clock and room, for one that fights from a distance on the ground. */
+        public Member ranged() {
+
+            return new Member(this.name, this.type, this.spawnData, this.preparation, this.provocation, this.height,
+                    RANGED_TICKS, RANGED_START, this.trainingCap);
         }
 
         /** The same mob, given at most that share of a run's training fights. */
         public Member cappedAt(double share) {
 
-            return new Member(this.name, this.type, this.spawnData, this.preparation, this.provocation, this.height, share);
+            return new Member(this.name, this.type, this.spawnData, this.preparation, this.provocation, this.height,
+                    this.ticks, this.start, share);
         }
 
         /** What its finalizeSpawn is handed, or null for what it would pick itself. */
@@ -210,16 +247,16 @@ public final class Roster {
             member("husk", EntityType.HUSK, GROWN_ZOMBIE, AS_SPAWNED, Roster::target),
             member("drowned", EntityType.DROWNED, GROWN_ZOMBIE, AS_SPAWNED, Roster::target),
             member("zombie_villager", EntityType.ZOMBIE_VILLAGER, GROWN_ZOMBIE, AS_SPAWNED, Roster::target),
-            member("skeleton", EntityType.SKELETON, null, AS_SPAWNED, Roster::target),
-            member("stray", EntityType.STRAY, null, AS_SPAWNED, Roster::target),
-            member("bogged", EntityType.BOGGED, null, AS_SPAWNED, Roster::target),
+            member("skeleton", EntityType.SKELETON, null, AS_SPAWNED, Roster::target).ranged(),
+            member("stray", EntityType.STRAY, null, AS_SPAWNED, Roster::target).ranged(),
+            member("bogged", EntityType.BOGGED, null, AS_SPAWNED, Roster::target).ranged(),
             member("wither_skeleton", EntityType.WITHER_SKELETON, null, AS_SPAWNED, Roster::target),
             member("spider", EntityType.SPIDER, null, AS_SPAWNED, Roster::target),
             member("cave_spider", EntityType.CAVE_SPIDER, null, AS_SPAWNED, Roster::target),
             member("creeper", EntityType.CREEPER, null, AS_SPAWNED, Roster::target),
             member("vindicator", EntityType.VINDICATOR, null, AS_SPAWNED, Roster::target),
-            member("pillager", EntityType.PILLAGER, null, AS_SPAWNED, Roster::target),
-            member("witch", EntityType.WITCH, null, AS_SPAWNED, Roster::target),
+            member("pillager", EntityType.PILLAGER, null, AS_SPAWNED, Roster::target).ranged(),
+            member("witch", EntityType.WITCH, null, AS_SPAWNED, Roster::target).ranged(),
             member("ravager", EntityType.RAVAGER, null, AS_SPAWNED, Roster::target),
             member("enderman", EntityType.ENDERMAN, null, AS_SPAWNED, Roster::target),
             member("silverfish", EntityType.SILVERFISH, null, AS_SPAWNED, Roster::target),
@@ -231,8 +268,8 @@ public final class Roster {
             member("piglin_brute", EntityType.PIGLIN_BRUTE, null, Roster::unturning, Roster::anger),
             member("hoglin", EntityType.HOGLIN, null, Roster::grownHoglin, Roster::attack),
             member("zoglin", EntityType.ZOGLIN, null, AS_SPAWNED, Roster::attack),
-            member("breeze", EntityType.BREEZE, null, AS_SPAWNED, Roster::attack),
-            member("evoker", EntityType.EVOKER, null, AS_SPAWNED, Roster::summon),
+            member("breeze", EntityType.BREEZE, null, AS_SPAWNED, Roster::attack).ranged(),
+            member("evoker", EntityType.EVOKER, null, AS_SPAWNED, Roster::summon).ranged(),
             member("blaze", EntityType.BLAZE, null, AS_SPAWNED, Roster::target).flyingAt(HOVER_HEIGHT),
             member("ghast", EntityType.GHAST, null, AS_SPAWNED, Roster::target).flyingAt(GHAST_HEIGHT),
             member("phantom", EntityType.PHANTOM, null, AS_SPAWNED, Roster::target).flyingAt(PHANTOM_HEIGHT),
@@ -241,7 +278,7 @@ public final class Roster {
             member("wolf", EntityType.WOLF, GROWN_ANIMAL, Roster::grown, Roster::enrage),
             member("polar_bear", EntityType.POLAR_BEAR, GROWN_ANIMAL, Roster::grown, Roster::enrage),
             member("iron_golem", EntityType.IRON_GOLEM, null, AS_SPAWNED, Roster::enrage),
-            member("snow_golem", EntityType.SNOW_GOLEM, null, Roster::unmelting, Roster::target),
+            member("snow_golem", EntityType.SNOW_GOLEM, null, Roster::unmelting, Roster::target).ranged(),
             member("warden", EntityType.WARDEN, null, AS_SPAWNED, Roster::rouse).cappedAt(WARDEN_TRAINING_CAP));
 
     /** The ones this process fields, read once. */
@@ -302,7 +339,7 @@ public final class Roster {
     private static Member member(String name, EntityType<? extends Mob> type, @Nullable Supplier<SpawnGroupData> spawnData,
                                  Preparation preparation, Provocation provocation) {
 
-        return new Member(name, type, spawnData, preparation, provocation, 0, 1.0D);
+        return new Member(name, type, spawnData, preparation, provocation, 0, MELEE_TICKS, MELEE_START, 1.0D);
     }
 
     // ---------------------------------------------------------------------------------------------------------------
