@@ -55,6 +55,32 @@ the terrain keeps changing. Delete the folder to start over.
 
 A fight ends when either dies, or after 1200 ticks, a minute, which is a loss.
 
+## The league
+
+The league suite (`-Psuite=league`, `scripts\train.ps1 -Suite league`) is the same fight on the same sites against a
+different opponent every time: 26 hostile mobs, the scripted fighter, and frozen checkpoints of the run itself, each
+played on its most likely action with nothing recorded, so only the agent learns. The agent, and any agent it fights,
+carries a loadout drawn afresh every fight: sword tiers, an axe, armour, a shield, a bow, a crossbow. League fights happen
+at midnight with mob griefing off. `gametest/league/Roster` has which mobs and why the rest are left out, and how each is
+made to fight an agent rather than a player; `gametest/league/League` has the draw.
+
+The training side decides who the agent meets and rates everyone; `trainer/mmai/league.py` has the arithmetic. Training
+fights go mostly to opponents the agent beats about half the time, with a floor for every one, and a fifth of them to a
+pool of checkpoints. Evaluation fights, one in ten, play a checkpoint against an opponent drawn evenly from everyone, and
+those are rated: Elo, the scripted fighter held at 1500. A checkpoint's evaluation fights against the mobs and the
+scripted fighter are also its evaluation for the best weights and for when the run is done, as on the terrain suite.
+`scripts\league.ps1 -Run <run>` prints the tier list and the tables below.
+
+| File | Written by | Holds |
+| --- | --- | --- |
+| `league/roster.csv` | each worker as it starts | `opponent,kind`: the mobs and the scripted fighter it fields |
+| `league/results/wNN.csv` | each worker, a line a fight | `iteration,kind,opponent,loadout,opponent_loadout,outcome,ticks`; kind is `train` or `eval`, outcome `win`, `loss`, `timeout` or `draw` (the opponent went unkilled, a creeper that blew itself up) |
+| `league/matchmaking.csv` | the trainer, every iteration | `opponent,share,chance,rating,fights`: the share of training fights each gets, which the workers draw from |
+| `league/ratings.csv` | the trainer | every player's rating and rated record |
+| `league/opponents.csv`, `league/loadouts.csv` | the trainer | the agent's last 200 evaluation and training fights against each opponent, and with each loadout |
+| `league/evaluations.csv` | the trainer | every evaluated checkpoint's record against each opponent |
+| `league/state.json` | the trainer | what a resumed run needs to carry the league on |
+
 ## The code
 
 ```
@@ -66,8 +92,9 @@ mod/                the Gradle build
     brain/nn/         the network runtime, plain Java: topology, weights, forward pass, heads, rollout writer
     arena/            a fight someone set up: who the opponent is, what the agent is paid, what it may see
   common/src/gametest/java/net/sievert/modularmobai/gametest/
-    tests/            the fights: in a closed box, and on natural terrain
+    tests/            the fights: in a closed box, on natural terrain, and against the league
     terrain/          the terrain sites
+    league/           the league: who is fielded and how, the loadouts, the draw and the results
     tools/            BrainTool: schema export and the parity check, runs without the game
 trainer/            see trainer/README.md
 scripts/            what to run from a terminal

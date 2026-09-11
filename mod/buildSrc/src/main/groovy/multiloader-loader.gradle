@@ -149,6 +149,11 @@ afterEvaluate {
     // on the single process run like the replay properties, so every worker runArenas starts copies it from there.
     runTask.systemProperty('modular_mob_ai.gametest.opponent', providers.gradleProperty('opponent').getOrElse(''))
 
+    // The league suite's opponents and loadouts, when a run wants fewer than all of them: -PleagueOpponents=zombie,creeper
+    // -PleagueLoadouts=sword,bow. Names as the league writes them in its results.
+    runTask.systemProperty('modular_mob_ai.league.opponents', providers.gradleProperty('leagueOpponents').getOrElse(''))
+    runTask.systemProperty('modular_mob_ai.league.loadouts', providers.gradleProperty('leagueLoadouts').getOrElse(''))
+
     // The small tool that lives in the game test sources. It touches nothing of the game, so it runs as a plain Java
     // program in a second rather than booting a server: the observation layout the training side builds a network from,
     // and the parity check between this build's forward pass and PyTorch's.
@@ -614,7 +619,7 @@ afterEvaluate {
         // pool is short of worlds, one worker of every run generates a fresh one to add to it, or the pool would never grow
         // past the number of workers and those few worlds would all be used up at once.
         def suite = (extraProperties['modular_mob_ai.gametest.suite'] ?: providers.gradleProperty('suite').getOrElse('')) as String
-        def pooled = suite == 'terrain' && terrainPoolSize > 0
+        def pooled = (suite == 'terrain' || suite == 'league') && terrainPoolSize > 0
         def keptWorlds = pooled ? keptTerrain() : []
         def poolShort = keptWorlds.size() < terrainPoolSize
         def spawnSource = keptWorlds.isEmpty() ? null : keptWorlds.first().dir
@@ -987,6 +992,55 @@ afterEvaluate {
             println "=" * 60
         }
 
+        // A league run's workers each say how their fights against every opponent went, beside their durations: fights,
+        // won, lost, timed out, drawn, and in how many the opponent hurt the agent and went for it; and the same for every
+        // loadout the agent carried, as loadout:NAME. Added up here.
+        def league = [:] as TreeMap
+
+        processes.each { entry ->
+
+            def file = new File(entry.dir, entry.stats.name + '.league')
+
+            if (!file.isFile()) {
+
+                return
+            }
+
+            file.eachLine { line ->
+
+                def parts = line.trim().split(/\s+/)
+
+                if (parts.length == 8) {
+
+                    def tally = league.computeIfAbsent(parts[0]) { new long[7] }
+                    (1..7).each { tally[it - 1] += parts[it] as long }
+                }
+            }
+        }
+
+        if (!league.isEmpty()) {
+
+            println "========= League results, the agent against each opponent and with each loadout ========="
+
+            [['opponent', league.findAll { !it.key.startsWith('loadout:') }],
+             ["agent's loadout", league.findAll { it.key.startsWith('loadout:') }]].each { title, rows ->
+
+                println String.format(Locale.ROOT, "  %-18s %6s %7s %7s %9s %7s %7s %9s", title, 'fights', 'won %', 'lost %',
+                        'timeout %', 'draw %', 'hit it', 'went for')
+
+                rows.each { name, tally ->
+
+                    def fights = Math.max(1L, tally[0])
+                    println String.format(Locale.ROOT, "  %-18s %6d %7.1f %7.1f %9.1f %7.1f %7d %9d", name - 'loadout:', tally[0],
+                            100.0d * tally[1] / fights, 100.0d * tally[2] / fights, 100.0d * tally[3] / fights,
+                            100.0d * tally[4] / fights, tally[5], tally[6])
+                }
+            }
+
+            println "  hit it: fights in which the opponent hurt the agent; went for: in which it kept the agent as its target"
+            println "=" * 60
+        }
+
 
         // Record what this run cost so the next one can size itself. Startup is what the wall clock has left over
         // once the longest worker stopped testing, since the workers boot alongside each other.
@@ -1211,6 +1265,15 @@ afterEvaluate {
                            '--run', runDirectory.absolutePath,
                            '--rollout-steps', rolloutSteps]
 
+            // Training fights on natural terrain unless asked for the closed arena or the league, and on the league the
+            // training side keeps the ratings and decides who is met; see trainer/mmai/league.py.
+            def suite = providers.gradleProperty('suite').getOrElse('terrain')
+
+            if (suite == 'league') {
+
+                command += ['--league', 'true']
+            }
+
             def extra = providers.gradleProperty('trainArgs').getOrElse('').trim()
 
             if (!extra.isEmpty()) {
@@ -1289,9 +1352,6 @@ afterEvaluate {
 
             // As many workers as the cores and the memory allow, unless told otherwise; runArenas cuts this down to fit.
             def maxWorkers = Integer.parseInt(providers.gradleProperty('maxWorkers').getOrElse('16'))
-
-            // Training fights on natural terrain unless asked for the closed arena.
-            def suite = providers.gradleProperty('suite').getOrElse('terrain')
 
             // A few fights of every round written down for watching, in the run's own folder; -PreplayEvery=0 for none.
             def replays = replayProperties(runName, replayEvery(200))

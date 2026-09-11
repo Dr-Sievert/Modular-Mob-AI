@@ -29,7 +29,8 @@ System properties on the game process:
   "worker": 1,
   "fight": 400,
   "biome": "minecraft:plains", // biome at the site's centre, or null
-  "outcome": "win",            // "win" | "loss" | "timeout"
+  "outcome": "win",            // "win" | "loss" | "timeout" | "draw" (league only: the opponent went unkilled, a creeper
+                               // that blew itself up)
   "ticks": 187,                // T: frames recorded, one per server tick of the fight
   "tickRate": 20,
 
