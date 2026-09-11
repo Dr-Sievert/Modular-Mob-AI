@@ -3,6 +3,7 @@ package net.sievert.modularmobai.gametest;
 import java.util.Collection;
 
 import net.minecraft.gametest.framework.TestFunction;
+import net.sievert.modularmobai.gametest.tests.AgentMechanicsGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentVindicatorGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentVindicatorTerrainGameTest;
 import net.sievert.modularmobai.gametest.tests.VillagerVindicatorGameTest;
@@ -23,6 +24,9 @@ public class ModularMobAiGameTests {
 
             // The fifty thousand arena baseline, with no agent in it.
             case "baseline" -> new Class<?>[] {VillagerVindicatorGameTest.class};
+
+            // The agent's body against a player's rules, one rule at a time: no fights, a minute or so all told.
+            case "mechanics" -> new Class<?>[] {AgentMechanicsGameTest.class};
 
             default -> new Class<?>[] {AgentVindicatorGameTest.class};
         };
