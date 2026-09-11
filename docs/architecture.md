@@ -104,6 +104,41 @@ Workers keep the worlds they generate in `runs/terrain/<minecraft version>`, up 
 reused at most 8 times (`terrainUses`). A later worker reads its first sites from disk in seconds instead of generating
 them.
 
+## The league
+
+The league suite (`-Psuite=league`, `scripts\train.ps1 -Suite league`) is the same fight on the same sites against a
+different opponent every time, with a different loadout:
+- 26 mobs (`gametest/league/Roster`, which also says why the rest are left out): zombie, husk, drowned, zombie villager,
+  skeleton, stray, bogged, wither skeleton, spider, cave spider, creeper, vindicator, pillager, witch, ravager, enderman,
+  silverfish, endermite, slime, magma cube, zombified piglin, piglin, piglin brute, hoglin, zoglin, breeze. Each gets its
+  own finalizeSpawn, is grown up, kept from zombifying and, for a slime, made its biggest, and is made to go for the
+  agent every tick it has let go: as its target, angered, or in its brain's memory. Slimes and breezes treat the agent
+  as a player (`SlimeInvoker`, `BreezeMixin`).
+- The scripted fighter and frozen checkpoints of the run, as another agent with a brain of its own on its most likely
+  action, so only the agent's steps are recorded.
+- 10 loadouts (`gametest/league/Loadouts`, armed with `arena/Loadout`): iron, stone and diamond swords, an axe, a sword
+  with iron armour, sword or axe with a shield, a bow, a crossbow, a sword with a bow behind it.
+- League fights happen at midnight with mob griefing off: no undead burn, spiders stay hostile, no crater stays in a kept
+  world. A creeper that blows itself up without killing the agent is a draw, which pays as a loss.
+
+The trainer decides who the agent meets and rates everyone (`trainer/mmai/league.py`). Training fights are shared by the
+agent's chance against each opponent times its complement, from its recent fights and filled in from the ratings, with
+a quarter spread evenly and a fifth for a pool of 8 checkpoints (the newest 4, and 4 spread over the run). Evaluation
+fights, one in ten, play a checkpoint against an opponent drawn evenly from everyone, and those are rated: Elo, K 16 (32
+for a player's first 30 fights), the scripted fighter held at 1500. Those against mobs and the scripted fighter are also
+the checkpoint's evaluation, so best weights and the end of the run work as on the terrain suite, on 1,000 fights each.
+`scripts\league.ps1 -Run <run>` prints the tier list and the tables.
+
+| File (`runs/<run>/league/`) | Written by | Holds |
+| --- | --- | --- |
+| `roster.csv` | each worker as it starts | `opponent,kind`: the mobs and the scripted fighter it fields |
+| `results/wNN.csv` | each worker, a line a fight | `iteration,kind,opponent,loadout,opponent_loadout,outcome,ticks,cause`; kind `train` or `eval`, outcome `win`, `loss`, `timeout` or `draw`, cause what the agent died of when it died |
+| `matchmaking.csv` | the trainer, every iteration | `opponent,share,chance,rating,fights`: each opponent's share of the training fights, which the workers draw from |
+| `ratings.csv` | the trainer | every player's rating and rated record |
+| `opponents.csv`, `loadouts.csv` | the trainer | the agent's last 200 evaluation and training fights against each opponent and with each loadout |
+| `evaluations.csv` | the trainer | every evaluated checkpoint's record against each opponent |
+| `state.json` | the trainer | what a resumed run needs to carry the league on |
+
 ## The code
 
 ```
@@ -116,8 +151,9 @@ mod/                    the Gradle build (MultiLoader: common + fabric + neoforg
     arena/                a fight someone set up: loadouts, the reward, what the agent may see
     mixin/                vanilla changes the agent needs (placing, axes, damage payment, bow access)
   common/src/gametest/java/net/sievert/modularmobai/gametest/
-    tests/                the fights (closed arena, natural terrain) and the mechanics suite
+    tests/                the fights (closed arena, natural terrain, the league) and the mechanics suite
     terrain/              the terrain sites
+    league/               the league: the mobs and how each is fielded, the loadouts, the draw and the results
     replay/               fight recording for the viewer (FightRecorder, SiteBlocks)
     mixin/                game-test-only server changes: no saving, chunk unloading, no idle chunk ticking
     tools/                BrainTool: schema export and the parity check, runs without the game

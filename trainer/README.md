@@ -85,7 +85,10 @@ two sides disagree about the network, which makes every ratio in the update wron
 | `mmai/rollout.py` | Reading the game's `.mbr` shards into per agent segments. |
 | `mmai/run.py` | The run folder: shards in, weights out, status, and who still has to deliver. |
 | `mmai/ppo.py` | `Trainer`: replay, advantages, the PPO update, checkpoints. |
+| `mmai/evaluate.py` | Evaluation of checkpoints, the best weights, and when a run is done. |
+| `mmai/league.py` | A league run's matchmaking, Elo ratings and tables; turned on by the build for `-Psuite=league`. |
 | `mmai/parity.py` | The fixture the game checks its own forward pass against. |
+| `tests/` | Unit tests, `python -m unittest discover -s tests` from here, or `scripts\league.ps1 -Test`. |
 
 The file formats themselves are written down once, in [`../docs/README.md`](../docs/README.md).
 

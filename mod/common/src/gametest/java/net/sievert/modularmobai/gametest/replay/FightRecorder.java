@@ -61,7 +61,13 @@ public final class FightRecorder {
         LOSS,
 
         /** Both still standing when the time ran out. The arena scores it as a loss; someone watching wants to know. */
-        TIMEOUT
+        TIMEOUT,
+
+        /**
+         * The opponent went without being killed, as a creeper that blew itself up does, and the agent is still standing.
+         * Scored as a loss as well; only league fights end this way.
+         */
+        DRAW
     }
 
     private static final String PROPERTY = "modular_mob_ai.replays";

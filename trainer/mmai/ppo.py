@@ -110,6 +110,34 @@ class Config:
     eval_patience: int = 10
     eval_target: float = 0.995
 
+    # The league, for a run on the league suite, which the build turns on; see league.py. Off for every other suite.
+    league: bool = False
+
+    # Frozen checkpoints the agent meets in self play: this many, the newest league_recent of them and the rest spread
+    # over the run so far. They get league_self_play of the training fights, the mobs and the scripted fighter the rest.
+    league_pool: int = 8
+    league_recent: int = 4
+    league_self_play: float = 0.2
+
+    # Of each of those two shares, how much is spread evenly over its opponents whatever the agent's chances, so none
+    # is forgotten. The rest goes by how close to an even fight each one is.
+    league_floor: float = 0.25
+
+    # What the agent's training fights against an opponent still count for an iteration later, and how many fights'
+    # worth the ratings' guess at its chances is worth beside them.
+    league_decay: float = 0.98
+    league_prior: float = 10.0
+
+    # Elo: how far one rated fight moves a rating, twice that for a player's first league_provisional of them, where
+    # everyone starts, and whose rating never moves, so the scale means the same in every run.
+    league_k: float = 16.0
+    league_provisional: int = 30
+    league_initial: float = 1500.0
+    league_anchor: str = "scripted"
+
+    # How many of the most recent fights against each opponent, and with each loadout, the tables go by.
+    league_window: int = 200
+
 
 @dataclass
 class Replayed:

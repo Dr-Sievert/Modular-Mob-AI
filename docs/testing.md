@@ -22,6 +22,9 @@ Each boots a headless server in seconds, and all three need only Java (parity al
 scripts\test.ps1 -Terrain                 the fights on natural terrain; generates a world first
 scripts\test.ps1 -Arenas 200              more fights
 scripts\test.ps1 -Terrain -Replays        record every fight for the viewer, in runs\gametest\replays
+scripts\test.ps1 -League                  twice round every league opponent; a table of each, with how often it hit the agent
+scripts\test.ps1 -League -Weights models\vs-copy\best.mbw   the same with a network, which also fights a frozen copy of itself
+scripts\league.ps1 -Test                  the league's unit tests: Elo, matchmaking, the pool, reading and resuming results
 scripts\eval.ps1 -Weights models\vs-copy\best.mbw          a network's win rate, 2,000 fights, most likely action
 scripts\eval.ps1 -Run vs-copy -Iteration 650 -Arenas 400   a checkpoint of a local run
 ```

@@ -153,7 +153,9 @@ public final class GameTestTuning {
      * Which fights to run: {@code arena}, the agent against a vindicator in a closed nine block box on a flat world, which
      * boots in seconds and is the quick check; or {@code terrain}, the same fight out in the open on natural ground,
      * which is what training uses. {@code mechanics} runs no fights at all, only short tests of the agent's body against a
-     * player's rules, in the arena's box.
+     * player's rules, in the arena's box. {@code league} is the terrain fight against a different opponent every time:
+     * nearly every hostile mob, the scripted fighter, and frozen copies of the network being trained, see
+     * {@link net.sievert.modularmobai.gametest.league.League}.
      */
     public static String suite() {
 
@@ -161,10 +163,10 @@ public final class GameTestTuning {
         return property == null || property.isBlank() ? "arena" : property.trim().toLowerCase(java.util.Locale.ROOT);
     }
 
-    /** Whether the world has to be generated as a normal one rather than flat, which the terrain suite needs. */
+    /** Whether the world has to be generated as a normal one rather than flat, which the terrain and league suites need. */
     public static boolean naturalTerrain() {
 
-        return "terrain".equals(suite());
+        return "terrain".equals(suite()) || "league".equals(suite());
     }
 
     /**
