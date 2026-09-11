@@ -30,6 +30,7 @@ if ($League -and -not $PSBoundParameters.ContainsKey('Arenas')) {
     $Arenas = 54
 }
 
-$brain = if ($Weights) { @('-Pbrain=neural', "-PbrainWeights=$Weights") } else { @() }
+# The game runs in a folder of its own under mod\, so a path relative to here would not be found from there.
+$brain = if ($Weights) { @('-Pbrain=neural', "-PbrainWeights=$((Resolve-Path $Weights).Path)") } else { @() }
 
 Invoke-Gradle (@(':fabric:runGametest', "-Parenas=$Arenas", "-Psuite=$suite", "-PreplayEvery=$replayEvery") + $brain)
