@@ -7,20 +7,27 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 import org.jetbrains.annotations.Nullable;
 
 import it.unimi.dsi.fastutil.floats.FloatArrayList;
+import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import net.minecraft.SharedConstants;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import net.sievert.modularmobai.Constants;
 import net.sievert.modularmobai.arena.Episode;
 import net.sievert.modularmobai.brain.Brain;
@@ -32,8 +39,8 @@ import net.sievert.modularmobai.gametest.GameTestTuning;
 
 /**
  * Writes a fight down tick by tick, so it can be watched afterwards: the ground it was fought on, where both fighters
- * stood and which way they looked, their health, every swing and every hit, and what the agent's brain asked for on
- * each tick. The format is docs/replay-format.md.
+ * stood and which way they looked, their health, every swing and every hit, every arrow or anything else shot or thrown
+ * and where it came down, and what the agent's brain asked for on each tick. The format is docs/replay-format.md.
  *
  * <pre>
  *   -Dmodular_mob_ai.replays=DIR          where the replays go; unset or empty records nothing
@@ -61,6 +68,15 @@ public final class FightRecorder {
     private static final String PROPERTY = "modular_mob_ai.replays";
 
     private static final long[] SCALES = {1L, 10L, 100L, 1_000L, 10_000L};
+
+    /**
+     * How far above and below the fight's bounds a projectile is still followed. An arrow lobbed at a distant target climbs
+     * well above anything the fighters were allowed to perceive, and is worth watching all the way down.
+     */
+    private static final double AIRSPACE_PADDING = 16.0D;
+
+    /** How far outside a fighter's box a projectile's path still meets it, the margin the game's own hit test allows. */
+    private static final double HIT_MARGIN = 0.3D;
 
     /** Where the replays go, or null when nobody asked for any. Read when the first fight starts. */
     @Nullable
@@ -107,6 +123,19 @@ public final class FightRecorder {
     /** How much of the episode's total the recorded ticks already account for. */
     private float rewardSeen;
 
+    /**
+     * Where projectiles are followed: over the ground the replay draws, from well below the fight's bounds to well above
+     * them. One is picked up on the first tick it is inside, and let go of if it leaves.
+     */
+    private final AABB airspace;
+
+    /** Every projectile seen in flight, in the order they were first seen, and those of them still flying. */
+    private final List<Flight> flights = new ArrayList<>();
+    private final List<Flight> flying = new ArrayList<>();
+
+    /** The id of every projectile already picked up, so none is ever followed twice. */
+    private final IntOpenHashSet seen = new IntOpenHashSet();
+
     private FightRecorder(int fight, AgentMob agent, LivingEntity opponent, int ceiling) {
 
         this.fight = fight;
@@ -121,6 +150,8 @@ public final class FightRecorder {
         // box and its walls in the closed arena. A fight with no bounds gets the ground around where it started.
         AABB area = this.episode != null && this.episode.bounds() != null
                 ? this.episode.bounds() : agent.getBoundingBox().inflate(16.0D, 0.0D, 16.0D);
+
+        this.airspace = area.inflate(0.0D, AIRSPACE_PADDING, 0.0D);
 
         int west = Mth.floor(area.minX);
         int north = Mth.floor(area.minZ);
@@ -236,6 +267,10 @@ public final class FightRecorder {
             this.agentTrack.frame();
             this.opponentTrack.frame();
 
+            // After the fighters, who by then know whether they were hurt, which is what tells a projectile that went into
+            // one of them from one that just vanished.
+            this.followProjectiles();
+
             // What the brain asked for, before the body applied any of its limits. The buttons and the slot were already
             // decided when the controls were filled in, but a brain only ever sends them as zero or one and as an index.
             MobControls controls = this.agent.controls();
@@ -276,6 +311,106 @@ public final class FightRecorder {
 
             fail("Could not record a tick of fight " + this.fight, exception);
         }
+    }
+
+    /**
+     * Moves every projectile in flight on by the tick that just ran, ends the flights that are over, and picks up any
+     * projectile that has just appeared. A fight nobody shoots in costs one search a tick, which finds nothing.
+     */
+    private void followProjectiles() {
+
+        this.flying.removeIf(flight -> !this.advance(flight));
+
+        for (Projectile projectile : this.agent.level().getEntitiesOfClass(Projectile.class, this.airspace,
+                projectile -> !this.seen.contains(projectile.getId()) && this.airspace.contains(projectile.position()))) {
+
+            Flight flight = new Flight(projectile, this.indexOf(projectile.getOwner()), this.ticks);
+
+            this.seen.add(projectile.getId());
+            this.flights.add(flight);
+            this.flying.add(flight);
+        }
+    }
+
+    /**
+     * Writes down where a projectile got to on the tick that just ran, or how its flight ended.
+     *
+     * @return whether it is still in flight, to be followed again on the next tick
+     */
+    private boolean advance(Flight flight) {
+
+        Projectile projectile = flight.projectile;
+        Track struck = this.struck(projectile);
+
+        if (struck != null) {
+
+            // Into a fighter, which ends the flight whatever the projectile does next: an arrow is gone, a trident bounces
+            // off, a piercing arrow flies on.
+            flight.frame(impact(struck.fighter, flight.last, projectile.position()));
+            flight.end(this.ticks, this.indexOf(struck.fighter));
+            return false;
+        }
+
+        if (projectile.isRemoved()) {
+
+            // Gone without hurting either fighter: into something else, or it simply burst, as a snowball does on the
+            // ground.
+            flight.frame(projectile.position());
+            flight.end(this.ticks, -1);
+            return false;
+        }
+
+        if (projectile.position().equals(flight.last)) {
+
+            // An arrow that has come to rest in a block never moves again, so one that did not move at all came to rest on
+            // the tick before, which is already written down. Following it for the minute it lingers would add nothing.
+            flight.end(this.ticks - 1, -1);
+            return false;
+        }
+
+        if (!this.airspace.contains(projectile.position())) {
+
+            return false;
+        }
+
+        flight.frame(projectile.position());
+        return true;
+    }
+
+    /**
+     * The fighter a projectile went into on this tick, if any: one that lost health on this tick, to damage the projectile
+     * itself dealt. Tied to the damage rather than to the impact, so every hit is also a hurt tick in that fighter's
+     * frames. One that struck a fighter without hurting it, a snowball say, or an arrow that glanced off one still in its
+     * cooldown, did not hit it.
+     */
+    @Nullable
+    private Track struck(Projectile projectile) {
+
+        if (this.agentTrack.hurtBy(projectile)) {
+
+            return this.agentTrack;
+        }
+
+        return this.opponentTrack.hurtBy(projectile) ? this.opponentTrack : null;
+    }
+
+    /**
+     * Where a projectile's last move met a fighter it went into. The rest of the move carries an arrow on through, so its
+     * own position is past the fighter: this is where its path entered the fighter's box, or, when the fighter stepped out
+     * of the way of that path during the tick, the point of the box nearest to where the move began.
+     */
+    private static Vec3 impact(LivingEntity fighter, Vec3 from, Vec3 to) {
+
+        AABB body = fighter.getBoundingBox().inflate(HIT_MARGIN);
+
+        return body.clip(from, to).orElseGet(() -> new Vec3(Mth.clamp(from.x, body.minX, body.maxX),
+                Mth.clamp(from.y, body.minY, body.maxY), Mth.clamp(from.z, body.minZ, body.maxZ)));
+    }
+
+    /** Where an entity is in the replay's list of them: the agent first, its opponent second, and anything else -1. */
+    private int indexOf(@Nullable Entity entity) {
+
+        return entity == this.agentTrack.fighter ? 0 : entity == this.opponentTrack.fighter ? 1 : -1;
     }
 
     /**
@@ -354,6 +489,19 @@ public final class FightRecorder {
             for (int tick = 0; tick < this.rewards.size(); tick++) {
 
                 number(tick == 0 ? out : out.append(','), this.rewards.getFloat(tick), 4);
+            }
+
+            out.append(']');
+        }
+
+        // Only when there were any, so a fight nobody shot in is written exactly as it always was.
+        if (!this.flights.isEmpty()) {
+
+            out.append(",\n\"projectiles\":[\n");
+
+            for (int index = 0; index < this.flights.size(); index++) {
+
+                this.flights.get(index).write(index == 0 ? out : out.append(",\n"));
             }
 
             out.append(']');
@@ -511,6 +659,9 @@ public final class FightRecorder {
         private float lastHealth;
         private int lastTickCount;
 
+        /** Whether it lost health on the tick just written down. */
+        private boolean justHurt;
+
         private Track(LivingEntity fighter) {
 
             this.fighter = fighter;
@@ -540,10 +691,19 @@ public final class FightRecorder {
 
             // Taking damage is losing health, however it came: a hit, a fall, a fire, a hit landing in the cooldown after
             // another. Consistent with the health column beside it, which is what anyone checking it will compare.
-            next(this.hurt).append(now < this.lastHealth ? 1 : 0);
+            this.justHurt = now < this.lastHealth;
+            next(this.hurt).append(this.justHurt ? 1 : 0);
 
             this.lastHealth = now;
             this.lastTickCount = this.fighter.tickCount;
+        }
+
+        /** Whether it lost health on the tick just written down, to damage the given projectile dealt. */
+        private boolean hurtBy(Projectile projectile) {
+
+            // Only asked once it has just lost health, so the damage it remembers last is this tick's.
+            DamageSource source = this.justHurt ? this.fighter.getLastDamageSource() : null;
+            return source != null && source.getDirectEntity() == projectile;
         }
 
         private void write(StringBuilder out) {
@@ -567,6 +727,71 @@ public final class FightRecorder {
             }
 
             return fighter.swinging && fighter.swingTime < 0;
+        }
+    }
+
+    /**
+     * One projectile's flight, written out as text a tick at a time like a fighter's frames: what it was, who shot it,
+     * where it was on every tick it flew, and how the flight ended.
+     */
+    private static final class Flight {
+
+        private final Projectile projectile;
+        private final String type;
+        private final int owner;
+        private final int start;
+
+        private final StringBuilder x = new StringBuilder();
+        private final StringBuilder y = new StringBuilder();
+        private final StringBuilder z = new StringBuilder();
+
+        /** Where the last frame put it: where the next one moves it on from, and where the flight ended once it has. */
+        private Vec3 last;
+
+        /** The tick it ended on, -1 while it has not, and the fighter it went into, -1 for none. */
+        private int endTick = -1;
+        private int hit = -1;
+
+        private Flight(Projectile projectile, int owner, int start) {
+
+            this.projectile = projectile;
+            this.type = EntityType.getKey(projectile.getType()).toString();
+            this.owner = owner;
+            this.start = start;
+            this.frame(projectile.position());
+        }
+
+        private void frame(Vec3 at) {
+
+            number(next(this.x), at.x, 2);
+            number(next(this.y), at.y, 2);
+            number(next(this.z), at.z, 2);
+
+            this.last = at;
+        }
+
+        private void end(int tick, int hit) {
+
+            this.endTick = tick;
+            this.hit = hit;
+        }
+
+        private void write(StringBuilder out) {
+
+            out.append("{\"type\":\"").append(this.type).append("\",\"owner\":").append(this.owner)
+                    .append(",\"start\":").append(this.start).append(",\"x\":[").append(this.x)
+                    .append("],\"y\":[").append(this.y).append("],\"z\":[").append(this.z).append(']');
+
+            if (this.endTick >= 0) {
+
+                out.append(",\"end\":{\"tick\":").append(this.endTick).append(",\"hit\":").append(this.hit);
+                number(out.append(",\"x\":"), this.last.x, 2);
+                number(out.append(",\"y\":"), this.last.y, 2);
+                number(out.append(",\"z\":"), this.last.z, 2);
+                out.append('}');
+            }
+
+            out.append('}');
         }
     }
 }
