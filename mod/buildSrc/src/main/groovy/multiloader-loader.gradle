@@ -116,6 +116,35 @@ afterEvaluate {
         return file.isAbsolute() ? file : new File(repositoryRoot, path)
     }
 
+    // Replays of fights, for watching afterwards: every Nth fight of each worker, written whole when it ends, in the format
+    // docs/replay-format.md describes. Off unless -PreplayEvery=N asks, except in training, which keeps one fight in two
+    // hundred unless told otherwise. A one-off run writes into runs/gametest/replays, or runs/<replayRun>/replays when given
+    // a name, and says where at the end; a training run writes into its own folder. Nothing is ever cleared: each worker
+    // numbers its fights on from the replays it already left there.
+    def replayEvery = { int fallback -> Integer.parseInt(providers.gradleProperty('replayEvery').getOrElse(String.valueOf(fallback))) }
+
+    def replayProperties = { String runName, int every ->
+
+        def folder = new File(new File(new File(repositoryRoot, 'runs'), runName), 'replays')
+        return ['modular_mob_ai.replays': every > 0 ? folder.absolutePath : '', 'modular_mob_ai.replays.every': Math.max(1, every)]
+    }
+
+    // The single process run takes these straight onto its command line, and every worker a parallel run starts copies
+    // them from there.
+    def oneOffReplays = replayProperties(providers.gradleProperty('replayRun').getOrElse('gametest'), replayEvery(0))
+
+    oneOffReplays.each { name, value -> runTask.systemProperty(name, value) }
+
+    def reportReplays = {
+
+        if (!oneOffReplays['modular_mob_ai.replays'].isEmpty()) {
+
+            println "Replays: ${oneOffReplays['modular_mob_ai.replays']}"
+        }
+    }
+
+    runTask.doLast { reportReplays() }
+
     // The small tool that lives in the game test sources. It touches nothing of the game, so it runs as a plain Java
     // program in a second rather than booting a server: the observation layout the training side builds a network from,
     // and the parity check between this build's forward pass and PyTorch's.
@@ -764,6 +793,7 @@ afterEvaluate {
         doLast {
 
             runArenas(providers.gradleProperty('brain').getOrElse(''), 16)
+            reportReplays()
         }
     }
 
@@ -964,6 +994,14 @@ afterEvaluate {
             // Training fights on natural terrain unless asked for the closed arena.
             def suite = providers.gradleProperty('suite').getOrElse('terrain')
 
+            // A few fights of every round written down for watching, in the run's own folder; -PreplayEvery=0 for none.
+            def replays = replayProperties(runName, replayEvery(200))
+
+            if (!replays['modular_mob_ai.replays'].isEmpty()) {
+
+                logger.lifecycle("Replays of one fight in ${replays['modular_mob_ai.replays.every']} of each worker go to ${replays['modular_mob_ai.replays']}")
+            }
+
             // What the training side needs to hear from here rather than from the workers: that a worker is gone for good,
             // so nothing waits for its shards, and that a round is over, so it can say when it has finished with it.
             def rollouts = new File(runDirectory, 'rollouts')
@@ -994,7 +1032,7 @@ afterEvaluate {
                             'modular_mob_ai.training.iteration'   : iteration,
                             'modular_mob_ai.training.round'       : round,
                             'modular_mob_ai.training.rolloutSteps': rolloutSteps
-                    ], {
+                    ] + replays, {
 
                         // Workers block waiting for the next weights, so a training process that has died would leave
                         // them waiting for good.

@@ -17,6 +17,7 @@ import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.gametest.GameTestGroup;
 import net.sievert.modularmobai.gametest.GameTestTuning;
 import net.sievert.modularmobai.gametest.RepeatGameTest;
+import net.sievert.modularmobai.gametest.replay.FightRecorder;
 import net.sievert.modularmobai.gametest.util.TestDurationStats;
 
 /**
@@ -82,8 +83,17 @@ public class AgentVindicatorGameTest {
         agent.setHotbarItem(0, new ItemStack(Items.IRON_SWORD));
         agent.startEpisode(episode);
 
+        // Null unless this is one of the fights asked to be written down for watching later. The box starts one above
+        // the structure block, so the roof, the last of its nine layers, is at helper height nine.
+        final FightRecorder replay = FightRecorder.start(agent, vindicator, helper.absolutePos(new BlockPos(0, SIZE, 0)).getY());
+
         helper.startSequence()
                 .thenWaitUntil(() -> {
+
+                    if (replay != null) {
+
+                        replay.tick();
+                    }
 
                     if (agent.isAlive() && vindicator.isAlive() && helper.getTick() < FIGHT_TICKS) {
 
@@ -109,6 +119,12 @@ public class AgentVindicatorGameTest {
 
                     TIME_TO_RESOLVE.record(helper.getTick(),
                             won ? TestDurationStats.Outcome.WIN : TestDurationStats.Outcome.LOSS);
+
+                    if (replay != null) {
+
+                        replay.finish(won ? FightRecorder.Outcome.WIN
+                                : agent.isAlive() ? FightRecorder.Outcome.TIMEOUT : FightRecorder.Outcome.LOSS);
+                    }
                 })
                 // The outcome above was decided after this tick's batch had already gone out, so the agent's final step,
                 // the one flagged done and carrying its terminal reward, goes out at the start of the next tick. The

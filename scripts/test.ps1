@@ -4,14 +4,17 @@
 #   scripts\test.ps1                    20 fights in the closed arena, boots in seconds
 #   scripts\test.ps1 -Terrain           the same on natural terrain, which has to generate the world first
 #   scripts\test.ps1 -Arenas 200
+#   scripts\test.ps1 -Terrain -Replays  every fight written down for watching, in runs\gametest\replays
 
 param(
     [int] $Arenas = 20,
-    [switch] $Terrain
+    [switch] $Terrain,
+    [switch] $Replays
 )
 
 . "$PSScriptRoot\_common.ps1"
 
 $suite = if ($Terrain) { 'terrain' } else { 'arena' }
+$replayEvery = if ($Replays) { 1 } else { 0 }
 
-Invoke-Gradle @(':fabric:runGametest', "-Parenas=$Arenas", "-Psuite=$suite")
+Invoke-Gradle @(':fabric:runGametest', "-Parenas=$Arenas", "-Psuite=$suite", "-PreplayEvery=$replayEvery")

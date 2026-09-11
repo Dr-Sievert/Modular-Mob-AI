@@ -5,6 +5,7 @@
 #   scripts\train.ps1 -Battles 0                until Ctrl+C
 #   scripts\train.ps1 -Workers 2 -Device cpu    lighter on the machine
 #   scripts\train.ps1 -Run wide -Extra '--entropy-coef 0.003'
+#   scripts\train.ps1 -ReplayEvery 50           replays of more fights in runs\<run>\replays, 0 for none
 #   scripts\compare.ps1                         two runs side by side instead, see there
 #
 # Learning happens every -RolloutSteps steps of experience across all workers (an iteration): the workers pause, the
@@ -21,6 +22,7 @@ param(
     [int] $RolloutSteps = 16384,
     [ValidateSet('cuda', 'cpu')] [string] $Device = 'cuda',
     [ValidateSet('terrain', 'arena')] [string] $Suite = 'terrain',
+    [int] $ReplayEvery = 200,
     [string] $Extra = ''
 )
 
@@ -48,5 +50,6 @@ Invoke-Gradle (@(
     '-Prounds=0',
     "-PworkerHeap=$Heap",
     "-ProlloutSteps=$RolloutSteps",
+    "-PreplayEvery=$ReplayEvery",
     "-PtrainArgs=--device $Device $Extra".Trim()
 ) + $workerArguments)

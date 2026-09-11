@@ -18,6 +18,7 @@ import net.sievert.modularmobai.entity.agent.AgentMob;
 import net.sievert.modularmobai.gametest.GameTestGroup;
 import net.sievert.modularmobai.gametest.GameTestTuning;
 import net.sievert.modularmobai.gametest.RepeatGameTest;
+import net.sievert.modularmobai.gametest.replay.FightRecorder;
 import net.sievert.modularmobai.gametest.terrain.TerrainSites;
 import net.sievert.modularmobai.gametest.util.TestDurationStats;
 
@@ -100,6 +101,9 @@ public class AgentVindicatorTerrainGameTest {
         private Episode episode;
         private long started;
 
+        /** The fight being written down for watching later, or null when this one is not. */
+        private FightRecorder replay;
+
         private Slot(GameTestHelper helper) {
 
             this.helper = helper;
@@ -134,6 +138,11 @@ public class AgentVindicatorTerrainGameTest {
                 }
 
                 case FIGHTING -> {
+
+                    if (this.replay != null) {
+
+                        this.replay.tick();
+                    }
 
                     if (!this.agent.isAlive() || !this.vindicator.isAlive() || this.helper.getTick() - this.started >= FIGHT_TICKS) {
 
@@ -188,6 +197,7 @@ public class AgentVindicatorTerrainGameTest {
 
             this.episode = this.agent.episode();
             this.started = this.helper.getTick();
+            this.replay = FightRecorder.start(this.agent, this.vindicator);
 
             return Phase.FIGHTING;
         }
@@ -213,6 +223,14 @@ public class AgentVindicatorTerrainGameTest {
 
             TIME_TO_RESOLVE.record(this.helper.getTick() - this.started,
                     won ? TestDurationStats.Outcome.WIN : TestDurationStats.Outcome.LOSS);
+
+            // After the reward above, so the replay's last tick carries what the ending paid.
+            if (this.replay != null) {
+
+                this.replay.finish(won ? FightRecorder.Outcome.WIN
+                        : this.agent.isAlive() ? FightRecorder.Outcome.TIMEOUT : FightRecorder.Outcome.LOSS);
+                this.replay = null;
+            }
         }
     }
 
