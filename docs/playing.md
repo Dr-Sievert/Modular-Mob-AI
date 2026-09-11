@@ -16,6 +16,7 @@ scripts\play.ps1 -Model vs-scratch        another published network, by its fold
 scripts\play.ps1 -Weights runs\vs-copy\weights\000700.mbw    any weight file, such as a local checkpoint
 scripts\play.ps1 -Scripted                the hand-written fighter instead
 scripts\play.ps1 -Loader neoforge         the NeoForge client
+scripts\play.ps1 -World arena             straight into the saved world 'arena' (its folder under saves\), no menus
 ```
 
 - **The best network** is the one whose `models\<name>\model.json` records the highest win rate (more fights breaks a

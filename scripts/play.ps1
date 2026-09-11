@@ -5,6 +5,7 @@
 #   scripts\play.ps1 -Weights runs\vs-copy\weights\000700.mbw    any weight file, such as a checkpoint of a local run
 #   scripts\play.ps1 -Scripted                the hand written fighter instead
 #   scripts\play.ps1 -Loader neoforge         the NeoForge client rather than Fabric's
+#   scripts\play.ps1 -World arena             straight into the saved world 'arena', skipping the menus
 #
 # It is the development client, so the mod is the one in this checkout, built on the way. Every network under models\
 # can be named in the game as well, /mmai brain @e vs-scratch, including ones published after the last build. The log
@@ -19,7 +20,8 @@ param(
     [string] $Model = '',
     [string] $Weights = '',
     [ValidateSet('fabric', 'neoforge')] [string] $Loader = 'fabric',
-    [switch] $Scripted
+    [switch] $Scripted,
+    [string] $World = ''
 )
 
 . "$PSScriptRoot\_common.ps1"
@@ -106,4 +108,13 @@ if ($free -lt 4) {
 
 Write-Host "Starting the $Loader client, agents on $label"
 
-Invoke-Gradle (@(":${Loader}:runClient", "-Pmodels=$models") + $brain)
+$arguments = @(":${Loader}:runClient", "-Pmodels=$models") + $brain
+
+# Minecraft's own quick play: the client opens the world by its folder name under saves\ as soon as it has started. The
+# build adds it to the client's program arguments; Gradle's --args would replace the ones the run needs to start at all.
+if ($World) {
+
+    $arguments += "-Pworld=$World"
+}
+
+Invoke-Gradle $arguments

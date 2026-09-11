@@ -63,6 +63,14 @@ loom {
             run.vmArg("-Dmodular_mob_ai.brain.weights=${providers.gradleProperty('brainWeights').getOrElse('')}")
             run.vmArg("-Dmodular_mob_ai.models=${providers.gradleProperty('models').getOrElse('')}")
         }
+
+        // Straight into a saved world, by its folder under saves, skipping the menus: scripts\play.ps1 -World.
+        def world = providers.gradleProperty('world').getOrElse('')
+
+        if (!world.isEmpty()) {
+            client.programArgs('--quickPlaySingleplayer', world)
+        }
+
         gametest {
             server()
             setConfigName('Fabric Game Test')
