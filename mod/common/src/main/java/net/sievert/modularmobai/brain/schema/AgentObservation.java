@@ -282,6 +282,28 @@ public final class AgentObservation {
      */
     private static float cell(ChunkAccess chunk, BlockState state) {
 
+        byte known = CELLS.getByte(state);
+
+        if (known != UNKNOWN) {
+
+            return VALUES[known];
+        }
+
+        float cell = classify(chunk, state);
+
+        // A block whose shape is the same wherever it stands, which vanilla already keeps one of per state, reads the same
+        // everywhere too; one whose shape depends on where it stands is worked out every time, as before.
+        if (!state.getBlock().hasDynamicShape()) {
+
+            CELLS.put(state, code(cell));
+        }
+
+        return cell;
+    }
+
+    /** What a cell holds, worked out from scratch: see {@link #cell}. */
+    private static float classify(ChunkAccess chunk, BlockState state) {
+
         if (hazard(state)) {
 
             return HAZARD;
@@ -295,6 +317,27 @@ public final class AgentObservation {
         FluidState fluid = state.getFluidState();
 
         return fluid.isEmpty() ? EMPTY : FLUID;
+    }
+
+    /**
+     * What {@link #cell} makes of each block state, remembered, since the answer only depends on the state for all but
+     * the few blocks whose shape changes with where they stand: four hundred cells an agent a tick asked the lava tag and
+     * the collision shape every time, which was more than any other part of the observation. Only ever read and written
+     * on the server thread, as the rest of this class is.
+     */
+    private static final it.unimi.dsi.fastutil.objects.Reference2ByteOpenHashMap<BlockState> CELLS = new it.unimi.dsi.fastutil.objects.Reference2ByteOpenHashMap<>();
+
+    private static final byte UNKNOWN = -1;
+    private static final float[] VALUES = {EMPTY, FLUID, SOLID, HAZARD};
+
+    static {
+
+        CELLS.defaultReturnValue(UNKNOWN);
+    }
+
+    private static byte code(float cell) {
+
+        return cell == EMPTY ? 0 : cell == FLUID ? (byte) 1 : cell == SOLID ? (byte) 2 : (byte) 3;
     }
 
     /**
@@ -317,14 +360,17 @@ public final class AgentObservation {
             }
 
             SCRATCH.set(worldX, worldY - below, worldZ);
-            BlockState state = chunk.getBlockState(SCRATCH);
 
-            if (hazard(state)) {
+            // The same three questions as a cell, in the same order: a hazard ends the fall badly, anything a body lands
+            // on or in ends it well, and open air goes on down.
+            float cell = cell(chunk, chunk.getBlockState(SCRATCH));
+
+            if (cell == HAZARD) {
 
                 return HAZARD;
             }
 
-            if (!state.getFluidState().isEmpty() || !state.getCollisionShape(chunk, SCRATCH).isEmpty()) {
+            if (cell != EMPTY) {
 
                 return EMPTY;
             }

@@ -29,9 +29,10 @@
 #
 # Each worker fights -Slots battles at once, on a quarter again as many terrain sites, in a -Heap sized heap. A worker
 # is bound by its one server thread, so the machine's memory, not its cores, decides how many run. Twenty five slots
-# measured the same throughput per worker as fifty, in half the memory. Most of a heap is the ground around the sites in
-# use, generated part way so that the sites could be; as sites move on it settles at about 0.95 GB, which a 1 GB heap
-# only held by collecting garbage without end, so the heap is 1.5 GB.
+# measured the same throughput per worker as fifty, in half the memory. Nearly all of a heap is the ground under and
+# around the sites in use, so what those sites cost is what the heap has to hold: read from the terrain library it is
+# about half a gigabyte and a worker runs in a gigabyte, where generating its own ground settles at about 0.95 GB and
+# needs more. The build knows which of those a run is doing and picks the heap to match, unless -Heap says otherwise.
 
 param(
     [string] $Run = 'default',
@@ -39,11 +40,13 @@ param(
     [int] $RoundSize = 250000,
     [int] $Workers = 0,
     [int] $Slots = 25,
-    [string] $Heap = '1536M',
+    # Heap per worker. Empty lets the build choose from what the run actually fights on: a gigabyte on the terrain
+    # library, two when a worker generates its own ground.
+    [string] $Heap = '',
 
     # How much ground one fight site holds, in chunks either side of its centre: two is the 80 blocks across every run so
     # far has fought on, three is 112. It has to be no more than the terrain library was built for, scripts\terrain.ps1
-    # -Radius, and each step up roughly doubles a worker's live heap, so raise -Heap or drop -Slots with it.
+    # -Radius, and each step up roughly doubles what a worker's heap has to hold, so give -Heap a number with it.
     [ValidateRange(1, 8)] [int] $SiteRadius = 2,
 
     [int] $RolloutSteps = 16384,
@@ -245,13 +248,14 @@ $arguments = (@(
     "-Pbattles=$Battles",
     "-Parenas=$RoundSize",
     '-Prounds=0',
-    "-PworkerHeap=$Heap",
     "-PbatchSize=$Slots",
     "-PsiteRadius=$SiteRadius",
     "-ProlloutSteps=$RolloutSteps",
     "-PreplayEvery=$ReplayEvery",
     "-PtrainArgs=--device $Device $Extra".Trim()
-) + $workerArguments)
+# An empty -Heap is left off the command line altogether rather than passed as nothing, so that the build sees no
+# property at all and falls back to the heap that suits what this run fights on.
+) + $workerArguments + @(if ($Heap) { "-PworkerHeap=$Heap" }))
 
 if ($Full) {
 
