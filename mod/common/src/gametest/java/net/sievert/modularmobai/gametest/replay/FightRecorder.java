@@ -17,7 +17,6 @@ import it.unimi.dsi.fastutil.floats.FloatArrayList;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import net.minecraft.SharedConstants;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.world.damagesource.DamageSource;
@@ -38,9 +37,9 @@ import net.sievert.modularmobai.entity.agent.MobControls;
 import net.sievert.modularmobai.gametest.GameTestTuning;
 
 /**
- * Writes a fight down tick by tick, so it can be watched afterwards: the ground it was fought on, where both fighters
- * stood and which way they looked, their health, every swing and every hit, every arrow or anything else shot or thrown
- * and where it came down, and what the agent's brain asked for on each tick. The format is docs/replay-format.md.
+ * Writes a fight down tick by tick, so it can be watched afterwards: the blocks of the ground it was fought on, where both
+ * fighters stood and which way they looked, their health, every swing and every hit, every arrow or anything else shot or
+ * thrown and where it came down, and what the agent's brain asked for on each tick. The format is docs/replay-format.md.
  *
  * <pre>
  *   -Dmodular_mob_ai.replays=DIR          where the replays go; unset or empty records nothing
@@ -104,8 +103,8 @@ public final class FightRecorder {
     private final Track agentTrack;
     private final Track opponentTrack;
 
-    /** The ground and the fighters as they were at the start, already written out; neither changes during a fight. */
-    private final String terrain;
+    /** The blocks of the site and the fighters as they were at the start, already written out, to be written whole at the end. */
+    private final String blocks;
     private final String entities;
 
     @Nullable
@@ -146,44 +145,14 @@ public final class FightRecorder {
 
         ServerLevel level = (ServerLevel) agent.level();
 
-        // Whatever the fighters were allowed to perceive covers the whole site: the eighty blocks of a terrain fight, the
-        // box and its walls in the closed arena. A fight with no bounds gets the ground around where it started.
-        AABB area = this.episode != null && this.episode.bounds() != null
-                ? this.episode.bounds() : agent.getBoundingBox().inflate(16.0D, 0.0D, 16.0D);
+        // Whatever the fighters were allowed to perceive covers the whole site: the eighty blocks of a terrain fight from
+        // well below them to well above, the box and its walls in the closed arena. A fight with no bounds gets the ground
+        // around where it started.
+        AABB area = this.episode != null && this.episode.bounds() != null ? this.episode.bounds()
+                : agent.getBoundingBox().inflate(16.0D, 0.0D, 16.0D).expandTowards(0.0D, 24.0D, 0.0D).expandTowards(0.0D, -16.0D, 0.0D);
 
         this.airspace = area.inflate(0.0D, AIRSPACE_PADDING, 0.0D);
-
-        int west = Mth.floor(area.minX);
-        int north = Mth.floor(area.minZ);
-        int width = Mth.ceil(area.maxX) - west;
-        int depth = Mth.ceil(area.maxZ) - north;
-
-        StringBuilder heights = new StringBuilder(width * depth * 3);
-        StringBuilder colours = new StringBuilder(width * depth * 8);
-        BlockPos.MutableBlockPos top = new BlockPos.MutableBlockPos();
-
-        for (int dz = 0; dz < depth; dz++) {
-
-            for (int dx = 0; dx < width; dx++) {
-
-                // The heightmap holds the first air above the highest block that stops movement or holds a fluid: ground,
-                // leaves, water. Grass and flowers are left out, since counted as the top they turn a flat meadow into a
-                // checkerboard of one block steps. Under a roof, the highest block below the roof instead.
-                int surface = level.getHeight(Heightmap.Types.MOTION_BLOCKING, west + dx, north + dz);
-                top.set(west + dx, Math.min(surface, ceiling) - 1, north + dz);
-
-                while (top.getY() > level.getMinBuildHeight() && level.getBlockState(top).isAir()) {
-
-                    top.move(Direction.DOWN);
-                }
-
-                next(heights).append(top.getY());
-                next(colours).append(level.getBlockState(top).getMapColor(level, top).col);
-            }
-        }
-
-        this.terrain = "{\"x\":" + west + ",\"z\":" + north + ",\"width\":" + width + ",\"depth\":" + depth
-                + ",\n\"height\":[" + heights + "],\n\"color\":[" + colours + "]}";
+        this.blocks = SiteBlocks.write(level, area, ceiling);
 
         StringBuilder described = new StringBuilder();
         describe(described, "agent", agent);
@@ -191,10 +160,11 @@ public final class FightRecorder {
         describe(described, "opponent", opponent);
         this.entities = described.toString();
 
-        top.set(west + width / 2, 0, north + depth / 2);
-        top.setY(level.getHeight(Heightmap.Types.WORLD_SURFACE, top.getX(), top.getZ()));
+        Vec3 centre = area.getCenter();
+        BlockPos top = BlockPos.containing(centre.x, 0.0D, centre.z);
 
-        this.biome = level.getBiome(top).unwrapKey().map(key -> key.location().toString()).orElse(null);
+        this.biome = level.getBiome(top.atY(level.getHeight(Heightmap.Types.WORLD_SURFACE, top.getX(), top.getZ())))
+                .unwrapKey().map(key -> key.location().toString()).orElse(null);
     }
 
     /**
@@ -213,7 +183,7 @@ public final class FightRecorder {
      * The same, for a fight under a roof. Seen from above, a closed box is nothing but its lid, and the game test
      * framework lays a sheet of barriers over that; what is worth drawing is the floor and the walls underneath.
      *
-     * @param ceiling the height of the roof; the ground is drawn from the blocks below it
+     * @param ceiling the height of the roof; only the blocks below it are written down
      */
     @Nullable
     public static synchronized FightRecorder start(AgentMob agent, LivingEntity opponent, int ceiling) {
@@ -448,9 +418,9 @@ public final class FightRecorder {
 
     private String json(Outcome outcome) {
 
-        StringBuilder out = new StringBuilder(this.terrain.length() + this.actions.length() * 3);
+        StringBuilder out = new StringBuilder(this.blocks.length() + this.actions.length() * 3);
 
-        out.append("{\"format\":\"mmai-replay\",\"version\":1");
+        out.append("{\"format\":\"mmai-replay\",\"version\":2");
         out.append(",\"run\":");
         string(out, run);
         out.append(",\"iteration\":").append(this.iteration < 0 ? "null" : String.valueOf(this.iteration));
@@ -464,7 +434,7 @@ public final class FightRecorder {
         out.append(",\"ticks\":").append(this.ticks);
         out.append(",\"tickRate\":").append(SharedConstants.TICKS_PER_SECOND);
 
-        out.append(",\n\"terrain\":").append(this.terrain);
+        out.append(",\n\"blocks\":").append(this.blocks);
         out.append(",\n\"entities\":[").append(this.entities).append(']');
 
         out.append(",\n\"frames\":[\n");

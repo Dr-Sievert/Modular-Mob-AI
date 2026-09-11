@@ -5,7 +5,7 @@
 #   scripts\viewer.ps1 -Run imitate     the newest replay of that run
 #   scripts\viewer.ps1 -Port 8800       try that port first
 #   scripts\viewer.ps1 -MinecraftJar C:\path\client.jar
-#                                       take mob textures from that jar instead of looking in the Gradle cache
+#                                       take mob and block textures from that jar instead of looking in the Gradle cache
 
 param(
     [string] $Run = '',
