@@ -11,12 +11,12 @@
 # Learning happens every -RolloutSteps steps of experience across all workers (an iteration): the workers pause, the
 # trainer runs a few epochs of PPO over exactly that experience, the new weights swap in, and the fights carry on. The
 # battles are fought in rounds of -RoundSize, each with fresh worker processes, so a worker that crashes costs at most
-# the rest of its round.
+# the rest of its round. Starting workers takes minutes, so a round is large enough to make that a small share of it.
 
 param(
     [string] $Run = 'default',
     [int] $Battles = 10000,
-    [int] $RoundSize = 10000,
+    [int] $RoundSize = 50000,
     [int] $Workers = 0,
     [string] $Heap = '2G',
     [int] $RolloutSteps = 16384,

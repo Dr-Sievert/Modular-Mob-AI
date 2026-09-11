@@ -135,10 +135,10 @@ public final class FightRecorder {
 
             for (int dx = 0; dx < width; dx++) {
 
-                // The heightmap holds the first air above a column, so its highest block is the one below that: grass,
-                // leaves, water, whatever someone looking down from above would see. Under a roof, the highest one below
-                // the roof instead.
-                int surface = level.getHeight(Heightmap.Types.WORLD_SURFACE, west + dx, north + dz);
+                // The heightmap holds the first air above the highest block that stops movement or holds a fluid: ground,
+                // leaves, water. Grass and flowers are left out, since counted as the top they turn a flat meadow into a
+                // checkerboard of one block steps. Under a roof, the highest block below the roof instead.
+                int surface = level.getHeight(Heightmap.Types.MOTION_BLOCKING, west + dx, north + dz);
                 top.set(west + dx, Math.min(surface, ceiling) - 1, north + dz);
 
                 while (top.getY() > level.getMinBuildHeight() && level.getBlockState(top).isAir()) {

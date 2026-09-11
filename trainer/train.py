@@ -22,6 +22,8 @@ import sys
 from dataclasses import fields
 from pathlib import Path
 
+import torch
+
 from mmai import log
 from mmai.ppo import Config, Trainer
 from mmai.rollout import ShardHeader, read_shard
@@ -122,26 +124,35 @@ def main() -> None:
 def imitate(run: RunDirectory, trainer: Trainer, schema: Schema, demos: Path, epochs: int) -> None:
     """Starts a run from a copy of the recorded teacher rather than from nothing: iteration zero is the copy."""
 
-    if run.state_file().is_file():
-        raise SystemExit(f"{run.path} has already started; imitation only makes sense for a fresh run")
+    # A run still at iteration zero holds nothing but a copy, which a better record may replace. Past that, reinforcement
+    # learning has started and a new copy would throw it away.
+    if run.state_file().is_file() and torch.load(run.state_file(), map_location="cpu", weights_only=False)["iteration"] > 0:
+        raise SystemExit(f"{run.path} has already started training; imitation only makes sense before that")
 
     segments = []
     steps = 0
 
-    for path in sorted(demos.glob("*.mbr")):
-        header, found = read_shard(path)
+    # The teacher's own record and every round of it correcting a copy, which all count the same.
+    for folder in sorted({path.parent for path in demos.rglob("*.mbr")}):
+        found_here = []
 
-        if header.schema_id != schema.schema_id:
-            raise SystemExit(f"{path.name} was recorded against a different layout")
+        for path in sorted(folder.glob("*.mbr")):
+            header, found = read_shard(path)
 
-        segments.extend(found)
-        steps += header.steps
+            if header.schema_id != schema.schema_id:
+                raise SystemExit(f"{path.name} was recorded against a different layout")
+
+            found_here.extend(found)
+            steps += header.steps
+
+        wins = sum(1 for segment in found_here if segment.done and float(segment.rewards[-1]) > 0.0)
+        logger.info("  %-12s %5d fights, whoever drove won %5.1f%%", folder.name, len(found_here), 100.0 * wins / max(1, len(found_here)))
+        segments.extend(found_here)
 
     if not segments:
         raise SystemExit(f"no demonstrations in {demos}; record some with gradlew :fabric:recordDemonstrations")
 
-    wins = sum(1 for segment in segments if segment.done and float(segment.rewards[-1]) > 0.0)
-    logger.info("copying %d fights, %s steps, from %s (the teacher won %d of them)", len(segments), f"{steps:,}", demos, wins)
+    logger.info("copying %d fights, %s steps, from %s", len(segments), f"{steps:,}", demos)
 
     trainer.imitate(segments, epochs)
     trainer.iteration = 0

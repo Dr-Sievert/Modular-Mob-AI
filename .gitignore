@@ -27,6 +27,10 @@ eclipse
 run
 # training runs at the root, and the loaders' own run folders
 runs
+# the Java and Python setup.ps1 downloads when a machine has none of its own
+.tools
+# worktrees Claude Code makes for work in parallel
+.claude/worktrees
 
 # python
 __pycache__

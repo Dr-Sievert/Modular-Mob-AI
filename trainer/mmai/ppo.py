@@ -23,7 +23,7 @@ import torch
 from torch import Tensor
 
 from . import log
-from .model import Actor, Critic, PolicyHeads, RewardScaler, RunningNormalizer
+from .model import INITIAL_LOG_STD, Actor, Critic, PolicyHeads, RewardScaler, RunningNormalizer
 from .rollout import Segment, pack_by_rows
 from .schema import Schema
 from .weights import export as export_weights
@@ -515,6 +515,11 @@ class Trainer:
         parameters = [parameter for name, parameter in self.actor.named_parameters() if name != "log_std"]
         optimizer = torch.optim.Adam(parameters, lr=learning_rate)
         groups = pack_by_rows(segments, batch_rows)
+
+        # The copy is scored with one spread for every continuous control, whatever each explores with afterwards. A
+        # narrower spread divides that control's error by its square, and with aim exploring at a tenth of full
+        # deflection its error would count fourteen times over and crowd out learning when to swing.
+        scoring_log_std = torch.full_like(self.actor.log_std, INITIAL_LOG_STD)
         continuous = [head for head in self.schema.heads if head.kind == "continuous"]
         buttons = next(head for head in self.schema.heads if head.kind == "binary")
 
@@ -554,7 +559,7 @@ class Trainer:
                 obs, targets, mask = obs.to(self.device), targets.to(self.device), mask.to(self.device)
 
                 logits, _ = self.actor(obs, torch.zeros(len(group), config.hidden, device=self.device))
-                distributions = self.heads.distributions(logits, self.actor.log_std, obs)
+                distributions = self.heads.distributions(logits, scoring_log_std, obs)
 
                 log_prob = None
 
@@ -598,6 +603,8 @@ class Trainer:
             )
 
         self.actor.eval()
+        self.actor.narrow_spread()
+        logger.info("the copy explores with a spread of %s", self.actor.log_std.detach().exp().cpu().numpy().round(3))
 
     def _refresh_normalizer(self, segments: list[Segment]) -> None:
         if not segments:

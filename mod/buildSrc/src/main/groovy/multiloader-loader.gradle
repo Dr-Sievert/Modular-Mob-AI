@@ -821,14 +821,17 @@ afterEvaluate {
         }
     }
 
-    // Records the scripted fighter at work, for a network to learn to copy before reinforcement learning takes over. The
-    // record lands in the run's demos folder; `train.py imitate` learns from it.
+    // Records what the scripted fighter would do, for a network to learn to copy before reinforcement learning takes over.
+    // Without -Pstudent the scripted fighter drives, and its record replaces demos/teacher. With -Pstudent a copy drives
+    // and the scripted fighter labels every tick of it, into the next demos/round-N; those rounds add up rather than
+    // replace each other. `train.py imitate` learns from everything under demos.
     //
     //   gradlew :fabric:recordDemonstrations -Prun=imitate -Parenas=1000
+    //   gradlew :fabric:recordDemonstrations -Prun=imitate -Parenas=1000 -Pstudent=runs/imitate/weights/000000.mbw
     tasks.register('recordDemonstrations') {
 
         group = 'modular mob ai'
-        description = 'Records the scripted fighter, for a network to learn to copy.'
+        description = 'Records the scripted fighter, or a copy of it corrected by it, for a network to learn to copy.'
         dependsOn runTask.taskDependencies
         dependsOn 'gametestClasses'
 
@@ -836,21 +839,53 @@ afterEvaluate {
 
             def runName = providers.gradleProperty('run').getOrElse('imitate')
             def runDirectory = new File(new File(repositoryRoot, 'runs'), runName)
-            def demonstrations = new File(runDirectory, 'demos')
+            def student = providers.gradleProperty('student').map { fromRepositoryRoot(it) }.getOrNull()
 
-            demonstrations.deleteDir()
+            if (student != null && !student.isFile()) {
+
+                throw new GradleException("No weights at ${student}")
+            }
+
+            def demonstrations
+
+            if (student == null) {
+
+                demonstrations = new File(runDirectory, 'demos/teacher')
+                demonstrations.deleteDir()
+            }
+
+            else {
+
+                int round = 1
+
+                while (new File(runDirectory, "demos/round-${round}").exists()) {
+
+                    round++
+                }
+
+                demonstrations = new File(runDirectory, "demos/round-${round}")
+                logger.lifecycle("${student.name} drives, the scripted fighter labels it, into ${demonstrations}")
+            }
+
             demonstrations.mkdirs()
 
             // The trainer builds its network from the layout, so it goes in with the record.
             brainTool(['schema', new File(runDirectory, 'schema.json').absolutePath])
 
-            // A worker that falls over only loses its own share of the record; the rest is still worth learning from. The
-            // noise pushes the teacher off target now and then, so the record shows how it gets back.
-            runArenas('scripted', 16, [
+            def properties = [
                     'modular_mob_ai.gametest.suite'        : providers.gradleProperty('suite').getOrElse('terrain'),
                     'modular_mob_ai.demonstrations'        : demonstrations.absolutePath,
                     'modular_mob_ai.demonstrations.noise'  : providers.gradleProperty('demonstrationNoise').getOrElse('0.2')
-            ], null, { int worker -> }, null, runName)
+            ]
+
+            if (student != null) {
+
+                properties['modular_mob_ai.brain.weights'] = student.absolutePath
+            }
+
+            // A worker that falls over only loses its own share of the record; the rest is still worth learning from. The
+            // noise pushes the driver off target now and then, so the record shows how to get back.
+            runArenas(student == null ? 'scripted' : 'neural', 16, properties, null, { int worker -> }, null, runName)
         }
     }
 

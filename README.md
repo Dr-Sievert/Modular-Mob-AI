@@ -1,9 +1,29 @@
 # Modular Mob AI
 
+> **Work in progress.** The full guide gets written once the system is complete: several weapons, matchups against
+> several mobs, an ELO league, evaluation with best weights, and the flags that drive them. Until then this page covers
+> what works today, and the sections marked *to be written* are placeholders.
+
 A neural network brain for Minecraft mobs. The network runs inside the game, in plain Java, one batched forward pass per
 tick for every mob on the same weights. It is trained offline in PyTorch from what the game recorded, and the new weights
 are swapped in without the game restarting. Right now it learns one thing: to beat a vindicator one on one, out in the
 open on natural terrain.
+
+## Quick start
+
+Windows 10 or 11 and a clone of this repository. Nothing else has to be installed first.
+
+```
+scripts\setup.ps1        once per machine: Java 21, Python, PyTorch (CUDA when there is an NVIDIA card), compile, parity check
+scripts\test.ps1 -Terrain  a first look at some fights with the scripted fighter
+scripts\compare.ps1      train from scratch and from a copy of the scripted fighter, side by side
+scripts\watch.ps1 -Run imitate   live progress of a run, in a second terminal
+scripts\eval.ps1 -Run imitate    a trained network's win rate, no exploration
+scripts\stop.ps1         stop every run and anything it left behind
+```
+
+Setup installs nothing system wide: a machine without Java 21 or Python gets them unpacked into `.tools\`, which git
+ignores. Every path is found relative to the repository, so a clone anywhere on any machine works the same.
 
 ## Layout
 
@@ -12,26 +32,41 @@ mod/          the Minecraft mod: the whole Gradle build, one project per loader
   common/       everything both loaders share: the agent, its brain, the network runtime, the fights
   fabric/       Fabric entry points
   neoforge/     NeoForge entry points
-trainer/      the PyTorch trainer (see trainer/README.md)
+trainer/      the PyTorch trainer
+viewer/       the fight replay viewer
 scripts/      what to run from a terminal
-docs/         how the pieces fit, the file formats both sides share, and machine stability notes
-runs/         training runs: weights, rollouts, logs, checkpoints (not in git)
+docs/         how the pieces fit and the file formats both sides share
+runs/         training runs: weights, rollouts, replays, logs, checkpoints (not in git)
 ```
 
-## From a terminal
+## Scripts and their parameters
 
-```
-scripts\setup.ps1      once: Java 21, the trainer's Python environment, then the parity check
-scripts\test.ps1       20 fights with the scripted brain, the quick "is anything broken" check (-Terrain for real ground)
-scripts\parity.ps1     the game's forward pass against PyTorch's, in seconds
-scripts\train.ps1      10,000 battles on natural terrain, all the machine can run; resumes where it left off
-scripts\watch.ps1      live progress of a run, in a second terminal
-scripts\eval.ps1       a trained network's win rate, no exploration
-scripts\stop.ps1       stop a run and anything it left behind
-```
+*To be written.* Each script documents its parameters at its top in the meantime.
 
-Each script says what it takes at the top; most have `-Run`, and `train.ps1` has `-Battles`, `-Workers` and
-`-Device cpu`. Read [docs/README.md](docs/README.md) before long runs on this PC.
+## How training works
+
+*To be written:* the fights, the reward, imitation then PPO, evaluation and best weights, matchups and the ELO league.
+
+## Findings so far
+
+- **Exploration noise on aim has to be small.** At a spread of 0.37 of full deflection the crosshair jerked about 22
+  degrees a tick at random, and the copy of the scripted fighter won about 1% of its fights sampling against 63% on its
+  most likely action. With aim at 0.1 (about 6 degrees a tick) the sampled copy won 20% from the start.
+- **Training from nothing does not get anywhere against a vindicator.** 10,000 battles, no wins, and the policy got more
+  random as it went. Starting from a copy of the scripted fighter does: 21% rising to 36% while training, and 48.8% to
+  55.0% on its most likely action over 400 evaluation fights, in the same 10,000 battles.
+- **A copy needs to have seen mistakes.** Recording the scripted fighter with its movement and aim pushed off by noise
+  (DART), and writing down its correction, took the copy from 0% to 63%.
+- **Letting the copy drive and having the teacher correct it (DAgger) is the big one.** Three rounds of 1,500 fights,
+  the copy driving with light noise and the scripted fighter labelling every tick, took the copy from 48.8% to 89.8% on
+  its most likely action over 400 fights; the teacher itself wins about 96%. The copy driving won 46%, 81% and 80% of
+  the recorded rounds. `scripts\imitate.ps1` does all of it.
+- **Reinforcement learning on a good copy has to explore gently.** Starting PPO from the 89.8% copy with a movement
+  spread of 0.37 and the usual entropy bonus, the training win rate rose from 48% to 68% while the spread kept widening,
+  and the deployed fighter fell to 84–85%: PPO improves the policy it samples from, and it had learned to cope with its
+  own jitter. A copy now starts at 0.14 on movement and 0.05 on aim, with a tenth of the entropy bonus.
+- **The teacher's own record needs less noise than it got.** At 0.2 of full deflection the scripted fighter won only 11%
+  of the fights it was recorded in; the correction rounds use 0.05.
 
 ## Development
 The mod follows the MultiLoader layout: almost everything lives in `mod/common`, which is compiled against the vanilla game

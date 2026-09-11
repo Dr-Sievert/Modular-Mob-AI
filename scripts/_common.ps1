@@ -8,28 +8,68 @@ $Gradle = Join-Path $Mod 'gradlew.bat'
 $Python = Join-Path $Root 'trainer\.venv\Scripts\python.exe'
 $Runs = Join-Path $Root 'runs'
 
-# A terminal opened before Java was installed still has the old environment, so this looks further than JAVA_HOME.
-function Use-Java21 {
+# What setup.ps1 downloads when the machine has no Java 21 or Python of its own. Never in git.
+$Tools = Join-Path $Root '.tools'
 
-    foreach ($candidate in @($env:JAVA_HOME, [Environment]::GetEnvironmentVariable('JAVA_HOME', 'Machine'))) {
+# The major version of the Java installed at a folder, from the release file every JDK carries; 0 for anything else.
+function Get-JavaMajor([string] $Directory) {
 
-        if ($candidate -and (Test-Path (Join-Path $candidate 'bin\java.exe'))) {
+    if (-not $Directory -or -not (Test-Path (Join-Path $Directory 'bin\java.exe'))) {
 
-            $env:JAVA_HOME = $candidate
-            return
+        return 0
+    }
+
+    $line = Select-String -Path (Join-Path $Directory 'release') -Pattern '^JAVA_VERSION="(\d+)' -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+
+    if ($line) {
+
+        return [int]$line.Matches[0].Groups[1].Value
+    }
+
+    return 0
+}
+
+# Minecraft 1.21.1 is built with Java 21 exactly. Looks in the order a machine is most likely to have it right: the copy
+# setup.ps1 unpacked, then JAVA_HOME as this terminal, the user and the machine see it (a terminal opened before Java was
+# installed still has the old environment), then whatever java is on the PATH.
+function Find-Java21 {
+
+    $candidates = @(Get-ChildItem $Tools -Directory -Filter 'jdk-21*' -ErrorAction SilentlyContinue |
+            Sort-Object Name -Descending | ForEach-Object { $_.FullName })
+
+    $candidates += $env:JAVA_HOME
+    $candidates += [Environment]::GetEnvironmentVariable('JAVA_HOME', 'User')
+    $candidates += [Environment]::GetEnvironmentVariable('JAVA_HOME', 'Machine')
+
+    $onPath = Get-Command java -ErrorAction SilentlyContinue
+
+    if ($onPath) {
+
+        $candidates += Split-Path -Parent (Split-Path -Parent $onPath.Source)
+    }
+
+    foreach ($candidate in $candidates) {
+
+        if ((Get-JavaMajor $candidate) -eq 21) {
+
+            return $candidate
         }
     }
 
-    $installed = Get-ChildItem 'C:\Program Files\Eclipse Adoptium' -Directory -Filter 'jdk-21*' -ErrorAction SilentlyContinue |
-            Sort-Object Name -Descending | Select-Object -First 1
+    return $null
+}
 
-    if ($installed) {
+function Use-Java21 {
 
-        $env:JAVA_HOME = $installed.FullName
-        return
+    $found = Find-Java21
+
+    if (-not $found) {
+
+        throw 'No Java 21 found. Run scripts\setup.ps1 first.'
     }
 
-    throw 'No Java 21 found. Run scripts\setup.ps1 first.'
+    $env:JAVA_HOME = $found
 }
 
 function Invoke-Gradle([string[]] $Arguments) {

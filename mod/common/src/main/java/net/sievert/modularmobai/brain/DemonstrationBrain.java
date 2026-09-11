@@ -14,7 +14,8 @@ import net.sievert.modularmobai.brain.schema.ActionSchema;
 import net.sievert.modularmobai.brain.schema.ObservationSchema;
 
 /**
- * Lets another brain drive, and writes down everything it does, for a network to learn to copy.
+ * Writes down what a teacher would do on every tick, for a network to learn to copy, while the teacher or a student
+ * drives.
  *
  * <p>A network trained from nothing starts out flailing, and against an opponent that kills in two hits it can go
  * thousands of fights before a swing happens to land. The scripted fighter already wins most fights, and everything it
@@ -23,9 +24,18 @@ import net.sievert.modularmobai.brain.schema.ObservationSchema;
  *
  * <p>A record of a teacher that never makes mistakes teaches nothing about fixing them. The scripted fighter is nearly
  * always on target, so its record is all small corrections, and a copy that drifts off target has never seen what to do
- * about it and simply stays off. So while recording, the movement and aim the teacher asks for are pushed off by a
- * little noise before they are applied, and what is written down is what the teacher asked for. The record then covers
- * being off target, and the teacher's way back, which is exactly what a copy needs. The noise is off unless asked for.
+ * about it and simply stays off. Two things fix that, and both are here:
+ *
+ * <ul>
+ *   <li>The movement and aim that get applied can be pushed off by a little noise, while what is written down is still
+ *       what the teacher asked for. The record then covers being off target, and the teacher's way back.</li>
+ *   <li>A student can drive instead of the teacher: the copy made from the last record fights, and the teacher says
+ *       what it would have done in every situation the copy got itself into. Those are exactly the situations the copy
+ *       gets wrong, which no record of the teacher driving contains. Learning from both records and fighting again,
+ *       a few rounds over, brings a copy close to its teacher.</li>
+ * </ul>
+ *
+ * The teacher can label any situation because it keeps no memory and reads nothing but the observation.
  *
  * <p>The record is an ordinary rollout shard, one per game process, with no hidden state and no log probabilities:
  * the teacher has neither.
@@ -34,6 +44,8 @@ final class DemonstrationBrain implements Brain {
 
     private static final float[] NO_MEMORY = new float[0];
 
+    /** What actually drives the agents: the teacher itself, or a student being corrected. */
+    private final Brain driver;
     private final Brain teacher;
     private final RolloutWriter shard;
 
@@ -48,11 +60,22 @@ final class DemonstrationBrain implements Brain {
     /** Agents with a fight open in the record. */
     private final IntSet open = new IntOpenHashSet();
 
+    /** The teacher drives and is recorded. */
     DemonstrationBrain(Brain teacher, Path directory, float noise) {
+
+        this(teacher, teacher, directory, noise);
+    }
+
+    /**
+     * The student drives, and the teacher's answer to every situation it gets into is recorded. The teacher must keep no
+     * memory: it is asked about situations it did not bring about.
+     */
+    DemonstrationBrain(Brain driver, Brain teacher, Path directory, float noise) {
 
         int worker = Integer.getInteger("modular_mob_ai.gametest.shardIndex", 0);
         int workers = Math.max(1, Integer.getInteger("modular_mob_ai.gametest.shardCount", 1));
 
+        this.driver = driver;
         this.teacher = teacher;
         this.noise = noise;
         this.random = new SplittableRandom(0x6A09E667L ^ worker);
@@ -73,6 +96,13 @@ final class DemonstrationBrain implements Brain {
         }
 
         System.arraycopy(step.actions, 0, this.chosen, 0, values);
+
+        // The teacher answered first because it writes nothing but actions: the student then overwrites those with its
+        // own, and its memory has only ever been touched by itself.
+        if (this.driver != this.teacher) {
+
+            this.driver.act(step);
+        }
 
         if (this.noise > 0.0F) {
 
@@ -106,7 +136,7 @@ final class DemonstrationBrain implements Brain {
         }
     }
 
-    /** Pushes every continuous control the teacher chose a little off, in what is applied only. */
+    /** Pushes every continuous control the driver chose a little off, in what is applied only. */
     private void perturb(BrainStep step) {
 
         for (Heads.Block block : ActionSchema.HEADS.blocks()) {
@@ -129,17 +159,22 @@ final class DemonstrationBrain implements Brain {
         }
     }
 
-    /** Whatever memory the brain being recorded needs, it still gets. */
+    /** Whatever memory the driver needs, it still gets. */
     @Override
     public int hiddenSize() {
 
-        return this.teacher.hiddenSize();
+        return this.driver.hiddenSize();
     }
 
     @Override
     public void close() {
 
         this.shard.close(true);
-        this.teacher.close();
+        this.driver.close();
+
+        if (this.teacher != this.driver) {
+
+            this.teacher.close();
+        }
     }
 }

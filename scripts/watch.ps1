@@ -17,7 +17,7 @@ param(
 $ErrorActionPreference = 'Continue'
 $directory = Get-RunDirectory $Run
 
-$pattern = 'iteration\s+(?<iteration>\d+)\s+steps\s+(?<steps>[\d,]+)\s+episodes\s+(?<episodes>\d+)\s+win\s+(?<win>[\d.]+)%\s+' +
+$pattern = '^(?<time>\d\d:\d\d:\d\d)\s+\S+\s+iteration\s+(?<iteration>\d+)\s+steps\s+(?<steps>[\d,]+)\s+episodes\s+(?<episodes>\d+)\s+win\s+(?<win>[\d.]+)%\s+' +
         'return\s+(?<return>\S+)\s+length\s+(?<length>\S+)\s+\|\s+pi\s+(?<pi>\S+)\s+v\s+(?<v>\S+)\s+ent\s+(?<ent>\S+)\s+' +
         'clip\s+(?<clip>\S+)\s+kl\s+(?<kl>\S+)\s+ep\s+(?<ep>\d+)\s+\|\s+drift\s+(?<drift>\S+)\s+(?<device>\w+)\s+(?<seconds>[\d.]+)s'
 
@@ -114,11 +114,24 @@ function Show-Run {
 
     else {
 
-        $lines.Add(('{0,9} {1,12} {2,6} {3,6} {4,8} {5,7} {6,7} {7,7} {8,8} {9,6}' -f 'iteration', 'steps', 'fights', 'win %', 'return', 'length', 'entropy', 'kl', 'drift', 'secs'))
+        # "learn s" is only the trainer's update. "wall s" is the whole gap since the iteration before, nearly all of it
+        # the game playing out the next batch of steps, so that is the one more workers shrink.
+        $lines.Add(('{0,9} {1,12} {2,6} {3,6} {4,8} {5,7} {6,7} {7,7} {8,8} {9,7} {10,6}' -f 'iteration', 'steps', 'fights', 'win %', 'return', 'length', 'entropy', 'kl', 'drift', 'learn s', 'wall s'))
 
-        foreach ($row in $iterations | Select-Object -Last $Rows) {
+        $shown = @($iterations | Select-Object -Last ($Rows + 1))
 
-            $lines.Add(('{0,9} {1,12} {2,6} {3,6} {4,8} {5,7} {6,7} {7,7} {8,8} {9,6}' -f $row.iteration, $row.steps, $row.episodes, $row.win, $row.return, $row.length, $row.ent, $row.kl, $row.drift, $row.seconds))
+        for ($i = [Math]::Max(0, $shown.Count - $Rows); $i -lt $shown.Count; $i++) {
+
+            $row = $shown[$i]
+            $wall = ''
+
+            if ($i -gt 0) {
+
+                $seconds = ([TimeSpan]$row.time - [TimeSpan]$shown[$i - 1].time).TotalSeconds
+                $wall = '{0:N0}' -f $(if ($seconds -lt 0) { $seconds + 86400 } else { $seconds })
+            }
+
+            $lines.Add(('{0,9} {1,12} {2,6} {3,6} {4,8} {5,7} {6,7} {7,7} {8,8} {9,7} {10,6}' -f $row.iteration, $row.steps, $row.episodes, $row.win, $row.return, $row.length, $row.ent, $row.kl, $row.drift, $row.seconds, $wall))
         }
 
         # Win rate is noisy iteration to iteration; the trend over the last few dozen is what says it is learning.
