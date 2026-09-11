@@ -15,6 +15,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.ShieldItem;
 import net.minecraft.world.item.SwordItem;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.phys.Vec3;
@@ -42,6 +43,11 @@ public final class AgentObservation {
     private static final double VELOCITY_SCALE = 0.5D;
 
     private static final float MAX_FALL_DISTANCE = 20.0F;
+
+    /** What a terrain cell holds: see {@link #writeTerrain}. */
+    public static final float EMPTY = 0.0F;
+    public static final float FLUID = 0.5F;
+    public static final float SOLID = 1.0F;
 
     private static final BlockPos.MutableBlockPos SCRATCH = new BlockPos.MutableBlockPos();
 
@@ -188,6 +194,11 @@ public final class AgentObservation {
      * <p>Going through the level for each block would resolve the chunk four hundred times over. Instead the loop walks
      * one vertical column at a time and resolves the chunk once per column, which is eighty one lookups, and holds onto
      * the last one because a nine wide box spans at most two chunks in each direction.
+     *
+     * <p>A cell is {@link #SOLID} when something in it stops a body, {@link #FLUID} when it holds water or lava and
+     * nothing solid, and empty otherwise. Grass, flowers and anything else a body walks through are empty: counted as
+     * solid, as they once were, every meadow read as a wall at foot height all the way round, and a river as solid
+     * ground, and neither a step that needs a jump nor water that needs swimming could be told from them.
      */
     private static void writeTerrain(AgentMob agent, float[] out, int base) {
 
@@ -223,18 +234,29 @@ public final class AgentObservation {
                 for (int y = 0; y < ObservationSchema.TERRAIN_Y; y++) {
 
                     int worldY = feet.getY() + y - ObservationSchema.TERRAIN_RADIUS_Y;
-                    float solid = 1.0F;
+                    float cell = SOLID;
 
                     if (chunk != null && worldY >= minY && worldY < maxY) {
 
                         SCRATCH.set(worldX, worldY, worldZ);
-                        solid = chunk.getBlockState(SCRATCH).isAir() ? 0.0F : 1.0F;
+                        cell = cell(chunk, chunk.getBlockState(SCRATCH));
                     }
 
-                    out[base + ObservationSchema.terrainOffset(x, y, z)] = solid;
+                    out[base + ObservationSchema.terrainOffset(x, y, z)] = cell;
                 }
             }
         }
+    }
+
+    /** What one terrain cell holds, as {@link #writeTerrain} describes. Both lookups are cached by the block state. */
+    private static float cell(ChunkAccess chunk, BlockState state) {
+
+        if (!state.getCollisionShape(chunk, SCRATCH).isEmpty()) {
+
+            return SOLID;
+        }
+
+        return state.getFluidState().isEmpty() ? EMPTY : FLUID;
     }
 
     // -----------------------------------------------------------------------------------------------------------

@@ -304,9 +304,12 @@ public class AgentMob extends PathfinderMob {
         this.setZza(forward);
         this.setXxa(strafe);
 
-        boolean grounded = this.onGround();
+        // Held jump goes through whenever it is held, the way a player's space bar does, and vanilla works out from where
+        // the body is what that means: a jump off the ground, swimming up through water, climbing a ladder. Passed on
+        // only while standing on something, it left an agent in deep water with no way back up, and it drowned.
+        boolean lifted = this.onGround() || this.isInLiquid() || this.onClimbable();
 
-        if (this.controls.jump && grounded) {
+        if (this.controls.jump) {
 
             // Going through the jump control rather than setJumping, because that control ticks after this method and
             // would otherwise overwrite the flag before the jump is read.
@@ -315,9 +318,20 @@ public class AgentMob extends PathfinderMob {
 
         this.executed.moveForward = forward;
         this.executed.moveStrafe = strafe;
-        this.executed.jumped = this.controls.jump && grounded;
+        this.executed.jumped = this.controls.jump && lifted;
         this.executed.sprinting = sprint;
         this.executed.sneaking = sneak;
+    }
+
+    /**
+     * How hard the agent can steer in the air, which is a player's figure rather than a mob's. Vanilla gives every mob the
+     * same fixed amount, and a player a little more while sprinting, which is what makes a sprint jump carry; without it
+     * the agent's sprint jumps fall short of the ones it is meant to learn to match.
+     */
+    @Override
+    protected float getFlyingSpeed() {
+
+        return this.isSprinting() ? 0.025999999F : 0.02F;
     }
 
     private void applyUse() {
