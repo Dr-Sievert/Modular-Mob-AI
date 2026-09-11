@@ -19,9 +19,10 @@
 # the rest of its round. Starting workers takes minutes, so a round is large enough to make that a small share of it.
 #
 # Each worker fights -Slots battles at once, on a quarter again as many terrain sites, in a -Heap sized heap. A worker
-# is bound by its one server thread, so the machine's memory, not its cores, decides how many run. Twenty five slots in
-# a 1 GB heap measured the same throughput per worker as fifty in 2 GB, in 1.35 GB of memory rather than 2.5, so about
-# twice as many workers fit.
+# is bound by its one server thread, so the machine's memory, not its cores, decides how many run. Twenty five slots
+# measured the same throughput per worker as fifty, in half the memory. Most of a heap is the ground around the sites in
+# use, generated part way so that the sites could be; as sites move on it grows to 0.6-0.8 GB over a round, which a 1 GB
+# heap only held by collecting garbage without end, so the heap is 1.25 GB.
 
 param(
     [string] $Run = 'default',
@@ -29,7 +30,7 @@ param(
     [int] $RoundSize = 50000,
     [int] $Workers = 0,
     [int] $Slots = 25,
-    [string] $Heap = '1G',
+    [string] $Heap = '1280M',
     [int] $RolloutSteps = 16384,
     [ValidateSet('cuda', 'cpu')] [string] $Device = 'cuda',
     [ValidateSet('terrain', 'arena')] [string] $Suite = 'terrain',
@@ -82,20 +83,50 @@ Write-Host "Training run '$Run' in $directory on $Suite, $(if ($Battles -gt 0) {
 
 $started = Get-Date
 
-# The short feed: of all the build prints, only what says how the run is going. Every fifth iteration's win rate and
-# pace, evaluations and new bests, rounds, the end, and anything that went wrong, each on one line.
+# What the iterations since the last line of the feed added up to.
+$feed = @{ Printed = $started; Steps = -1L; Fights = 0; Wins = 0.0; Ticks = 0.0 }
+
+# The short feed: of all the build prints, only what says how the run is going. A line every half minute with the pace
+# and the training win rate over it, evaluations and new bests, rounds, the end, and anything that went wrong.
 function Format-Feed([string] $Line) {
 
-    $clock = '{0:hh\:mm\:ss}' -f ((Get-Date) - $started)
+    $now = Get-Date
+    $clock = '{0:hh\:mm\:ss}' -f ($now - $started)
 
-    if ($Line -match 'iteration +(\d+) +steps +([\d,]+) +episodes +(\d+) +win +([\d.]+)%.*length +([\d.]+).*?(\d+\.\d)m\s*$') {
+    if ($Line -match 'iteration +(\d+) +steps +([\d,]+) +episodes +(\d+) +win +([\d.]+)%.*length +([\d.]+)') {
 
-        if ([int]$Matches[1] % 5 -eq 0) {
+        $steps = [long]($Matches[2] -replace ',', '')
+        $fights = [int]$Matches[3]
 
-            return '{0}  iteration {1,5}  training win {2,5}%  fights {3,4}  fight length {4,6} ticks' -f $clock, $Matches[1], $Matches[4], $Matches[3], $Matches[5]
+        if ($feed.Steps -lt 0) {
+
+            $feed.Steps = $steps
+            $feed.Printed = $now
+            return $null
         }
 
-        return $null
+        $feed.Fights += $fights
+        $feed.Wins += $fights * [double]$Matches[4] / 100.0
+        $feed.Ticks += $fights * [double]$Matches[5]
+
+        $seconds = ($now - $feed.Printed).TotalSeconds
+
+        if ($seconds -lt 30) {
+
+            return $null
+        }
+
+        $text = '{0}  iteration {1,6}  {2,7:N0} ticks/s  {3,6:N1} fights/s  training win {4,5:N1}%  fights {5,4:N0} ticks long' -f $clock,
+                $Matches[1], (($steps - $feed.Steps) / $seconds), ($feed.Fights / $seconds), (100.0 * $feed.Wins / [Math]::Max(1, $feed.Fights)),
+                ($feed.Ticks / [Math]::Max(1, $feed.Fights))
+
+        $feed.Printed = $now
+        $feed.Steps = $steps
+        $feed.Fights = 0
+        $feed.Wins = 0.0
+        $feed.Ticks = 0.0
+
+        return $text
     }
 
     if ($Line -match 'mmai\.eval\s+(.*)$' -or $Line -match 'mmai\.train\s+(done: .*)$') {
@@ -139,11 +170,11 @@ else {
 
     Invoke-Gradle $arguments | ForEach-Object {
 
-        $feed = Format-Feed "$_"
+        $said = Format-Feed "$_"
 
-        if ($feed) {
+        if ($said) {
 
-            Write-Host $feed
+            Write-Host $said
         }
     }
 }

@@ -18,7 +18,7 @@ param(
     # Small workers: a worker is bound by its one server thread, and twenty five fights in a gigabyte keep it as busy as
     # fifty in two, so twice as many fit; see scripts\train.ps1.
     [int] $Slots = 25,
-    [string] $Heap = '1G',
+    [string] $Heap = '1280M',
 
     # How far the applied movement and aim are pushed off, as a fraction of full deflection. The teacher gets some, so its
     # record covers getting back on target: 0.1 is six degrees of aim a tick. At 0.2 it won only 11% of the fights it was
