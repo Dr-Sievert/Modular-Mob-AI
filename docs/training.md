@@ -117,6 +117,7 @@ scripts\train.ps1 -Run league -Suite league -Seed vs-copy     the league, from v
 | `-ReplayEvery` | 200 | record one fight in this many per worker, for the viewer; 0 for none |
 | `-FromCopy` | off | the safeguarded settings for a run that starts from a copy |
 | `-Seed` | | start a new run from another's best checkpoint state: `runs\<seed>`, else `models\<seed>\state.pt`, else a folder by path; gentle settings as `-FromCopy` but no teacher pull, the critic alone for 30 iterations, 65536 steps and no battle limit by default |
+| `-TeacherWeight` | 0 | pull every update back towards the teacher's recorded answers in `runs\<run>\demos`; see `scripts\dagger.ps1` below |
 | `-Full` | off | the whole build output |
 | `-Extra` | | options passed to the trainer |
 
@@ -173,6 +174,46 @@ This sets up `runs\<prefix>-copy` from the copy the first time (state, weights, 
 runs in the background, with output going to each run's `console.log`. The copy's run stops when evaluation says done;
 the run from nothing only stops at `-ScratchBattles` (3,000,000).
 
+### `scripts\dagger.ps1`: correct a run that is already training
+
+```
+scripts\dagger.ps1 -Run league                    one round for runs\league on the league, from its best weights
+scripts\dagger.ps1 -Run league -Fights 8000       more of it
+scripts\dagger.ps1 -Run league -Weights models\vs-copy\best.mbw     another network's mistakes to correct
+scripts\dagger.ps1 -Run vindicator -Suite terrain one vindicator instead, as imitate.ps1's rounds are
+```
+
+This is `imitate.ps1`'s correction round on its own, for a run past imitation: the run's own best network drives, the
+scripted fighter says what it would have done on every tick, and the answers go into the run's `demos`. What is new is
+the suite. On the league the student meets every mob and every loadout in turn, so the record covers a bow, a crossbow, a
+shield and all 26 opponents, which is what a league run can usefully be pulled back towards; a record of one fight
+against one vindicator is not.
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `-Run` | required | the run whose demos to add to |
+| `-Fights` | 4000 | fights recorded, about fifteen per opponent and loadout pairing |
+| `-Suite` | league | `terrain` or `arena` for the one on one fight instead |
+| `-Weights` | `runs\<run>\best.mbw` | which network drives |
+| `-Workers`, `-Slots`, `-Heap`, `-StudentNoise` | 8, 25, 1280M, 0.05 | as for `imitate.ps1` |
+
+Records are named after the suite they were made on: `demos\league-round-1` beside `demos\round-1`, so a league record
+never lands on top of a vindicator one and a run can keep both. `runs\vindicator4`'s melee record stays exactly as
+usable as it was, and `train.py imitate` and `--teacher-weight` both read every folder under `demos`.
+
+The script refuses to write into a `demos` folder that is a junction to another run's, which `compare.ps1` makes: a round
+recorded there would put this run's corrections into the other run's record.
+
+Then train pulled back towards it:
+
+```
+scripts\train.ps1 -Run league -Suite league -TeacherWeight 0.5
+```
+
+`-TeacherWeight` is an imitation loss on a sample of the record, applied on every update alongside PPO's own; it is what
+`-FromCopy` sets to 0.5, and an explicit one beats that. It stops the run before it starts if there is no record to pull
+towards.
+
 ### `scripts\imitate.ps1`: make a copy of the teacher
 
 ```
@@ -188,7 +229,8 @@ scripts\imitate.ps1 -Run vindicator -Rounds 2       two more rounds on top
 | `-StudentNoise` | 0.05 | noise on the copy while it drives in correction rounds |
 | `-Workers`, `-Slots`, `-Heap` | 8, 25, 1280M | as for training |
 
-Demos go to `runs\<run>\demos\round-N\`. They're gigabytes, and not in git.
+Demos go to `runs\<run>\demos\round-N\` on the terrain suite, and `demos\<suite>-round-N\` on any other. They're
+gigabytes, and not in git.
 
 ### Watching and stopping
 
@@ -219,7 +261,7 @@ eval\ eval.csv best.mbw finished       evaluation, see architecture.md
 logs\train-*.log     the trainer's log; one line per iteration
 console.log          the whole build output of a background run
 replays\*.json       recorded fights for the viewer
-demos\               the teacher's recorded answers (imitation runs, or a junction to them)
+demos\               the teacher's recorded answers, a folder per round and suite, or a junction to another run's
 ```
 
 ## The machine

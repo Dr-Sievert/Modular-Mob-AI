@@ -1326,12 +1326,17 @@ afterEvaluate {
     }
 
     // Records what the scripted fighter would do, for a network to learn to copy before reinforcement learning takes over.
-    // Without -Pstudent the scripted fighter drives, and its record replaces demos/teacher. With -Pstudent a copy drives
-    // and the scripted fighter labels every tick of it, into the next demos/round-N; those rounds add up rather than
-    // replace each other. `train.py imitate` learns from everything under demos.
+    // Without -Pstudent the scripted fighter drives, and its record replaces the teacher folder for the suite it drove on.
+    // With -Pstudent a copy drives and the scripted fighter labels every tick of it, into the next round folder; those
+    // rounds add up rather than replace each other. `train.py imitate` learns from everything under demos, and a training
+    // run's --teacher-weight samples the same folders, so what is recorded here is what a run is pulled back towards.
+    //
+    // The folders are named after the suite, so a league record never lands on top of a vindicator one: the two are
+    // records of different fights and a run may well want both.
     //
     //   gradlew :fabric:recordDemonstrations -Prun=imitate -Parenas=1000
     //   gradlew :fabric:recordDemonstrations -Prun=imitate -Parenas=1000 -Pstudent=runs/imitate/weights/000000.mbw
+    //   gradlew :fabric:recordDemonstrations -Prun=league -Psuite=league -Parenas=4000 -Pstudent=runs/league/best.mbw
     tasks.register('recordDemonstrations') {
 
         group = 'modular mob ai'
@@ -1344,17 +1349,30 @@ afterEvaluate {
             def runName = providers.gradleProperty('run').getOrElse('imitate')
             def runDirectory = new File(new File(repositoryRoot, 'runs'), runName)
             def student = providers.gradleProperty('student').map { fromRepositoryRoot(it) }.getOrNull()
+            def suite = providers.gradleProperty('suite').getOrElse('terrain')
 
             if (student != null && !student.isFile()) {
 
                 throw new GradleException("No weights at ${student}")
             }
 
+            // Same reason as a training run: a fight on natural ground reads its site from the library, and a worker that
+            // has to generate its own instead costs two to three cores and a third more memory.
+            if ((suite == 'terrain' || suite == 'league') && libraryWanted && !libraryIndex.isFile()) {
+
+                throw new GradleException("No terrain library in ${terrainLibrary}. Build one first with "
+                        + "scripts\\terrain.ps1, or pass -PterrainLibrary=false to have every worker generate its own "
+                        + "ground as before.")
+            }
+
+            // The suite the record was made on, in the folder name. The terrain suite keeps the names it always had, so
+            // every run recorded before this still reads as one record.
+            def flavour = suite == 'terrain' ? '' : "${suite}-"
             def demonstrations
 
             if (student == null) {
 
-                demonstrations = new File(runDirectory, 'demos/teacher')
+                demonstrations = new File(runDirectory, "demos/${flavour}teacher")
                 demonstrations.deleteDir()
             }
 
@@ -1362,13 +1380,13 @@ afterEvaluate {
 
                 int round = 1
 
-                while (new File(runDirectory, "demos/round-${round}").exists()) {
+                while (new File(runDirectory, "demos/${flavour}round-${round}").exists()) {
 
                     round++
                 }
 
-                demonstrations = new File(runDirectory, "demos/round-${round}")
-                logger.lifecycle("${student.name} drives, the scripted fighter labels it, into ${demonstrations}")
+                demonstrations = new File(runDirectory, "demos/${flavour}round-${round}")
+                logger.lifecycle("${student.name} drives on the ${suite} suite, the scripted fighter labels it, into ${demonstrations}")
             }
 
             demonstrations.mkdirs()
@@ -1377,7 +1395,7 @@ afterEvaluate {
             brainTool(['schema', new File(runDirectory, 'schema.json').absolutePath])
 
             def properties = [
-                    'modular_mob_ai.gametest.suite'        : providers.gradleProperty('suite').getOrElse('terrain'),
+                    'modular_mob_ai.gametest.suite'        : suite,
                     'modular_mob_ai.demonstrations'        : demonstrations.absolutePath,
                     'modular_mob_ai.demonstrations.noise'  : providers.gradleProperty('demonstrationNoise').getOrElse('0.2')
             ]

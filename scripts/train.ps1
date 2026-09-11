@@ -9,6 +9,9 @@
 #   scripts\train.ps1 -Run vindicator -FromCopy a run that starts from scripts\imitate.ps1's copy, see -FromCopy
 #   scripts\train.ps1 -Run league -Suite league -Seed vs-copy
 #                                               the league, starting from the best of runs\vs-copy, see -Suite and -Seed
+#   scripts\train.ps1 -Run league -Suite league -TeacherWeight 0.5
+#                                               the same, pulled back towards the teacher's recorded answers every update,
+#                                               which scripts\dagger.ps1 records for a league run
 #   scripts\compare.ps1                         two runs side by side instead, see there
 #
 # Every checkpoint is played by the workers on its most likely action, in one fight in ten, and the best so far is kept
@@ -54,10 +57,16 @@ param(
     # Starts a new run from another run's best checkpoint: its whole training state, network, critic and all, taken from
     # runs\<seed>\checkpoints, and runs\<seed> itself left as it is. Without such a run, a network published in
     # models\<seed> with its state, or a folder given by path, seeds it from the state.pt there. It carries on learning
-    # the way a copy does, gently, but is not pulled back towards a teacher, whose record is of one fight against one mob.
-    # The critic learns alone for the first thirty iterations, since it has only ever seen the fights the seed was trained
-    # on. A run that has already started carries on from where it is and only takes the gentle settings from this.
+    # the way a copy does, gently. The critic learns alone for the first thirty iterations, since it has only ever seen the
+    # fights the seed was trained on. A run that has already started carries on from where it is and only takes the gentle
+    # settings from this. Nothing pulls it back towards a teacher unless -TeacherWeight asks.
     [string] $Seed = '',
+
+    # How hard every update is pulled back towards the teacher's recorded answers, which is an imitation loss on a sample
+    # of runs\<run>\demos. Zero, the default, is no pull; -FromCopy uses 0.5. What the pull is worth depends entirely on
+    # what was recorded: a record of one fight against one vindicator teaches a league run nothing about a creeper, and
+    # scripts\dagger.ps1 records one on the league suite instead, over every opponent and every loadout.
+    [double] $TeacherWeight = 0,
 
     # Everything the build and both sides of it say, rather than the short feed: a line every few iterations with the
     # training win rate and pace, every evaluation, every round, and anything that went wrong.
@@ -155,6 +164,20 @@ if ($Seed) {
     }
 
     $Extra = "--learning-rate 5e-5 --clip 0.1 --target-kl 0.01 --entropy-coef 0.001 $warmup $Extra"
+}
+
+# A pull towards the teacher, whether asked for here or brought in by -FromCopy, needs a record to pull towards. Said here
+# rather than left to the trainer, which would start, read the state and then stop.
+if ($PSBoundParameters.ContainsKey('TeacherWeight')) {
+
+    if ($TeacherWeight -gt 0 -and -not @(Get-ChildItem (Join-Path $directory 'demos') -Filter '*.mbr' -Recurse -ErrorAction SilentlyContinue)) {
+
+        throw "A pull towards the teacher needs its record, and there is none in $(Join-Path $directory 'demos'). Record one with scripts\dagger.ps1 -Run $Run"
+    }
+
+    # Last, so an explicit weight beats the 0.5 that -FromCopy brings with it: the trainer takes the last of a repeated
+    # option, and asking for one here is asking for that one.
+    $Extra = "$Extra --teacher-weight $TeacherWeight".Trim()
 }
 
 # A checkpoint is judged on this many evaluation fights spread over the league's mobs and the scripted fighter, a few
