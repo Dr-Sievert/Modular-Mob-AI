@@ -211,7 +211,7 @@ public final class GameTestTuning {
     /** How many sites the library suite generates. */
     public static int librarySites() {
 
-        return Math.max(1, intProperty("librarySites", 2048));
+        return Math.max(1, intProperty("librarySites", 4096));
     }
 
     /**

@@ -43,6 +43,21 @@ Results so far (evaluated on the most likely action):
 | vs-copy | vindicator4, PPO with the teacher pull | iteration 650 | 99.8 / 0.2 / 0.0 (553 fights) |
 | vs-scratch | nothing | iteration 650 | 78.6 / 18.4 / 3.0 (500 fights), still climbing |
 
+## The terrain library, before any training
+
+```
+scripts\terrain.ps1                       4,096 fight sites, on as much of the machine as fits
+scripts\terrain.ps1 -Sites 8192           more ground; about 0.8 MB and 1.5 s of one builder per site
+```
+
+Training on natural ground reads its sites from the library and generates nothing, so a run stops and says to build one
+if it is missing (`-PterrainLibrary=false` asks for the old behaviour, where every worker generates its own ground).
+Generating cost two to three cores and a third more memory per worker, and memory is what caps how many workers run.
+
+- It lives in `runs\terrain\<minecraft version>\library` and is not in git: about 0.8 MB a site, and machine-local.
+- Workers hard-link its region files, so it is on disk once however many run, and nothing can write back to it.
+- Building a new one while training runs is safe: it replaces the old one only once it is whole.
+- Run it once per machine, and again whenever you want fresh ground.
 ## Scripts
 
 ### `scripts\train.ps1`: one run

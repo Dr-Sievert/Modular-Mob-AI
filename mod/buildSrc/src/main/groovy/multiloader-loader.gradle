@@ -1216,7 +1216,7 @@ afterEvaluate {
     // new library replaces the old one only once it is whole; workers already running on the old one keep their links to
     // its files, which stay on disk for as long as they do.
     //
-    //   gradlew :fabric:buildTerrainLibrary -PlibrarySites=2048 -Pworkers=4 -PworkerHeap=2G
+    //   gradlew :fabric:buildTerrainLibrary -PlibrarySites=4096 -Pworkers=4 -PworkerHeap=2G
     tasks.register('buildTerrainLibrary') {
 
         group = 'modular mob ai'
@@ -1236,7 +1236,7 @@ afterEvaluate {
             def result = runArenas('scripted', 16, [
                     'modular_mob_ai.gametest.suite'       : 'library',
                     'modular_mob_ai.gametest.library'     : 'library.properties',
-                    'modular_mob_ai.gametest.librarySites': providers.gradleProperty('librarySites').getOrElse('2048')
+                    'modular_mob_ai.gametest.librarySites': providers.gradleProperty('librarySites').getOrElse('4096')
             ], null, null, '1', label)
 
             // One index for all of them: their blocks one after another, and each one's unusable points moved along by
@@ -1477,6 +1477,17 @@ afterEvaluate {
             // Training fights on natural terrain unless asked for the closed arena or the league, and on the league the
             // training side keeps the ratings and decides who is met; see trainer/mmai/league.py.
             def suite = providers.gradleProperty('suite').getOrElse('terrain')
+
+            // Every fight on natural ground comes from the terrain library, built once by scripts\terrain.ps1. A worker
+            // that generates its own ground instead takes two to three cores rather than one and a third more memory, and
+            // memory is what caps how many workers run, so training without a library is training at half the pace for no
+            // reason. A run says so and stops rather than quietly doing that; -PterrainLibrary=false asks for the old way.
+            if ((suite == 'terrain' || suite == 'league') && libraryWanted && !libraryIndex.isFile()) {
+
+                throw new GradleException("No terrain library in ${terrainLibrary}. Build one first with "
+                        + "scripts\\terrain.ps1, which takes about half an hour, or pass -PterrainLibrary=false to have "
+                        + "every worker generate its own ground as before.")
+            }
 
             if (suite == 'league') {
 

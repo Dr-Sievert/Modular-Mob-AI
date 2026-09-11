@@ -42,6 +42,7 @@ scripts\test.ps1                       20 arena fights with the scripted fighter
 scripts\test.ps1 -Mechanics            the item and block rules against a player's numbers: expect 19 passed
 scripts\test.ps1 -Play                 the agent in a real game (jar networks, /mmai, sides, Infinity loadouts): expect 17 passed
 scripts\play.ps1                       the dev client, agents on the best network in models\; -Model, -Weights, -Loader
+scripts\terrain.ps1                    once per machine before any training: the terrain library a run fights on
 scripts\train.ps1 -Run <name>          train (resumes); see docs/training.md for -FromCopy, -Workers and the rest
 scripts\watch.ps1                      live dashboard of every run, one line each
 scripts\stop.ps1 -Run <name>           stop one run (bare stop.ps1 stops every run on the machine)
