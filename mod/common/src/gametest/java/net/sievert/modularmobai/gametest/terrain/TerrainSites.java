@@ -51,6 +51,10 @@ import net.sievert.modularmobai.gametest.GameTestTuning;
  * opponent, and for a league squad one for each of them, standing together a few blocks apart, so a squad is a group the
  * agent walks into rather than a ring drawn round it.
  *
+ * <p>Each site also knows what is on it, {@link SiteHazards}: lava, an edge to knock something off, some other hazard,
+ * water, or nothing but ground. A fight may ask for ground with something on it worth using, and a share of the league's
+ * do; every fight is recorded under whatever kind of ground it actually got.
+ *
  * <p>Generating the lattice is most of what starting a worker costs, so fights do not wait for all of it. The sites are
  * generated a couple at a time, in order, and each one is handed out as soon as it is ready, while the rest are still
  * being generated behind it. Better still, the build keeps the worlds workers generated and hands them to later workers,
@@ -169,8 +173,9 @@ public final class TerrainSites {
      *                  together for a squad
      * @param bounds    what the fighters may perceive: the site's loaded area, from a little below the lowest fighter up
      *                  to well above the highest
+     * @param kind      what is on this patch of ground worth knocking an opponent into, see {@link SiteHazards}
      */
-    public record Site(int index, BlockPos agent, List<BlockPos> opponents, AABB bounds) {
+    public record Site(int index, BlockPos agent, List<BlockPos> opponents, AABB bounds, SiteHazards.Kind kind) {
 
         /** Where the one opponent starts, for the fights that only ever have one. */
         public BlockPos opponent() {
@@ -219,6 +224,13 @@ public final class TerrainSites {
     /** Fights each site has hosted since it last moved, and how many of those ran out the clock. */
     private static final int[] fights = new int[COUNT];
     private static final int[] timeouts = new int[COUNT];
+
+    /**
+     * What is on each site, worked out the first time anything asks and kept until the site moves on to fresh ground. A
+     * scan of a site is four hundred odd block lookups and a site hosts a hundred fights, so this is nothing; asking on
+     * demand rather than as a site becomes ready keeps it off the path that gets the first fight going.
+     */
+    private static final SiteHazards.Kind[] kinds = new SiteHazards.Kind[COUNT];
 
     /** Points of the lattice asked for as spares, in order, and whether each is loaded yet. */
     private static final int[] spares = new int[SPARES];
@@ -537,7 +549,7 @@ public final class TerrainSites {
     @Nullable
     public static synchronized Site claim(ServerLevel level) {
 
-        return claim(level, 1, 0);
+        return claim(level, 1, 0, false);
     }
 
     /**
@@ -554,9 +566,12 @@ public final class TerrainSites {
      * @param apart     how far away from the agent to put them, or zero for the ordinary distance; more than the site can
      *                  hold is cut down to what it can, and ground with no room for it falls back to the ordinary distance
      *                  rather than losing the fight
+     * @param hazards   whether to look first for ground with something on it worth knocking an opponent into, see
+     *                  {@link SiteHazards}. Only a fraction of the library has any, so a fight that asks and finds none
+     *                  takes ordinary ground rather than waiting; what the fight is recorded on is whatever it got
      */
     @Nullable
-    public static synchronized Site claim(ServerLevel level, int opponents, int apart) {
+    public static synchronized Site claim(ServerLevel level, int opponents, int apart, boolean hazards) {
 
         if (origin == null) {
 
@@ -571,36 +586,57 @@ public final class TerrainSites {
             nextWildlifeSweep = level.getGameTime() + WILDLIFE_SWEEP_TICKS;
         }
 
-        for (int attempt = 0; attempt < COUNT; attempt++) {
+        // The first pass is only for a fight that asked for hazardous ground, and only looks at sites that have some.
+        for (int pass = hazards ? 0 : 1; pass < 2; pass++) {
 
-            int index = next++ % COUNT;
+            for (int attempt = 0; attempt < COUNT; attempt++) {
 
-            if (!ready[index] || unusable[index] || inUse[index]) {
+                int index = next++ % COUNT;
 
-                continue;
-            }
+                if (!ready[index] || unusable[index] || inUse[index]) {
 
-            BlockPos centre = centre(index);
-
-            for (int tries = 0; tries < PLACEMENT_TRIES; tries++) {
-
-                Site site = place(level, index, centre, random, opponents, apart);
-
-                if (site != null) {
-
-                    inUse[index] = true;
-                    return site;
+                    continue;
                 }
-            }
 
-            if (opponents == 1 && apart == 0) {
+                BlockPos centre = centre(index);
+                SiteHazards.Kind kind = kindOf(level, index, centre);
 
-                // Water or cliff all the way across. Out of use until a spare takes its place.
-                unusable[index] = true;
+                if (pass == 0 && !kind.hazardous()) {
+
+                    continue;
+                }
+
+                for (int tries = 0; tries < PLACEMENT_TRIES; tries++) {
+
+                    Site site = place(level, index, centre, random, opponents, apart, kind);
+
+                    if (site != null) {
+
+                        inUse[index] = true;
+                        return site;
+                    }
+                }
+
+                if (opponents == 1 && apart == 0) {
+
+                    // Water or cliff all the way across. Out of use until a spare takes its place.
+                    unusable[index] = true;
+                }
             }
         }
 
         return null;
+    }
+
+    /** What is on a site, worked out once and kept until the site moves on. */
+    private static SiteHazards.Kind kindOf(ServerLevel level, int index, BlockPos centre) {
+
+        if (kinds[index] == null) {
+
+            kinds[index] = SiteHazards.of(level, centre, SIZE);
+        }
+
+        return kinds[index];
     }
 
     /**
@@ -686,6 +722,9 @@ public final class TerrainSites {
             fights[site] = 0;
             timeouts[site] = 0;
             unusable[site] = false;
+
+            // Fresh ground, so what was on the old patch says nothing about this one.
+            kinds[site] = null;
 
             if (++swaps % 100 == 0) {
 
@@ -826,7 +865,7 @@ public final class TerrainSites {
     @Nullable
     static Site place(ServerLevel level, int index, BlockPos centre, RandomSource random) {
 
-        return place(level, index, centre, random, 1, 0);
+        return place(level, index, centre, random, 1, 0, SiteHazards.Kind.FLAT);
     }
 
     /**
@@ -834,7 +873,8 @@ public final class TerrainSites {
      * melee fight does: the first of them where one opponent would stand, the rest beside it.
      */
     @Nullable
-    static Site place(ServerLevel level, int index, BlockPos centre, RandomSource random, int opponents, int apart) {
+    static Site place(ServerLevel level, int index, BlockPos centre, RandomSource random, int opponents, int apart,
+                      SiteHazards.Kind kind) {
 
         int x = centre.getX() + Mth.nextInt(random, -JITTER, JITTER);
         int z = centre.getZ() + Mth.nextInt(random, -JITTER, JITTER);
@@ -878,7 +918,7 @@ public final class TerrainSites {
             high = Math.max(high, start.getY());
         }
 
-        return new Site(index, agent, side, new AABB(box.minX, low - 16, box.minZ, box.maxX, high + 24, box.maxZ));
+        return new Site(index, agent, side, new AABB(box.minX, low - 16, box.minZ, box.maxX, high + 24, box.maxZ), kind);
     }
 
     /**

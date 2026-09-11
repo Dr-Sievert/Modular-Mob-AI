@@ -66,6 +66,7 @@ function Read-Table([string] $File) {
 $ratings = Read-Table (Join-Path $league 'ratings.csv')
 $opponents = Read-Table (Join-Path $league 'opponents.csv')
 $loadouts = Read-Table (Join-Path $league 'loadouts.csv')
+$ground = Read-Table (Join-Path $league 'ground.csv')
 
 # The checkpoint evaluation judged best, which is the one in best.mbw; none until the first has been judged.
 $best = @(Read-Table (Join-Path $directory 'eval.csv') | Where-Object { $_.best -eq '1' }) | Select-Object -Last 1
@@ -159,5 +160,24 @@ if ($loadouts.Count -gt 0) {
         Write-Host ('{0,-20} {1,6} {2,6} {3,6} {4,9} {5,6}   {6,6} {7,6}' -f $row.loadout, $fights, (Format-Percent $row.eval_wins $fights),
                 (Format-Percent $row.eval_losses $fights), (Format-Percent $row.eval_timeouts $fights), (Format-Percent $row.eval_draws $fights),
                 $trained, (Format-Percent $row.train_wins $trained))
+    }
+}
+
+if ($ground.Count -gt 0) {
+
+    Write-Host ''
+    Write-Host 'On each kind of ground, and what finished the other side. A quarter of the fights are drawn onto ground with'
+    Write-Host 'something worth knocking an opponent into. "Ground %" of the wins is the number to watch: a fight the terrain'
+    Write-Host 'ends is the agent''s win either way, so it is the only sign that the agent has learned the terrain is a weapon.'
+    Write-Host ('{0,-12} {1,8} {2,8} {3,7}   {4,8} {5,8} {6,8} {7,8}' -f 'ground', 'fights', 'wins', 'won %', 'by agent', 'by ground',
+            'ground %', 'by side')
+
+    foreach ($row in $ground) {
+
+        $fights = [int]$row.fights
+        $wins = [int]$row.wins
+
+        Write-Host ('{0,-12} {1,8} {2,8} {3,7}   {4,8} {5,8} {6,8} {7,8}' -f $row.site, $fights, $wins, (Format-Percent $wins $fights),
+                $row.by_agent, $row.by_terrain, (Format-Percent $row.by_terrain $wins), $row.by_side)
     }
 }

@@ -101,7 +101,8 @@ Each worker runs 25 fights at once on a quarter again as many sites (32), plus 4
   terrain library holds its sites at the size it was built for. A worker will read a library built for bigger sites and use
   the inner part; a library built for smaller ones it refuses and says which `-Radius` to rebuild with.
 - A site is handed out with a place to stand for the agent and one for each of the other side, 7 to 11 blocks away, a
-  squad's members within 3 blocks of each other.
+  squad's members within 3 blocks of each other. It also knows what is on it, which the league draws a share of its fights
+  by; see the league below.
 - Every fighter starts with open sky above it. Starts under canopies and mangrove roots lost 9.8% against 0.8%.
 - A site hosts 100 fights, then moves on to fresh ground once a spare is ready. A site where 2 fights time out is
   retired at once: that's the ground, not luck.
@@ -158,6 +159,17 @@ different opponent every time, with a different loadout:
   scripted fighter or a checkpoint, keeps the melee minute whatever loadout it drew, so their ratings do not move. Ground
   with no room for the wanted distance falls back to the ordinary one rather than losing the fight, and the clock is also
   what the speed bonus is paid against, so fast means fast for the fight it was.
+- **Ground worth using.** Each site is labelled by what is on it (`gametest/terrain/SiteHazards`): `lava`, `drop` (a cliff
+  or ravine edge, a fall of more than 8), `hazard` (fire, magma, cactus, powder snow, berries, cobweb, dripstone), `water`
+  or `flat`. A quarter of the league's fights (`-PleagueHazards`) look for ground with something on it, since the terrain
+  is a weapon: a hundred health of iron golem goes into a lava lake as easily as a zombie does, and a fight the ground
+  finishes is already the agent's win. Only a quarter, because the plain melee on plain ground is still the fight it has to
+  win, and a run that only saw hazards would learn to hunt for them. Every fight records the ground it was on and what
+  finished the other side — the agent, the ground (as the damage names it: `lava`, `fall`), its own side, or nothing — and
+  `league/ground.csv` adds that up per kind of ground. **That number is the point**: a fight the ground ends counts as a
+  win either way, so terrain finishes rising on lava and cliff sites is the only sign the agent has learned the trick.
+  Labelling happens when a site is handed out, not in the library's index: it costs about 400 block lookups once per site
+  (a site hosts 100 fights), works on a library already built, and leaves the index format alone.
 - League fights happen at midnight, clear and with mob griefing off: no undead burn, spiders stay hostile, rain neither
   hurts a blaze or a snow golem nor teleports an enderman, and no crater stays in a kept world. A creeper that blows
   itself up without killing the agent is a draw, which pays as a loss.
@@ -173,10 +185,11 @@ the checkpoint's evaluation, so best weights and the end of the run work as on t
 | File (`runs/<run>/league/`) | Written by | Holds |
 | --- | --- | --- |
 | `roster.csv` | each worker as it starts | `opponent,kind,cap`: the mobs and the scripted fighter it fields, and the largest share of the training fights each may take (1 for no cap) |
-| `results/wNN.csv` | each worker, a line a fight | `iteration,kind,opponent,loadout,opponent_loadout,outcome,ticks,cause`; kind `train` or `eval`, outcome `win`, `loss`, `timeout` or `draw`, cause what the agent died of when it died |
+| `results/wNN.csv` | each worker, a line a fight | `iteration,kind,opponent,loadout,opponent_loadout,outcome,ticks,cause,site,finish`; kind `train` or `eval`, outcome `win`, `loss`, `timeout` or `draw`, cause what the agent died of when it died, site what was on the ground, finish what finished the other side (`agent`, `side`, a damage name like `lava`, or `-`) |
 | `matchmaking.csv` | the trainer, every iteration | `opponent,share,chance,rating,fights`: each opponent's share of the training fights, which the workers draw from |
 | `ratings.csv` | the trainer | every player's rating and rated record |
 | `opponents.csv`, `loadouts.csv` | the trainer | the agent's last 200 evaluation and training fights against each opponent and with each loadout |
+| `ground.csv` | the trainer | every fight of the run on each kind of ground, and what finished the other side: the agent, the ground, its own side |
 | `evaluations.csv` | the trainer | every evaluated checkpoint's record against each opponent |
 | `state.json` | the trainer | what a resumed run needs to carry the league on, the rungs of the ladder it has opened included |
 
@@ -197,7 +210,7 @@ mod/                    the Gradle build (MultiLoader: common + fabric + neoforg
     Config.java           config/modular_mob_ai.properties, read by agents in a real game only
   common/src/gametest/java/net/sievert/modularmobai/gametest/
     tests/                the fights (closed arena, natural terrain, the league), the mechanics suite and the play suite
-    terrain/              the terrain sites
+    terrain/              the terrain sites, the library they come from, and what each site has on it
     league/               the league: the mobs and how each is fielded, the squads, the loadouts, the draw and the results
     replay/               fight recording for the viewer (FightRecorder, SiteBlocks)
     mixin/                game-test-only server changes: no saving, chunk unloading, no idle chunk ticking

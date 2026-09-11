@@ -26,6 +26,22 @@ are deliberate.
 - **The machine blue-screened under load (2026-09-11).** The i7-14700KF was on microcode 0x11F, below Intel's fix for
   13th and 14th gen instability (0x12B). A BIOS update (A.K0, microcode 0x137) fixed it; crashes since are code bugs.
 
+## The league's curriculum
+
+- **The terrain is a weapon, and nothing had ever told the agent so.** Its grid has marked lava, fire, magma, cactus,
+  powder snow, berries, cobwebs and drops of more than eight blocks as hazards since the hazard work, above solid, which is
+  what keeps it from walking onto them. What it never learned is that the same blocks are somewhere to put an opponent: a
+  hundred health of iron golem takes a long time to cut down and no time to knock into a lava lake, and a fight the ground
+  finishes already pays as a win. Sites are labelled by what is on them and a quarter of the fights are drawn onto the ones
+  with something, `-PleagueHazards`; the number that says whether any of it worked is the share of wins the ground finished,
+  per kind of ground, in `league/ground.csv`.
+- **A quarter, not all of it.** Plain melee on plain ground is still the fight the agent has to be able to win, and a run
+  that only ever fought beside lava would learn to go looking for lava rather than to fight.
+- **Labelling a site belongs where the site is handed out, not in the library index.** A site's ground is loaded and
+  ticking by then, so the scan costs no disk; it is about 400 block lookups once per site and a site hosts a hundred
+  fights; it works on a library that is already built rather than needing gigabytes generated again; and it leaves the
+  index format alone.
+
 ## The league's opponents
 
 - **Some mobs kill themselves, and the agent was paid for it.** Each of these hands over a win nobody fought for, and a

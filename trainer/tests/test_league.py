@@ -380,6 +380,44 @@ class LeagueTest(unittest.TestCase):
         self.assertEqual(resumed.rated, 3)
         self.assertEqual(json.loads((self.run.path / "league" / "state.json").read_text(encoding="utf-8"))["rated"], 3)
 
+    def test_the_ground_a_fight_was_on_and_what_finished_it_are_counted_per_kind(self):
+        self.results(0,
+                     "50,eval,zombie,sword,-,win,200,-,lava,lava",
+                     "50,train,zombie,sword,-,win,150,-,lava,agent",
+                     "50,train,creeper,sword,-,win,150,-,drop,fall",
+                     "50,train,zombie,sword,-,loss,300,opponent,flat,-",
+                     "50,train,2x_creeper,sword,-,win,150,-,flat,side")
+
+        league = League(self.run, self.config)
+        league.update(50)
+
+        ground = {row[0]: [int(value) for value in row[1:]] for row in self.read("ground.csv")}
+
+        # fights, wins, by_agent, by_terrain, by_side
+        self.assertEqual(ground["lava"], [2, 2, 1, 1, 0])
+        self.assertEqual(ground["drop"], [1, 1, 0, 1, 0])
+        self.assertEqual(ground["flat"], [2, 1, 0, 0, 1])
+
+    def test_a_result_written_before_the_ground_was_recorded_still_reads(self):
+        self.results(0, "50,eval,zombie,sword,-,win,200", "50,eval,creeper,sword,-,loss,300,lava")
+
+        league = League(self.run, self.config)
+        league.update(50)
+
+        ground = {row[0]: [int(value) for value in row[1:]] for row in self.read("ground.csv")}
+
+        self.assertEqual(league.rated, 2)
+        self.assertEqual(ground["-"], [2, 1, 0, 0, 0])
+
+    def test_the_ground_counts_survive_a_resume(self):
+        self.results(0, "50,train,zombie,sword,-,win,150,-,lava,lava")
+
+        first = League(self.run, self.config)
+        first.update(50)
+
+        resumed = League(self.run, self.config)
+        self.assertEqual(resumed.ground["lava"].by_terrain, 1)
+
     def test_the_tables_hold_every_opponent_and_loadout(self):
         self.results(0, "50,eval,zombie,sword,-,win,200", "50,train,creeper,bow,-,loss,300", "50,eval,iteration-000025,axe,bow,win,500")
 

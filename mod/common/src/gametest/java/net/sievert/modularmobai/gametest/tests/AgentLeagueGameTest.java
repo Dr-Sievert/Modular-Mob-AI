@@ -101,6 +101,9 @@ public class AgentLeagueGameTest {
         private Phase phase = Phase.IDLE;
         private boolean holding;
 
+        /** Whether this fight asked for ground with something on it worth knocking an opponent into. */
+        private boolean hazards;
+
         private TerrainSites.Site site;
         private League.Matchup matchup;
         private Evaluation.Assignment evaluation;
@@ -165,10 +168,14 @@ public class AgentLeagueGameTest {
                         // other side either way: only the agent's own fights are learned from.
                         this.evaluation = Evaluation.next();
                         this.matchup = League.next(this.evaluation, this.level.getRandom());
+
+                        // A share of the fights go looking for ground with something on it worth knocking an opponent
+                        // into. Drawn here, per fight, so every opponent is met on both kinds of ground.
+                        this.hazards = League.wantsHazards(this.level.getRandom());
                         this.holding = true;
                     }
 
-                    this.site = TerrainSites.claim(this.level, this.matchup.mobs(), this.matchup.start());
+                    this.site = TerrainSites.claim(this.level, this.matchup.mobs(), this.matchup.start(), this.hazards);
 
                     if (this.site != null) {
 
@@ -384,7 +391,8 @@ public class AgentLeagueGameTest {
                     won ? TestDurationStats.Outcome.WIN : TestDurationStats.Outcome.LOSS, this.helper.getTick());
 
             League.record(this.matchup, outcome, this.helper.getTick() - this.started, this.landed, this.targeted,
-                    standing ? "-" : DeathCauses.cause(this.agent, this.opponents));
+                    standing ? DeathCauses.NOTHING : DeathCauses.cause(this.agent, this.opponents), this.site.kind().label(),
+                    DeathCauses.finish(this.agent, this.opponents));
 
             if (this.replay != null) {
 

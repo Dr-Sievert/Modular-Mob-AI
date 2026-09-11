@@ -218,6 +218,10 @@ afterEvaluate {
     runTask.systemProperty('modular_mob_ai.league.loadouts', providers.gradleProperty('leagueLoadouts').getOrElse(''))
     runTask.systemProperty('modular_mob_ai.league.difficulties', providers.gradleProperty('leagueDifficulties').getOrElse(''))
 
+    // What share of league fights look for ground with something on it worth knocking an opponent into, lava or a cliff
+    // edge: -PleagueHazards=0.25, and 0 for none at all. A quarter unless told otherwise; see League.
+    runTask.systemProperty('modular_mob_ai.league.hazards', providers.gradleProperty('leagueHazards').getOrElse(''))
+
     // The small tool that lives in the game test sources. It touches nothing of the game, so it runs as a plain Java
     // program in a second rather than booting a server: the observation layout the training side builds a network from,
     // and the parity check between this build's forward pass and PyTorch's.
@@ -1103,8 +1107,10 @@ afterEvaluate {
         }
 
         // A league run's workers each say how their fights against every opponent went, beside their durations: fights,
-        // won, lost, timed out, drawn, and in how many the opponent hurt the agent and went for it; and the same for every
-        // loadout the agent carried, as loadout:NAME. Added up here.
+        // won, lost, timed out, drawn, in how many the opponent hurt the agent and went for it, and in how many the ground
+        // finished the opponent rather than the agent; and the same for every loadout the agent carried, as loadout:NAME,
+        // and every kind of ground it fought on, as site:NAME. Added up here.
+        def leagueColumns = 8
         def league = [:] as TreeMap
 
         processes.each { entry ->
@@ -1120,17 +1126,17 @@ afterEvaluate {
 
                 def parts = line.trim().split(/\s+/)
 
-                if (parts.length == 8) {
+                if (parts.length == leagueColumns + 1) {
 
                     def tally = league[parts[0]]
 
                     if (tally == null) {
 
-                        tally = [0L] * 7
+                        tally = [0L] * leagueColumns
                         league[parts[0]] = tally
                     }
 
-                    for (int index = 0; index < 7; index++) {
+                    for (int index = 0; index < leagueColumns; index++) {
 
                         tally[index] = (tally[index] as long) + Long.parseLong(parts[index + 1])
                     }
@@ -1140,24 +1146,27 @@ afterEvaluate {
 
         if (!league.isEmpty()) {
 
-            println "========= League results, the agent against each opponent and with each loadout ========="
+            println "========= League results, the agent against each opponent, with each loadout and on each ground ========="
 
-            [['opponent', league.findAll { !it.key.startsWith('loadout:') }],
-             ["agent's loadout", league.findAll { it.key.startsWith('loadout:') }]].each { title, rows ->
+            [['opponent', league.findAll { !it.key.startsWith('loadout:') && !it.key.startsWith('site:') }],
+             ["agent's loadout", league.findAll { it.key.startsWith('loadout:') }],
+             ['ground', league.findAll { it.key.startsWith('site:') }]].each { title, rows ->
 
-                println String.format(Locale.ROOT, "  %-28s %6s %7s %7s %9s %7s %7s %9s", title, 'fights', 'won %', 'lost %',
-                        'timeout %', 'draw %', 'hit it', 'went for')
+                println String.format(Locale.ROOT, "  %-28s %6s %7s %7s %9s %7s %7s %9s %7s", title, 'fights', 'won %', 'lost %',
+                        'timeout %', 'draw %', 'hit it', 'went for', 'ground')
 
                 rows.each { name, tally ->
 
                     def fights = Math.max(1L, tally[0])
-                    println String.format(Locale.ROOT, "  %-28s %6d %7.1f %7.1f %9.1f %7.1f %7d %9d", name - 'loadout:', tally[0],
+                    println String.format(Locale.ROOT, "  %-28s %6d %7.1f %7.1f %9.1f %7.1f %7d %9d %7d",
+                            (name - 'loadout:') - 'site:', tally[0],
                             100.0d * tally[1] / fights, 100.0d * tally[2] / fights, 100.0d * tally[3] / fights,
-                            100.0d * tally[4] / fights, tally[5], tally[6])
+                            100.0d * tally[4] / fights, tally[5], tally[6], tally[7])
                 }
             }
 
-            println "  hit it: fights in which the opponent hurt the agent; went for: in which it kept the agent as its target"
+            println "  hit it: fights in which the opponent hurt the agent; went for: in which it kept the agent as its target;"
+            println "  ground: wins in which the ground finished the opponent rather than the agent"
             println "=" * 60
         }
 

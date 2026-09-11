@@ -30,6 +30,7 @@ import net.sievert.modularmobai.brain.nn.WeightFile;
 import net.sievert.modularmobai.brain.schema.ObservationSchema;
 import net.sievert.modularmobai.gametest.Evaluation;
 import net.sievert.modularmobai.gametest.GameTestTuning;
+import net.sievert.modularmobai.gametest.util.DeathCauses;
 
 /**
  * Who each league fight is between, and how every one of them ended.
@@ -71,11 +72,31 @@ public final class League {
     /** A frozen copy of the network driving the agents, in a run with no checkpoints to draw from. */
     public static final String SELF = "self";
 
+
     /** How a checkpoint is named in the files: iteration-000125. */
     private static final String CHECKPOINT = "iteration-";
 
     /** Midnight, when no undead burns, every spider is hostile and no enderman is chased off by the light. */
     private static final long MIDNIGHT = 18000L;
+
+    /**
+     * What share of the fights ask for ground with something on it worth knocking an opponent into: lava, an edge, a
+     * cactus patch. The terrain is a weapon, a fight the ground finishes is already the agent's win, and a hundred health
+     * of iron golem goes into a lava lake as easily as a zombie does; but a quarter, not all of it, because the plain melee
+     * on plain ground is still the fight the agent has to be able to win, and because a run that only ever saw hazards
+     * would learn to hunt for them instead of to fight.
+     *
+     * <p>Only a fraction of the library's sites have anything, so a fight that asks and finds none takes ordinary ground:
+     * what comes out of this is a ceiling on the share, and the results say what it really was.
+     *
+     * <pre>
+     *   -Dmodular_mob_ai.league.hazards=0.25   the share; 0 for none at all
+     * </pre>
+     */
+    private static final String HAZARDS = "modular_mob_ai.league.hazards";
+    private static final double HAZARD_SHARE = 0.25D;
+
+    private static double hazardShare = Double.NaN;
 
     /**
      * One fight's pairing.
@@ -136,9 +157,13 @@ public final class League {
     @Nullable
     private static ScriptedBrain scripted;
 
-    /** What became of the fights against each opponent, and with each loadout, for the summary once they are all done. */
+    /**
+     * What became of the fights against each opponent, with each loadout, and on each kind of ground, for the summary once
+     * they are all done; and of those, how many the ground itself finished rather than the agent.
+     */
     private static final Map<String, Tally> tallies = new LinkedHashMap<>();
     private static final Map<String, Tally> loadoutTallies = new LinkedHashMap<>();
+    private static final Map<String, Tally> siteTallies = new LinkedHashMap<>();
 
     /**
      * Midnight for good, clear weather and no mob griefing, once per process as the first league fight starts. See
@@ -167,6 +192,30 @@ public final class League {
         Constants.LOG.info("League fights: {} opponents of {} mobs and squads, the scripted fighter{}, {} loadouts; midnight "
                 + "and clear for good, no mob griefing", Opposition.fielded().size(), Roster.fielded().size(),
                 directory != null ? " and the run's checkpoints" : "", Loadouts.enabled().size());
+    }
+
+    /**
+     * Whether the next fight should look for ground with something on it worth knocking an opponent into. Drawn per fight
+     * rather than settled per opponent, so every opponent is met on both kinds of ground and the ratings stay comparable.
+     */
+    public static synchronized boolean wantsHazards(RandomSource random) {
+
+        if (Double.isNaN(hazardShare)) {
+
+            String asked = System.getProperty(HAZARDS, "").trim();
+
+            try {
+
+                hazardShare = asked.isEmpty() ? HAZARD_SHARE : Math.max(0.0D, Math.min(1.0D, Double.parseDouble(asked)));
+            }
+
+            catch (NumberFormatException exception) {
+
+                hazardShare = HAZARD_SHARE;
+            }
+        }
+
+        return hazardShare > 0.0D && random.nextDouble() < hazardShare;
     }
 
     /** The pairing for the next fight, which is an evaluation when it is handed one. */
@@ -209,13 +258,16 @@ public final class League {
      * @param targeted whether the opponent went for the agent at any point
      * @param cause    what the agent died of when it died, as {@link net.sievert.modularmobai.gametest.util.DeathCauses}
      *                 names it, and {@code -} when it did not
+     * @param site     what was on the ground it was fought on, see {@link net.sievert.modularmobai.gametest.terrain.SiteHazards}
+     * @param finish   what finished the other side: {@code agent}, or what the terrain did it with, {@code lava} or
+     *                 {@code fall}, and {@code -} when nothing was finished at all
      */
     public static synchronized void record(Matchup matchup, String outcome, long ticks, boolean landed, boolean targeted,
-                                           String cause) {
+                                           String cause, String site, String finish) {
 
         if (directory != null) {
 
-            write(matchup, outcome, ticks, cause);
+            write(matchup, outcome, ticks, cause, site, finish);
         }
 
         // Only a mob or the scripted fighter holds still enough to judge a checkpoint by, see the class comment.
@@ -224,8 +276,11 @@ public final class League {
             Evaluation.record(matchup.evaluation(), outcome, ticks);
         }
 
-        tallies.computeIfAbsent(matchup.opponent(), ignored -> new Tally()).add(outcome, landed, targeted);
-        loadoutTallies.computeIfAbsent(matchup.loadout().name(), ignored -> new Tally()).add(outcome, landed, targeted);
+        boolean byTheGround = DeathCauses.byTheGround(finish);
+
+        tallies.computeIfAbsent(matchup.opponent(), ignored -> new Tally()).add(outcome, landed, targeted, byTheGround);
+        loadoutTallies.computeIfAbsent(matchup.loadout().name(), ignored -> new Tally()).add(outcome, landed, targeted, byTheGround);
+        siteTallies.computeIfAbsent(site, ignored -> new Tally()).add(outcome, landed, targeted, byTheGround);
 
         if (++recorded == GameTestTuning.arenasInShard(GameTestTuning.arenaCount())) {
 
@@ -539,14 +594,14 @@ public final class League {
         }
     }
 
-    private static void write(Matchup matchup, String outcome, long ticks, String cause) {
+    private static void write(Matchup matchup, String outcome, long ticks, String cause, String site, String finish) {
 
         int iteration = matchup.evaluation() != null ? matchup.evaluation().iteration()
                 : Brains.defaultBrain() instanceof NeuralBrain neural ? neural.weights().iteration() : -1;
 
-        String line = String.format(Locale.ROOT, "%d,%s,%s,%s,%s,%s,%d,%s%n", iteration, matchup.evaluation() != null ? "eval" : "train",
-                matchup.opponent(), matchup.loadout().name(), matchup.opponentLoadout() == null ? "-" : matchup.opponentLoadout().name(),
-                outcome, ticks, cause);
+        String line = String.format(Locale.ROOT, "%d,%s,%s,%s,%s,%s,%d,%s,%s,%s%n", iteration,
+                matchup.evaluation() != null ? "eval" : "train", matchup.opponent(), matchup.loadout().name(),
+                matchup.opponentLoadout() == null ? "-" : matchup.opponentLoadout().name(), outcome, ticks, cause, site, finish);
 
         try {
 
@@ -561,8 +616,9 @@ public final class League {
     }
 
     /**
-     * Prints what became of the fights against every opponent and with every loadout, and hands the same to the build
-     * when this is one worker of a parallel run, which adds the workers up. Loadouts go in the file as loadout:NAME.
+     * Prints what became of the fights against every opponent, with every loadout and on every kind of ground, and hands
+     * the same to the build when this is one worker of a parallel run, which adds the workers up. Loadouts go in the file
+     * as loadout:NAME and kinds of ground as site:NAME.
      */
     private static void summarise() {
 
@@ -572,7 +628,10 @@ public final class League {
         System.out.println(header);
         print("opponent", tallies, "", file);
         print("agent's loadout", loadoutTallies, "loadout:", file);
-        System.out.println("  hit it: fights in which the opponent hurt the agent; went for: in which it kept the agent as its target");
+        print("ground", siteTallies, "site:", file);
+        System.out.println("  hit it: fights in which the opponent hurt the agent; went for: in which it kept the agent as its target;");
+        System.out.println("  ground: wins in which the ground finished the opponent rather than the agent, which is the whole point of");
+        System.out.println("  fighting on lava and cliff edges at all");
         System.out.println("=".repeat(header.length()));
 
         String stats = GameTestTuning.statsFile();
@@ -596,20 +655,20 @@ public final class League {
     /** One table of the summary, printed, and added to what the build is handed with each name under the prefix. */
     private static void print(String title, Map<String, Tally> table, String prefix, StringBuilder file) {
 
-        System.out.println(String.format(Locale.ROOT, "  %-28s %6s %7s %7s %9s %7s %6s %9s", title, "fights", "won %", "lost %",
-                "timeout %", "draw %", "hit it", "went for"));
+        System.out.println(String.format(Locale.ROOT, "  %-28s %6s %7s %7s %9s %7s %6s %9s %7s", title, "fights", "won %", "lost %",
+                "timeout %", "draw %", "hit it", "went for", "ground"));
 
         for (Map.Entry<String, Tally> entry : table.entrySet()) {
 
             Tally tally = entry.getValue();
             double fights = Math.max(1, tally.fights);
 
-            System.out.println(String.format(Locale.ROOT, "  %-28s %6d %7.1f %7.1f %9.1f %7.1f %6d %9d", entry.getKey(), tally.fights,
-                    100.0D * tally.wins / fights, 100.0D * tally.losses / fights, 100.0D * tally.timeouts / fights,
-                    100.0D * tally.draws / fights, tally.landed, tally.targeted));
+            System.out.println(String.format(Locale.ROOT, "  %-28s %6d %7.1f %7.1f %9.1f %7.1f %6d %9d %7d", entry.getKey(),
+                    tally.fights, 100.0D * tally.wins / fights, 100.0D * tally.losses / fights, 100.0D * tally.timeouts / fights,
+                    100.0D * tally.draws / fights, tally.landed, tally.targeted, tally.finished));
 
-            file.append(String.format(Locale.ROOT, "%s%s %d %d %d %d %d %d %d%n", prefix, entry.getKey(), tally.fights, tally.wins,
-                    tally.losses, tally.timeouts, tally.draws, tally.landed, tally.targeted));
+            file.append(String.format(Locale.ROOT, "%s%s %d %d %d %d %d %d %d %d%n", prefix, entry.getKey(), tally.fights, tally.wins,
+                    tally.losses, tally.timeouts, tally.draws, tally.landed, tally.targeted, tally.finished));
         }
     }
 
@@ -630,7 +689,10 @@ public final class League {
         private int landed;
         private int targeted;
 
-        private void add(String outcome, boolean hurtTheAgent, boolean wentForIt) {
+        /** Of the wins, the ones the ground finished rather than the agent: a fall, a lava lake, a cactus. */
+        private int finished;
+
+        private void add(String outcome, boolean hurtTheAgent, boolean wentForIt, boolean groundFinishedIt) {
 
             this.fights++;
 
@@ -644,6 +706,7 @@ public final class League {
 
             this.landed += hurtTheAgent ? 1 : 0;
             this.targeted += wentForIt ? 1 : 0;
+            this.finished += groundFinishedIt ? 1 : 0;
         }
     }
 }

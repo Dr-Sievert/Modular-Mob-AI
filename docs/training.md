@@ -140,6 +140,11 @@ Every opponent also has a harder and an easier rung, `zombie(hard)` and `zombie(
 the agent earns them and then rates as players of their own. Nothing needs asking for: the log says
 `zombie is met on hard from now on: 84% of the last 40 evaluation fights on normal`, and the tier list shows both.
 
+A quarter of the fights are drawn onto ground with something on it worth knocking an opponent into, lava or a cliff edge
+(`-PleagueHazards=0.25`, 0 for none). Whether the agent is learning that trick is the `ground %` column of
+`scripts\league.ps1` and `league/ground.csv`: how many of its wins on each kind of ground were finished by the ground
+rather than by the agent. The log says `the ground finished the opponent in lava 8% of 240 wins; drop 3% of 510 wins`.
+
 ```
 scripts\train.ps1 -Run league -Suite league -Seed vs-copy     start one from vs-copy's best, run until done
 scripts\league.ps1 -Run league                                the tier list, the record against each opponent and loadout

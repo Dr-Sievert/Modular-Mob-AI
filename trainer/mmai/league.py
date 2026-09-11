@@ -6,13 +6,19 @@ every fight. This side reads them, keeps an Elo rating for every player, decides
 all of it down:
 
     runs/RUN/league/roster.csv          written by the workers: the mobs and the scripted fighter they field, and the cap on each
-    runs/RUN/league/results/wNN.csv     appended by each worker: iteration,kind,opponent,loadout,opponent_loadout,outcome,ticks,cause
+    runs/RUN/league/results/wNN.csv     appended by each worker: iteration,kind,opponent,loadout,opponent_loadout,outcome,ticks,cause,site,finish
     runs/RUN/league/matchmaking.csv     written here: each opponent's share of the training fights, and why
     runs/RUN/league/ratings.csv         written here: every player's rating, best first
     runs/RUN/league/opponents.csv       written here: the agent's recent record against each opponent
     runs/RUN/league/loadouts.csv        written here: the agent's recent record with each loadout
+    runs/RUN/league/ground.csv          written here: the fights on each kind of ground, and what finished the other side
     runs/RUN/league/evaluations.csv     written here: every evaluated checkpoint's record against each opponent
     runs/RUN/league/state.json          written here: everything a resumed run needs to carry on where it was
+
+The ground. A quarter of the fights are drawn onto sites with something on them worth knocking an opponent into, lava or a
+cliff edge, and every fight says which kind of ground it was on and what finished the other side: the agent, the ground,
+its own side, or nothing. ground.csv adds that up per kind of ground. It is the one number that says whether the agent has
+learned that the terrain is a weapon, since a fight the ground finishes is its win either way.
 
 The difficulty ladder. Every opponent has three rungs, and its name says which: zombie on normal, zombie(hard) and
 zombie(easy) either side. Only normal is there from the start; a rung opens when the agent's evaluated record says it is
@@ -333,6 +339,33 @@ class Tally:
 
 
 @dataclass
+class Ground:
+    """How the fights on one kind of ground went, and how the other side went down.
+
+    The number this exists for is ``by_terrain``: a fight the ground finishes counts as the agent's win either way, so the
+    only way to see whether the agent has learned that lava and cliff edges are weapons is to count how often the ground is
+    what ended the fight, on ground that had any. Counted over the whole run rather than a window, since it is a trend and
+    not a current form, and saved with the rest so a resumed run keeps it.
+    """
+
+    fights: int = 0
+    wins: int = 0
+    by_agent: int = 0
+    by_terrain: int = 0
+    by_side: int = 0
+
+    def add(self, outcome: str, finish: str) -> None:
+        self.fights += 1
+        self.wins += outcome == "win"
+        self.by_agent += finish == "agent"
+        self.by_side += finish == "side"
+        self.by_terrain += finish not in ("agent", "side", "-")
+
+    def values(self) -> list[int]:
+        return [self.fights, self.wins, self.by_agent, self.by_terrain, self.by_side]
+
+
+@dataclass
 class Windows:
     """The most recent outcomes against each opponent, or with each loadout, so many of each."""
 
@@ -397,6 +430,9 @@ class League:
         # is saved with the rest and a resumed run does not have to earn them again.
         self.rungs: set[str] = set()
 
+        # How the fights on each kind of ground went, and how often the ground itself finished the other side.
+        self.ground: dict[str, Ground] = {}
+
         self._resume()
 
     # -------------------------------------------------------------------------------------------------------------
@@ -444,15 +480,18 @@ class League:
             end = data.rfind(b"\n") + 1
             self.offsets[file.name] = start + end
 
-            # The eighth field, what the agent died of, is for reading fights back later; nothing here needs it.
+            # The eighth field, what the agent died of, is for reading fights back later; nothing here needs it. The ninth
+            # and tenth, what ground the fight was on and what finished the other side, are newer than some runs, so a line
+            # without them still reads.
             for line in data[:end].decode("utf-8").splitlines():
                 parts = line.strip().split(",")
 
-                if len(parts) not in (7, 8) or parts[5] not in SCORES or parts[1] not in ("train", "eval"):
+                if not 7 <= len(parts) <= 10 or parts[5] not in SCORES or parts[1] not in ("train", "eval"):
                     continue
 
                 try:
-                    rows.append((int(parts[0]), parts[1], parts[2], parts[3], parts[4], parts[5], int(parts[6])))
+                    rows.append((int(parts[0]), parts[1], parts[2], parts[3], parts[4], parts[5], int(parts[6]),
+                                 parts[8] if len(parts) > 8 else "-", parts[9] if len(parts) > 9 else "-"))
 
                 except ValueError:
                     continue
@@ -460,7 +499,9 @@ class League:
         return rows
 
     def _take(self, iteration: int, kind: str, opponent: str, loadout: str, opponent_loadout: str, outcome: str,
-              ticks: int) -> None:
+              ticks: int, site: str, finish: str) -> None:
+
+        self.ground.setdefault(site, Ground()).add(outcome, finish)
 
         if kind == "train":
             record = self.training.setdefault(opponent, [0.0, 0.0])
@@ -624,6 +665,11 @@ class League:
             for name in loadouts
         ])
 
+        self._table("ground.csv", "site,fights,wins,by_agent,by_terrain,by_side", [
+            f"{site}," + ",".join(str(value) for value in tally.values())
+            for site, tally in sorted(self.ground.items())
+        ])
+
         self._table("evaluations.csv", "iteration,opponent,fights,wins,losses,timeouts,draws", [
             f"{iteration},{opponent}," + ",".join(str(value) for value in tally.values())
             for (iteration, opponent), tally in sorted(self.evaluations.items())
@@ -651,6 +697,15 @@ class League:
             ", ".join(f"{name} {100 * self.shares[name]:.0f}%" for name in most),
         )
 
+        # What the hazard sites are for: the ground finishing the fight, and only on the ground that has any.
+        using = [
+            f"{site} {100.0 * tally.by_terrain / max(1, tally.wins):.0f}% of {tally.wins} wins"
+            for site, tally in sorted(self.ground.items()) if tally.by_terrain > 0
+        ]
+
+        if using:
+            logger.info("the ground finished the opponent in %s", "; ".join(using))
+
     # -------------------------------------------------------------------------------------------------------------
 
     def _save(self) -> None:
@@ -658,6 +713,7 @@ class League:
             "offsets": self.offsets,
             "rated": self.rated,
             "rungs": sorted(self.rungs),
+            "ground": {site: tally.values() for site, tally in self.ground.items()},
             "players": {
                 player.name: [player.kind, player.rating, player.games, player.wins, player.losses, player.draws]
                 for player in self.ratings.players.values()
@@ -688,6 +744,7 @@ class League:
         self.offsets = {name: int(offset) for name, offset in state.get("offsets", {}).items()}
         self.rated = int(state.get("rated", 0))
         self.rungs = set(state.get("rungs", []))
+        self.ground = {site: Ground(*values) for site, values in state.get("ground", {}).items()}
 
         for name, (kind, rating, games, wins, losses, draws) in state.get("players", {}).items():
             self.ratings.players[name] = Player(name, kind, float(rating), int(games), int(wins), int(losses), int(draws))
