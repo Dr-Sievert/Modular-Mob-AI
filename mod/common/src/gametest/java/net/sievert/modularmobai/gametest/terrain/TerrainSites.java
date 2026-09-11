@@ -47,6 +47,10 @@ import net.sievert.modularmobai.gametest.GameTestTuning;
  * on it has finished and been cleaned up. The terrain stays as the generator left it: fights move nothing but
  * themselves, and what they drop is swept up after them.
  *
+ * <p>A site is handed out with somewhere to stand for the agent and for each of the other side: one place for a single
+ * opponent, and for a league squad one for each of them, standing together a few blocks apart, so a squad is a group the
+ * agent walks into rather than a ring drawn round it.
+ *
  * <p>Generating the lattice is most of what starting a worker costs, so fights do not wait for all of it. The sites are
  * generated a couple at a time, in order, and each one is handed out as soon as it is ready, while the rest are still
  * being generated behind it. Better still, the build keeps the worlds workers generated and hands them to later workers,
@@ -120,6 +124,12 @@ public final class TerrainSites {
     private static final int OPPONENT_MAX_DISTANCE = 11;
     private static final int OPPONENT_MAX_CLIMB = 3;
 
+    /**
+     * How far the rest of a squad may stand from the first of them. A squad is a group the agent walks into rather than a
+     * ring around it, so they start together, each in the nearest place to the first that something can stand.
+     */
+    private static final int SQUAD_SPREAD = 3;
+
     /** How many places to try for the lattice before settling for the one with the most land. */
     private static final int ORIGIN_ATTEMPTS = 400;
     private static final int ORIGIN_RANGE = 2_000_000;
@@ -127,10 +137,19 @@ public final class TerrainSites {
     /**
      * A fight's patch of ground.
      *
-     * @param bounds what the fighters may perceive: the site's loaded area, from a little below the lower of the two up
-     *               to well above the higher
+     * @param opponents where the other side starts, one place for each of them: one for a single mob, several standing
+     *                  together for a squad
+     * @param bounds    what the fighters may perceive: the site's loaded area, from a little below the lowest fighter up
+     *                  to well above the highest
      */
-    public record Site(int index, BlockPos agent, BlockPos opponent, AABB bounds) {}
+    public record Site(int index, BlockPos agent, List<BlockPos> opponents, AABB bounds) {
+
+        /** Where the one opponent starts, for the fights that only ever have one. */
+        public BlockPos opponent() {
+
+            return this.opponents.get(0);
+        }
+    }
 
     /**
      * Fights a site hosts before it is swapped for fresh ground, once a spare is ready to take its place. Every swap
@@ -477,11 +496,26 @@ public final class TerrainSites {
     }
 
     /**
-     * The next free site, with somewhere to stand for the agent and for its opponent, or null when every usable site that
-     * is ready has a fight on it; the caller tries again a tick later. Never waits for the world generator.
+     * The next free site, with somewhere to stand for the agent and for its one opponent, or null when every usable site
+     * that is ready has a fight on it; the caller tries again a tick later. Never waits for the world generator.
      */
     @Nullable
     public static synchronized Site claim(ServerLevel level) {
+
+        return claim(level, 1);
+    }
+
+    /**
+     * The same for a fight against several at once, which needs a place to stand for each of them.
+     *
+     * <p>A site is only ever written off as water or cliff on a fight that wanted the one place the library checked it for.
+     * A squad needs room the library never looked for, so failing to find it says nothing about the site: it is left for
+     * the next fight, which is almost always a fight against one mob and will decide.
+     *
+     * @param opponents how many places the other side needs
+     */
+    @Nullable
+    public static synchronized Site claim(ServerLevel level, int opponents) {
 
         if (origin == null) {
 
@@ -509,7 +543,7 @@ public final class TerrainSites {
 
             for (int tries = 0; tries < PLACEMENT_TRIES; tries++) {
 
-                Site site = place(level, index, centre, random);
+                Site site = place(level, index, centre, random, opponents);
 
                 if (site != null) {
 
@@ -518,8 +552,11 @@ public final class TerrainSites {
                 }
             }
 
-            // Water or cliff all the way across. Out of use until a spare takes its place.
-            unusable[index] = true;
+            if (opponents == 1) {
+
+                // Water or cliff all the way across. Out of use until a spare takes its place.
+                unusable[index] = true;
+            }
         }
 
         return null;
@@ -748,6 +785,14 @@ public final class TerrainSites {
     @Nullable
     static Site place(ServerLevel level, int index, BlockPos centre, RandomSource random) {
 
+        return place(level, index, centre, random, 1);
+    }
+
+    /** The same with room for a whole squad on the other side: the first of them where one opponent would stand, the rest
+     * beside it. */
+    @Nullable
+    static Site place(ServerLevel level, int index, BlockPos centre, RandomSource random, int opponents) {
+
         int x = centre.getX() + Mth.nextInt(random, -JITTER, JITTER);
         int z = centre.getZ() + Mth.nextInt(random, -JITTER, JITTER);
 
@@ -784,11 +829,68 @@ public final class TerrainSites {
             return null;
         }
 
-        AABB box = siteBox(level, centre);
-        int low = Math.min(agent.getY(), opponent.getY());
-        int high = Math.max(agent.getY(), opponent.getY());
+        List<BlockPos> side = squad(level, agent, opponent, random, opponents);
 
-        return new Site(index, agent, opponent, new AABB(box.minX, low - 16, box.minZ, box.maxX, high + 24, box.maxZ));
+        if (side == null) {
+
+            return null;
+        }
+
+        AABB box = siteBox(level, centre);
+        int low = agent.getY();
+        int high = agent.getY();
+
+        for (BlockPos start : side) {
+
+            low = Math.min(low, start.getY());
+            high = Math.max(high, start.getY());
+        }
+
+        return new Site(index, agent, side, new AABB(box.minX, low - 16, box.minZ, box.maxX, high + 24, box.maxZ));
+    }
+
+    /**
+     * Where each of the other side starts: the first where a single opponent would, and every one after it in the nearest
+     * free place to that, so a squad meets the agent as a group. Null when the ground has no room for all of them, which
+     * leaves the site to the next fight rather than writing it off, see {@link #claim(ServerLevel, int)}.
+     */
+    @Nullable
+    private static List<BlockPos> squad(ServerLevel level, BlockPos agent, BlockPos first, RandomSource random, int opponents) {
+
+        List<BlockPos> side = new ArrayList<>(opponents);
+        side.add(first);
+
+        float heading = random.nextFloat() * Mth.TWO_PI;
+
+        for (int member = 1; member < opponents; member++) {
+
+            BlockPos found = null;
+
+            // Round the first of them, a turn further along for each, so the same squad does not always form the same shape.
+            for (int turn = 0; turn < 8 && found == null; turn++) {
+
+                float angle = heading + (member * 8 + turn) * (Mth.TWO_PI / 8.0F);
+                int spread = Mth.nextInt(random, 1, SQUAD_SPREAD);
+
+                BlockPos candidate = nearestStanding(level,
+                        first.getX() + Math.round(Mth.cos(angle) * spread),
+                        first.getZ() + Math.round(Mth.sin(angle) * spread), 1);
+
+                if (candidate != null && !side.contains(candidate) && Math.abs(candidate.getY() - agent.getY()) <= OPPONENT_MAX_CLIMB) {
+
+                    found = candidate;
+                }
+            }
+
+            if (found == null) {
+
+                return null;
+            }
+
+            side.add(found);
+        }
+
+        return List.copyOf(side);
     }
 
     /** The closest place within the radius where something can stand on dry, solid ground with its head clear. */

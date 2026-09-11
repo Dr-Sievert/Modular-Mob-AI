@@ -280,11 +280,15 @@ public final class Roster {
         return fielded;
     }
 
-    /** The member of that name this process fields, or null. */
-    @Nullable
-    public static Member named(String name) {
+    /**
+     * The member of that name whether this process fields it on its own or not, for the squads, whose members are named in
+     * code: asking for one squad by name should not also need every mob on it named. There being no such mob is a mistake
+     * in the squad rather than anything a run can ask for, so it is refused rather than quietly dropped. What a league
+     * opponent's name means is {@link Opposition#named}, which is what everything else asks.
+     */
+    public static Member any(String name) {
 
-        for (Member member : fielded()) {
+        for (Member member : ALL) {
 
             if (member.name().equals(name)) {
 
@@ -292,7 +296,7 @@ public final class Roster {
             }
         }
 
-        return null;
+        throw new IllegalArgumentException("There is no league mob called '" + name + "'");
     }
 
     private static Member member(String name, EntityType<? extends Mob> type, @Nullable Supplier<SpawnGroupData> spawnData,

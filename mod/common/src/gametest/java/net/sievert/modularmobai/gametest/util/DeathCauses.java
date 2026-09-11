@@ -1,5 +1,6 @@
 package net.sievert.modularmobai.gametest.util;
 
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -25,7 +26,13 @@ public final class DeathCauses {
 
     public static synchronized void record(LivingEntity agent, LivingEntity opponent) {
 
-        String cause = cause(agent, opponent);
+        record(agent, List.of(opponent));
+    }
+
+    /** The same where the agent was up against several at once: a blow from any of them is the fight going against it. */
+    public static synchronized void record(LivingEntity agent, List<? extends LivingEntity> opponents) {
+
+        String cause = cause(agent, opponents);
 
         COUNTS.merge(cause, 1, Integer::sum);
 
@@ -45,10 +52,27 @@ public final class DeathCauses {
      */
     public static String cause(LivingEntity agent, LivingEntity opponent) {
 
+        return cause(agent, List.of(opponent));
+    }
+
+    /** The same against several at once: any of them, or anything any of them shot, counts as the opponent. */
+    public static String cause(LivingEntity agent, List<? extends LivingEntity> opponents) {
+
         DamageSource source = agent.getLastDamageSource();
 
-        return source == null ? "unknown"
-                : source.getEntity() == opponent || source.getDirectEntity() == opponent ? OPPONENT
-                : source.getMsgId();
+        if (source == null) {
+
+            return "unknown";
+        }
+
+        for (LivingEntity opponent : opponents) {
+
+            if (source.getEntity() == opponent || source.getDirectEntity() == opponent) {
+
+                return OPPONENT;
+            }
+        }
+
+        return source.getMsgId();
     }
 }

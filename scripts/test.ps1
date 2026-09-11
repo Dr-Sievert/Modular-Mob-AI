@@ -6,7 +6,7 @@
 #   scripts\test.ps1 -Arenas 200
 #   scripts\test.ps1 -Terrain -Replays  every fight written down for watching, in runs\gametest\replays
 #   scripts\test.ps1 -Mechanics         no fights: the agent's bows, shields, blocks and the rest against a player's rules
-#   scripts\test.ps1 -League            76 fights on terrain, twice round every league opponent, then how each went
+#   scripts\test.ps1 -League            98 fights on terrain, twice round every league opponent, then how each went
 #   scripts\test.ps1 -League -Weights runs\x\best.mbw
 #                                       a network drives the agents instead, and fights a frozen copy of itself as well
 #   scripts\test.ps1 -Play              the agent in a real game: networks in the jar, /mmai, sides, Infinity loadouts
@@ -28,11 +28,11 @@ param(
 $suite = if ($Play) { 'play' } elseif ($Mechanics) { 'mechanics' } elseif ($League) { 'league' } elseif ($Terrain) { 'terrain' } else { 'arena' }
 $replayEvery = if ($Replays) { 1 } else { 0 }
 
-# Twice round the league's thirty seven mobs and the scripted fighter, unless asked for another number. Twice, so a mob
-# that only fails on some ground is not written off as working, and every one gets a second loadout.
+# Twice round the league's thirty seven mobs, eleven squads and the scripted fighter, unless asked for another number.
+# Twice, so an opponent that only fails on some ground is not written off as working, and every one gets a second loadout.
 if ($League -and -not $PSBoundParameters.ContainsKey('Arenas')) {
 
-    $Arenas = 76
+    $Arenas = 98
 }
 
 # The game runs in a folder of its own under mod\, so a path relative to here would not be found from there.

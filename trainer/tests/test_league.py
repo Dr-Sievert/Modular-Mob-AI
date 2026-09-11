@@ -211,6 +211,30 @@ class LeagueTest(unittest.TestCase):
         self.assertAlmostEqual(sum(rows.values()), 1.0, places=4)
         self.assertAlmostEqual(sum(rows[checkpoint_name(number)] for number in (0, 25, 50)), self.config.league_self_play, places=4)
 
+    def test_a_squad_is_rated_as_a_player_of_its_own_and_never_as_a_sum(self):
+        (self.run.path / "league" / "roster.csv").write_text(
+            "opponent,kind,cap\nzombie,mob,1.00000\n2x_zombie,squad,1.00000\nzombie+skeleton,squad,1.00000\nscripted,scripted,1.00000\n",
+            encoding="utf-8")
+
+        self.results(0, "50,eval,zombie,sword,-,win,200", "50,eval,2x_zombie,sword,-,loss,300",
+                     "50,eval,zombie+skeleton,bow,-,timeout,1200")
+
+        league = League(self.run, self.config)
+        league.update(50)
+
+        ratings = {row[0]: row for row in self.read("ratings.csv")}
+        opponents = {row[0]: row for row in self.read("opponents.csv")}
+
+        self.assertEqual(ratings["2x_zombie"][1], "squad")
+        self.assertEqual(ratings["zombie+skeleton"][1], "squad")
+        self.assertEqual(ratings["zombie"][1], "mob")
+
+        # Each of the three moved on its own fight and nothing added the squads up out of their members.
+        self.assertLess(float(ratings["zombie"][2]), 1500.0)
+        self.assertGreater(float(ratings["2x_zombie"][2]), 1500.0)
+        self.assertEqual(float(ratings["zombie+skeleton"][2]), 1500.0)
+        self.assertEqual(opponents["2x_zombie"][4:6], ["1", "0"])
+
     def test_a_capped_opponent_takes_no_more_than_its_cap_and_is_still_drawn_for_evaluation(self):
         (self.run.path / "league" / "roster.csv").write_text(
             "opponent,kind,cap\nzombie,mob,1.00000\nwarden,mob,0.00200\nscripted,scripted,1.00000\n", encoding="utf-8")

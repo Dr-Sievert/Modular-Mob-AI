@@ -94,7 +94,9 @@ either fighter dies, or after 1200 ticks (a minute), which counts as a loss.
 Each worker runs 25 fights at once on a quarter again as many sites (32), plus 4 spares, all held by
 `gametest/terrain/TerrainSites`:
 - A site is 80 × 80 blocks (5 × 5 chunks). Sites sit on a lattice 128 blocks apart, 8 to a row.
-- Both fighters start with open sky above them. Starts under canopies and mangrove roots lost 9.8% against 0.8%.
+- A site is handed out with a place to stand for the agent and one for each of the other side, 7 to 11 blocks away, a
+  squad's members within 3 blocks of each other.
+- Every fighter starts with open sky above it. Starts under canopies and mangrove roots lost 9.8% against 0.8%.
 - A site hosts 100 fights, then moves on to fresh ground once a spare is ready. A site where 2 fights time out is
   retired at once: that's the ground, not luck.
 - Chunks unload when a site moves on (`ChunkMapMixin`). Nothing is saved while tests run (`ServerLevelMixin`), and
@@ -121,6 +123,14 @@ different opponent every time, with a different loadout:
   for. An evoker's vexes are taken into the fight as it calls them, and swept up with it.
 - The warden is a benchmark, not a lesson: nothing beats it and the reward cannot pay for escaping, so its share of the
   training fights is capped at 0.2% (`Roster.Member.trainingCap`, written into `roster.csv`). It stays fully rated.
+- 11 squads of several mobs at once (`gametest/league/Opposition`): `2x_zombie`, `2x_vindicator`, `3x_silverfish`,
+  `2x_skeleton`, `zombie+skeleton`, `witch+zombie`, `pillager+vindicator`, `spider+cave_spider`, `2x_wither_skeleton`,
+  `2x_creeper`, `phantom+zombie`. They are curated, not generated: every pair of 37 mobs would be 600 ratings saying
+  little. **Each composition is a player of its own** — two zombies are not twice a zombie, and nothing anywhere adds a
+  squad's members up. A squad fights as a side: the agent on one team and all of them on another
+  (`allegiance/Allegiance`), so each goes for the agent and the agent counts every one an enemy whatever it is; the teams
+  are disbanded the moment the fight ends. A fight against one mob still uses no teams at all. The warden is in no squad,
+  and a squad fight is not recorded for the viewer, whose format holds two fighters.
 - The scripted fighter and frozen checkpoints of the run, as another agent with a brain of its own on its most likely
   action, so only the agent's steps are recorded.
 - 10 loadouts (`gametest/league/Loadouts`, armed with `arena/Loadout`): iron, stone and diamond swords, an axe, a sword
@@ -165,7 +175,7 @@ mod/                    the Gradle build (MultiLoader: common + fabric + neoforg
   common/src/gametest/java/net/sievert/modularmobai/gametest/
     tests/                the fights (closed arena, natural terrain, the league), the mechanics suite and the play suite
     terrain/              the terrain sites
-    league/               the league: the mobs and how each is fielded, the loadouts, the draw and the results
+    league/               the league: the mobs and how each is fielded, the squads, the loadouts, the draw and the results
     replay/               fight recording for the viewer (FightRecorder, SiteBlocks)
     mixin/                game-test-only server changes: no saving, chunk unloading, no idle chunk ticking
     tools/                BrainTool: schema export and the parity check, runs without the game

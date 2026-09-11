@@ -34,19 +34,21 @@ import net.sievert.modularmobai.gametest.GameTestTuning;
 /**
  * Who each league fight is between, and how every one of them ended.
  *
- * <p>A league run's agent fights nearly every hostile mob there is, the scripted fighter, and frozen copies of itself,
- * with a different loadout from one fight to the next. What it meets in its training fights is the trainer's call: it
- * weighs every opponent by how close the agent is to an even fight against it, keeps a share for each so none is
- * forgotten, and writes the shares down here; see trainer/mmai/league.py. This side only draws from them, fights, and
- * writes down how each fight went. The ratings, the tier list and when the run is done are worked out over there.
+ * <p>A league run's agent fights every hostile mob there is, squads of several of them at once, the scripted fighter, and
+ * frozen copies of itself, with a different loadout from one fight to the next. What it meets in its training fights is
+ * the trainer's call: it weighs every opponent by how close the agent is to an even fight against it, keeps a share for
+ * each so none is forgotten, and writes the shares down here; see trainer/mmai/league.py. This side only draws from them,
+ * fights, and writes down how each fight went. The ratings, the tier list and when the run is done are worked out over
+ * there.
  *
  * <pre>
- *   runs/RUN/league/roster.csv        written here: every opponent this build fields that is not a checkpoint
+ *   runs/RUN/league/roster.csv        written here: opponent,kind,cap for every opponent this build fields that is not a checkpoint
  *   runs/RUN/league/matchmaking.csv   written by the trainer: opponent,share and more, read here whenever it changes
  *   runs/RUN/league/results/wNN.csv   appended here: iteration,kind,opponent,loadout,opponent_loadout,outcome,ticks,cause
  * </pre>
  *
- * <p>An opponent is a mob by its entity name, {@code scripted}, or a checkpoint of the run as {@code iteration-000125},
+ * <p>An opponent is a mob or a squad of mobs by the name {@link Opposition} gives it, {@code scripted}, or a checkpoint of
+ * the run as {@code iteration-000125},
  * whose weights play it on their most likely action, frozen, with nothing recorded: only the agent learns. An evaluation
  * fight, the one in ten {@link Evaluation} hands to a checkpoint, draws its opponent evenly from everyone instead of by the
  * shares, so a checkpoint is measured against all of them alike, and its fights are the ones the trainer rates. Those
@@ -79,14 +81,21 @@ public final class League {
      * One fight's pairing.
      *
      * @param opponent        its name in the results
-     * @param mob             the kind of mob it is, or null for another agent
-     * @param brain           what drives it when it is an agent, or null for a mob
+     * @param opposition      the mob or squad of mobs it is, or null for another agent
+     * @param brain           what drives it when it is an agent, or null for mobs
      * @param loadout         what the agent carries
-     * @param opponentLoadout what an agent opponent carries, or null for a mob, which keeps what it spawns with
+     * @param opponentLoadout what an agent opponent carries, or null for mobs, which keep what they spawn with
      * @param evaluation      the checkpoint playing the agent's side instead of the training brain, or null
      */
-    public record Matchup(String opponent, @Nullable Roster.Member mob, @Nullable Brain brain, Loadout loadout,
-                          @Nullable Loadout opponentLoadout, @Nullable Evaluation.Assignment evaluation) {}
+    public record Matchup(String opponent, @Nullable Opposition opposition, @Nullable Brain brain, Loadout loadout,
+                          @Nullable Loadout opponentLoadout, @Nullable Evaluation.Assignment evaluation) {
+
+        /** How many mobs are on the other side, which is how many places to stand the fight's ground needs. */
+        public int mobs() {
+
+            return this.opposition == null ? 1 : this.opposition.mobs().size();
+        }
+    }
 
     /** The run's league folder, or null outside a training run or once something has gone wrong with it. */
     @Nullable
@@ -140,9 +149,9 @@ public final class League {
         level.setDayTime(MIDNIGHT);
         level.setWeatherParameters(0, 0, false, false);
 
-        Constants.LOG.info("League fights: {} mobs, the scripted fighter{}, {} loadouts; midnight and clear for good, no mob "
-                + "griefing", Roster.fielded().size(), directory != null ? " and the run's checkpoints" : "",
-                Loadouts.enabled().size());
+        Constants.LOG.info("League fights: {} opponents of {} mobs and squads, the scripted fighter{}, {} loadouts; midnight "
+                + "and clear for good, no mob griefing", Opposition.fielded().size(), Roster.fielded().size(),
+                directory != null ? " and the run's checkpoints" : "", Loadouts.enabled().size());
     }
 
     /** The pairing for the next fight, which is an evaluation when it is handed one. */
@@ -213,15 +222,13 @@ public final class League {
     // Who
     // ---------------------------------------------------------------------------------------------------------------
 
-    /** Every opponent that is not a checkpoint: the mobs, the scripted fighter, and outside a training run, the network. */
+    /**
+     * Every opponent that is not a checkpoint: the mobs and squads, the scripted fighter, and outside a training run, the
+     * network.
+     */
     private static List<String> fixed() {
 
-        List<String> names = new ArrayList<>();
-
-        for (Roster.Member member : Roster.fielded()) {
-
-            names.add(member.name());
-        }
+        List<String> names = new ArrayList<>(Opposition.fielded());
 
         names.add(SCRIPTED);
 
@@ -275,11 +282,11 @@ public final class League {
                 ? agentLoadouts.get((int) (fight % agentLoadouts.size()))
                 : agentLoadouts.get(random.nextInt(agentLoadouts.size()));
 
-        Roster.Member member = Roster.named(name);
+        Opposition opposition = Opposition.named(name);
 
-        if (member != null) {
+        if (opposition != null) {
 
-            return new Matchup(name, member, null, loadout, null, evaluation);
+            return new Matchup(name, opposition, null, loadout, null, evaluation);
         }
 
         Brain brain;
@@ -415,9 +422,10 @@ public final class League {
 
         StringBuilder out = new StringBuilder("opponent,kind,cap\n");
 
-        for (Roster.Member member : Roster.fielded()) {
+        for (String name : Opposition.fielded()) {
 
-            out.append(String.format(Locale.ROOT, "%s,mob,%.5f\n", member.name(), member.trainingCap()));
+            Opposition opposition = Opposition.named(name);
+            out.append(String.format(Locale.ROOT, "%s,%s,%.5f\n", name, opposition.kind(), opposition.trainingCap()));
         }
 
         out.append(SCRIPTED).append(",scripted,1.00000\n");
@@ -474,7 +482,7 @@ public final class League {
                 String name = parts[0].trim();
                 double share = Double.parseDouble(parts[1].trim());
 
-                boolean known = Roster.named(name) != null || name.equals(SCRIPTED) || name.matches(CHECKPOINT + "\\d+");
+                boolean known = Opposition.named(name) != null || name.equals(SCRIPTED) || name.matches(CHECKPOINT + "\\d+");
 
                 if (!known || !(share > 0.0D)) {
 
@@ -569,7 +577,7 @@ public final class League {
     /** One table of the summary, printed, and added to what the build is handed with each name under the prefix. */
     private static void print(String title, Map<String, Tally> table, String prefix, StringBuilder file) {
 
-        System.out.println(String.format(Locale.ROOT, "  %-18s %6s %7s %7s %9s %7s %6s %9s", title, "fights", "won %", "lost %",
+        System.out.println(String.format(Locale.ROOT, "  %-24s %6s %7s %7s %9s %7s %6s %9s", title, "fights", "won %", "lost %",
                 "timeout %", "draw %", "hit it", "went for"));
 
         for (Map.Entry<String, Tally> entry : table.entrySet()) {
@@ -577,7 +585,7 @@ public final class League {
             Tally tally = entry.getValue();
             double fights = Math.max(1, tally.fights);
 
-            System.out.println(String.format(Locale.ROOT, "  %-18s %6d %7.1f %7.1f %9.1f %7.1f %6d %9d", entry.getKey(), tally.fights,
+            System.out.println(String.format(Locale.ROOT, "  %-24s %6d %7.1f %7.1f %9.1f %7.1f %6d %9d", entry.getKey(), tally.fights,
                     100.0D * tally.wins / fights, 100.0D * tally.losses / fights, 100.0D * tally.timeouts / fights,
                     100.0D * tally.draws / fights, tally.landed, tally.targeted));
 

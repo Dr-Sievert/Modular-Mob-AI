@@ -1142,13 +1142,13 @@ afterEvaluate {
             [['opponent', league.findAll { !it.key.startsWith('loadout:') }],
              ["agent's loadout", league.findAll { it.key.startsWith('loadout:') }]].each { title, rows ->
 
-                println String.format(Locale.ROOT, "  %-18s %6s %7s %7s %9s %7s %7s %9s", title, 'fights', 'won %', 'lost %',
+                println String.format(Locale.ROOT, "  %-24s %6s %7s %7s %9s %7s %7s %9s", title, 'fights', 'won %', 'lost %',
                         'timeout %', 'draw %', 'hit it', 'went for')
 
                 rows.each { name, tally ->
 
                     def fights = Math.max(1L, tally[0])
-                    println String.format(Locale.ROOT, "  %-18s %6d %7.1f %7.1f %9.1f %7.1f %7d %9d", name - 'loadout:', tally[0],
+                    println String.format(Locale.ROOT, "  %-24s %6d %7.1f %7.1f %9.1f %7.1f %7d %9d", name - 'loadout:', tally[0],
                             100.0d * tally[1] / fights, 100.0d * tally[2] / fights, 100.0d * tally[3] / fights,
                             100.0d * tally[4] / fights, tally[5], tally[6])
                 }
