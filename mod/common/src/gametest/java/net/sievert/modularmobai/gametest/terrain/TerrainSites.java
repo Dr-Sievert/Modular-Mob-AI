@@ -3,6 +3,7 @@ package net.sievert.modularmobai.gametest.terrain;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -75,12 +76,12 @@ public final class TerrainSites {
     private static final int COLUMNS = 8;
 
     /**
-     * More than run at once, which is fifty unless a run asks for bigger batches: every fight in progress holds a site,
+     * More than run at once, which is fifty unless a run asks for other batches: every fight in progress holds a site,
      * and some of the lattice is always water or cliff that nothing can stand on. When all the usable ones are busy, a
      * fight waits a tick for one. Each site is twenty five chunks kept in memory, which is what keeps this from growing:
-     * eighty sites did not fit in a gigabyte and a half of heap.
+     * eighty sites did not fit in a gigabyte and a half of heap. See {@link GameTestTuning#terrainSites()}.
      */
-    private static final int COUNT = 64;
+    private static final int COUNT = GameTestTuning.terrainSites();
 
     /**
      * Sites the world generator works on at once. Asked for all at once, every site came out of the generator at about
@@ -122,8 +123,13 @@ public final class TerrainSites {
     private static BlockPos origin;
 
     private static int next;
-    private static final boolean[] swept = new boolean[COUNT];
     private static final boolean[] unusable = new boolean[COUNT];
+
+    /** How often, in game ticks, the whole world is swept for wildlife. */
+    private static final int WILDLIFE_SWEEP_TICKS = 20;
+
+    /** The game time the next sweep for wildlife is due at; the first fight to ask for a site does the first. */
+    private static long nextWildlifeSweep;
 
     /** Sites whose chunks have been asked for, always the first so many; the rest wait their turn. */
     private static int requested;
@@ -314,6 +320,12 @@ public final class TerrainSites {
 
         RandomSource random = level.getRandom();
 
+        if (level.getGameTime() >= nextWildlifeSweep) {
+
+            sweepWildlife(level);
+            nextWildlifeSweep = level.getGameTime() + WILDLIFE_SWEEP_TICKS;
+        }
+
         for (int attempt = 0; attempt < COUNT; attempt++) {
 
             int index = next++ % COUNT;
@@ -324,13 +336,6 @@ public final class TerrainSites {
             }
 
             BlockPos centre = centre(index);
-
-            if (!swept[index]) {
-
-                // Whatever the world generator put here, cows and all, would otherwise wander through every fight.
-                sweep(level, siteBox(level, centre), true);
-                swept[index] = true;
-            }
 
             for (int tries = 0; tries < PLACEMENT_TRIES; tries++) {
 
@@ -361,7 +366,7 @@ public final class TerrainSites {
             }
         }
 
-        sweep(level, site.bounds().inflate(8.0D), false);
+        sweep(level, site.bounds().inflate(8.0D));
         inUse[site.index()] = false;
     }
 
@@ -422,20 +427,37 @@ public final class TerrainSites {
         return true;
     }
 
-    /**
-     * @param wildlife also remove living things the fight did not bring, which only needs doing once per site since
-     *                 nothing spawns in a game test world after it is generated
-     */
-    private static void sweep(ServerLevel level, AABB box, boolean wildlife) {
+    private static void sweep(ServerLevel level, AABB box) {
 
         List<Entity> leftovers = level.getEntitiesOfClass(Entity.class, box, entity ->
-                !(entity instanceof Player)
-                        && (entity instanceof ItemEntity
-                        || entity instanceof ExperienceOrb
-                        || entity instanceof Projectile
-                        || (wildlife && entity instanceof LivingEntity && !entity.getTags().contains(TAG))));
+                entity instanceof ItemEntity || entity instanceof ExperienceOrb || entity instanceof Projectile);
 
         leftovers.forEach(Entity::discard);
+    }
+
+    /**
+     * Removes every living thing no fight brought, anywhere in the world. Whatever the world generator put down, cows and
+     * all, would otherwise wander through the fights, and each one near a fight costs as much to tick as a fighter.
+     *
+     * <p>Sweeping each site once, when first claimed, missed the plots the framework keeps under the spawn, which tick
+     * whatever lives above them, and, before sites waited for their entities to load, most of the sites as well: the
+     * cows, sheep and chickens that got through outnumbered the fighters and cost a tenth of the server thread. So the
+     * whole world is swept, a second of game time apart; nothing spawns in a game test world, so each sweep only ever
+     * finds what the last one could not yet see.
+     */
+    private static void sweepWildlife(ServerLevel level) {
+
+        List<Entity> wildlife = new ArrayList<>();
+
+        for (Entity entity : level.getAllEntities()) {
+
+            if (entity instanceof LivingEntity && !(entity instanceof Player) && !entity.getTags().contains(TAG)) {
+
+                wildlife.add(entity);
+            }
+        }
+
+        wildlife.forEach(Entity::discard);
     }
 
     @Nullable
@@ -568,7 +590,7 @@ public final class TerrainSites {
 
         BiomeSource biomes = level.getChunkSource().getGenerator().getBiomeSource();
         Climate.Sampler climate = level.getChunkSource().randomState().sampler();
-        RandomSource random = level.getRandom();
+        RandomSource random = GameTestTuning.terrainSeed() != 0L ? RandomSource.create(GameTestTuning.terrainSeed()) : level.getRandom();
 
         BlockPos best = BlockPos.ZERO;
         int bestLand = -1;

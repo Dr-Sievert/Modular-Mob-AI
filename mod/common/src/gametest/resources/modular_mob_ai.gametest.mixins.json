@@ -6,7 +6,10 @@
   "mixins": [
     "GameTestBatchFactoryMixin",
     "GameTestServerMixin",
+    "LevelMixin",
     "MinecraftServerMixin",
+    "ServerChunkCacheMixin",
+    "ServerLevelMixin",
     "VillagerMixin"
   ],
   "client": [],
