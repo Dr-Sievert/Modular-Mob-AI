@@ -62,12 +62,12 @@ public final class TerrainSites {
     private static final int COLUMNS = 8;
 
     /**
-     * More than run at once, which is fifty unless a run asks for bigger batches: every fight in progress holds a site,
+     * More than run at once, which is fifty unless a run asks for other batches: every fight in progress holds a site,
      * and some of the lattice is always water or cliff that nothing can stand on. When all the usable ones are busy, a
      * fight waits a tick for one. Each site is twenty five chunks kept in memory, which is what keeps this from growing:
-     * eighty sites did not fit in a gigabyte and a half of heap.
+     * eighty sites did not fit in a gigabyte and a half of heap. See {@link GameTestTuning#terrainSites()}.
      */
-    private static final int COUNT = 64;
+    private static final int COUNT = GameTestTuning.terrainSites();
 
     /** Tries at a site, each from a different spot near its centre, before it is written off as water or cliff. */
     private static final int PLACEMENT_TRIES = 4;

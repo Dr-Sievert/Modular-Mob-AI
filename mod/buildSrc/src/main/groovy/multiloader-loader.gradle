@@ -279,13 +279,15 @@ afterEvaluate {
         def heap = providers.gradleProperty('workerHeap').getOrElse('2G')
 
         // Every worker is a whole Minecraft server, so memory caps the count as much as cores do. Each needs its heap
-        // plus roughly a gigabyte the heap does not cover, and the machine keeps a reserve for everything else running on
-        // it. Asking for more workers than fit is quietly cut down rather than allowed to push the machine into swapping,
-        // which is where a long run turns a slow afternoon into a frozen desktop.
+        // plus about half a gigabyte the heap does not cover: measured, a worker with a 1 GB heap peaked at 1.35 GB of
+        // private memory and one with 2 GB at 2.5 GB, the rest being the collector's own tables, compiled code and class
+        // data. The machine keeps a reserve for everything else running on it. Asking for more workers than fit is
+        // quietly cut down rather than allowed to push the machine into swapping, which is where a long run turns a slow
+        // afternoon into a frozen desktop.
         def memory = java.lang.management.ManagementFactory.getOperatingSystemMXBean() as com.sun.management.OperatingSystemMXBean
         def gigabyte = 1024.0d * 1024.0d * 1024.0d
         def heapGigabytes = heap.toUpperCase(Locale.ROOT).endsWith('G') ? Double.parseDouble(heap[0..-2]) : Double.parseDouble(heap[0..-2]) / 1024.0d
-        def perWorkerGigabytes = heapGigabytes + 1.0d
+        def perWorkerGigabytes = heapGigabytes + 0.5d
         def reserveGigabytes = Double.parseDouble(providers.gradleProperty('memoryReserve').getOrElse('3'))
         def freeGigabytes = memory.freeMemorySize / gigabyte
         def memoryCeiling = Math.max(1, (int) Math.floor((freeGigabytes - reserveGigabytes) / perWorkerGigabytes))

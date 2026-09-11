@@ -12,13 +12,19 @@
 # trainer runs a few epochs of PPO over exactly that experience, the new weights swap in, and the fights carry on. The
 # battles are fought in rounds of -RoundSize, each with fresh worker processes, so a worker that crashes costs at most
 # the rest of its round.
+#
+# Each worker fights -Slots battles at once, on a quarter again as many terrain sites, in a -Heap sized heap. A worker
+# is bound by its one server thread, so the machine's memory, not its cores, decides how many run. Twenty five slots in
+# a 1 GB heap measured the same throughput per worker as fifty in 2 GB, in 1.35 GB of memory rather than 2.5, so about
+# twice as many workers fit.
 
 param(
     [string] $Run = 'default',
     [int] $Battles = 10000,
     [int] $RoundSize = 10000,
     [int] $Workers = 0,
-    [string] $Heap = '2G',
+    [int] $Slots = 25,
+    [string] $Heap = '1G',
     [int] $RolloutSteps = 16384,
     [ValidateSet('cuda', 'cpu')] [string] $Device = 'cuda',
     [ValidateSet('terrain', 'arena')] [string] $Suite = 'terrain',
@@ -49,6 +55,7 @@ Invoke-Gradle (@(
     "-Parenas=$RoundSize",
     '-Prounds=0',
     "-PworkerHeap=$Heap",
+    "-PbatchSize=$Slots",
     "-ProlloutSteps=$RolloutSteps",
     "-PreplayEvery=$ReplayEvery",
     "-PtrainArgs=--device $Device $Extra".Trim()

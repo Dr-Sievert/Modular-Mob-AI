@@ -123,6 +123,17 @@ public final class GameTestTuning {
         return batchSize() > 0 ? batchSize() : 50;
     }
 
+    /**
+     * How many sites the terrain suite lays out. Every fight running holds one and some always turn out to be water or
+     * cliff, so there are a quarter again as many as fights at once, sixty four for the usual fifty, unless a run names
+     * a number. The sites are nearly all of a worker's memory: each is twenty five chunks kept loaded, with a ring of
+     * generated ground around it, so a worker running fewer fights at once can be given a smaller heap as well.
+     */
+    public static int terrainSites() {
+
+        return Math.max(1, intProperty("sites", Math.max(concurrentTests() + 1, concurrentTests() * 64 / 50)));
+    }
+
     public static int ticksPerSecond() {
 
         return intProperty("ticksPerSecond", TICKS_PER_SECOND);
