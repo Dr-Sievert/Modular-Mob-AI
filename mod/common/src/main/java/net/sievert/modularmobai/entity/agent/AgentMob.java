@@ -563,6 +563,7 @@ public class AgentMob extends PathfinderMob {
                 && this.getMainHandItem().getItem() instanceof SwordItem;
 
         float total = damage + bonus;
+        float healthBefore = target instanceof LivingEntity living ? living.getHealth() : 0.0F;
 
         if (!target.hurt(source, total)) {
 
@@ -603,7 +604,10 @@ public class AgentMob extends PathfinderMob {
 
         if (target instanceof LivingEntity hurt && this.episode != null && this.episode.pays(hurt)) {
 
-            this.episode.reward().damageDealt(total, hurt.getMaxHealth());
+            // What the swing took off rather than what it swung for, the same as damage taken is counted: a finishing
+            // blow pays only the health that was left, so hitting harder than a kill needs earns nothing extra and a kill
+            // is worth one health bar however it was done.
+            this.episode.reward().damageDealt(Math.max(0.0F, healthBefore - hurt.getHealth()), hurt.getMaxHealth());
         }
 
         this.executed.attackDamage = total;

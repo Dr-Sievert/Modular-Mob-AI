@@ -23,6 +23,9 @@ import net.sievert.modularmobai.entity.agent.MobControls;
  * the moment it arrives with the cooldown recovered, and backs away while the cooldown recovers. It steps up onto what a
  * jump clears and swims up out of water, reading both off the terrain grid, since a fighter that walks into a one block
  * step and stays there is not fighting.
+ *
+ * <p>It does not jump for criticals. Timed from the observation alone, the fall rarely lined up with the target walking
+ * into reach, one hit in ten landed as one, and it won no more fights for trying; that is left for training to find.
  */
 public final class ScriptedBrain implements Brain {
 
@@ -39,6 +42,18 @@ public final class ScriptedBrain implements Brain {
     private static final float SWING_CONE_DEGREES = 20.0F;
 
     private static final float SPRINT_RANGE = 6.0F;
+
+    /**
+     * The cooldown as the observation reads it, when a swing lands at full strength. The observation is taken half a tick
+     * before the swing resolves, so this is a little short of one.
+     */
+    private static final float FULL_STRENGTH = 0.96F;
+
+    /** How close the target has to be before a blocked line matters; farther off it is still being walked towards. */
+    private static final float LINE_CHECK_RANGE = 4.0F;
+
+    /** A player's eyes above its feet, where a swing starts from. */
+    private static final double EYE_HEIGHT = 1.62D;
 
     @Override
     public void act(BrainStep step) {
@@ -111,13 +126,107 @@ public final class ScriptedBrain implements Brain {
             a[act + ActionSchema.JUMP] = 1.0F;
         }
 
-        // Swinging wide costs the whole cooldown, so the swing waits until the target is actually in front of it.
+        // A block between its eyes and the target's stops every swing, and in a forest or a bamboo thicket the two can
+        // stand in reach of each other for the whole minute with neither ever landing a blow. So it waits for a clear line
+        // instead of swinging into the leaves, and sidesteps to find one, the same way it steps round a trunk in its path.
+        boolean blocked = distance <= LINE_CHECK_RANGE && lineBlocked(o, obs, forward, right, up);
+
+        if (blocked || (moving > 0.0F && wallAhead(o, obs))) {
+
+            a[act + ActionSchema.MOVE_STRAFE] = sidestep(o, obs);
+        }
+
+        // Swinging wide costs the whole cooldown, so the swing waits until the target is actually in front of it. It also
+        // waits for the cooldown to come all the way back: damage goes with the square of it, so a swing at nine tenths
+        // does barely more than five of a sword's six, and a vindicator then takes five hits instead of four.
         float strength = o[self + ObservationSchema.SELF_ATTACK_STRENGTH];
 
-        if (distance <= SWING_RANGE && strength > 0.9F && Math.abs(yawError) < SWING_CONE_DEGREES) {
+        if (distance <= SWING_RANGE && strength >= FULL_STRENGTH && Math.abs(yawError) < SWING_CONE_DEGREES && !blocked) {
 
             a[act + ActionSchema.ATTACK] = 1.0F;
         }
+    }
+
+    /**
+     * Whether a block stands between its eyes and the target's, walking the straight line between them through the terrain
+     * grid a quarter block at a time. The agent is taken to stand in the middle of its block, which is as close as the
+     * grid can say.
+     */
+    private static boolean lineBlocked(float[] o, int obs, float forward, float right, float up) {
+
+        float sin = o[obs + ObservationSchema.SELF_OFFSET + ObservationSchema.SELF_AIM_SIN];
+        float cos = o[obs + ObservationSchema.SELF_OFFSET + ObservationSchema.SELF_AIM_COS];
+        double view = ObservationSchema.VIEW_DISTANCE;
+
+        // Back from the agent's frame to the world's: forward runs along minus sine, cosine and right along minus cosine,
+        // minus sine.
+        double dx = (-sin * forward - cos * right) * view;
+        double dz = (cos * forward - sin * right) * view;
+        double dy = up * view;
+
+        int steps = (int) Math.ceil(Math.sqrt(dx * dx + dy * dy + dz * dz) / 0.25D);
+
+        for (int i = 1; i < steps; i++) {
+
+            double t = i / (double) steps;
+            int x = ObservationSchema.TERRAIN_RADIUS_XZ + (int) Math.floor(0.5D + dx * t);
+            int y = ObservationSchema.TERRAIN_RADIUS_Y + (int) Math.floor(EYE_HEIGHT + dy * t);
+            int z = ObservationSchema.TERRAIN_RADIUS_XZ + (int) Math.floor(0.5D + dz * t);
+
+            if (x < 0 || y < 0 || z < 0 || x >= ObservationSchema.TERRAIN_X || y >= ObservationSchema.TERRAIN_Y
+                    || z >= ObservationSchema.TERRAIN_Z) {
+
+                continue;
+            }
+
+            if (o[obs + ObservationSchema.terrainOffset(x, y, z)] >= AgentObservation.SOLID) {
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether the column it walks into next is too tall to step or jump onto: solid at head height. Only walking forward
+     * is checked. Sidestepping a trunk while backing away as well cut how often it was caught stuck, but turned more
+     * forest fights into stand-offs that ran the clock out, and won fewer fights overall.
+     */
+    private static boolean wallAhead(float[] o, int obs) {
+
+        float sin = o[obs + ObservationSchema.SELF_OFFSET + ObservationSchema.SELF_AIM_SIN];
+        float cos = o[obs + ObservationSchema.SELF_OFFSET + ObservationSchema.SELF_AIM_COS];
+
+        int x = ObservationSchema.TERRAIN_RADIUS_XZ + Math.round(-sin);
+        int z = ObservationSchema.TERRAIN_RADIUS_XZ + Math.round(cos);
+
+        return o[obs + ObservationSchema.terrainOffset(x, ObservationSchema.TERRAIN_RADIUS_Y + 1, z)] >= AgentObservation.SOLID;
+    }
+
+    /** Left, when the column to its left has room for a body; otherwise right, when that one does; otherwise nowhere. */
+    private static float sidestep(float[] o, int obs) {
+
+        float sin = o[obs + ObservationSchema.SELF_OFFSET + ObservationSchema.SELF_AIM_SIN];
+        float cos = o[obs + ObservationSchema.SELF_OFFSET + ObservationSchema.SELF_AIM_COS];
+
+        // Left of the way it looks is cosine, sine in the world; strafing is positive to the left.
+        if (roomFor(o, obs, Math.round(cos), Math.round(sin))) {
+
+            return 1.0F;
+        }
+
+        return roomFor(o, obs, Math.round(-cos), Math.round(-sin)) ? -1.0F : 0.0F;
+    }
+
+    private static boolean roomFor(float[] o, int obs, int dx, int dz) {
+
+        int x = ObservationSchema.TERRAIN_RADIUS_XZ + dx;
+        int z = ObservationSchema.TERRAIN_RADIUS_XZ + dz;
+        int feet = ObservationSchema.TERRAIN_RADIUS_Y;
+
+        return o[obs + ObservationSchema.terrainOffset(x, feet, z)] < AgentObservation.SOLID
+                && o[obs + ObservationSchema.terrainOffset(x, feet + 1, z)] < AgentObservation.SOLID;
     }
 
     /**
