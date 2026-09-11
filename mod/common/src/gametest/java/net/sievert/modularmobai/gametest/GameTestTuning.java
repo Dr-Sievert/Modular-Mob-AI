@@ -199,6 +199,33 @@ public final class GameTestTuning {
     }
 
     /**
+     * Whether the light engine has to work out how bright anywhere is. Working light out is most of what a worker
+     * allocates, and the two suites that train run without a light engine at all; see
+     * {@link net.sievert.modularmobai.gametest.mixin.LevelLightEngineMixin} for what that saves.
+     *
+     * <p>Those two are named rather than every suite but a few, because being wrong here is quiet. Nothing about the
+     * agent reads light: the observation has none in it, and neither the network nor the scripted fighter nor the reward
+     * ever asks. What reads light is vanilla, and it reads it through more doors than it looks: brightness directly, for
+     * the undead burning by day, a spider giving up by day and anything spawning naturally; and {@code canSeeSky}, which
+     * is not a heightmap question but "is the sky light here fifteen", which rain then asks in turn. A vindicator, which
+     * is the whole of the {@code terrain} and {@code arena} suites, asks none of them, and neither does the agent facing
+     * it: nothing there burns, nothing spawns, and nothing catches fire for rain to put out.
+     *
+     * <p>Everything else keeps its light, and each for its own reason. The {@code league} suite fights 26 mobs, among
+     * them the undead, spiders and endermen, and an enderman takes damage in rain; its ratings are a record of vanilla
+     * behaviour and should stay one. The {@code library} suite saves the chunks it generates, light and all, and that
+     * saved light is exactly what later workers read instead of working it out again. A run that keeps its world
+     * ({@link #terrainFile()}, the pool behind {@code -PterrainLibrary=false}) saves it for the same reason. And
+     * {@code play} and {@code mechanics} are checks, not throughput.
+     */
+    public static boolean lighting() {
+
+        final String suite = suite();
+
+        return !(("terrain".equals(suite) || "arena".equals(suite)) && terrainFile() == null);
+    }
+
+    /**
      * The terrain library's index, when the build linked a library into this worker's world: the terrain suite then
      * takes every site from it, already generated, and never generates any ground itself. Null otherwise.
      */

@@ -5,6 +5,48 @@ are deliberate.
 
 ## Throughput and stability
 
+- **The suites that train want no light engine, and that is a fifth more fights a worker.** A vindicator fight never asks
+  how bright anywhere is, so the `terrain` and `arena` suites drop both light engines, which vanilla's `LevelLightEngine`
+  null checks in every method it has. Measured on one worker over 24,000 fights on the terrain library, the seed pinned so
+  both arms fought the same sites, run twice in each order, and 99.5% won either way:
+
+  | | with light | without |
+  | --- | --- | --- |
+  | the round's fights took | 142, 146 s | 112, 128 s |
+  | arena ticks a second of wall clock | 13.1k, 12.9k | 17.0k, 15.1k |
+  | arena ticks a second of server-thread CPU | 17.1k, 17.2k | 17.8k, 17.7k |
+  | collections | 253, 234 | 138, 131 |
+  | time in collection pauses | 2.08, 2.22 s | 1.43, 1.20 s |
+
+  The server-thread cost barely moves, which is the whole finding: **the server thread was not doing the light work, it
+  was waiting for it.** Propagation runs on a thread of its own and a chunk does not tick until it is lit, and a worker's
+  sites move on hundreds of times a round. Dividing the two rates says the server thread was busy 72% of the round with
+  light and 88% without.
+  - `canSeeSky` is `getBrightness(SKY, pos) >= 15`, not a heightmap question, so switching light off reaches further than
+    it looks: it reaches rain, and burning, and anything spawning. The `league` suite (the undead, spiders, endermen), the
+    `library` build, a run that keeps its own world, `play` and `mechanics` all keep their light for that reason.
+  - A short round says the opposite. At 6,000 fights, whose steady window is 30 s, light-on measured *faster* twice; the
+    difference only separates from the noise at 24,000.
+- **A worker's heap fits what it actually holds, and G1's regions have to be four megabytes.** Two things, measured on one
+  worker over 6,000 fights on the terrain library, with the terrain seed pinned so both rounds fought the same ground and
+  won the same 5,959 of 6,000:
+
+  | | peak private memory | collections | full collections | pause in all | "humongous" in the GC log |
+  | --- | --- | --- | --- | --- | --- |
+  | 1.5 GB heap, 1 MB regions (as it was) | 1.92 GB | 197 | 4 | 1.85 s | 56 |
+  | 1 GB heap, 1 MB regions | 1.48 GB | 360 | 12 | 2.78 s | 137 |
+  | **1 GB heap, 4 MB regions** | **1.42 GB** | 156 | 1 | 0.94 s | 1 |
+
+  A worker on the library holds about half a gigabyte live, so a gigabyte is enough and a run fits half again as many
+  workers in the same machine. But at a 1 GB heap G1's regions are 1 MB, and the light engine's section-map copies are
+  about a megabyte each: over half a region, so **humongous**, straight into the old generation, and freed only by a full
+  collection. Shrinking the heap alone therefore made collection worse, not better. At 4 MB regions those copies are
+  ordinary young objects and nearly every full collection goes away.
+  - Arena ticks per second of server-thread processor time was the same in all three, within the round-to-round noise: the
+    collector's threads are not the server thread, so this buys memory and pauses, not tick cost.
+  - **Measure with the terrain seed pinned** (`-PterrainSeed=N`), and never trust one round: on this machine, with other
+    runs coming and going, the same configuration measured 14.4k and 18.5k arena ticks per second of server-thread CPU
+    twenty minutes apart. A round of 24,000 fights, and the two arms back to back, is the smallest thing worth believing.
 - **The forward pass is within 15% of what this machine can do, and fusing the multiplies would not change that.**
   Measured outside the game on the real topology (634 to 256, GRU 128, 128, 19), 25 agents a batch as a training worker
   runs, one core to itself:

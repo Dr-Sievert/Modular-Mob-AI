@@ -100,11 +100,17 @@ mod\gradlew.bat -p mod :fabric:runGametestParallel -Psuite=terrain -Parenas=2000
 | `arenas`, `workers`, `batchSize` | fights, worker processes, fights at once per worker |
 | `brain`, `brainWeights` | `scripted` (default) or `neural` with a `.mbw` file |
 | `replayEvery`, `replayRun` | record one fight in N, into `runs\<replayRun>\replays` |
-| `workerHeap` | heap per worker |
+| `workerHeap` | heap per worker; the build picks 1G on the terrain library and 2G otherwise when this is absent |
+| `terrainSeed` | pins where the fight sites come from, so two rounds fight the same ground; 0, the default, picks somewhere new |
 | `ticksPerSecond` | ceiling on the tick rate; unthrottled by default, since a game-test server never sleeps |
 
 Fabric writes a JUnit report to `mod/fabric/build/gametest/report.xml`. The normal client and server runs also load the
 game-test source set, so tests can be run by hand in a dev world with `/test runall`.
+
+The `terrain` and `arena` suites run with no light engine, which is worth about a fifth of a worker's throughput and does
+not change a single fight: nothing the agent or a vindicator does reads light. Every other suite keeps it, since `canSeeSky`
+is a light question and the undead, spiders, endermen and rain all are too. `GameTestTuning.lighting` decides, and a run
+that keeps its own world keeps its light so the light it saves is worth reading back.
 
 ### Writing a test
 
