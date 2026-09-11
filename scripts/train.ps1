@@ -52,10 +52,11 @@ param(
     [switch] $FromCopy,
 
     # Starts a new run from another run's best checkpoint: its whole training state, network, critic and all, taken from
-    # runs\<seed>\checkpoints, and runs\<seed> itself left as it is. It carries on learning the way a copy does, gently,
-    # but is not pulled back towards a teacher, whose record is of one fight against one mob. The critic learns alone for
-    # the first thirty iterations, since it has only ever seen the fights the seed was trained on. A run that has already
-    # started carries on from where it is and only takes the gentle settings from this.
+    # runs\<seed>\checkpoints, and runs\<seed> itself left as it is. Without such a run, a network published in
+    # models\<seed> with its state, or a folder given by path, seeds it from the state.pt there. It carries on learning
+    # the way a copy does, gently, but is not pulled back towards a teacher, whose record is of one fight against one mob.
+    # The critic learns alone for the first thirty iterations, since it has only ever seen the fights the seed was trained
+    # on. A run that has already started carries on from where it is and only takes the gentle settings from this.
     [string] $Seed = '',
 
     # Everything the build and both sides of it say, rather than the short feed: a line every few iterations with the
@@ -111,18 +112,22 @@ if ($Seed) {
 
     if (-not (Test-Path (Join-Path $directory 'state.pt'))) {
 
-        $source = Get-RunDirectory $Seed
+        $source = if (Test-Path (Get-RunDirectory $Seed)) { Get-RunDirectory $Seed }
+                elseif (Test-Path (Join-Path $Root "models\$Seed")) { Join-Path $Root "models\$Seed" }
+                else { $Seed }
+
         $table = Join-Path $source 'eval.csv'
         $best = @(if (Test-Path $table) { Import-Csv $table | Where-Object { $_.best -eq '1' } }) | Select-Object -Last 1
 
         # The best checkpoint's own state, which holds the weights that won with the critic that went with them. A run
-        # whose best is where it started has no such file, and gives the state it has got to instead.
+        # whose best is where it started has no such file, and a published model keeps only the state its run had got to
+        # when it was published, so those give that instead.
         $state = if ($best) { Join-Path $source ('checkpoints\iteration-{0:D6}.pt' -f [int]$best.iteration) } else { $null }
 
         if (-not $state -or -not (Test-Path $state)) {
 
             $state = Join-Path $source 'state.pt'
-            Write-Warning "No checkpoint of the best iteration in $source; seeding from the state it has got to"
+            Write-Host "No checkpoint of the best iteration in $source; seeding from its state.pt"
         }
 
         if (-not (Test-Path $state)) {

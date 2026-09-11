@@ -54,6 +54,7 @@ scripts\train.ps1 -Run name -FromCopy              the safeguarded PPO above, fo
 scripts\train.ps1 -Run name -Workers 4             4 workers; 0 (default) means as many as cores and memory allow
 scripts\train.ps1 -Run name -Extra '--eval-target 0.999 --eval-fights 2000'    any trainer option, see below
 scripts\train.ps1 -Run name -Full                  everything the build prints, instead of the half-minute feed
+scripts\train.ps1 -Run league -Suite league -Seed vs-copy     the league, from vs-copy's best (see the league below)
 ```
 
 | Parameter | Default | Meaning |
@@ -66,9 +67,10 @@ scripts\train.ps1 -Run name -Full                  everything the build prints, 
 | `-Heap` | 1536M | heap per worker; it needs about 0.95 GB live, so 1 GB thrashes |
 | `-RolloutSteps` | 16384 (65536 with `-FromCopy`) | steps of experience per update (an iteration) |
 | `-Device` | cuda | `cpu` keeps the GPU out of it |
-| `-Suite` | terrain | `arena` is a closed 9-block box, for quick checks |
+| `-Suite` | terrain | `arena` is a closed 9-block box, for quick checks; `league` is every mob, the scripted fighter and the run's own checkpoints |
 | `-ReplayEvery` | 200 | record one fight in this many per worker, for the viewer; 0 for none |
 | `-FromCopy` | off | the safeguarded settings for a run that starts from a copy |
+| `-Seed` | | start a new run from another's best checkpoint state: `runs\<seed>`, else `models\<seed>\state.pt`, else a folder by path; gentle settings as `-FromCopy` but no teacher pull, the critic alone for 30 iterations, 65536 steps and no battle limit by default |
 | `-Full` | off | the whole build output |
 | `-Extra` | | options passed to the trainer |
 
@@ -94,6 +96,25 @@ Every field of `Config` in `trainer/mmai/ppo.py` is an option, as `--field-name 
 | `--eval-patience` | 10 | judged checkpoints without a new best before done |
 | `--eval-target` | 0.995 | win rate at which the run is done at once |
 | `--checkpoint-every` | 25 | iterations between kept checkpoints, and so between evaluations |
+| `--league-pool`, `--league-recent` | 8, 4 | checkpoints the league agent meets, and how many of them are the newest |
+| `--league-self-play` | 0.2 | share of league training fights against those checkpoints |
+| `--league-floor` | 0.25 | share of each group's fights spread evenly, whatever the agent's chances |
+| `--league-k` | 16 | Elo K (twice that for a player's first `--league-provisional` 30 rated fights) |
+
+### The league: `-Suite league` and `scripts\league.ps1`
+
+A league run fights 26 mobs, the scripted fighter and frozen checkpoints of itself, with a loadout drawn every fight; see
+[architecture.md](architecture.md#the-league). Matchmaking sends training fights where the agent wins about half the
+time; evaluation fights are drawn evenly and rated. A checkpoint is judged on 1,000 evaluation fights over the mobs and
+the scripted fighter, and the run is done after ten judged checkpoints in a row without a new best.
+
+```
+scripts\train.ps1 -Run league -Suite league -Seed vs-copy     start one from vs-copy's best, run until done
+scripts\league.ps1 -Run league                                the tier list, the record against each opponent and loadout
+scripts\league.ps1 -Run league -All                           every rated checkpoint in the tier list
+scripts\league.ps1 -Test                                      the unit tests of the Elo, matchmaking and pool arithmetic
+scripts\eval.ps1 -Run league -Suite league                    a network round every opponent, with a table at the end
+```
 
 ### `scripts\compare.ps1`: from the copy and from nothing, side by side
 
