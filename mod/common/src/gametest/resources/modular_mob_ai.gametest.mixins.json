@@ -8,6 +8,7 @@
     "ChunkMapMixin",
     "GameTestBatchFactoryMixin",
     "GameTestServerMixin",
+    "LevelLightEngineMixin",
     "LevelMixin",
     "MinecraftServerMixin",
     "RegionFileStorageMixin",

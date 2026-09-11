@@ -199,7 +199,12 @@ and around the sites it is fighting on, so the build picks the heap from what th
 terrain library**, where the sites are read from disk and about half a gigabyte is live, measured at 1.42 GB of private
 memory in all; **2 GB** where a worker generates its own ground and settles at about 0.95 GB live. `-Heap` overrides it.
 Every worker also gets `-XX:G1HeapRegionSize=4m`, without which a gigabyte heap collects worse than a larger one; see
-[findings.md](findings.md). The build protects the machine:
+[findings.md](findings.md).
+
+A worker on the `terrain` or `arena` suite runs with **no light engine at all**, since a vindicator fight never asks how
+bright anywhere is: about a fifth more fights per worker-second and nearly half the collections, measured over 24,000
+fights. The `league` suite keeps its light, because the undead burn by day and an enderman takes damage in rain, and so do
+the library build, `play` and `mechanics`; see `GameTestTuning.lighting`. The build protects the machine:
 
 | Gradle property | Default | What it does |
 | --- | --- | --- |

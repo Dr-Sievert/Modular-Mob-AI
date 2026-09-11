@@ -5,6 +5,28 @@ are deliberate.
 
 ## Throughput and stability
 
+- **The suites that train want no light engine, and that is a fifth more fights a worker.** A vindicator fight never asks
+  how bright anywhere is, so the `terrain` and `arena` suites drop both light engines, which vanilla's `LevelLightEngine`
+  null checks in every method it has. Measured on one worker over 24,000 fights on the terrain library, the seed pinned so
+  both arms fought the same sites, run twice in each order, and 99.5% won either way:
+
+  | | with light | without |
+  | --- | --- | --- |
+  | the round's fights took | 142, 146 s | 112, 128 s |
+  | arena ticks a second of wall clock | 13.1k, 12.9k | 17.0k, 15.1k |
+  | arena ticks a second of server-thread CPU | 17.1k, 17.2k | 17.8k, 17.7k |
+  | collections | 253, 234 | 138, 131 |
+  | time in collection pauses | 2.08, 2.22 s | 1.43, 1.20 s |
+
+  The server-thread cost barely moves, which is the whole finding: **the server thread was not doing the light work, it
+  was waiting for it.** Propagation runs on a thread of its own and a chunk does not tick until it is lit, and a worker's
+  sites move on hundreds of times a round. Dividing the two rates says the server thread was busy 72% of the round with
+  light and 88% without.
+  - `canSeeSky` is `getBrightness(SKY, pos) >= 15`, not a heightmap question, so switching light off reaches further than
+    it looks: it reaches rain, and burning, and anything spawning. The `league` suite (the undead, spiders, endermen), the
+    `library` build, a run that keeps its own world, `play` and `mechanics` all keep their light for that reason.
+  - A short round says the opposite. At 6,000 fights, whose steady window is 30 s, light-on measured *faster* twice; the
+    difference only separates from the noise at 24,000.
 - **A worker's heap fits what it actually holds, and G1's regions have to be four megabytes.** Two things, measured on one
   worker over 6,000 fights on the terrain library, with the terrain seed pinned so both rounds fought the same ground and
   won the same 5,959 of 6,000:

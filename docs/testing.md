@@ -104,6 +104,11 @@ mod\gradlew.bat -p mod :fabric:runGametestParallel -Psuite=terrain -Parenas=2000
 Fabric writes a JUnit report to `mod/fabric/build/gametest/report.xml`. The normal client and server runs also load the
 game-test source set, so tests can be run by hand in a dev world with `/test runall`.
 
+The `terrain` and `arena` suites run with no light engine, which is worth about a fifth of a worker's throughput and does
+not change a single fight: nothing the agent or a vindicator does reads light. Every other suite keeps it, since `canSeeSky`
+is a light question and the undead, spiders, endermen and rain all are too. `GameTestTuning.lighting` decides, and a run
+that keeps its own world keeps its light so the light it saves is worth reading back.
+
 ### Writing a test
 
 1. Add a class under `mod/common/src/gametest/java/net/sievert/modularmobai/gametest/tests`, annotate it with
