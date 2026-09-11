@@ -91,6 +91,15 @@ public class ModularMobAiTestFunction {
         // Padded so the runs sort in order rather than 1, 10, 100, 11.
         final String format = "%s_%0" + String.valueOf(runs).length() + "d";
 
+        // Slots: as many tests as run at once, each taking this worker's runs from a shared queue until it is empty.
+        if (repeat.slots()) {
+
+            final int slots = Math.max(1, Math.min(GameTestTuning.concurrentTests(), GameTestTuning.arenasInShard(runs)));
+
+            return IntStream.range(0, slots)
+                    .mapToObj(slot -> build(method, gameTest, structure, "%s_slot%02d".formatted(name, slot), slot));
+        }
+
         // Only this worker's slice is generated. Every worker still names its arenas by their index in the whole suite, so
         // an arena keeps the same name no matter how the run was split up.
         final int shardCount = GameTestTuning.shardCount();

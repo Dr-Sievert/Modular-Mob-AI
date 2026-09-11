@@ -25,6 +25,7 @@ import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.AABB;
 import net.sievert.modularmobai.Constants;
+import net.sievert.modularmobai.gametest.GameTestTuning;
 
 /**
  * Patches of natural ground for fights to happen on, handed out one per fight.
@@ -59,8 +60,16 @@ public final class TerrainSites {
     private static final int SPACING = 128;
     private static final int COLUMNS = 8;
 
-    /** At least as many as run at once, which is fifty unless a run asks for bigger batches. */
+    /**
+     * More than run at once, which is fifty unless a run asks for bigger batches: every fight in progress holds a site,
+     * and some of the lattice is always water or cliff that nothing can stand on. When all the usable ones are busy, a
+     * fight waits a tick for one. Each site is twenty five chunks kept in memory, which is what keeps this from growing:
+     * eighty sites did not fit in a gigabyte and a half of heap.
+     */
     private static final int COUNT = 64;
+
+    /** Tries at a site, each from a different spot near its centre, before it is written off as water or cliff. */
+    private static final int PLACEMENT_TRIES = 4;
 
     /** How far a fight's centre may sit from its site's centre, so the same site is not the same fight every time. */
     private static final int JITTER = 6;
@@ -90,6 +99,29 @@ public final class TerrainSites {
     private static int next;
     private static final boolean[] swept = new boolean[COUNT];
     private static final boolean[] unusable = new boolean[COUNT];
+
+    /** Sites with a fight on them right now. Fights end at different times, so the free ones are not simply the next. */
+    private static final boolean[] inUse = new boolean[COUNT];
+
+    /** Fights this process still has to run, shared by every slot; -1 until the first slot asks. */
+    private static int fightsLeft = -1;
+
+    /** Takes one fight from this process's share of the run, or says there are none left. */
+    public static synchronized boolean takeFight() {
+
+        if (fightsLeft < 0) {
+
+            fightsLeft = GameTestTuning.arenasInShard(GameTestTuning.arenaCount());
+        }
+
+        if (fightsLeft == 0) {
+
+            return false;
+        }
+
+        fightsLeft--;
+        return true;
+    }
 
     /**
      * Chooses where the lattice goes and starts the world generating it, before any fight asks for a site. Returns where
@@ -127,9 +159,11 @@ public final class TerrainSites {
     }
 
     /**
-     * The next free site, with somewhere to stand for the agent and for its opponent. Blocks until the site's chunks
-     * exist, which is only ever a wait the first time round.
+     * The next free site, with somewhere to stand for the agent and for its opponent, or null when every usable site has
+     * a fight on it; the caller tries again a tick later. Blocks until the site's chunks exist, which is only ever a wait
+     * the first time round.
      */
+    @Nullable
     public static synchronized Site claim(ServerLevel level) {
 
         if (origin == null) {
@@ -143,7 +177,7 @@ public final class TerrainSites {
 
             int index = next++ % COUNT;
 
-            if (unusable[index]) {
+            if (unusable[index] || inUse[index]) {
 
                 continue;
             }
@@ -158,22 +192,26 @@ public final class TerrainSites {
                 swept[index] = true;
             }
 
-            Site site = place(level, index, centre, random);
+            for (int tries = 0; tries < PLACEMENT_TRIES; tries++) {
 
-            if (site != null) {
+                Site site = place(level, index, centre, random);
 
-                return site;
+                if (site != null) {
+
+                    inUse[index] = true;
+                    return site;
+                }
             }
 
             // Water or cliff all the way across. Skipped for the rest of this process rather than tried again.
             unusable[index] = true;
         }
 
-        throw new IllegalStateException("No usable terrain site in the whole lattice at " + origin.toShortString());
+        return null;
     }
 
     /** Takes the fighters away and sweeps up whatever the fight left lying around, so the site is clean for the next. */
-    public static void release(ServerLevel level, Site site, Entity... fighters) {
+    public static synchronized void release(ServerLevel level, Site site, Entity... fighters) {
 
         for (Entity fighter : fighters) {
 
@@ -184,6 +222,7 @@ public final class TerrainSites {
         }
 
         sweep(level, site.bounds().inflate(8.0D), false);
+        inUse[site.index()] = false;
     }
 
     // ---------------------------------------------------------------------------------------------------------------

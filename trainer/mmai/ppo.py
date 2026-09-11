@@ -91,6 +91,11 @@ class Config:
 
     seed: int = 0
 
+    # Iterations at the start of a run in which only the critic learns. A policy copied from the scripted fighter is
+    # already good, and a critic that has never seen a fight would hand it nonsense advantages that undo it before the
+    # critic caught up. Zero for a run from scratch, where there is nothing to protect.
+    critic_warmup: int = 0
+
 
 @dataclass
 class Replayed:
@@ -114,6 +119,13 @@ class Trainer:
         torch.manual_seed(config.seed)
         np.random.seed(config.seed)
         torch.set_num_threads(max(1, config.threads))
+
+        # Full float precision on the GPU. By default cuDNN runs the GRU in TF32 on this generation of card, which keeps
+        # ten bits of mantissa, and the replay then drifts a thousandth away from what the game computed in plain
+        # floats: every PPO ratio starts off wrong by that much. The network is small enough that the speed does not
+        # matter.
+        torch.backends.cudnn.allow_tf32 = False
+        torch.backends.cuda.matmul.allow_tf32 = False
 
         self.device = torch.device(config.device)
 
@@ -441,7 +453,10 @@ class Trainer:
                 value_loss = 0.5 * torch.max((values - target) ** 2, (bounded - target) ** 2)[mask].mean()
 
                 entropy_bonus = entropy[mask].mean()
-                loss = policy_loss + config.value_coef * value_loss - config.entropy_coef * entropy_bonus
+                if self.iteration < config.critic_warmup:
+                    loss = config.value_coef * value_loss
+                else:
+                    loss = policy_loss + config.value_coef * value_loss - config.entropy_coef * entropy_bonus
 
                 self.optimizer.zero_grad(set_to_none=True)
                 loss.backward()
@@ -449,6 +464,7 @@ class Trainer:
                     list(self.actor.parameters()) + list(self.critic.parameters()), config.max_grad_norm
                 )
                 self.optimizer.step()
+                self.actor.bound_spread()
 
                 with torch.no_grad():
                     policy_losses.append(policy_loss.item())
@@ -476,6 +492,112 @@ class Trainer:
             "epochs": epochs_run,
             "chunks": chunks,
         }
+
+    # -----------------------------------------------------------------------------------------------------------
+    # Copying a teacher
+    # -----------------------------------------------------------------------------------------------------------
+
+    def imitate(self, segments: list[Segment], epochs: int, learning_rate: float = 1e-3, batch_rows: int = 8192) -> None:
+        """Teaches the actor to do what the recorded teacher did, before any reinforcement learning.
+
+        The loss is the policy's own log probability of the teacher's action, under the same heads PPO uses, so what is
+        learned here is exactly what PPO starts from. The spread stays where it was set: a teacher that never hesitates
+        would otherwise shrink it to nothing, and a policy that cannot explore cannot improve on what it copied.
+        Continuous targets are pulled in from the very edge, where a tanh can only reach by growing without bound.
+        """
+
+        config = self.config
+
+        rows = np.concatenate([segment.obs for segment in segments])
+        self.normalizer.update(torch.from_numpy(rows))
+        self.normalizer.into(self.actor)
+
+        parameters = [parameter for name, parameter in self.actor.named_parameters() if name != "log_std"]
+        optimizer = torch.optim.Adam(parameters, lr=learning_rate)
+        groups = pack_by_rows(segments, batch_rows)
+        continuous = [head for head in self.schema.heads if head.kind == "continuous"]
+        buttons = next(head for head in self.schema.heads if head.kind == "binary")
+
+        # A button the teacher presses on one tick in twenty-five is learned as "never press it" by a plain likelihood:
+        # never swinging is right ninety six times in a hundred. Presses are weighted up to make them count, but only a
+        # little: weighted too far, the copy swings whenever in doubt, every swing restarts the cooldown, and a fighter
+        # that never waits for a full strength hit loses every fight.
+        pressed = np.concatenate([segment.actions[:, buttons.action : buttons.action + buttons.size] for segment in segments])
+        rate = (pressed > 0.5).mean(axis=0)
+        press_weight = torch.from_numpy(np.where(rate > 0.0, np.clip((1.0 - rate) / np.maximum(rate, 1e-9), 1.0, 3.0), 1.0))
+        press_weight = press_weight.to(torch.float32).to(self.device)
+
+        self.actor.train()
+
+        for epoch in range(epochs):
+            started = time.time()
+            order = np.random.permutation(len(groups))
+            losses, swings_caught, swings, false_swings, quiet = [], 0.0, 0.0, 0.0, 0.0
+
+            for group_index in order:
+                group = groups[group_index]
+                width = max(segments[index].steps for index in group)
+
+                obs = torch.zeros(len(group), width, self.schema.obs_dim)
+                targets = torch.zeros(len(group), width, self.schema.act_dim)
+                mask = torch.zeros(len(group), width, dtype=torch.bool)
+
+                for row, index in enumerate(group):
+                    segment = segments[index]
+                    obs[row, : segment.steps] = torch.from_numpy(segment.obs[: segment.steps])
+                    targets[row, : segment.steps] = torch.from_numpy(segment.actions)
+                    mask[row, : segment.steps] = True
+
+                for head in continuous:
+                    targets[..., head.action : head.action + head.size].clamp_(-0.95, 0.95)
+
+                obs, targets, mask = obs.to(self.device), targets.to(self.device), mask.to(self.device)
+
+                logits, _ = self.actor(obs, torch.zeros(len(group), config.hidden, device=self.device))
+                distributions = self.heads.distributions(logits, self.actor.log_std, obs)
+
+                log_prob = None
+
+                for head, distribution in distributions:
+                    if head.kind == "binary":
+                        taken = targets[..., head.action : head.action + head.size]
+                        weight = torch.where(taken > 0.5, press_weight, torch.ones_like(press_weight))
+                        piece = (distribution.log_prob(taken) * weight).sum(-1)
+                    else:
+                        piece = self.heads.log_prob([(head, distribution)], targets)
+
+                    log_prob = piece if log_prob is None else log_prob + piece
+
+                loss = -log_prob[mask].mean()
+
+                optimizer.zero_grad(set_to_none=True)
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(parameters, 1.0)
+                optimizer.step()
+
+                losses.append(loss.item())
+
+                # The teacher swings on only a few ticks, so plain agreement says little: never swinging agrees almost
+                # always. What matters is how many of its swings the copy makes, and how rarely it swings when it should not.
+                with torch.no_grad():
+                    attack = self.schema.action_names.index("attack")
+                    predicted = (logits[..., buttons.logit + attack - buttons.action] > 0.0)[mask]
+                    wanted = (targets[..., attack] > 0.5)[mask]
+                    swings_caught += (predicted & wanted).float().sum().item()
+                    swings += wanted.float().sum().item()
+                    false_swings += (predicted & ~wanted).float().sum().item()
+                    quiet += (~wanted).float().sum().item()
+
+            logger.info(
+                "imitation epoch %3d  loss %+.4f  swings made %5.1f%%  swings out of turn %5.1f%%  %4.1fs",
+                epoch + 1,
+                float(np.mean(losses)),
+                100.0 * swings_caught / max(1.0, swings),
+                100.0 * false_swings / max(1.0, quiet),
+                time.time() - started,
+            )
+
+        self.actor.eval()
 
     def _refresh_normalizer(self, segments: list[Segment]) -> None:
         if not segments:

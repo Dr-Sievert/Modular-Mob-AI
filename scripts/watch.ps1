@@ -34,7 +34,7 @@ function Show-Run {
     }
 
     # What the trainer says it is doing, and whether it is still there to say it.
-    $pidFile = Join-Path $Root 'mod\fabric\build\training-process-pid.txt'
+    $pidFile = Join-Path $Root "mod\fabric\build\training\$Run-trainer.txt"
     $alive = $false
 
     # A crash can leave the file holding nothing readable, which just means nothing is running.
@@ -58,8 +58,8 @@ function Show-Run {
         $lines.Add(("Trainer   {0}" -f ($(if ($alive) { 'starting' } else { 'not running' }))))
     }
 
-    # Each worker publishes how many of its arenas are done.
-    $progress = @(Get-ChildItem $WorkerDirectory -Filter 'durations.txt.progress' -Recurse -ErrorAction SilentlyContinue)
+    # Each worker publishes how many of its battles are done, in this run's own worker folder.
+    $progress = @(Get-ChildItem (Join-Path $Root "mod\fabric\build\training\$Run") -Filter 'durations.txt.progress' -Recurse -ErrorAction SilentlyContinue)
 
     if ($progress.Count -gt 0) {
 
@@ -73,8 +73,8 @@ function Show-Run {
     }
 
     $workerProcesses = @(Get-CimInstance Win32_Process -Filter "Name='java.exe'" -ErrorAction SilentlyContinue |
-            Where-Object { $_.CommandLine -match 'gametest\.shardIndex' })
-    $lines.Add(('          {0} Minecraft worker processes alive' -f $workerProcesses.Count))
+            Where-Object { $_.CommandLine -match 'gametest\.shardIndex' -and $_.CommandLine -match [regex]::Escape($directory) })
+    $lines.Add(('          {0} Minecraft worker processes alive for this run' -f $workerProcesses.Count))
 
     # The machine, since this is what has to stay healthy for a run to last.
     $os = Get-CimInstance Win32_OperatingSystem

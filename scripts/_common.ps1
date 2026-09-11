@@ -7,7 +7,6 @@ $Mod = Join-Path $Root 'mod'
 $Gradle = Join-Path $Mod 'gradlew.bat'
 $Python = Join-Path $Root 'trainer\.venv\Scripts\python.exe'
 $Runs = Join-Path $Root 'runs'
-$WorkerDirectory = Join-Path $Root 'mod\fabric\build\gametest-parallel'
 
 # A terminal opened before Java was installed still has the old environment, so this looks further than JAVA_HOME.
 function Use-Java21 {

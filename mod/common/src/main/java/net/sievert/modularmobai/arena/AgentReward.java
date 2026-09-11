@@ -6,25 +6,22 @@ package net.sievert.modularmobai.arena;
  * <p>Damage is scaled by the health of whoever took it, so a full kill is worth one no matter how much health the
  * opponent had. That keeps the numbers comparable when the ladder moves from a zombie to a vindicator to another agent.
  *
- * <p>Time is folded into the ending rather than charged per tick, because a tick of elapsed time is only bad if the
- * agent is going to win. Winning quickly is better than winning slowly, and dying late is better than dying early, and
- * neither of those can be known until the fight is over. A per tick clock would have to guess the sign in advance and
- * would get it wrong for every episode that ends the other way.
- *
- * <p>The bonuses are deliberately smaller than the gap between a win and a loss, so every win outscores every loss. Let
- * them grow past that and the agent finds out that a long, careful defeat pays better than a scrappy victory.
+ * <p>Time only enters through a win: winning quickly pays more than winning slowly. A loss is a loss however it came,
+ * killed in the first second or still standing when the minute ran out. Paying anything back for lasting longer made
+ * running away the best thing an agent that could not yet win could do, and a policy that has learned to run never
+ * finds out how to fight.
  *
  * <pre>
- *   instant kill, untouched      +1.50 dealt   0.00 taken   +3 outcome   =  +4.50
- *   slow kill, untouched         +1.50 dealt   0.00 taken   +2 outcome   =  +3.50
- *   slow kill, nearly dead       +1.50 dealt  -0.99 taken   +2 outcome   =  +2.51
- *   died at the buzzer, nearly won  +1.49 dealt  -1.00 taken   -1 outcome   =  -0.51
- *   stalled to the timeout        0.00 dealt   0.00 taken   -1 outcome   =  -1.00
- *   killed immediately            0.00 dealt  -1.00 taken   -2 outcome   =  -3.00
+ *   instant kill, untouched         +1.50 dealt   0.00 taken   +3 outcome   =  +4.50
+ *   slow kill, untouched            +1.50 dealt   0.00 taken   +2 outcome   =  +3.50
+ *   slow kill, nearly dead          +1.50 dealt  -0.99 taken   +2 outcome   =  +2.51
+ *   died at the buzzer, nearly won  +1.49 dealt  -1.00 taken   -2 outcome   =  -1.51
+ *   stalled to the timeout           0.00 dealt   0.00 taken   -2 outcome   =  -2.00
+ *   killed immediately               0.00 dealt  -1.00 taken   -2 outcome   =  -3.00
  * </pre>
  *
- * <p>Every win outscores everything else by a wide margin, and among the ways of not winning, the agent that fought and
- * lost beats the one that hid and ran the clock out.
+ * <p>Every win outscores everything else by a wide margin, and among the ways of not winning, only the damage done and
+ * taken tells them apart.
  */
 public final class AgentReward {
 
@@ -37,8 +34,11 @@ public final class AgentReward {
     /** Added to a win, in full for an instant kill and nothing for one that came in at the buzzer. */
     public static final float SPEED_BONUS = 1.0F;
 
-    /** Given back on a loss for every tick survived, so being driven off is worth more than being cut down. */
-    public static final float SURVIVAL_BONUS = 1.0F;
+    /**
+     * Given back on a loss for the time survived. Zero: anything above it pays the agent to run rather than fight, see
+     * the class comment.
+     */
+    public static final float SURVIVAL_BONUS = 0.0F;
 
     /**
      * Hurting the opponent counts for more than being hurt. Without this an agent that stalls in a corner and an agent
@@ -85,10 +85,7 @@ public final class AgentReward {
         this.finish(WIN + SPEED_BONUS * (1.0F - this.elapsedFraction()));
     }
 
-    /**
-     * Also how a timeout ends. Running the clock out is a loss: the agent did not die, but it did not win either, and at
-     * the timeout the elapsed fraction is already one, so this pays out the full survival bonus by itself.
-     */
+    /** Also how a timeout ends. Running the clock out is a loss: the agent did not die, but it did not win either. */
     public void lost() {
 
         this.finish(LOSS + SURVIVAL_BONUS * this.elapsedFraction());

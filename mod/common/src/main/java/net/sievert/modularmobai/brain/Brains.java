@@ -21,6 +21,7 @@ import net.sievert.modularmobai.brain.schema.ObservationSchema;
  *
  * <pre>
  *   -Dmodular_mob_ai.brain=scripted                                   the hand written fighter, needs nothing
+ *   -Dmodular_mob_ai.brain=scripted -Dmodular_mob_ai.demonstrations=DIR   the same, writing down what it does
  *   -Dmodular_mob_ai.brain=neural -Dmodular_mob_ai.brain.weights=X    a trained network, most likely action
  *   -Dmodular_mob_ai.brain=neural -Dmodular_mob_ai.training.run=DIR   a network being trained; see {@link TrainingRun}
  * </pre>
@@ -89,7 +90,15 @@ public final class Brains {
 
         return switch (kind) {
 
-            case "scripted" -> new ScriptedBrain();
+            case "scripted" -> {
+
+                // Recording what the scripted fighter does, for a network to learn to copy before training starts.
+                String demonstrations = property("modular_mob_ai.demonstrations", "");
+                float noise = Float.parseFloat(property("modular_mob_ai.demonstrations.noise", "0"));
+
+                yield demonstrations.isEmpty() ? new ScriptedBrain()
+                        : new DemonstrationBrain(new ScriptedBrain(), Path.of(demonstrations), noise);
+            }
 
             case "neural" -> {
 
@@ -105,7 +114,11 @@ public final class Brains {
                     throw new IllegalArgumentException("A neural brain needs weights: set modular_mob_ai.brain.weights");
                 }
 
-                yield network(Path.of(weights));
+                // Recording a trained network at work, to see what it actually does rather than what it was taught.
+                String demonstrations = property("modular_mob_ai.demonstrations", "");
+
+                yield demonstrations.isEmpty() ? network(Path.of(weights))
+                        : new DemonstrationBrain(network(Path.of(weights)), Path.of(demonstrations), 0.0F);
             }
 
             default -> throw new IllegalArgumentException("Unknown brain '" + kind + "'; expected scripted or neural. "

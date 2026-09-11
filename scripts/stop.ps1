@@ -1,5 +1,10 @@
-# Stops a training run and anything it left behind: the trainer and every Minecraft worker the build started. Safe to
-# run at any time; the weights and checkpoints already on disk are kept, and the next scripts\train.ps1 carries on.
+# Stops training and anything it left behind: the trainers and every Minecraft worker the build started. Safe to run
+# at any time; the weights and checkpoints already on disk are kept, and the next scripts\train.ps1 carries on.
+#
+#   scripts\stop.ps1                every run
+#   scripts\stop.ps1 -Run imitate   just that one
+
+param([string] $Run = '')
 
 . "$PSScriptRoot\_common.ps1"
 
@@ -10,7 +15,19 @@ foreach ($loader in 'fabric', 'neoforge') {
 
     $build = Join-Path $Root "mod\$loader\build"
 
-    foreach ($name in 'training-process-pid.txt', 'gametest-parallel-pids.txt') {
+    # Training runs keep a trainer and a worker list each; plain parallel test runs keep one list.
+    $files = if ($Run) {
+
+        @("training\$Run-trainer.txt", "training\$Run-workers.txt")
+    }
+
+    else {
+
+        @('gametest-parallel-pids.txt') + @(Get-ChildItem (Join-Path $build 'training') -Filter '*.txt' -ErrorAction SilentlyContinue |
+                ForEach-Object { "training\$($_.Name)" })
+    }
+
+    foreach ($name in $files) {
 
         $file = Join-Path $build $name
 
@@ -42,8 +59,10 @@ foreach ($loader in 'fabric', 'neoforge') {
     }
 }
 
-# The Gradle process driving the run, if it is still waiting on them.
-Get-CimInstance Win32_Process -Filter "Name='java.exe'" | Where-Object { $_.CommandLine -match 'GradleWrapperMain|GradleMain' -and $_.CommandLine -match 'runTraining' } | ForEach-Object {
+# The Gradle process driving a run, if it is still waiting on them.
+$pattern = if ($Run) { "runTraining.*-Prun=$Run(\s|$)" } else { 'runTraining|recordDemonstrations' }
+
+Get-CimInstance Win32_Process -Filter "Name='java.exe'" | Where-Object { $_.CommandLine -match 'GradleWrapperMain' -and $_.CommandLine -match $pattern } | ForEach-Object {
 
     Stop-Process -Id $_.ProcessId -Force
     Write-Host "Stopped Gradle $($_.ProcessId)"

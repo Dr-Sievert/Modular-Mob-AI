@@ -117,6 +117,12 @@ public final class GameTestTuning {
         return intProperty("batchSize", BATCH_SIZE);
     }
 
+    /** How many tests the framework runs at once: the batch size when one is set, fifty, vanilla's own, when not. */
+    public static int concurrentTests() {
+
+        return batchSize() > 0 ? batchSize() : 50;
+    }
+
     public static int ticksPerSecond() {
 
         return intProperty("ticksPerSecond", TICKS_PER_SECOND);

@@ -20,4 +20,13 @@ public @interface RepeatGameTest {
      * @return The number of runs, at least one.
      */
     int value() default 1;
+
+    /**
+     * Whether each generated test is a slot rather than a run: only as many tests as run at once, each working through
+     * runs from a queue the process shares until it is empty. The number of runs stays the same; what changes is that a
+     * slot whose run has finished starts the next one straight away, instead of waiting for the rest of its batch.
+     *
+     * @return Whether the test takes its runs from a shared queue. The int it is handed is then its slot, not a run.
+     */
+    boolean slots() default false;
 }

@@ -95,6 +95,11 @@ class PolicyHeads:
         return total
 
 
+INITIAL_LOG_STD = -1.0
+MIN_LOG_STD = -2.5
+MAX_LOG_STD = 0.0
+
+
 class Actor(nn.Module):
     """The exported network: normalise, encode, remember, decide."""
 
@@ -113,10 +118,17 @@ class Actor(nn.Module):
         self.out = nn.Linear(topology.h3, topology.out_dim)
 
         # State independent, which is the usual choice for PPO: the spread of exploration is learned once for the whole
-        # task rather than per situation, and shrinks as the policy commits.
-        self.log_std = nn.Parameter(torch.zeros(topology.std_dim))
+        # task rather than per situation, and shrinks as the policy commits. It starts at a third of full deflection,
+        # not all of it: at full deflection the aim swings up to sixty degrees a tick at random, the crosshair never
+        # settles on anything, and no swing ever lands for the policy to learn from.
+        self.log_std = nn.Parameter(torch.full((topology.std_dim,), INITIAL_LOG_STD))
 
         self._init()
+
+    def bound_spread(self) -> None:
+        """Keeps exploration between a sliver and full deflection. The entropy bonus alone would keep widening it."""
+        with torch.no_grad():
+            self.log_std.clamp_(MIN_LOG_STD, MAX_LOG_STD)
 
     def _init(self) -> None:
         for module in (self.fc1, self.fc2):
@@ -188,13 +200,18 @@ class RunningNormalizer:
     Updated once per iteration, after the update rather than before it, because the log probabilities the game recorded
     were worked out behind the statistics the game was given. Moving them first would make the ratio at the start of an
     update something other than one, which is the one thing PPO assumes.
+
+    The spread is floored. A feature that barely moved so far, a terrain cell that has always been solid or a flag that
+    has never been set, would otherwise be divided by next to nothing, and the first time it did move it would hit the
+    clip at full strength and swamp everything else going into the network.
     """
 
-    def __init__(self, size: int, epsilon: float = 1e-8) -> None:
+    def __init__(self, size: int, epsilon: float = 1e-8, floor: float = 0.1) -> None:
         self.mean = torch.zeros(size, dtype=torch.float64)
         self.var = torch.ones(size, dtype=torch.float64)
         self.count = epsilon
         self.epsilon = epsilon
+        self.floor = floor
 
     def update(self, batch: Tensor) -> None:
         batch = batch.reshape(-1, batch.shape[-1]).to(torch.float64)
@@ -213,7 +230,7 @@ class RunningNormalizer:
         """Hands the statistics to the network that will be exported with them."""
         with torch.no_grad():
             actor.norm_mean.copy_(self.mean.to(torch.float32))
-            actor.norm_std.copy_((self.var.sqrt() + self.epsilon).to(torch.float32))
+            actor.norm_std.copy_(self.var.sqrt().clamp(min=self.floor).to(torch.float32))
 
     def state_dict(self) -> dict:
         return {"mean": self.mean, "var": self.var, "count": self.count}

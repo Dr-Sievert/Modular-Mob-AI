@@ -5,6 +5,7 @@
 #   scripts\train.ps1 -Battles 0                until Ctrl+C
 #   scripts\train.ps1 -Workers 2 -Device cpu    lighter on the machine
 #   scripts\train.ps1 -Run wide -Extra '--entropy-coef 0.003'
+#   scripts\compare.ps1                         two runs side by side instead, see there
 #
 # Learning happens every -RolloutSteps steps of experience across all workers (an iteration): the workers pause, the
 # trainer runs a few epochs of PPO over exactly that experience, the new weights swap in, and the fights carry on. The
@@ -14,8 +15,9 @@
 param(
     [string] $Run = 'default',
     [int] $Battles = 10000,
-    [int] $RoundSize = 2000,
+    [int] $RoundSize = 10000,
     [int] $Workers = 0,
+    [string] $Heap = '2G',
     [int] $RolloutSteps = 16384,
     [ValidateSet('cuda', 'cpu')] [string] $Device = 'cuda',
     [ValidateSet('terrain', 'arena')] [string] $Suite = 'terrain',
@@ -44,6 +46,7 @@ Invoke-Gradle (@(
     "-Pbattles=$Battles",
     "-Parenas=$RoundSize",
     '-Prounds=0',
+    "-PworkerHeap=$Heap",
     "-ProlloutSteps=$RolloutSteps",
     "-PtrainArgs=--device $Device $Extra".Trim()
 ) + $workerArguments)

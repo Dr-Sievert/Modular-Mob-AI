@@ -2,6 +2,7 @@
 
     python train.py loop --run ../runs/default      wait for rollouts, learn, export the next weights, repeat
     python train.py init --run ../runs/default      just write iteration zero's weights and stop
+    python train.py imitate --run ../runs/imitate   start a run by copying the recorded scripted fighter
     python train.py parity --schema S --out DIR     build the fixture the game checks its own forward pass against
 
 The game is what runs the network; this only improves it. The two never talk directly: the game writes rollout shards
@@ -32,10 +33,12 @@ logger = log.get("train")
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train Modular Mob AI agents from recorded rollouts.")
-    parser.add_argument("command", choices=["loop", "init", "parity"], nargs="?", default="loop")
+    parser.add_argument("command", choices=["loop", "init", "imitate", "parity"], nargs="?", default="loop")
     parser.add_argument("--run", help="the run folder the game is writing into")
     parser.add_argument("--schema", help="the layout the game wrote, defaults to <run>/schema.json")
     parser.add_argument("--out", help="where to put the parity fixture")
+    parser.add_argument("--demos", help="the recorded teacher for imitate, defaults to <run>/demos")
+    parser.add_argument("--imitation-epochs", type=int, default=80, help="passes over the teacher's record")
     parser.add_argument("--log-dir", help="defaults to <run>/logs, or the parity folder")
     parser.add_argument("--keep-weights", type=int, default=5, help="how many recent weight files to keep")
 
@@ -78,7 +81,7 @@ def main() -> None:
         return
 
     if not arguments.run:
-        parser.error("loop and init need --run")
+        parser.error("loop, init and imitate need --run")
 
     run = RunDirectory(arguments.run)
     schema = Schema.load(arguments.schema or run.schema_file())
@@ -88,6 +91,10 @@ def main() -> None:
     logger.info("config %s", config)
 
     trainer = Trainer(config, schema)
+
+    if arguments.command == "imitate":
+        imitate(run, trainer, schema, Path(arguments.demos) if arguments.demos else run.path / "demos", arguments.imitation_epochs)
+        return
 
     if run.state_file().is_file():
         trainer.load(run.state_file())
@@ -110,6 +117,38 @@ def main() -> None:
     run.clear_rollouts()
 
     loop(run, trainer, config, schema, arguments.keep_weights)
+
+
+def imitate(run: RunDirectory, trainer: Trainer, schema: Schema, demos: Path, epochs: int) -> None:
+    """Starts a run from a copy of the recorded teacher rather than from nothing: iteration zero is the copy."""
+
+    if run.state_file().is_file():
+        raise SystemExit(f"{run.path} has already started; imitation only makes sense for a fresh run")
+
+    segments = []
+    steps = 0
+
+    for path in sorted(demos.glob("*.mbr")):
+        header, found = read_shard(path)
+
+        if header.schema_id != schema.schema_id:
+            raise SystemExit(f"{path.name} was recorded against a different layout")
+
+        segments.extend(found)
+        steps += header.steps
+
+    if not segments:
+        raise SystemExit(f"no demonstrations in {demos}; record some with gradlew :fabric:recordDemonstrations")
+
+    wins = sum(1 for segment in segments if segment.done and float(segment.rewards[-1]) > 0.0)
+    logger.info("copying %d fights, %s steps, from %s (the teacher won %d of them)", len(segments), f"{steps:,}", demos, wins)
+
+    trainer.imitate(segments, epochs)
+    trainer.iteration = 0
+    trainer.save(run.state_file())
+    trainer.export(run.weights_file(0), 0)
+
+    logger.info("iteration 0 of %s is the copy; training carries on from it", run.path.name)
 
 
 def lower_priority() -> None:
