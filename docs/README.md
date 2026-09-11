@@ -44,8 +44,14 @@ Training fights are one agent against one vindicator on natural terrain, generat
 water, whatever is there. Each fight owns an 80 by 80 block site of open ground with no walls, and sites sit 128 blocks
 apart. The chunks between sites never tick entities, so anything that walks off its site stops there and the fight ends
 the way any stalled fight does, as a loss when the minute runs out. The sites are placed once per worker on land, found by
-asking the world generator for biomes rather than generating anything, and are generated in the background as the worker
-starts. `gametest/terrain/TerrainSites` holds all of it.
+asking the world generator for biomes rather than generating anything, and are generated a couple at a time while fights
+already run on the first ones. `gametest/terrain/TerrainSites` holds all of it.
+
+Generating 64 sites takes a worker about a minute and a half, so the build keeps the worlds workers generated, in
+`runs/terrain/<minecraft version>`, about 60 MB each. A later worker gets one of those and reads its sites from disk in
+seconds: the least used world first, each at most 8 times (`terrainUses`) before it is dropped and a worker that finds no
+world left generates a fresh one, so the terrain keeps changing. The pool holds up to 8 worlds (`terrainPool`, 0 turns it
+off); delete the folder to start over.
 
 A fight ends when either dies, or after 1200 ticks, a minute, which is a loss.
 

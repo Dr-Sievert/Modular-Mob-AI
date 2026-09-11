@@ -172,6 +172,117 @@ afterEvaluate {
         }
     }
 
+    // Generating the terrain is most of what starting a worker on natural terrain costs, and a world generated once can be
+    // fought in again. So every such worker's world is kept in runs/terrain/<minecraft version>, and later workers start
+    // from one of those, reading their fight sites from disk instead of generating them: the least used first, each at
+    // most terrainUses times. A world that has been used up is dropped, and the next worker that finds none left
+    // generates a fresh one in its place, so the terrain keeps changing. A world is about 60 MB and the pool keeps
+    // terrainPool of them; -PterrainPool=0 turns it off.
+    def terrainPool = new File(new File(new File(repositoryRoot, 'runs'), 'terrain'), project.property('minecraft_version') as String)
+    def terrainPoolSize = Integer.parseInt(providers.gradleProperty('terrainPool').getOrElse('8'))
+    def terrainUses = Integer.parseInt(providers.gradleProperty('terrainUses').getOrElse('8'))
+
+    def readProperties = { File file ->
+
+        def properties = new Properties()
+
+        if (file.isFile()) {
+
+            file.withInputStream { properties.load(it) }
+        }
+
+        return properties
+    }
+
+    // Only the parts of a world that hold its chunks. The test server writes fresh level data every time, and the saved
+    // list of forced chunks would have the next worker load every site at once.
+    def copyWorld = { File from, File to ->
+
+        ['region', 'entities', 'poi'].each { part ->
+
+            def source = new File(from, part)
+
+            if (source.isDirectory()) {
+
+                def target = new File(to, part)
+                target.mkdirs()
+
+                source.eachFile { file ->
+
+                    java.nio.file.Files.copy(file.toPath(), new File(target, file.name).toPath(),
+                            java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                }
+            }
+        }
+    }
+
+    // The kept worlds, least used first and, among those, the longest unused.
+    def keptTerrain = {
+
+        def worlds = (terrainPool.listFiles() ?: []).findAll { new File(it, 'world.properties').isFile() }
+
+        return worlds.collect { dir -> [dir: dir, properties: readProperties(new File(dir, 'world.properties'))] }.sort { a, b ->
+
+            (a.properties.getProperty('uses', '0') as int) <=> (b.properties.getProperty('uses', '0') as int)
+                    ?: new File(a.dir, 'world.properties').lastModified() <=> new File(b.dir, 'world.properties').lastModified()
+        }
+    }
+
+    // After a round: every kept world a worker used counts one more use and goes once it is used up; one that was not
+    // finished when the worker got it goes back with the sites the worker added; a world a worker generated fresh joins
+    // the pool. Each worker says in terrain.properties where its sites were and how many it had ready by the end.
+    def keepTerrain = { List workers ->
+
+        workers.each { entry ->
+
+            def report = readProperties(new File(entry.dir, 'terrain.properties'))
+            def sites = (report.getProperty('sites') ?: '0') as int
+            def world = new File(entry.dir, 'world')
+            def healthy = entry.process.exitValue() == 0 && sites > 0
+
+            if (entry.kept != null) {
+
+                def properties = entry.kept.properties
+                def uses = (properties.getProperty('uses', '0') as int) + 1
+
+                if (uses >= terrainUses) {
+
+                    entry.kept.dir.deleteDir()
+                    return
+                }
+
+                if (healthy && sites > (properties.getProperty('sites', '0') as int)) {
+
+                    copyWorld(world, entry.kept.dir)
+                    properties.setProperty('sites', String.valueOf(sites))
+                }
+
+                properties.setProperty('uses', String.valueOf(uses))
+                new File(entry.kept.dir, 'world.properties').withOutputStream { properties.store(it, null) }
+            }
+
+            else if (healthy && report.getProperty('x') != null && report.getProperty('z') != null) {
+
+                def dir = new File(terrainPool, "${report.getProperty('x')}_${report.getProperty('z')}")
+                dir.mkdirs()
+                copyWorld(world, dir)
+
+                // Written last, so a world only counts as kept once all of it is there.
+                def properties = new Properties()
+                ['x', 'z', 'sites'].each { properties.setProperty(it, report.getProperty(it)) }
+                properties.setProperty('uses', '1')
+                new File(dir, 'world.properties').withOutputStream { properties.store(it, null) }
+            }
+        }
+
+        def worlds = keptTerrain()
+
+        while (worlds.size() > terrainPoolSize) {
+
+            worlds.remove(worlds.size() - 1).dir.deleteDir()
+        }
+    }
+
     // The Python environment under trainer/, which is where everything on the training side lives.
     def pythonExecutable = {
 
@@ -464,6 +575,17 @@ afterEvaluate {
         pidFile.parentFile.mkdirs()
         pidFile.text = ''
 
+        // Worlds earlier workers generated, for as many of these as the pool has; the rest generate their own.
+        def suite = (extraProperties['modular_mob_ai.gametest.suite'] ?: providers.gradleProperty('suite').getOrElse('')) as String
+        def pooled = suite == 'terrain' && terrainPoolSize > 0
+        def keptWorlds = pooled ? keptTerrain() : []
+
+        if (pooled) {
+
+            logger.lifecycle("Terrain: ${Math.min(workers, keptWorlds.size())} of ${workers} workers start from a kept world "
+                    + "(${keptWorlds.size()} in ${terrainPool})")
+        }
+
         for (int worker = 0; worker < workers; worker++) {
 
             if (worker > 0 && staggerSeconds > 0) {
@@ -528,6 +650,30 @@ afterEvaluate {
 
             extraProperties.each { name, value -> command += "-D${name}=${value}".toString() }
 
+            def kept = keptWorlds.isEmpty() ? null : keptWorlds.remove(0)
+
+            if (kept != null) {
+
+                try {
+
+                    copyWorld(kept.dir, new File(dir, 'world'))
+                    command += "-Dmodular_mob_ai.gametest.keptTerrain=${['x', 'z', 'sites'].collect { kept.properties.getProperty(it) }.join(',')}".toString()
+                }
+
+                catch (IOException exception) {
+
+                    // Another run dropped it in the meantime, most likely. This worker generates its own instead.
+                    logger.lifecycle("Could not copy the terrain in ${kept.dir}, worker ${worker} generates its own: ${exception}")
+                    new File(dir, 'world').deleteDir()
+                    kept = null
+                }
+            }
+
+            if (pooled) {
+
+                command += "-Dmodular_mob_ai.gametest.terrainFile=${new File(dir, 'terrain.properties').absolutePath}".toString()
+            }
+
             command += "-Dfabric-api.gametest.report-file=${new File(dir, 'report.xml').absolutePath}".toString()
 
             command += classpathArgs
@@ -555,7 +701,7 @@ afterEvaluate {
                 }
             }
 
-            processes += [worker: worker, process: process, stats: stats, dir: dir]
+            processes += [worker: worker, process: process, stats: stats, dir: dir, kept: kept]
 
             // Recorded as each one starts, so a run cancelled in the middle of starting them can still be cleaned up by
             // the next one.
@@ -654,6 +800,11 @@ afterEvaluate {
 
         // Every worker has exited, so there is nothing left for the next run to clean up.
         pidFile.delete()
+
+        if (pooled) {
+
+            keepTerrain(processes)
+        }
 
         def seconds = (System.nanoTime() - started) / 1_000_000_000.0d
 

@@ -96,6 +96,23 @@ public class GameTestServerMixin {
         );
     }
 
+    // At the same moment the terrain suite writes down where its sites were, so the build can keep the world it generated
+    // for the workers after this one.
+    @Inject(
+            method = "tickServer",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lcom/google/common/base/Stopwatch;stop()Lcom/google/common/base/Stopwatch;"
+            )
+    )
+    private void modular_mob_ai$reportTerrain(BooleanSupplier hasTimeLeft, CallbackInfo ci) {
+
+        if (GameTestTuning.naturalTerrain()) {
+
+            TerrainSites.finish();
+        }
+    }
+
     // The progress bar carries one character per test, so at ten thousand arenas it is a ten thousand character line,
     // rebuilt and written roughly every twenty ticks. That is tens of megabytes of string building on the server thread
     // over a run, and it grows with the square of the suite size. The periodic render is dropped; the one printed when
