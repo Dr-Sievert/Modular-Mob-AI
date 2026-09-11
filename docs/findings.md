@@ -5,6 +5,35 @@ are deliberate.
 
 ## Throughput and stability
 
+- **The forward pass is within 15% of what this machine can do, and fusing the multiplies would not change that.**
+  Measured outside the game on the real topology (634 to 256, GRU 128, 128, 19), 25 agents a batch as a training worker
+  runs, one core to itself:
+
+  | | us per tick | against the loops as they are |
+  | --- | --- | --- |
+  | the scalar loops in `Forward` | 345 | |
+  | the same arithmetic in explicit vectors (Vector API) | 299 | 115% |
+  | explicit vectors with fused multiply add | 290 | 119% |
+
+  Fused multiply add halves the floating point operations the matrix loops issue and bought 3.5% over plain vectors, so
+  those loops are not waiting on floating point at all: they are waiting on the weights and the running sums moving
+  through the caches. **Bit identity is therefore nearly free**, which is worth knowing, because `Math.fma` drifts the
+  logits by about 7e-3 relative and nothing here is worth that.
+  - Walking each weight matrix once for the whole batch instead of once per pair of agents is worth 2%. The weights were
+    never the bottleneck.
+  - Masked vector loads and stores are a trap: the same loops written with a mask per iteration instead of whole vectors
+    and a scalar tail ran at **40%** of the scalar loops.
+- **A quarter of the forward pass is the GRU cell, and four fifths of that is one `Math.tanh`.** At 25 agents the pass
+  divides up as: fc1 39%, the gates from the input 20%, the gates from the state 10%, **the cell 24%**, normalising 5%,
+  fc2 4%, the head 3%. The cell does two sigmoids and one hyperbolic tangent per unit per agent, 3,200 of each a tick,
+  and `Math.tanh` measured 30 ns a call against 3.8 ns for a sigmoid: it is not an intrinsic like `Math.exp`, it is
+  `StrictMath`'s software `expm1`. So about a fifth of the whole pass is one library call that no change to the matrix
+  loops can reach, and no faster tangent gives the same bits.
+- **A benchmark on a busy machine invented a result that was not there.** The first run of the above, unpinned while the
+  terrain library was building, showed the pass getting 2.4 times slower between 8 and 25 agents, which read exactly like
+  a batch that had outgrown a cache. Pinned to one core at high priority it is flat from 1 to 50 agents. The tell was
+  that 25 and 50 agents came out within half a percent of each other, and that every variant, whatever its memory
+  behaviour, landed on the same number. Pin the core, keep the bursts short, and go round the variants in turn.
 - **Saving off also switched off chunk unloading.** `ServerLevelMixin` turns saving off while tests run, which removed an
   eighth of the server thread. But vanilla's `ChunkMap.tick` skips its whole unload pass for a level that doesn't save,
   so no chunk was ever let go.
