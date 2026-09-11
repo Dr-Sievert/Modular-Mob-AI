@@ -77,6 +77,18 @@ class EloTest(unittest.TestCase):
         self.assertAlmostEqual(one.rating("witch"), two.rating("witch"))
         self.assertAlmostEqual(one.rating("iteration-000050"), two.rating("iteration-000050"))
 
+    def test_the_agent_stands_where_the_newest_settled_checkpoint_does(self):
+        ratings = Ratings(k=16.0, provisional=30, initial=1500.0, anchor="")
+        self.assertIsNone(ratings.newest_checkpoint())
+
+        ratings.players["iteration-000025"] = replace(ratings.ensure("iteration-000025", "checkpoint"), games=12)
+        ratings.players["iteration-000050"] = replace(ratings.ensure("iteration-000050", "checkpoint"), games=2)
+        self.assertEqual(ratings.newest_checkpoint().name, "iteration-000025")
+
+        ratings.players["iteration-000000"] = replace(ratings.ensure("iteration-000000", "checkpoint"), games=300)
+        ratings.players["iteration-000075"] = replace(ratings.ensure("iteration-000075", "checkpoint"), games=40)
+        self.assertEqual(ratings.newest_checkpoint().name, "iteration-000075")
+
     def test_a_new_checkpoint_starts_where_the_one_before_it_got_to(self):
         ratings = Ratings(k=16.0, provisional=30, initial=1500.0, anchor="")
         ratings.players["iteration-000025"] = replace(ratings.ensure("iteration-000025", "checkpoint"), rating=1710.0)

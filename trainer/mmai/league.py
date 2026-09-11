@@ -165,10 +165,21 @@ class Ratings:
         return player.rating if player is not None else self.initial
 
     def newest_checkpoint(self) -> Player | None:
-        """The newest checkpoint that has been rated, the nearest thing to where the agent in training stands."""
+        """The nearest thing to where the agent in training stands: the newest checkpoint that has played its provisional
+        fights, which a checkpoint only does as the one being evaluated; failing that, whichever has played the most. A
+        checkpoint met a few times from the pool has hardly moved from where it started, and says little."""
 
         rated = [player for player in self.players.values() if player.kind == "checkpoint" and player.games > 0]
-        return max(rated, key=lambda player: checkpoint_iteration(player.name) or 0) if rated else None
+
+        if not rated:
+            return None
+
+        settled = [player for player in rated if player.games >= self.provisional]
+
+        if settled:
+            return max(settled, key=lambda player: checkpoint_iteration(player.name) or 0)
+
+        return max(rated, key=lambda player: (player.games, checkpoint_iteration(player.name) or 0))
 
 
 # ---------------------------------------------------------------------------------------------------------------------
