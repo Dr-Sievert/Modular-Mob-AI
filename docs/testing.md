@@ -62,7 +62,8 @@ mod\gradlew.bat -p mod :fabric:runGametestParallel -Psuite=terrain -Parenas=2000
 
 | Property | What it does |
 | --- | --- |
-| `suite` | `arena` (closed box), `terrain` (natural ground, what training uses), `mechanics`, `baseline` (villager against vindicator, no agent) |
+| `suite` | `arena` (closed box), `terrain` (natural ground, what training uses), `mechanics`, `baseline` (villager against vindicator, no agent), `library` (no fights: builds the terrain library, see `scripts\terrain.ps1`) |
+| `terrainLibrary`, `librarySites` | `false` makes terrain workers generate their own ground even when a library exists; how many sites a library build generates |
 | `arenas`, `workers`, `batchSize` | fights, worker processes, fights at once per worker |
 | `brain`, `brainWeights` | `scripted` (default) or `neural` with a `.mbw` file |
 | `replayEvery`, `replayRun` | record one fight in N, into `runs\<replayRun>\replays` |
