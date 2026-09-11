@@ -54,7 +54,7 @@ class Step:
     that produced it has to be copied.
     """
 
-    worker_id: int
+    worker_ids: np.ndarray  # int32,   (count,)  one per row, so steps from several workers can share one batch
     agent_ids: np.ndarray  # int32,   (count,)
     flags: np.ndarray  # uint8,   (count,)
     rewards: np.ndarray  # float32, (count,)
@@ -70,7 +70,18 @@ class Step:
         Entity ids only mean anything inside one game process, so a parallel run has several agents called seven. Pairing
         the id with the worker is what keeps their hidden states apart.
         """
-        return [(self.worker_id, int(agent)) for agent in self.agent_ids]
+        return list(zip(self.worker_ids.tolist(), self.agent_ids.tolist()))
+
+    @staticmethod
+    def merge(steps: "list[Step]") -> "Step":
+        """Several workers' steps as one, rows in the order given, so one forward pass can serve all of them."""
+        return Step(
+            worker_ids=np.concatenate([step.worker_ids for step in steps]),
+            agent_ids=np.concatenate([step.agent_ids for step in steps]),
+            flags=np.concatenate([step.flags for step in steps]),
+            rewards=np.concatenate([step.rewards for step in steps]),
+            observations=np.concatenate([step.observations for step in steps]),
+        )
 
 
 def read_exactly(sock: socket.socket, size: int) -> memoryview:
@@ -129,7 +140,9 @@ def read_step(sock: socket.socket, worker_id: int, obs_dim: int) -> Step | None:
     rewards = np.frombuffer(read_exactly(sock, 4 * count), dtype="<f4")
     observations = np.frombuffer(read_exactly(sock, 4 * count * obs_dim), dtype="<f4").reshape(count, obs_dim)
 
-    return Step(worker_id=worker_id, agent_ids=agent_ids, flags=flags, rewards=rewards, observations=observations)
+    worker_ids = np.full(count, worker_id, dtype=np.int32)
+
+    return Step(worker_ids=worker_ids, agent_ids=agent_ids, flags=flags, rewards=rewards, observations=observations)
 
 
 def send_actions(sock: socket.socket, actions: np.ndarray) -> None:

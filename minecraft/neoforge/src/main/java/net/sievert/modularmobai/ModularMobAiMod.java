@@ -34,6 +34,12 @@ public class ModularMobAiMod {
             () -> ModEntities.AGENT_MOB_BUILDER.build(ModEntities.AGENT_MOB_ID.toString())
     );
 
+    private static final Supplier<EntityType<AgentMob>> TRAINING_AGENT = ENTITY_TYPES.register(
+            ModEntities.TRAINING_AGENT_ID.getPath(),
+            () -> ModEntities.TRAINING_AGENT_BUILDER.build(ModEntities.TRAINING_AGENT_ID.toString())
+    );
+
+    // Only the shipped one gets an egg. The training one is spawned by arenas and nothing else.
     private static final Supplier<Item> AGENT_MOB_SPAWN_EGG = ITEMS.register(
             ModItems.AGENT_MOB_SPAWN_EGG_ID.getPath(),
             () -> new DeferredSpawnEggItem(AGENT_MOB, ModItems.EGG_BACKGROUND, ModItems.EGG_HIGHLIGHT, new Item.Properties())
@@ -54,12 +60,15 @@ public class ModularMobAiMod {
     private static void handOver(FMLCommonSetupEvent event) {
 
         ModEntities.setAgentMob(AGENT_MOB.get());
+        ModEntities.setTrainingAgent(TRAINING_AGENT.get());
         ModItems.setAgentMobSpawnEgg(AGENT_MOB_SPAWN_EGG.get());
     }
 
     private static void registerAttributes(EntityAttributeCreationEvent event) {
 
+        // The same attributes for both: a network trained against one has to find the same body in the other.
         event.put(AGENT_MOB.get(), AgentMob.createAttributes().build());
+        event.put(TRAINING_AGENT.get(), AgentMob.createAttributes().build());
     }
 
     private static void addToCreativeTab(BuildCreativeModeTabContentsEvent event) {
@@ -77,6 +86,7 @@ public class ModularMobAiMod {
         public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
 
             event.registerEntityRenderer(AGENT_MOB.get(), AgentMobRenderer::new);
+            event.registerEntityRenderer(TRAINING_AGENT.get(), AgentMobRenderer::new);
         }
     }
 }

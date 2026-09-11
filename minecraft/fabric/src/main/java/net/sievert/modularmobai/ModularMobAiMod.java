@@ -23,8 +23,17 @@ public class ModularMobAiMod implements ModInitializer {
                 ModEntities.AGENT_MOB_BUILDER.build(ModEntities.AGENT_MOB_ID.toString())
         ));
 
-        FabricDefaultAttributeRegistry.register(ModEntities.agentMob(), AgentMob.createAttributes());
+        ModEntities.setTrainingAgent(Registry.register(
+                BuiltInRegistries.ENTITY_TYPE,
+                ModEntities.TRAINING_AGENT_ID,
+                ModEntities.TRAINING_AGENT_BUILDER.build(ModEntities.TRAINING_AGENT_ID.toString())
+        ));
 
+        // The same attributes for both: a network trained against one has to find the same body in the other.
+        FabricDefaultAttributeRegistry.register(ModEntities.agentMob(), AgentMob.createAttributes());
+        FabricDefaultAttributeRegistry.register(ModEntities.trainingAgent(), AgentMob.createAttributes());
+
+        // Only the shipped one gets an egg. The training one is spawned by arenas and nothing else.
         ModItems.setAgentMobSpawnEgg(Registry.register(
                 BuiltInRegistries.ITEM,
                 ModItems.AGENT_MOB_SPAWN_EGG_ID,

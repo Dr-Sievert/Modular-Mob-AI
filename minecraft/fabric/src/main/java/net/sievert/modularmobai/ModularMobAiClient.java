@@ -11,5 +11,6 @@ public class ModularMobAiClient implements ClientModInitializer {
     public void onInitializeClient() {
 
         EntityRendererRegistry.register(ModEntities.agentMob(), AgentMobRenderer::new);
+        EntityRendererRegistry.register(ModEntities.trainingAgent(), AgentMobRenderer::new);
     }
 }

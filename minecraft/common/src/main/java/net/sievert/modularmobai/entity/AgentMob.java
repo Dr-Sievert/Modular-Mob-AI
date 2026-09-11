@@ -90,9 +90,17 @@ public class AgentMob extends PathfinderMob {
     /** Shared between the hands, as the client's is, so alternating them cannot interact twice as fast as a player can. */
     private int useCooldown;
 
+    /**
+     * Whether this is the training registration rather than the shipped one. Everything the brain sees and does is the
+     * same either way; this only decides how the world treats the body when nobody is driving it.
+     */
+    private final boolean training;
+
     public AgentMob(EntityType<? extends PathfinderMob> type, Level level) {
 
         super(type, level);
+
+        this.training = EntityType.getKey(type).equals(ModEntities.TRAINING_AGENT_ID);
 
         // Both of the vanilla controls fight the controller on every tick if they are left in place: the look control
         // snaps the pitch back to zero and drags the head toward the body, and the move control zeroes the forward input
@@ -714,22 +722,29 @@ public class AgentMob extends PathfinderMob {
         this.syncMainHand();
     }
 
+    public boolean isTraining() {
+
+        return this.training;
+    }
+
     /**
-     * Kept alive by the arena that spawned it rather than by distance to a player, since a game test has no players in it.
+     * A training agent is kept alive by the arena that spawned it rather than by distance to a player, since a game test
+     * has no players in it. The shipped one despawns like any other mob.
      */
     @Override
     public boolean removeWhenFarAway(double distance) {
 
-        return false;
+        return !this.training && super.removeWhenFarAway(distance);
     }
 
     /**
-     * Nothing collects it, and dropping experience would only add work to every death in a suite of many thousands.
+     * In an arena nothing collects experience, and dropping it would only add work to every death in a suite of many
+     * thousands. In the game it is worth what a player's worth of health is worth.
      */
     @Override
     protected int getBaseExperienceReward() {
 
-        return 0;
+        return this.training ? 0 : 5;
     }
 
     /**

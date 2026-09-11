@@ -4,8 +4,9 @@ The game runs the fights and this decides what the agents do in them. The two ta
 conversation is in :mod:`mmai.protocol`.
 """
 
+from . import log
 from .policy import EchoPolicy, Policy, RandomPolicy
 from .schema import Schema
 from .server import Server
 
-__all__ = ["EchoPolicy", "Policy", "RandomPolicy", "Schema", "Server"]
+__all__ = ["EchoPolicy", "Policy", "RandomPolicy", "Schema", "Server", "log"]

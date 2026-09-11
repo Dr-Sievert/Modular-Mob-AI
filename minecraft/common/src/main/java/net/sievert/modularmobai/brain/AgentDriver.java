@@ -6,8 +6,9 @@ import java.util.Map;
 import java.util.WeakHashMap;
 
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.entity.EntityTypeTest;
 import net.sievert.modularmobai.entity.AgentMob;
-import net.sievert.modularmobai.entity.ModEntities;
 
 /**
  * Steps every agent in a level through the brain, once per tick, before any of them move.
@@ -22,6 +23,8 @@ import net.sievert.modularmobai.entity.ModEntities;
 public final class AgentDriver {
 
     private static final Map<ServerLevel, AgentDriver> BY_LEVEL = new WeakHashMap<>();
+
+    private static final EntityTypeTest<Entity, AgentMob> AGENTS = EntityTypeTest.forClass(AgentMob.class);
 
     /**
      * Built on first use rather than when this class loads. A remote brain opens a socket in its constructor, and doing
@@ -110,7 +113,8 @@ public final class AgentDriver {
         this.lastTick = time;
         this.stepping.clear();
 
-        for (AgentMob agent : level.getEntities(ModEntities.agentMob(), agent -> !agent.isRemoved() && !agent.reward().isReported())) {
+        // By class rather than by type, so both registrations of the entity are driven.
+        for (AgentMob agent : level.getEntities(AGENTS, agent -> !agent.isRemoved() && !agent.reward().isReported())) {
 
             this.stepping.add(agent);
         }

@@ -11,6 +11,7 @@ from typing import Protocol
 
 import numpy as np
 
+from . import log
 from .protocol import FLAG_DONE, FLAG_NEW, Step
 from .schema import Schema
 
@@ -73,11 +74,15 @@ class EchoPolicy:
             new = int((step.flags & FLAG_NEW).sum())
             done = int((step.flags & FLAG_DONE).sum())
 
-            print(
-                f"tick {self._ticks}: {step.count} agents ({new} new, {done} done), "
-                f"reward {step.rewards.sum():+.3f}, "
-                f"agent 0 sees {int(present.sum())} opponents, "
-                f"nearest at {enemies[present, 4].min() if present.any() else float('nan'):.3f}"
+            log.get("echo").info(
+                "tick %d: %d agents (%d new, %d done), reward %+.3f, agent 0 sees %d opponents, nearest at %.3f",
+                self._ticks,
+                step.count,
+                new,
+                done,
+                float(step.rewards.sum()),
+                int(present.sum()),
+                float(enemies[present, 4].min()) if present.any() else float("nan"),
             )
 
         return np.zeros((step.count, schema.act_dim), dtype=np.float32)

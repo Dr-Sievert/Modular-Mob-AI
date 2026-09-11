@@ -1,4 +1,5 @@
 {
   "entity.modular_mob_ai.agent_mob": "Agent",
+  "entity.modular_mob_ai.training_agent": "Training Agent",
   "item.modular_mob_ai.agent_mob_spawn_egg": "Agent Spawn Egg"
 }

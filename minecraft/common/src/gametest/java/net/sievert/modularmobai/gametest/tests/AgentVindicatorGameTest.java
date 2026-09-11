@@ -37,7 +37,15 @@ public class AgentVindicatorGameTest {
     private static final BlockPos AGENT_POS = new BlockPos(SIZE / 2, FLOOR_Y, 2);
     private static final BlockPos VINDICATOR_POS = new BlockPos(SIZE / 2, FLOOR_Y, SIZE - 3);
 
-    private static final int TIMEOUT_TICKS = 1200;
+    /** How long a fight may run before it is called as a loss. A minute is well past any fight that is going to end. */
+    private static final int FIGHT_TICKS = 1200;
+
+    /**
+     * The framework's own limit, deliberately later than the fight's. A fight that runs out of time is a loss, not a
+     * broken test: the test ends it itself, reports it, and passes. If the framework's timeout ever fires, something
+     * has gone wrong with that, which is exactly when a failed test is the right answer.
+     */
+    private static final int TIMEOUT_TICKS = FIGHT_TICKS + 40;
 
     private static final TestDurationStats TIME_TO_RESOLVE =
             new TestDurationStats("Agent fight length", GameTestTuning.arenasInShard(GameTestTuning.arenaCount()));
@@ -46,7 +54,7 @@ public class AgentVindicatorGameTest {
     @RepeatGameTest
     public static void agentFightsVindicator(GameTestHelper helper, int arena) {
 
-        final AgentMob agent = helper.spawn(ModEntities.agentMob(), AGENT_POS);
+        final AgentMob agent = helper.spawn(ModEntities.trainingAgent(), AGENT_POS);
         final Vindicator vindicator = helper.spawn(EntityType.VINDICATOR, VINDICATOR_POS);
 
         // spawn() skips finalizeSpawn, so a vindicator would arrive empty handed and hit for far less than one that
@@ -67,7 +75,7 @@ public class AgentVindicatorGameTest {
                 Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(SIZE, SIZE, SIZE)))).inflate(1.0D));
 
         agent.setHotbarItem(0, new ItemStack(Items.IRON_SWORD));
-        agent.reward().beginEpisode(TIMEOUT_TICKS);
+        agent.reward().beginEpisode(FIGHT_TICKS);
 
         helper.startSequence()
                 .thenWaitUntil(() -> {
@@ -76,15 +84,16 @@ public class AgentVindicatorGameTest {
                     // there are, so all the agents alive in this tick go through the brain together.
                     AgentDriver.tick(helper.getLevel());
 
-                    if (agent.isAlive() && vindicator.isAlive()) {
+                    if (agent.isAlive() && vindicator.isAlive() && helper.getTick() < FIGHT_TICKS) {
 
                         throw new GameTestAssertException("Fight still going");
                     }
                 })
                 .thenExecute(() -> {
 
-                    // Only the arena knows what winning meant, so it is the one that says so. A loss reports itself when
-                    // the agent dies.
+                    // Only the arena knows what winning meant, so it is the one that says so. An agent that died has
+                    // already reported its own loss; one that is still standing next to a live opponent ran out of time,
+                    // which is the other way to lose.
                     final boolean won = !vindicator.isAlive() && agent.isAlive();
 
                     if (won) {
@@ -92,9 +101,18 @@ public class AgentVindicatorGameTest {
                         agent.reward().won();
                     }
 
+                    else if (agent.isAlive()) {
+
+                        agent.reward().lost();
+                    }
+
                     TIME_TO_RESOLVE.record(helper.getTick(),
                             won ? TestDurationStats.Outcome.WIN : TestDurationStats.Outcome.LOSS);
                 })
+                // The outcome above was decided after this tick's batch had already gone out, so the agent's final step,
+                // the one flagged done and carrying its terminal reward, needs one more tick to be sent. Without this
+                // the last arena to finish would end without the brain ever hearing how it ended.
+                .thenExecuteAfter(1, () -> AgentDriver.tick(helper.getLevel()))
                 .thenSucceed();
     }
 }
