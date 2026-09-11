@@ -170,7 +170,7 @@ build does with the machine:
 | `maxWorkers` | 16 | Workers in a training round, cut down to what the cores and the free memory hold. |
 | `memoryReserve` | 3 | GB left for everything else when deciding how many workers fit, at heap plus one GB each. |
 | `workerCpus` | auto | Cores each server sees: the machine's share per worker, so a dozen servers never fight over every core. |
-| `workerStagger` | 3 | Seconds between starting workers, so boot bursts do not land on the same instant. |
+| `workerStagger` | 1 | Seconds between starting workers, so boot bursts do not land on the same instant. |
 | `memoryFloor` | 1.5 | GB of free memory below which the workers are stopped rather than left to swap. |
 
 The trainer caps itself at half the GPU's memory, so it can never spill into system memory and crawl, and an update that

@@ -419,8 +419,9 @@ afterEvaluate {
         // How the workers start and share the machine. A Minecraft server spends its first seconds compiling and loading
         // on every core it can see, and generates terrain on all of them after that, so each is shown its share of the
         // cores rather than all of them: the same total work, without a dozen servers fighting over every core at once.
-        // Starting them a few seconds apart keeps their boots from landing on the same instant.
-        def staggerSeconds = Integer.parseInt(providers.gradleProperty('workerStagger').getOrElse('3'))
+        // Starting them a second apart keeps their boots from landing on the same instant. It was three, but every second
+        // of it is paid once per worker by every run, and two servers booting side by side measured no slower than one.
+        def staggerSeconds = Integer.parseInt(providers.gradleProperty('workerStagger').getOrElse('1'))
         def cpuSetting = providers.gradleProperty('workerCpus').getOrElse('auto')
         def workerCpus = cpuSetting == 'auto' ? Math.max(2, cores.intdiv(workers)) : Integer.parseInt(cpuSetting)
 
