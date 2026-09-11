@@ -49,6 +49,14 @@ runs/         training runs: weights, rollouts, replays, logs, checkpoints (not 
 
 ## Findings so far
 
+- **Everything before commit c38efe9 was learned with broken mechanics.** Vanilla's `Mob.setSpeed` also writes the
+  forward input, and it ran after the agent's, so moving forward or back did nothing and the agent crept ahead at a tenth
+  of walking pace (strafing worked). Jump only worked on the ground, so the agent could not swim up and drowned in deep
+  water, and the terrain grid saw grass and flowers as walls and water as ground. The scripted fighter's 86% came from
+  standing still while the vindicator walked into its longer reach; with real movement it fell to 67%, and rewritten to
+  hold the vindicator between 2.4 and 3 blocks, swing as it steps into reach, back off while recovering and jump onto
+  steps, it wins 97.0% of 600 fights. The results below this line predate all of that.
+
 - **Exploration noise on aim has to be small.** At a spread of 0.37 of full deflection the crosshair jerked about 22
   degrees a tick at random, and the copy of the scripted fighter won about 1% of its fights sampling against 63% on its
   most likely action. With aim at 0.1 (about 6 degrees a tick) the sampled copy won 20% from the start.

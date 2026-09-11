@@ -16,10 +16,11 @@ param(
     [int] $Workers = 4,
     [string] $Heap = '2G',
 
-    # How far the applied movement and aim are pushed off, as a fraction of full deflection. The teacher gets a lot, so
-    # its record covers getting back on target; 0.2 is twelve degrees of aim a tick. The copy gets little, so the
-    # situations it is corrected in are the ones it really gets itself into.
-    [double] $TeacherNoise = 0.2,
+    # How far the applied movement and aim are pushed off, as a fraction of full deflection. The teacher gets some, so its
+    # record covers getting back on target: 0.1 is six degrees of aim a tick. At 0.2 it won only 11% of the fights it was
+    # recorded in, and a record of a fighter losing is mostly of positions nobody should be in. The copy gets little, so
+    # the situations it is corrected in are the ones it really gets itself into.
+    [double] $TeacherNoise = 0.1,
     [double] $StudentNoise = 0.05
 )
 
