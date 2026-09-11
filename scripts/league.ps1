@@ -53,12 +53,18 @@ if (-not (Test-Path (Join-Path $league 'ratings.csv'))) {
     throw "No league in $league yet. Start one with scripts\train.ps1 -Run $Run -Suite league"
 }
 
-$ratings = @(Import-Csv (Join-Path $league 'ratings.csv'))
-$opponents = @(Import-Csv (Join-Path $league 'opponents.csv') -ErrorAction SilentlyContinue)
-$loadouts = @(Import-Csv (Join-Path $league 'loadouts.csv') -ErrorAction SilentlyContinue)
+# A table the trainer writes, or nothing while it has not written it yet.
+function Read-Table([string] $File) {
 
-# The checkpoint evaluation judged best, which is the one in best.mbw.
-$best = @(Import-Csv (Join-Path $directory 'eval.csv') -ErrorAction SilentlyContinue | Where-Object { $_.best -eq '1' }) | Select-Object -Last 1
+    return @(if (Test-Path $File) { Import-Csv $File })
+}
+
+$ratings = Read-Table (Join-Path $league 'ratings.csv')
+$opponents = Read-Table (Join-Path $league 'opponents.csv')
+$loadouts = Read-Table (Join-Path $league 'loadouts.csv')
+
+# The checkpoint evaluation judged best, which is the one in best.mbw; none until the first has been judged.
+$best = @(Read-Table (Join-Path $directory 'eval.csv') | Where-Object { $_.best -eq '1' }) | Select-Object -Last 1
 $bestName = if ($best) { 'iteration-{0:D6}' -f [int]$best.iteration } else { '' }
 
 function Get-Tier([double] $Rating) {
