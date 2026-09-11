@@ -270,10 +270,11 @@ public class AgentLeagueGameTest {
                 if (member != null) {
 
                     // What spawning on its own would do, including handing it what it fights with, and then what a fair
-                    // fight needs on top, see Roster.
+                    // fight needs on top, see Roster. The difficulty is the matchup's rung of the ladder rather than the
+                    // level's, which is what makes a hard opponent hard, see Opposition.
                     Mob mob = (Mob) opponent;
 
-                    mob.finalizeSpawn(this.level, this.level.getCurrentDifficultyAt(ground), MobSpawnType.EVENT, member.groupData());
+                    mob.finalizeSpawn(this.level, opposition.spawnDifficulty(this.level, ground), MobSpawnType.EVENT, member.groupData());
                     member.prepare(mob, this.level.getRandom());
                 }
 

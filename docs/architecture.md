@@ -131,6 +131,16 @@ different opponent every time, with a different loadout:
   (`allegiance/Allegiance`), so each goes for the agent and the agent counts every one an enemy whatever it is; the teams
   are disbanded the moment the fight ends. A fight against one mob still uses no teams at all. The warden is in no squad,
   and a squad fight is not recorded for the viewer, whose format holds two fighters.
+- A difficulty ladder, three rungs per opponent, the name saying which: `zombie` on normal, `zombie(hard)` and
+  `zombie(easy)`. A rung is the `DifficultyInstance` the mob's own finalizeSpawn is handed — on hard it is likelier to
+  spawn in armour, likelier to have that armour and its weapon enchanted, rolls higher on the bonus health, damage and
+  follow range a zombie rolls for, and a spider gets a potion effect it never gets below hard. Nothing else changes. The
+  few things vanilla decides mid fight from the level's own difficulty (a husk's hunger, a zombie's reinforcements) stay
+  on normal for every fight: difficulty there belongs to the whole level and fifty fights share one, which is also why a
+  normal fight is exactly the fight it was before the ladder. **Each rung is a player of its own.** The trainer opens one
+  when the agent's evaluated win rate against the opponent passes 80% (hard) or is still under 20% (easy), over at least
+  30 evaluation fights, and a rung once open stays open. A run with no trainer goes round every rung the build enabled
+  (`-PleagueDifficulties`, normal and hard by default).
 - The scripted fighter and frozen checkpoints of the run, as another agent with a brain of its own on its most likely
   action, so only the agent's steps are recorded.
 - 10 loadouts (`gametest/league/Loadouts`, armed with `arena/Loadout`): iron, stone and diamond swords, an axe, a sword
@@ -155,7 +165,7 @@ the checkpoint's evaluation, so best weights and the end of the run work as on t
 | `ratings.csv` | the trainer | every player's rating and rated record |
 | `opponents.csv`, `loadouts.csv` | the trainer | the agent's last 200 evaluation and training fights against each opponent and with each loadout |
 | `evaluations.csv` | the trainer | every evaluated checkpoint's record against each opponent |
-| `state.json` | the trainer | what a resumed run needs to carry the league on |
+| `state.json` | the trainer | what a resumed run needs to carry the league on, the rungs of the ladder it has opened included |
 
 ## The code
 

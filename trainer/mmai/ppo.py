@@ -138,6 +138,14 @@ class Config:
     # How many of the most recent fights against each opponent, and with each loadout, the tables go by.
     league_window: int = 200
 
+    # The difficulty ladder. An opponent starts on normal and earns a rung either side of it: hard once the agent's
+    # evaluated win rate against it passes league_hard_at, easy while it is still under league_easy_below, either way only
+    # once league_rung_fights evaluation fights have judged it. A rung once opened stays open, so a rating is never of a
+    # moving target, and each is a player of its own: zombie, zombie(hard) and zombie(easy) rate separately.
+    league_hard_at: float = 0.80
+    league_easy_below: float = 0.20
+    league_rung_fights: int = 30
+
 
 @dataclass
 class Replayed:

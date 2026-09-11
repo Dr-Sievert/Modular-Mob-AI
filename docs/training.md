@@ -115,6 +115,8 @@ Every field of `Config` in `trainer/mmai/ppo.py` is an option, as `--field-name 
 | `--league-self-play` | 0.2 | share of league training fights against those checkpoints |
 | `--league-floor` | 0.25 | share of each group's fights spread evenly, whatever the agent's chances |
 | `--league-k` | 16 | Elo K (twice that for a player's first `--league-provisional` 30 rated fights) |
+| `--league-hard-at`, `--league-easy-below` | 0.80, 0.20 | evaluated win rate at which an opponent's hard or easy rung opens |
+| `--league-rung-fights` | 30 | evaluation fights an opponent needs before a rung can open |
 
 ### The league: `-Suite league` and `scripts\league.ps1`
 
@@ -125,6 +127,10 @@ time; evaluation fights are drawn evenly and rated. A checkpoint is judged on 1,
 the scripted fighter, and the run is done after ten judged checkpoints in a row without a new best. An opponent the
 workers cap, which today is only the warden, takes no more than its cap of the training fights however even the fight
 looks, and is rated on as many evaluation fights as any other.
+
+Every opponent also has a harder and an easier rung, `zombie(hard)` and `zombie(easy)`, which the run opens for itself as
+the agent earns them and then rates as players of their own. Nothing needs asking for: the log says
+`zombie is met on hard from now on: 84% of the last 40 evaluation fights on normal`, and the tier list shows both.
 
 ```
 scripts\train.ps1 -Run league -Suite league -Seed vs-copy     start one from vs-copy's best, run until done

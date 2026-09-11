@@ -14,7 +14,15 @@ all of it down:
     runs/RUN/league/evaluations.csv     written here: every evaluated checkpoint's record against each opponent
     runs/RUN/league/state.json          written here: everything a resumed run needs to carry on where it was
 
-Who is rated. Every player is a fixed policy: a kind of mob, the scripted fighter, a checkpoint on its most likely action.
+The difficulty ladder. Every opponent has three rungs, and its name says which: zombie on normal, zombie(hard) and
+zombie(easy) either side. Only normal is there from the start; a rung opens when the agent's evaluated record says it is
+ready for one. Past league_hard_at there is little left to learn from the opponent as it stands, so hard opens beside it;
+under league_easy_below there is nothing to learn from it yet, so easy does. Either needs league_rung_fights evaluation
+fights behind it. Once open a rung stays open, so its rating is never of a moving target and the agent has to keep what it
+won. Each rung is a player of its own, as each composition is, and a cap belongs to the opponent rather than the rung.
+
+Who is rated. Every player is a fixed policy: a kind of mob, a squad of them, a rung of the ladder, the scripted fighter,
+a checkpoint on its most likely action.
 The agent in training is none of those, since it samples and changes every iteration, so only evaluation fights are
 rated: a checkpoint on its most likely action, against an opponent drawn evenly from everyone. A fight scores one for a
 win, nothing for a loss, and a half when neither killed the other, on time or because a creeper blew itself up. Both
@@ -60,6 +68,10 @@ logger = log.get("league")
 CHECKPOINT = "iteration-"
 SCRIPTED = "scripted"
 
+# The rungs of the difficulty ladder either side of normal, as the game writes them on the end of an opponent's name; see
+# the gametest's league/Opposition. Normal has no suffix, so every name the league had before the ladder means what it did.
+RUNGS = ("(hard)", "(easy)")
+
 OUTCOMES = ("win", "loss", "timeout", "draw")
 SCORES = {"win": 1.0, "loss": 0.0, "timeout": 0.5, "draw": 0.5}
 
@@ -74,6 +86,16 @@ def checkpoint_name(iteration: int) -> str:
 
 def checkpoint_iteration(name: str) -> int | None:
     return int(name[len(CHECKPOINT) :]) if name.startswith(CHECKPOINT) and name[len(CHECKPOINT) :].isdigit() else None
+
+
+def base(name: str) -> str:
+    """The opponent a name is a rung of: zombie for zombie(hard), and the name itself for anything else."""
+
+    for rung in RUNGS:
+        if name.endswith(rung):
+            return name[: -len(rung)]
+
+    return name
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -371,6 +393,10 @@ class League:
         self.kinds: dict[str, str] = {}
         self.caps: dict[str, float] = {}
 
+        # The rungs of the difficulty ladder opened so far, by full name: zombie(hard), 2x_zombie(easy). A ratchet, so it
+        # is saved with the rest and a resumed run does not have to earn them again.
+        self.rungs: set[str] = set()
+
         self._resume()
 
     # -------------------------------------------------------------------------------------------------------------
@@ -391,6 +417,7 @@ class League:
 
         # Nobody to weigh until a worker has said who it fields; until then the workers go round all of them evenly.
         if roster:
+            roster = roster + self._ladder(roster)
             self._matchmake(roster, self._pool(iteration))
             self._write(roster)
 
@@ -457,7 +484,8 @@ class League:
         if name == SCRIPTED:
             return "scripted"
 
-        return self.kinds.get(name, "mob")
+        # A rung of the ladder is the same kind of thing as the opponent it is a rung of: 2x_zombie(hard) is still a squad.
+        return self.kinds.get(base(name), "mob")
 
     def _roster(self) -> list[str]:
         """The mobs and the scripted fighter the workers field, as they last said, with what kind each is and the largest
@@ -490,6 +518,41 @@ class League:
 
         return names
 
+    def _ladder(self, roster: list[str]) -> list[str]:
+        """The rungs of the difficulty ladder the agent has earned, opening any that its evaluated record now calls for.
+
+        An opponent starts on normal. Once its evaluated win rate passes league_hard_at there is little left to learn from
+        it as it stands, so the hard rung opens beside it; while the rate is still under league_easy_below there is nothing
+        to learn from it yet, so the easy one does. Either needs league_rung_fights evaluation fights behind it, or one
+        lucky handful would open a rung.
+
+        A rung stays open once it is open. Closing one again would make its rating a moving target, and the agent would
+        stop having to hold what it won; and the fights cost little, since matchmaking sends them where the fight is even
+        and a rung the agent walks over is weighed down to the floor like any other opponent.
+        """
+
+        for name in roster:
+            tally = self.eval_windows.tally(name)
+
+            if tally.fights < self.config.league_rung_fights:
+                continue
+
+            rate = tally.wins / tally.fights
+            rung = "(hard)" if rate >= self.config.league_hard_at else "(easy)" if rate <= self.config.league_easy_below else None
+
+            if rung is None or name + rung in self.rungs:
+                continue
+
+            self.rungs.add(name + rung)
+
+            logger.info(
+                "%s is met on %s from now on: %.0f%% of the last %d evaluation fights on normal",
+                name, rung.strip("()"), 100.0 * rate, tally.fights,
+            )
+
+        # Only of the opponents the workers still field, so a run told to field fewer does not meet the rest of a rung.
+        return sorted(name for name in self.rungs if base(name) in roster)
+
     def _pool(self, iteration: int) -> list[str]:
         """The checkpoints the agent meets, of those whose weights are still on disk; the trainer keeps every one."""
 
@@ -514,7 +577,11 @@ class League:
 
         self_play = self.config.league_self_play if checkpoints else 0.0
 
-        fixed = shares({name: chances[name] for name in roster}, self.config.league_floor, self.caps)
+        # A cap belongs to the opponent, so every rung of it is held to the same share: a hard warden is no more worth
+        # training against than a normal one.
+        caps = {name: self.caps.get(base(name), 1.0) for name in roster}
+
+        fixed = shares({name: chances[name] for name in roster}, self.config.league_floor, caps)
         frozen = shares({name: chances[name] for name in checkpoints}, self.config.league_floor)
 
         self.chances = chances
@@ -590,6 +657,7 @@ class League:
         state = {
             "offsets": self.offsets,
             "rated": self.rated,
+            "rungs": sorted(self.rungs),
             "players": {
                 player.name: [player.kind, player.rating, player.games, player.wins, player.losses, player.draws]
                 for player in self.ratings.players.values()
@@ -619,6 +687,7 @@ class League:
 
         self.offsets = {name: int(offset) for name, offset in state.get("offsets", {}).items()}
         self.rated = int(state.get("rated", 0))
+        self.rungs = set(state.get("rungs", []))
 
         for name, (kind, rating, games, wins, losses, draws) in state.get("players", {}).items():
             self.ratings.players[name] = Player(name, kind, float(rating), int(games), int(wins), int(losses), int(draws))
@@ -635,4 +704,5 @@ class League:
             iteration, opponent = key.split("|", 1)
             self.evaluations[(int(iteration), opponent)] = Tally(*values)
 
-        logger.info("carrying on from %d rated fights over %d players", self.rated, len(self.ratings.players))
+        logger.info("carrying on from %d rated fights over %d players, %d rungs of the ladder open", self.rated,
+                    len(self.ratings.players), len(self.rungs))

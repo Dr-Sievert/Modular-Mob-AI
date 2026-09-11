@@ -10,6 +10,10 @@
 # from everyone, one point for a win, half for a timeout or a draw. The scripted fighter is held at 1500, so the scale
 # means the same in every run. A tier is 150 points wide, which is what a 70% expected score over the tier below comes
 # to; the scripted fighter sits at the bottom of B.
+#
+# An opponent is a mob, a squad of several at once (2x_zombie, zombie+skeleton) or a rung of the difficulty ladder
+# (zombie(hard), zombie(easy)). Every one of those is a player in its own right: two zombies are not twice a zombie and a
+# hard zombie is not a zombie, so nothing here adds any of them up.
 
 param(
     [string] $Run = 'default',
@@ -102,7 +106,7 @@ $totalRated = ($ratings | Where-Object { $_.kind -eq 'checkpoint' } | Measure-Ob
 Write-Host ("League of run '{0}': {1:N0} rated fights, {2} players, {3} checkpoints rated" -f $Run, $totalRated, $ratings.Count, $rated.Count)
 Write-Host ''
 Write-Host 'Tier list, by rating, with each player''s own rated fights. The scripted fighter is held at 1500; a tier is 150 points.'
-Write-Host ('{0,4}  {1,-4} {2,-24} {3,7} {4,7} {5,6} {6,6} {7,6}' -f '#', 'tier', 'player', 'rating', 'rated', 'won', 'lost', 'drawn')
+Write-Host ('{0,4}  {1,-4} {2,-28} {3,7} {4,7} {5,6} {6,6} {7,6}' -f '#', 'tier', 'player', 'rating', 'rated', 'won', 'lost', 'drawn')
 
 $rank = 0
 
@@ -111,7 +115,7 @@ foreach ($player in $shown) {
     $rank++
     $note = if ($player.player -eq $bestName) { '   <- best, in best.mbw' } elseif ([int]$player.games -eq 0) { '   not rated yet' } else { '' }
 
-    Write-Host ('{0,4}  {1,-4} {2,-24} {3,7:N0} {4,7} {5,6} {6,6} {7,6}{8}' -f $rank, (Get-Tier ([double]$player.rating)), $player.player,
+    Write-Host ('{0,4}  {1,-4} {2,-28} {3,7:N0} {4,7} {5,6} {6,6} {7,6}{8}' -f $rank, (Get-Tier ([double]$player.rating)), $player.player,
             [double]$player.rating, $player.games, $player.wins, $player.losses, $player.draws, $note)
 }
 
@@ -126,7 +130,7 @@ if ($opponents.Count -gt 0) {
     Write-Host 'Against each opponent: the last fights of each kind. Evaluation plays a checkpoint on its most likely action;'
     Write-Host 'training is the agent exploring. Share is how many of the training fights go to it now. A squad, 2x_zombie or'
     Write-Host 'zombie+skeleton, is a player of its own: two zombies are not twice a zombie, and nothing adds them up.'
-    Write-Host ('{0,-24} {1,7} {2,7}   {3,6} {4,6} {5,6} {6,9} {7,6}   {8,6} {9,6}' -f 'opponent', 'rating', 'share %',
+    Write-Host ('{0,-28} {1,7} {2,7}   {3,6} {4,6} {5,6} {6,9} {7,6}   {8,6} {9,6}' -f 'opponent', 'rating', 'share %',
             'eval', 'won %', 'lost %', 'timeout %', 'draw %', 'train', 'won %')
 
     foreach ($row in $opponents | Sort-Object { [double]$_.rating } -Descending) {
@@ -134,7 +138,7 @@ if ($opponents.Count -gt 0) {
         $fights = [int]$row.eval_fights
         $trained = [int]$row.train_fights
 
-        Write-Host ('{0,-24} {1,7:N0} {2,7:N1}   {3,6} {4,6} {5,6} {6,9} {7,6}   {8,6} {9,6}' -f $row.opponent, [double]$row.rating,
+        Write-Host ('{0,-28} {1,7:N0} {2,7:N1}   {3,6} {4,6} {5,6} {6,9} {7,6}   {8,6} {9,6}' -f $row.opponent, [double]$row.rating,
                 (100.0 * [double]$row.share), $fights, (Format-Percent $row.eval_wins $fights), (Format-Percent $row.eval_losses $fights),
                 (Format-Percent $row.eval_timeouts $fights), (Format-Percent $row.eval_draws $fights), $trained,
                 (Format-Percent $row.train_wins $trained))

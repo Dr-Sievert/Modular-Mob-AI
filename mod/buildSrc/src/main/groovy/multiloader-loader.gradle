@@ -211,9 +211,12 @@ afterEvaluate {
     runTask.systemProperty('modular_mob_ai.gametest.opponent', providers.gradleProperty('opponent').getOrElse(''))
 
     // The league suite's opponents and loadouts, when a run wants fewer than all of them: -PleagueOpponents=zombie,creeper
-    // -PleagueLoadouts=sword,bow. Names as the league writes them in its results.
+    // or -PleagueOpponents=2x_zombie, -PleagueLoadouts=sword,bow. Names as the league writes them in its results. And which
+    // rungs of the difficulty ladder a run with no trainer goes round, -PleagueDifficulties=easy,normal,hard; a training
+    // run ignores it, since its trainer opens a rung when the agent has earned it.
     runTask.systemProperty('modular_mob_ai.league.opponents', providers.gradleProperty('leagueOpponents').getOrElse(''))
     runTask.systemProperty('modular_mob_ai.league.loadouts', providers.gradleProperty('leagueLoadouts').getOrElse(''))
+    runTask.systemProperty('modular_mob_ai.league.difficulties', providers.gradleProperty('leagueDifficulties').getOrElse(''))
 
     // The small tool that lives in the game test sources. It touches nothing of the game, so it runs as a plain Java
     // program in a second rather than booting a server: the observation layout the training side builds a network from,
@@ -1142,13 +1145,13 @@ afterEvaluate {
             [['opponent', league.findAll { !it.key.startsWith('loadout:') }],
              ["agent's loadout", league.findAll { it.key.startsWith('loadout:') }]].each { title, rows ->
 
-                println String.format(Locale.ROOT, "  %-24s %6s %7s %7s %9s %7s %7s %9s", title, 'fights', 'won %', 'lost %',
+                println String.format(Locale.ROOT, "  %-28s %6s %7s %7s %9s %7s %7s %9s", title, 'fights', 'won %', 'lost %',
                         'timeout %', 'draw %', 'hit it', 'went for')
 
                 rows.each { name, tally ->
 
                     def fights = Math.max(1L, tally[0])
-                    println String.format(Locale.ROOT, "  %-24s %6d %7.1f %7.1f %9.1f %7.1f %7d %9d", name - 'loadout:', tally[0],
+                    println String.format(Locale.ROOT, "  %-28s %6d %7.1f %7.1f %9.1f %7.1f %7d %9d", name - 'loadout:', tally[0],
                             100.0d * tally[1] / fights, 100.0d * tally[2] / fights, 100.0d * tally[3] / fights,
                             100.0d * tally[4] / fights, tally[5], tally[6])
                 }

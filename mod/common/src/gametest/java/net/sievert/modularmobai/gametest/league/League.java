@@ -47,8 +47,8 @@ import net.sievert.modularmobai.gametest.GameTestTuning;
  *   runs/RUN/league/results/wNN.csv   appended here: iteration,kind,opponent,loadout,opponent_loadout,outcome,ticks,cause
  * </pre>
  *
- * <p>An opponent is a mob or a squad of mobs by the name {@link Opposition} gives it, {@code scripted}, or a checkpoint of
- * the run as {@code iteration-000125},
+ * <p>An opponent is a mob, a squad of mobs or a rung of the difficulty ladder by the name {@link Opposition} gives it,
+ * {@code scripted}, or a checkpoint of the run as {@code iteration-000125},
  * whose weights play it on their most likely action, frozen, with nothing recorded: only the agent learns. An evaluation
  * fight, the one in ten {@link Evaluation} hands to a checkpoint, draws its opponent evenly from everyone instead of by the
  * shares, so a checkpoint is measured against all of them alike, and its fights are the ones the trainer rates. Those
@@ -225,10 +225,14 @@ public final class League {
     /**
      * Every opponent that is not a checkpoint: the mobs and squads, the scripted fighter, and outside a training run, the
      * network.
+     *
+     * <p>In a training run this is the opponents on normal, which is what the trainer was told the build fields and what it
+     * falls back to before it has weighed anybody. Outside one there is no trainer to open a rung of the difficulty ladder,
+     * so the rotation goes round every rung the build has enabled instead, and a quick look fights all of them.
      */
     private static List<String> fixed() {
 
-        List<String> names = new ArrayList<>(Opposition.fielded());
+        List<String> names = new ArrayList<>(directory == null ? Opposition.rotation() : Opposition.fielded());
 
         names.add(SCRIPTED);
 
@@ -577,7 +581,7 @@ public final class League {
     /** One table of the summary, printed, and added to what the build is handed with each name under the prefix. */
     private static void print(String title, Map<String, Tally> table, String prefix, StringBuilder file) {
 
-        System.out.println(String.format(Locale.ROOT, "  %-24s %6s %7s %7s %9s %7s %6s %9s", title, "fights", "won %", "lost %",
+        System.out.println(String.format(Locale.ROOT, "  %-28s %6s %7s %7s %9s %7s %6s %9s", title, "fights", "won %", "lost %",
                 "timeout %", "draw %", "hit it", "went for"));
 
         for (Map.Entry<String, Tally> entry : table.entrySet()) {
@@ -585,7 +589,7 @@ public final class League {
             Tally tally = entry.getValue();
             double fights = Math.max(1, tally.fights);
 
-            System.out.println(String.format(Locale.ROOT, "  %-24s %6d %7.1f %7.1f %9.1f %7.1f %6d %9d", entry.getKey(), tally.fights,
+            System.out.println(String.format(Locale.ROOT, "  %-28s %6d %7.1f %7.1f %9.1f %7.1f %6d %9d", entry.getKey(), tally.fights,
                     100.0D * tally.wins / fights, 100.0D * tally.losses / fights, 100.0D * tally.timeouts / fights,
                     100.0D * tally.draws / fights, tally.landed, tally.targeted));
 
