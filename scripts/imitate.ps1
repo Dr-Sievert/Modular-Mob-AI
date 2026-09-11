@@ -12,9 +12,13 @@
 param(
     [string] $Run = 'imitate',
     [int] $Rounds = 3,
-    [int] $Fights = 1500,
-    [int] $Workers = 4,
-    [string] $Heap = '2G',
+    [int] $Fights = 4000,
+    [int] $Workers = 8,
+
+    # Small workers: a worker is bound by its one server thread, and twenty five fights in a gigabyte keep it as busy as
+    # fifty in two, so twice as many fit; see scripts\train.ps1.
+    [int] $Slots = 25,
+    [string] $Heap = '1G',
 
     # How far the applied movement and aim are pushed off, as a fraction of full deflection. The teacher gets some, so its
     # record covers getting back on target: 0.1 is six degrees of aim a tick. At 0.2 it won only 11% of the fights it was
@@ -38,7 +42,7 @@ $copy = Join-Path $directory 'weights\000000.mbw'
 
 function Invoke-Record([double] $Noise, [string[]] $Extra) {
 
-    Invoke-Gradle (@(':fabric:recordDemonstrations', "-Prun=$Run", "-Parenas=$Fights", "-Pworkers=$Workers",
+    Invoke-Gradle (@(':fabric:recordDemonstrations', "-Prun=$Run", "-Parenas=$Fights", "-Pworkers=$Workers", "-PbatchSize=$Slots",
             "-PmaxWorkers=$Workers", "-PworkerHeap=$Heap", "-PdemonstrationNoise=$Noise") + $Extra)
 }
 

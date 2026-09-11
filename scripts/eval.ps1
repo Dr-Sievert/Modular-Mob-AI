@@ -12,7 +12,9 @@ param(
     [string] $Run = 'default',
     [int] $Iteration = -1,
     [int] $Arenas = 2000,
-    [int] $Workers = 4,
+    [int] $Workers = 8,
+    [int] $Slots = 25,
+    [string] $Heap = '1G',
     [ValidateSet('terrain', 'arena')] [string] $Suite = 'terrain',
     [int] $ReplayEvery = 0
 )
@@ -42,5 +44,5 @@ Write-Host "Evaluating $file over $Arenas arenas"
 
 $replayRun = 'eval-{0}-{1}' -f $Run, [IO.Path]::GetFileNameWithoutExtension($file)
 
-Invoke-Gradle @(':fabric:runGametestParallel', '-Pbrain=neural', "-PbrainWeights=$file", "-Parenas=$Arenas", "-Pworkers=$Workers", "-Psuite=$Suite",
-        "-PreplayEvery=$ReplayEvery", "-PreplayRun=$replayRun")
+Invoke-Gradle @(':fabric:runGametestParallel', '-Pbrain=neural', "-PbrainWeights=$file", "-Parenas=$Arenas", "-Pworkers=$Workers",
+        "-PbatchSize=$Slots", "-PworkerHeap=$Heap", "-Psuite=$Suite", "-PreplayEvery=$ReplayEvery", "-PreplayRun=$replayRun")
