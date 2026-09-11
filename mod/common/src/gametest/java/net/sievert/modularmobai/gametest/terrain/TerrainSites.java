@@ -52,6 +52,14 @@ import net.sievert.modularmobai.gametest.GameTestTuning;
  * being generated behind it. Better still, the build keeps the worlds workers generated and hands them to later workers,
  * whose lattice then goes where the earlier one put it and is read from disk in seconds; see {@link #start}. Since
  * fights leave the ground as they found it, a kept world is the same terrain the generator made.
+ *
+ * <p>Sites move on. A worker in training fights thousands of battles, and on a fixed lattice every site hosted a couple
+ * of hundred of them: one bad patch, a pit the opponent fell into and neither could leave, came back every thirty
+ * fights and made up half of every fight lost. So each site is swapped for fresh ground after {@link #SITE_FIGHTS}
+ * fights, taken from a few spare sites generated ahead in the lattice beyond. A swap waits for a spare to be ready,
+ * and a site past its fights keeps being used until one is, so fights never wait on the generator for this. A site where
+ * fights run out the clock twice, or with nowhere to stand, is taken out of use straight away: that is the ground,
+ * not the fighting. Timeouts still count as the losses they are.
  */
 public final class TerrainSites {
 
@@ -119,11 +127,49 @@ public final class TerrainSites {
      */
     public record Site(int index, BlockPos agent, BlockPos opponent, AABB bounds) {}
 
+    /** Fights a site hosts before it is swapped for fresh ground, once a spare is ready to take its place. */
+    private static final int SITE_FIGHTS = 25;
+
+    /** Fights on a site that run out the clock before it is taken out of use: two says it is the ground, not luck. */
+    private static final int SITE_TIMEOUTS = 2;
+
+    /** Sites generated ahead in the lattice, ready to take the place of one that has had its fights. */
+    private static final int SPARES = 4;
+
     @Nullable
     private static BlockPos origin;
 
     private static int next;
     private static final boolean[] unusable = new boolean[COUNT];
+
+    /**
+     * Which point of the lattice each site is on right now. It starts on its own index; a swap moves it on to a spare,
+     * further along the lattice than any site before it.
+     */
+    private static final int[] lattice = new int[COUNT];
+
+    /** Fights each site has hosted since it last moved, and how many of those ran out the clock. */
+    private static final int[] fights = new int[COUNT];
+    private static final int[] timeouts = new int[COUNT];
+
+    /** Points of the lattice asked for as spares, in order, and whether each is loaded yet. */
+    private static final int[] spares = new int[SPARES];
+    private static final boolean[] spareReady = new boolean[SPARES];
+    private static int spareCount;
+
+    /** The next point of the lattice nothing has used, where the next spare goes. */
+    private static int nextLattice = COUNT;
+
+    /** How many sites have moved on, for the log. */
+    private static int swaps;
+
+    static {
+
+        for (int site = 0; site < COUNT; site++) {
+
+            lattice[site] = site;
+        }
+    }
 
     /** How often, in game ticks, the whole world is swept for wildlife. */
     private static final int WILDLIFE_SWEEP_TICKS = 20;
@@ -250,8 +296,14 @@ public final class TerrainSites {
      */
     public static synchronized void tick(ServerLevel level) {
 
-        if (origin == null || readyCount == COUNT) {
+        if (origin == null) {
 
+            return;
+        }
+
+        if (readyCount == COUNT) {
+
+            rotate(level);
             return;
         }
 
@@ -279,7 +331,7 @@ public final class TerrainSites {
                 break;
             }
 
-            force(level, centre(requested++));
+            force(level, centre(requested++), true);
         }
     }
 
@@ -348,15 +400,20 @@ public final class TerrainSites {
                 }
             }
 
-            // Water or cliff all the way across. Skipped for the rest of this process rather than tried again.
+            // Water or cliff all the way across. Out of use until a spare takes its place.
             unusable[index] = true;
         }
 
         return null;
     }
 
-    /** Takes the fighters away and sweeps up whatever the fight left lying around, so the site is clean for the next. */
-    public static synchronized void release(ServerLevel level, Site site, Entity... fighters) {
+    /**
+     * Takes the fighters away and sweeps up whatever the fight left lying around, so the site is clean for the next, and
+     * counts the fight against the site.
+     *
+     * @param timedOut whether the fight ran out the clock, which a site is only allowed so often
+     */
+    public static synchronized void release(ServerLevel level, Site site, boolean timedOut, Entity... fighters) {
 
         for (Entity fighter : fighters) {
 
@@ -367,14 +424,112 @@ public final class TerrainSites {
         }
 
         sweep(level, site.bounds().inflate(8.0D));
-        inUse[site.index()] = false;
+
+        int index = site.index();
+        inUse[index] = false;
+        fights[index]++;
+
+        if (timedOut && ++timeouts[index] >= SITE_TIMEOUTS) {
+
+            unusable[index] = true;
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // Moving sites on
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * Once the first sites are all up: keeps the spares coming, and moves a site that has had its fights, or that is out
+     * of use, onto a spare that is ready. A site is only ever moved between fights.
+     */
+    private static void rotate(ServerLevel level) {
+
+        for (int i = 0; i < spareCount; i++) {
+
+            if (!spareReady[i] && loaded(level, point(spares[i]))) {
+
+                spareReady[i] = true;
+            }
+        }
+
+        // A couple at a time, the same as at the start, and only as many as are wanted.
+        int loading = 0;
+
+        for (int i = 0; i < spareCount; i++) {
+
+            loading += spareReady[i] ? 0 : 1;
+        }
+
+        while (spareCount < SPARES && loading < GENERATING) {
+
+            spares[spareCount] = nextLattice++;
+            spareReady[spareCount] = false;
+            force(level, point(spares[spareCount]), true);
+            spareCount++;
+            loading++;
+        }
+
+        for (int site = 0; site < COUNT; site++) {
+
+            if (inUse[site] || !(unusable[site] || fights[site] >= SITE_FIGHTS)) {
+
+                continue;
+            }
+
+            int spare = takeReadySpare();
+
+            if (spare < 0) {
+
+                return;
+            }
+
+            force(level, centre(site), false);
+
+            lattice[site] = spare;
+            fights[site] = 0;
+            timeouts[site] = 0;
+            unusable[site] = false;
+
+            if (++swaps % 100 == 0) {
+
+                Constants.LOG.info("Terrain arenas: {} sites moved on to fresh ground", swaps);
+            }
+        }
+    }
+
+    /** The point of the lattice of the first spare that is loaded, taken off the list, or -1 while none is. */
+    private static int takeReadySpare() {
+
+        for (int i = 0; i < spareCount; i++) {
+
+            if (spareReady[i]) {
+
+                int point = spares[i];
+
+                spareCount--;
+                spares[i] = spares[spareCount];
+                spareReady[i] = spareReady[spareCount];
+
+                return point;
+            }
+        }
+
+        return -1;
     }
 
     // ---------------------------------------------------------------------------------------------------------------
 
+    /** Where a site is now. */
     private static BlockPos centre(int index) {
 
-        return origin.offset((index % COLUMNS) * SPACING, 0, (index / COLUMNS) * SPACING);
+        return point(lattice[index]);
+    }
+
+    /** The centre of a point of the lattice, which runs on in rows of {@link #COLUMNS} as far as it is ever needed. */
+    private static BlockPos point(int latticeIndex) {
+
+        return origin.offset((latticeIndex % COLUMNS) * SPACING, 0, (latticeIndex / COLUMNS) * SPACING);
     }
 
     /** The whole loaded area of a site, from bedrock to the sky. */
@@ -387,11 +542,12 @@ public final class TerrainSites {
     }
 
     /**
-     * Asks for a site's chunks to be kept loaded and ticking. The level's own setChunkForced would generate each one on
-     * the spot, one after another, with the server standing still; the ticket underneath it only asks, and the generator
-     * works through them on every thread it has.
+     * Asks for a site's chunks to be kept loaded and ticking, or lets them go. The level's own setChunkForced would
+     * generate each one on the spot, one after another, with the server standing still; the ticket underneath it only
+     * asks, and the generator works through them on every thread it has. Let go, a site's chunks unload, which is what
+     * keeps a worker that moves its sites on hundreds of times in the same memory.
      */
-    private static void force(ServerLevel level, BlockPos centre) {
+    private static void force(ServerLevel level, BlockPos centre, boolean keep) {
 
         int chunkX = centre.getX() >> 4;
         int chunkZ = centre.getZ() >> 4;
@@ -400,7 +556,7 @@ public final class TerrainSites {
 
             for (int dz = -RADIUS_CHUNKS; dz <= RADIUS_CHUNKS; dz++) {
 
-                level.getChunkSource().updateChunkForced(new ChunkPos(chunkX + dx, chunkZ + dz), true);
+                level.getChunkSource().updateChunkForced(new ChunkPos(chunkX + dx, chunkZ + dz), keep);
             }
         }
     }

@@ -101,6 +101,9 @@ public class AgentVindicatorTerrainGameTest {
         private Episode episode;
         private long started;
 
+        /** Whether the fight just decided ran out the clock, which the site is told when it is handed back. */
+        private boolean timedOut;
+
         /** The fight being written down for watching later, or null when this one is not. */
         private FightRecorder replay;
 
@@ -158,7 +161,7 @@ public class AgentVindicatorTerrainGameTest {
                     // brain would never hear how the fight ended.
                     if (this.agent.brain().isFinished() || this.agent.isRemoved()) {
 
-                        TerrainSites.release(this.level, this.site, this.agent, this.opponent);
+                        TerrainSites.release(this.level, this.site, this.timedOut, this.agent, this.opponent);
                         this.phase = Phase.IDLE;
                     }
                 }
@@ -212,6 +215,7 @@ public class AgentVindicatorTerrainGameTest {
         private void decide() {
 
             boolean won = !this.opponent.isAlive() && this.agent.isAlive();
+            this.timedOut = !won && this.agent.isAlive();
 
             if (won) {
 

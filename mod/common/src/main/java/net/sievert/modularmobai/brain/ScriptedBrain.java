@@ -88,6 +88,16 @@ public final class ScriptedBrain implements Brain {
     private static final double MIN_DROP = 1.5D;
     private static final double MAX_DROP = 5.5D;
 
+    /**
+     * How far it will fall to reach a target that is stuck below and not coming up. A fall costs one health for every
+     * block past the third, so nine leaves fourteen of twenty, still more than a vindicator's axe takes in one blow:
+     * dropping in costs no more blows to die than staying up did.
+     */
+    private static final double MAX_DROP_TO_STUCK = 9.0D;
+
+    /** Slower than this, in the observation's velocity units, a target is standing still rather than coming. */
+    private static final float STILL_SPEED = 0.1F;
+
     @Override
     public void act(BrainStep step) {
 
@@ -170,7 +180,10 @@ public final class ScriptedBrain implements Brain {
 
         else if (distance > CLOSE_IN_RANGE || !clear) {
 
-            next = this.approach(o, obs, targetX, targetEye, targetZ, swungIntoBlock);
+            float targetSpeed = Math.abs(o[target + ObservationSchema.ENEMY_VELOCITY_FORWARD])
+                    + Math.abs(o[target + ObservationSchema.ENEMY_VELOCITY_RIGHT]);
+
+            next = this.approach(o, obs, targetX, targetEye, targetZ, swungIntoBlock, targetSpeed < STILL_SPEED);
         }
 
         if (next != start) {
@@ -209,11 +222,15 @@ public final class ScriptedBrain implements Brain {
      * The first step towards the nearest spot it can reach that is in the band with a clear line to the target, or,
      * where there is none in the grid, towards the reachable spot closest to the target without going inside the band.
      */
-    private int approach(float[] o, int obs, double targetX, double targetEye, double targetZ, boolean notHere) {
+    private int approach(float[] o, int obs, double targetX, double targetEye, double targetZ, boolean notHere,
+            boolean targetStuck) {
 
-        // A target well below can be dropped down to, as long as the fall does little more harm than a missed swing.
+        // A target well below can be dropped down to, as long as the fall does little more harm than a missed swing. One
+        // stuck at the bottom of a pit, that cannot come up and will not be reached any other way, is worth a deeper fall:
+        // down to where what the fall takes still leaves more than one blow from a vindicator can.
         double below = FEET + EYE_HEIGHT - targetEye;
-        int reached = this.search(o, obs, below >= MIN_DROP && below <= MAX_DROP);
+        double deepest = targetStuck ? MAX_DROP_TO_STUCK : MAX_DROP;
+        int reached = this.search(o, obs, below >= MIN_DROP && below <= deepest);
 
         int best = -1;
         int bestDepth = Integer.MAX_VALUE;
