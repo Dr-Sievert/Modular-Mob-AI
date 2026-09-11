@@ -98,9 +98,10 @@ public class AgentLeagueGameTest {
         private boolean struck;
 
         /**
-         * Whether the fight just decided ran out the clock with the two never having touched each other, which says the
-         * ground kept them apart and is what the site is told. A league opponent that keeps its distance runs the clock
-         * out on any ground, and the site is not to blame for that.
+         * Whether the fight just decided ran out the clock against a mob with the two never having touched each other,
+         * which says the ground kept them apart and is what the site is told. A league opponent that keeps its distance
+         * runs the clock out on any ground, and two agents that have not learned to fight yet can wander about for the
+         * whole minute without meeting; the site is not to blame for either.
          */
         private boolean stuck;
 
@@ -251,7 +252,7 @@ public class AgentLeagueGameTest {
 
             String outcome = won ? "win" : !standing ? "loss" : timedOut ? "timeout" : "draw";
 
-            this.stuck = timedOut && !this.landed && !this.struck;
+            this.stuck = timedOut && !this.landed && !this.struck && this.matchup.mob() != null;
 
             if (won) {
 
