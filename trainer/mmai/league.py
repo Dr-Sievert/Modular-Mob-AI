@@ -6,7 +6,7 @@ every fight. This side reads them, keeps an Elo rating for every player, decides
 all of it down:
 
     runs/RUN/league/roster.csv          written by the workers: the mobs and the scripted fighter they field
-    runs/RUN/league/results/wNN.csv     appended by each worker: iteration,kind,opponent,loadout,opponent_loadout,outcome,ticks
+    runs/RUN/league/results/wNN.csv     appended by each worker: iteration,kind,opponent,loadout,opponent_loadout,outcome,ticks,cause
     runs/RUN/league/matchmaking.csv     written here: each opponent's share of the training fights, and why
     runs/RUN/league/ratings.csv         written here: every player's rating, best first
     runs/RUN/league/opponents.csv       written here: the agent's recent record against each opponent
@@ -38,13 +38,12 @@ rating that holds still can mean everything around it got better too.
 from __future__ import annotations
 
 import json
-import os
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from . import log
+from . import files, log
 from .run import RunDirectory
 
 if TYPE_CHECKING:
@@ -368,10 +367,11 @@ class League:
             end = data.rfind(b"\n") + 1
             self.offsets[file.name] = start + end
 
+            # The eighth field, what the agent died of, is for reading fights back later; nothing here needs it.
             for line in data[:end].decode("utf-8").splitlines():
                 parts = line.strip().split(",")
 
-                if len(parts) != 7 or parts[5] not in SCORES or parts[1] not in ("train", "eval"):
+                if len(parts) not in (7, 8) or parts[5] not in SCORES or parts[1] not in ("train", "eval"):
                     continue
 
                 try:
@@ -495,7 +495,9 @@ class League:
         target = self.folder / name
         temporary = target.with_suffix(".tmp")
         temporary.write_text("\n".join([header] + lines) + "\n", encoding="utf-8")
-        os.replace(temporary, target)
+
+        # Every worker reads the matchmaking at the start of each fight, and league.ps1 the rest whenever it is run.
+        files.replace(temporary, target)
 
     def _report(self, iteration: int) -> None:
         learner = self.ratings.newest_checkpoint()
@@ -533,7 +535,7 @@ class League:
 
         temporary = self.state_file.with_suffix(".tmp")
         temporary.write_text(json.dumps(state), encoding="utf-8")
-        os.replace(temporary, self.state_file)
+        files.replace(temporary, self.state_file)
 
     def _resume(self) -> None:
         """Picks a resumed run's league up where it was. Without a state, whatever the workers wrote is read from the

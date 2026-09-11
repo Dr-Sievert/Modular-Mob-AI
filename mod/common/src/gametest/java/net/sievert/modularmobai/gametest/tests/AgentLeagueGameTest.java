@@ -19,6 +19,7 @@ import net.sievert.modularmobai.gametest.RepeatGameTest;
 import net.sievert.modularmobai.gametest.league.League;
 import net.sievert.modularmobai.gametest.replay.FightRecorder;
 import net.sievert.modularmobai.gametest.terrain.TerrainSites;
+import net.sievert.modularmobai.gametest.util.DeathCauses;
 import net.sievert.modularmobai.gametest.util.TestDurationStats;
 
 /**
@@ -264,10 +265,16 @@ public class AgentLeagueGameTest {
                 this.episode.reward().lost();
             }
 
+            else {
+
+                DeathCauses.record(this.agent, this.opponent);
+            }
+
             TIME_TO_RESOLVE.record(this.helper.getTick() - this.started,
                     won ? TestDurationStats.Outcome.WIN : TestDurationStats.Outcome.LOSS, this.helper.getTick());
 
-            League.record(this.matchup, outcome, this.helper.getTick() - this.started, this.landed, this.targeted);
+            League.record(this.matchup, outcome, this.helper.getTick() - this.started, this.landed, this.targeted,
+                    standing ? "-" : DeathCauses.cause(this.agent, this.opponent));
 
             if (this.replay != null) {
 

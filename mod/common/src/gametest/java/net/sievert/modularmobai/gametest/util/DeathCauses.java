@@ -25,10 +25,7 @@ public final class DeathCauses {
 
     public static synchronized void record(LivingEntity agent, LivingEntity opponent) {
 
-        DamageSource source = agent.getLastDamageSource();
-        String cause = source == null ? "unknown"
-                : source.getEntity() == opponent || source.getDirectEntity() == opponent ? OPPONENT
-                : source.getMsgId();
+        String cause = cause(agent, opponent);
 
         COUNTS.merge(cause, 1, Integer::sum);
 
@@ -40,5 +37,18 @@ public final class DeathCauses {
             Constants.LOG.info("Agent died of {} at {} {} {} in {}, not at its opponent's hand; deaths by cause so far: {}",
                     cause, at.getX(), at.getY(), at.getZ(), biome, COUNTS);
         }
+    }
+
+    /**
+     * What a dead agent died of: {@link #OPPONENT}, or the damage type of whatever else it was, such as lava, fall or
+     * drown, or unknown. The league writes it down with every fight lost that way.
+     */
+    public static String cause(LivingEntity agent, LivingEntity opponent) {
+
+        DamageSource source = agent.getLastDamageSource();
+
+        return source == null ? "unknown"
+                : source.getEntity() == opponent || source.getDirectEntity() == opponent ? OPPONENT
+                : source.getMsgId();
     }
 }

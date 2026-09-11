@@ -161,17 +161,19 @@ class LeagueTest(unittest.TestCase):
         return [line.split(",") for line in text.splitlines()[1:]]
 
     def test_evaluations_are_rated_and_training_fights_are_not(self):
-        self.results(0, "50,eval,zombie,sword,-,win,200", "50,eval,creeper,bow,-,draw,90", "51,train,zombie,axe,-,loss,300")
+        self.results(0, "50,eval,zombie,sword,-,win,200,-", "50,eval,creeper,bow,-,draw,90,-", "51,train,zombie,axe,-,loss,300,opponent",
+                     "50,eval,skeleton,axe,-,loss,410,lava")
 
         league = League(self.run, self.config)
         league.update(51)
 
         ratings = {row[0]: row for row in self.read("ratings.csv")}
 
-        self.assertEqual(int(ratings["iteration-000050"][3]), 2)
+        self.assertEqual(int(ratings["iteration-000050"][3]), 3)
         self.assertEqual(int(ratings["zombie"][3]), 1)
         self.assertLess(float(ratings["zombie"][2]), 1500.0)
-        self.assertEqual(league.rated, 2)
+        self.assertEqual(ratings["skeleton"][4], "1")
+        self.assertEqual(league.rated, 3)
 
     def test_matchmaking_covers_the_roster_and_the_pool_and_adds_up(self):
         league = League(self.run, self.config)

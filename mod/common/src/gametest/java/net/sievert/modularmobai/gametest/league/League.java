@@ -43,7 +43,7 @@ import net.sievert.modularmobai.gametest.GameTestTuning;
  * <pre>
  *   runs/RUN/league/roster.csv        written here: every opponent this build fields that is not a checkpoint
  *   runs/RUN/league/matchmaking.csv   written by the trainer: opponent,share and more, read here whenever it changes
- *   runs/RUN/league/results/wNN.csv   appended here: iteration,kind,opponent,loadout,opponent_loadout,outcome,ticks
+ *   runs/RUN/league/results/wNN.csv   appended here: iteration,kind,opponent,loadout,opponent_loadout,outcome,ticks,cause
  * </pre>
  *
  * <p>An opponent is a mob by its entity name, {@code scripted}, or a checkpoint of the run as {@code iteration-000125},
@@ -175,12 +175,15 @@ public final class League {
      *
      * @param landed   whether the opponent hurt the agent at any point
      * @param targeted whether the opponent went for the agent at any point
+     * @param cause    what the agent died of when it died, as {@link net.sievert.modularmobai.gametest.util.DeathCauses}
+     *                 names it, and {@code -} when it did not
      */
-    public static synchronized void record(Matchup matchup, String outcome, long ticks, boolean landed, boolean targeted) {
+    public static synchronized void record(Matchup matchup, String outcome, long ticks, boolean landed, boolean targeted,
+                                           String cause) {
 
         if (directory != null) {
 
-            write(matchup, outcome, ticks);
+            write(matchup, outcome, ticks, cause);
         }
 
         // Only a mob or the scripted fighter holds still enough to judge a checkpoint by, see the class comment.
@@ -497,14 +500,14 @@ public final class League {
         }
     }
 
-    private static void write(Matchup matchup, String outcome, long ticks) {
+    private static void write(Matchup matchup, String outcome, long ticks, String cause) {
 
         int iteration = matchup.evaluation() != null ? matchup.evaluation().iteration()
                 : Brains.defaultBrain() instanceof NeuralBrain neural ? neural.weights().iteration() : -1;
 
-        String line = String.format(Locale.ROOT, "%d,%s,%s,%s,%s,%s,%d%n", iteration, matchup.evaluation() != null ? "eval" : "train",
+        String line = String.format(Locale.ROOT, "%d,%s,%s,%s,%s,%s,%d,%s%n", iteration, matchup.evaluation() != null ? "eval" : "train",
                 matchup.opponent(), matchup.loadout().name(), matchup.opponentLoadout() == null ? "-" : matchup.opponentLoadout().name(),
-                outcome, ticks);
+                outcome, ticks, cause);
 
         try {
 
