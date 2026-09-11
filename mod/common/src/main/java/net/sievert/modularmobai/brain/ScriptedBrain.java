@@ -2,10 +2,15 @@ package net.sievert.modularmobai.brain;
 
 import java.util.Arrays;
 
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.objects.ObjectIterator;
+
 import net.minecraft.util.Mth;
 import net.sievert.modularmobai.brain.schema.ActionSchema;
 import net.sievert.modularmobai.brain.schema.AgentObservation;
 import net.sievert.modularmobai.brain.schema.ObservationSchema;
+import net.sievert.modularmobai.entity.agent.AgentMob;
 import net.sievert.modularmobai.entity.agent.MobControls;
 
 /**
@@ -16,8 +21,12 @@ import net.sievert.modularmobai.entity.agent.MobControls;
  * correctly. If it walks into walls or swings at nothing, the observation is wrong and no amount of training would have
  * fixed it, it would only have hidden it.
  *
- * <p>Second as an opponent: this is the rung of the ladder between the vanilla mobs and self play, and the agent it
- * fights on that rung is a copy of this.
+ * <p>Second as an opponent and as the teacher: this is the rung of the ladder between the vanilla mobs and self play, and
+ * the network is started by copying it. That second use is why it uses everything it carries rather than only a sword.
+ * Reinforcement learning only improves what it samples, and a network seeded from a teacher that never pressed use never
+ * pressed use either: over the last 400 league fights of the first league run it held use on 0 of 79,724 ticks, fired no
+ * arrows and raised no shield, and a bow needs twenty ticks of held use before the first arrow ever flies. Nothing in the
+ * reward can find that by accident, so the teacher has to show it.
  *
  * <p>It fights the way the reach allows. A sword reaches three blocks from the eyes, so a mob's middle can be about three
  * and a quarter blocks away and still be hit; a mob's own melee reaches under a block and a half head on, two across a
@@ -33,6 +42,39 @@ import net.sievert.modularmobai.entity.agent.MobControls;
  * <p>It does not jump for criticals. Timed from the observation alone, the fall rarely lined up with the target walking
  * into reach, one hit in ten landed as one, and it won no more fights for trying; that is left for training to find.
  * Nor does it sprint into its swings: the extra knockback did not keep the target away any longer than a plain hit.
+ *
+ * <h2>Everything else it carries</h2>
+ *
+ * <p>A drawn weapon, a shield and a lit creeper each need something the observation does not carry: whether the weapon
+ * drawing is a bow or a crossbow, whether there is a shield in the off hand at all, whether the thing in front of it has
+ * ever swung. So this brain keeps a little state per agent, keyed by the agent id the step carries, and works the rest out
+ * from what the body reports back:
+ *
+ * <ul>
+ *   <li><b>Bow or crossbow.</b> Both read as one item category, because the layout has one for a drawn weapon, and how far
+ *       either has charged is in the echo, so neither has to be named to be used: hold until it reads charged, then let
+ *       go. What is left over is told apart by what a deliberate release does. A wound crossbow loads and fires nothing,
+ *       so the press after that sends the bolt and leaves the hands free, where a bow has already fired and starts drawing
+ *       again. One cycle settles it, and neither weapon loses a shot to the question.</li>
+ *   <li><b>Ammunition.</b> A bow with nothing to fire does not so much as come up, so a press that resolves and leaves
+ *       the hands with nothing charged says the quiver is out, and the fighter goes back to swinging for the rest of the
+ *       fight.</li>
+ *   <li><b>A shield.</b> The self block says whether the off hand is in use but not what is in it, so the first raise is
+ *       also the question: press it, and if the off hand comes up there is a shield there. If it does not, there is none
+ *       to raise, unless one has come up before, in which case an axe has just knocked it aside and it will be back in
+ *       five seconds.</li>
+ * </ul>
+ *
+ * <p>Both of those last two read an answer out of a press, and a press this brain asks for does not always happen: as a
+ * teacher it labels a student's fight, and there the body is doing what the student said. So neither concludes anything
+ * until the press is known to have landed, which the use cooldown says outright, since any press with the cooldown clear
+ * sets it to full. Without that the teacher would decide on the first tick of the first fight that it had no arrows and no
+ * shield, and would never show a student either again.
+ *
+ * <p>A network copying this has to carry the same few things in its own memory, which it has 128 numbers of. That is the
+ * price of a weapon needing twenty ticks of commitment, and it is why a release is decided by the charge and the aim rather
+ * than by a clock: both are in the observation, so what the record shows is a fighter letting go because it is charged and
+ * on target, which is a rule that can be read off what the network sees.
  */
 public final class ScriptedBrain implements Brain {
 
@@ -59,9 +101,10 @@ public final class ScriptedBrain implements Brain {
     /** A player's eyes above its feet, where a swing starts from. */
     private static final double EYE_HEIGHT = 1.62D;
 
-    /** Where in the echo of last tick's controls a swing, and a swing that landed, are written. */
+    /** Where in the echo of last tick's controls a swing, a swing that landed, and the charge of a use are written. */
     private static final int ECHO_ATTACKED = 7;
     private static final int ECHO_HIT = 8;
+    private static final int ECHO_USE_PROGRESS = 19;
 
     private static final int X = ObservationSchema.TERRAIN_X;
     private static final int Z = ObservationSchema.TERRAIN_Z;
@@ -98,23 +141,280 @@ public final class ScriptedBrain implements Brain {
     /** Slower than this, in the observation's velocity units, a target is standing still rather than coming. */
     private static final float STILL_SPEED = 0.1F;
 
+    /** The scale the observation puts velocities on, so the numbers in the enemy block come back as blocks a tick. */
+    private static final double VELOCITY_SCALE = 0.5D;
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // Bows and crossbows
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * When a drawn weapon is charged, as the echo reads it. The body writes the item's own reckoning there: a bow reads one
+     * at the twenty ticks that make a full power arrow, a crossbow at the twenty five its wind takes. So one number says
+     * "let go now" for either of them, and the fighter does not have to know which it is holding to know when.
+     */
+    private static final float FULL_CHARGE = 0.999F;
+
+    /** A full draw's arrow, and a bolt, in blocks a tick, and what happens to either every tick: see AbstractArrow. */
+    private static final double ARROW_SPEED = 3.0D;
+    private static final double BOLT_SPEED = 3.15D;
+    private static final double ARROW_DRAG = 0.99D;
+    private static final double ARROW_GRAVITY = 0.05D;
+
+    /** An arrow leaves a tenth of a block below the eyes, which is where the shot is aimed from. */
+    private static final double ARROW_DROP_AT_LAUNCH = 0.1D;
+
+    /** No shot is worth more than this many ticks in the air; nothing inside the view distance is that far off. */
+    private static final int MAX_FLIGHT_TICKS = 120;
+
+    /** How steeply a shot is ever thrown. The arc to anything in view is a few degrees, so this only bounds the search. */
+    private static final double MAX_ELEVATION = Math.PI / 4.0D;
+
+    /** How near the shot has to be before it is loosed. Under a degree is past what a player's own spread allows anyway. */
+    private static final float FIRE_CONE_DEGREES = 3.0F;
+
+    /**
+     * Farther than this and a fighter with something to shoot shoots instead of closing in. Inside it a sword does more
+     * per tick than a bow needing twenty of them, so the bow goes away, unless there is nothing to swing.
+     */
+    private static final float SHOOT_RANGE = 5.0F;
+
+    /**
+     * A draw already under way is worth finishing even as the target closes, since a full arrow is most of a sword's blow
+     * and nearly in hand. Inside this the draw is dropped for the sword instead: changing slots cancels a draw without
+     * firing, so the arrow is kept rather than thrown away.
+     */
+    private static final float ABANDON_DRAW_RANGE = 2.6F;
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // The shield
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * How close something has to be for a shield to be worth holding up: a little past a swing's own reach, which also
+     * covers a ravager's, the longest in the league at about four blocks from its middle.
+     *
+     * <p>Not a block further. A shield takes the movement keys down to a fifth, so a fighter that holds one up while it
+     * still has ground to cover never covers it. The shield is for the reach; the answer to an archer further off is to
+     * close the distance.
+     */
+    private static final float BLOCK_RANGE = 4.2F;
+
+    /**
+     * Eye to eye, how far off something can be and still have reached the agent with a swing. A mob's melee reach goes
+     * with its width: about one and a half blocks for anything man sized, and four for a ravager, which is nearly two
+     * blocks wide. So a swing that landed from further off than this came from something with a reach of its own, and
+     * that is worth a raised shield even in a fight that is going well: a blocked ravager is stunned for two seconds, and
+     * it carries no axe to knock the shield aside with.
+     */
+    private static final float LONG_REACH_DISTANCE = 2.6F;
+
+    /**
+     * How close something already in the air has to be before the shield goes up for it. A full drawn arrow covers three
+     * blocks a tick, so twelve is four ticks, which is time enough for a press to resolve and no longer than it has to be:
+     * a shield up for the whole flight of every shot is a fighter that never covers the ground to the archer.
+     */
+    private static final float BLOCK_SHOT_RANGE = 12.0F;
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // Creepers
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * A creeper lights its fuse within three blocks of its target and stands still while it burns, for thirty ticks, and
+     * it is the one thing in the league that fights with nothing in its hands and never swings. So an empty handed
+     * opponent that has never swung and has stopped coming this close is one about to go off.
+     *
+     * <p>Three blocks and not one more, because it is the creeper's own figure. Everything else with empty hands stops at
+     * its own reach and swings from there, and a ravager's reach is four blocks: read any wider and a ravager waiting out
+     * its own cooldown is taken for a lit creeper, walked away from before it ever swings, and never seen to swing at
+     * all.
+     */
+    private static final float FUSE_RANGE = 3.05F;
+
+    /**
+     * How many ticks it has to have spent not coming any closer. Whether it is coming, rather than whether it is moving
+     * at all: a creeper that has just been hit slides backwards from the blow for a dozen ticks, and waiting for that to
+     * settle would spend half the fuse standing in the blast.
+     */
+    private static final int FUSE_STILL_TICKS = 3;
+
+    /**
+     * How far away is far enough. A creeper's fuse only winds back down past seven blocks, and its blast still takes ten
+     * health at four, so nothing short of this is worth walking back from.
+     */
+    private static final float FUSE_SAFE_RANGE = 7.5F;
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // What one agent is in the middle of
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /** Which of the two drawn weapons an agent turned out to be holding. */
+    private static final int WEAPON_UNKNOWN = 0;
+    private static final int WEAPON_BOW = 1;
+    private static final int WEAPON_CROSSBOW = 2;
+
+    /** Nothing in the hands, a draw under way, a bolt held ready, or the one tick press that sends it. */
+    private static final int DRAW_IDLE = 0;
+    private static final int DRAW_DRAWING = 1;
+    private static final int DRAW_LOADED = 2;
+    private static final int DRAW_FIRING = 3;
+
+    /** Whether the off hand holds a shield, which the observation does not say until one has been raised. */
+    private static final int SHIELD_UNKNOWN = 0;
+    private static final int SHIELD_NONE = 1;
+    private static final int SHIELD_CARRIED = 2;
+
+    /**
+     * What a fighter knows about itself that the observation leaves out. One of these per agent, kept for as long as the
+     * agent is being driven.
+     */
+    private static final class Fighter {
+
+        private int weapon = WEAPON_UNKNOWN;
+        private int draw = DRAW_IDLE;
+
+        /** Whether a press of use went out on the tick before, which is what makes the next tick's answer meaningful. */
+        private boolean asked;
+
+        /** Whether the drawn weapon has anything left to fire. Nothing puts arrows back, so this lasts the fight. */
+        private boolean spent;
+
+        private int shield = SHIELD_UNKNOWN;
+
+        /** Set on the ticks a press went out, which is what makes the next tick's answer meaningful. */
+        private boolean askedShield;
+
+        /** Ticks to wait before trying the shield again, after an axe knocked it aside. */
+        private int shieldWait;
+
+        /** Whether the off hand has ever come up, which tells a shield knocked aside from no shield at all. */
+        private boolean shieldSeen;
+
+        /** Enemy slots whose occupant has swung at some point: a bitmask, one bit a slot. */
+        private int swung;
+
+        /** Slots whose occupant swung from further off than anything man sized can reach. */
+        private int longReach;
+
+        /** How long the occupant of each slot has gone without coming any closer. */
+        private final byte[] holdingBack = new byte[ObservationSchema.ENEMY_SLOTS];
+
+        /** Whether it is walking away from something it takes for a lit creeper, which it does until it is well clear. */
+        private boolean fleeing;
+
+        /** The brain step this was last asked about, so an agent nothing ever finished can be let go of. */
+        private long seen;
+
+        /** A fresh fight: the body's cooldowns and hands all start again, so nothing at all carries over. */
+        private void reset() {
+
+            this.weapon = WEAPON_UNKNOWN;
+            this.draw = DRAW_IDLE;
+            this.asked = false;
+            this.spent = false;
+            this.shield = SHIELD_UNKNOWN;
+            this.askedShield = false;
+            this.shieldWait = 0;
+            this.shieldSeen = false;
+            this.swung = 0;
+            this.longReach = 0;
+            Arrays.fill(this.holdingBack, (byte) 0);
+            this.fleeing = false;
+        }
+
+        /** Nothing in sight: a draw is cancelled by the slot it is held in going away, and there is nothing to flee. */
+        private void idle() {
+
+            this.draw = this.draw == DRAW_LOADED ? DRAW_LOADED : DRAW_IDLE;
+            this.asked = false;
+            this.askedShield = false;
+            this.fleeing = false;
+        }
+
+        private boolean hasSwung(int slot) {
+
+            return (this.swung & 1 << slot) != 0;
+        }
+
+        private boolean reachesFar(int slot) {
+
+            return (this.longReach & 1 << slot) != 0;
+        }
+    }
+
+    /**
+     * What each agent is in the middle of, by the agent id its step carries. Rows are not agents and an agent that dies
+     * shifts every row after it up one, so the id is the only thing that follows one fighter.
+     */
+    private final Int2ObjectMap<Fighter> fighters = new Int2ObjectOpenHashMap<>();
+
+    private long steps;
+
+    /**
+     * How often the fighters are swept for agents that have gone. A fight's last step is normally flagged done, and that
+     * is where a fighter is let go, but an agent that won a fight it was not being paid for, a league opponent, is simply
+     * taken out of the world with no last step at all. Without a sweep those would pile up for the life of the process.
+     */
+    private static final int SWEEP_EVERY = 4096;
+    private static final int SWEEP_AFTER_STEPS = 1200;
+
     @Override
     public void act(BrainStep step) {
+
+        this.steps++;
 
         Arrays.fill(step.actions, 0, step.count * ActionSchema.ACT_DIM, 0.0F);
 
         for (int index = 0; index < step.count; index++) {
 
+            int id = step.agentIds[index];
+
             if ((step.flags[index] & BrainStep.FLAG_DONE) != 0) {
 
+                this.fighters.remove(id);
                 continue;
             }
 
-            this.actFor(step, index * ObservationSchema.OBS_DIM, index * ActionSchema.ACT_DIM);
+            Fighter fighter = this.fighters.get(id);
+
+            if (fighter == null) {
+
+                fighter = new Fighter();
+                this.fighters.put(id, fighter);
+            }
+
+            else if ((step.flags[index] & BrainStep.FLAG_NEW) != 0) {
+
+                fighter.reset();
+            }
+
+            fighter.seen = this.steps;
+
+            this.actFor(step, fighter, index * ObservationSchema.OBS_DIM, index * ActionSchema.ACT_DIM);
+        }
+
+        if (this.steps % SWEEP_EVERY == 0) {
+
+            this.sweep();
         }
     }
 
-    private void actFor(BrainStep step, int obs, int act) {
+    /** Lets go of every fighter that has not been asked about for longer than a fight lasts. */
+    private void sweep() {
+
+        ObjectIterator<Int2ObjectMap.Entry<Fighter>> entries = this.fighters.int2ObjectEntrySet().iterator();
+
+        while (entries.hasNext()) {
+
+            if (this.steps - entries.next().getValue().seen > SWEEP_AFTER_STEPS) {
+
+                entries.remove();
+            }
+        }
+    }
+
+    private void actFor(BrainStep step, Fighter me, int obs, int act) {
 
         float[] o = step.observations;
         float[] a = step.actions;
@@ -127,30 +427,22 @@ public final class ScriptedBrain implements Brain {
         boolean inWater = o[self + ObservationSchema.SELF_IN_WATER] > 0.5F;
         a[act + ActionSchema.JUMP] = inWater ? 1.0F : 0.0F;
 
-        int target = nearestEnemy(o, obs);
+        int slot = nearestEnemy(o, obs);
 
-        if (target < 0) {
+        if (slot < 0) {
 
+            me.idle();
             return;
         }
+
+        int target = obs + ObservationSchema.enemyOffset(slot);
+        watch(me, slot, o, target);
 
         // Positions arrive in the agent's own frame, already scaled down by the view distance.
         float forward = o[target + ObservationSchema.ENEMY_FORWARD];
         float right = o[target + ObservationSchema.ENEMY_RIGHT];
         float up = o[target + ObservationSchema.ENEMY_UP];
         float distance = o[target + ObservationSchema.ENEMY_DISTANCE] * (float) ObservationSchema.VIEW_DISTANCE;
-
-        // Turning right is a rising yaw, and a target off to the right has a positive right component, so the error and
-        // the control share a sign and no correction is needed.
-        float yawError = (float) Math.toDegrees(Mth.atan2(right, forward));
-        a[act + ActionSchema.AIM_YAW] = Mth.clamp(yawError / MobControls.MAX_AIM_YAW_PER_TICK, -1.0F, 1.0F);
-
-        float horizontal = (float) Math.sqrt(forward * forward + right * right) * (float) ObservationSchema.VIEW_DISTANCE;
-        float wantedPitch = (float) -Math.toDegrees(Mth.atan2(up * (float) ObservationSchema.VIEW_DISTANCE, horizontal));
-        float pitch = o[self + ObservationSchema.SELF_PITCH] * 90.0F;
-
-        a[act + ActionSchema.AIM_PITCH] =
-                Mth.clamp((wantedPitch - pitch) / MobControls.MAX_AIM_PITCH_PER_TICK, -1.0F, 1.0F);
 
         // Back from the agent's frame to the world's, in blocks: forward runs along minus sine, cosine and right along
         // minus cosine, minus sine. The grid puts the agent in the middle of its own column.
@@ -170,10 +462,69 @@ public final class ScriptedBrain implements Brain {
         boolean swungIntoBlock = o[echo + ECHO_ATTACKED] > 0.5F && o[echo + ECHO_HIT] < 0.5F && strength >= FULL_STRENGTH;
 
         boolean clear = !swungIntoBlock && !blocked(o, obs, CENTRE, 0, CENTRE, targetX, targetEye, targetZ);
+
+        // What it is carrying, and so what it can do about whatever is in front of it.
+        int melee = meleeSlot(o, obs);
+        int ranged = me.spent ? -1 : slotHolding(o, obs, AgentObservation.ITEM_RANGED);
+
+        boolean shooting = shoots(me, ranged, melee, distance, clear);
+        boolean fleeing = !shooting && this.flees(me, slot, o, target, distance);
+
+        // Anything with empty hands that has not swung yet might be a creeper, so while the swing is still cooling it is
+        // held at the three blocks a creeper needs to light its fuse, rather than let inside the usual band. It costs
+        // nothing against the rest of them, since an empty handed mob reaches a block and a half, two across a diagonal:
+        // the fighter steps in to swing and back out to wait, and is hitting something that cannot reach it.
+        boolean mayExplode = emptyHanded(o, target) && !me.hasSwung(slot);
+        float backOff = mayExplode && strength < FULL_STRENGTH ? FUSE_RANGE : BACK_OFF_RANGE;
+
+        // Where to look. A swing goes where the eyes are; a shot has to be thrown ahead of the target and above it, by
+        // whatever the arrow falls over the ground it has to cover and whatever the target covers while it flies.
+        if (shooting) {
+
+            this.shoot(me, o, a, obs, act, ranged, target, forward, right, up);
+
+            // A drawn weapon takes the movement keys down to a fifth, so there is no walking out of trouble while it is
+            // up: it holds its ground, steps away from anything already on top of it, and walks up to find a line when
+            // the one it has is blocked.
+            if (distance < BACK_OFF_RANGE) {
+
+                this.walkTowards(this.retreat(o, obs, targetX, targetZ), a, act, sin, cos, grounded);
+            }
+
+            else if (!clear) {
+
+                this.walkTowards(this.approach(o, obs, targetX, targetEye, targetZ, false, false), a, act, sin, cos, grounded);
+            }
+
+            return;
+        }
+
+        // Turning right is a rising yaw, and a target off to the right has a positive right component, so the error and
+        // the control share a sign and no correction is needed.
+        float yawError = (float) Math.toDegrees(Mth.atan2(right, forward));
+        a[act + ActionSchema.AIM_YAW] = Mth.clamp(yawError / MobControls.MAX_AIM_YAW_PER_TICK, -1.0F, 1.0F);
+
+        float horizontal = (float) Math.sqrt(forward * forward + right * right) * (float) ObservationSchema.VIEW_DISTANCE;
+        float wantedPitch = (float) -Math.toDegrees(Mth.atan2(up * (float) ObservationSchema.VIEW_DISTANCE, horizontal));
+        float pitch = o[self + ObservationSchema.SELF_PITCH] * 90.0F;
+
+        a[act + ActionSchema.AIM_PITCH] =
+                Mth.clamp((wantedPitch - pitch) / MobControls.MAX_AIM_PITCH_PER_TICK, -1.0F, 1.0F);
+
+        // Whatever it swings with, held ready. A draw that was under way is cancelled by the slot changing under it,
+        // which is the one way of letting a nocked arrow go without firing it.
+        a[act + ActionSchema.SELECTED_SLOT] = Math.max(0, melee);
+
+        if (me.draw == DRAW_DRAWING) {
+
+            me.draw = DRAW_IDLE;
+            me.asked = false;
+        }
+
         int start = state(CENTRE, 0, CENTRE);
         int next = start;
 
-        if (distance < BACK_OFF_RANGE) {
+        if (fleeing || distance < backOff) {
 
             next = this.retreat(o, obs, targetX, targetZ);
         }
@@ -203,15 +554,462 @@ public final class ScriptedBrain implements Brain {
             a[act + ActionSchema.JUMP] = 1.0F;
         }
 
+        // The shield goes up while there is nothing better to do with the hands, and comes down to strike. Nothing can be
+        // swung while anything is in use, not even on the tick it is let go, so a fighter holding one up has no attack.
+        boolean busy = this.hold(me, o, a, obs, act, slot, target, distance, strength, incomingDistance(o, obs), fleeing);
+
         // Swinging wide costs the whole cooldown, so the swing waits until the target is actually in front of it. It also
         // waits for the cooldown to come all the way back: damage goes with the square of it, so a swing at nine tenths
         // does barely more than five of a sword's six, and a vindicator then takes five hits instead of four. A swing
         // that meets a block on the way costs nothing, as a player's does, and clears grass and ferns out of the way, so a
         // line the grid says is blocked is no reason to hold back; it only decides where to walk.
-        if (distance <= SWING_RANGE && strength >= FULL_STRENGTH && Math.abs(yawError) < SWING_CONE_DEGREES) {
+        if (!busy && distance <= SWING_RANGE && strength >= FULL_STRENGTH && Math.abs(yawError) < SWING_CONE_DEGREES) {
 
             a[act + ActionSchema.ATTACK] = 1.0F;
         }
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // What it is carrying
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /** The first hotbar slot holding something of this kind, or -1. */
+    private static int slotHolding(float[] o, int obs, float kind) {
+
+        for (int slot = 0; slot < ObservationSchema.HOTBAR_SIZE; slot++) {
+
+            if (AgentObservation.isItem(o[obs + ObservationSchema.HOTBAR_OFFSET + slot], kind)) {
+
+                return slot;
+            }
+        }
+
+        return -1;
+    }
+
+    /** What it swings with: a sword if it has one, an axe if it has not, and -1 for empty hands. */
+    private static int meleeSlot(float[] o, int obs) {
+
+        int sword = slotHolding(o, obs, AgentObservation.ITEM_SWORD);
+        return sword >= 0 ? sword : slotHolding(o, obs, AgentObservation.ITEM_AXE);
+    }
+
+    /** Whether whatever is in this enemy slot fights at a distance, which is worth a raised shield on its own. */
+    private static boolean shootsBack(float[] o, int target) {
+
+        return AgentObservation.isItem(o[target + ObservationSchema.ENEMY_MAIN_HAND], AgentObservation.ITEM_RANGED)
+                || AgentObservation.isItem(o[target + ObservationSchema.ENEMY_OFF_HAND], AgentObservation.ITEM_RANGED);
+    }
+
+    /** Whether it carries nothing at all, which in the league means it fights by touching, charging or exploding. */
+    private static boolean emptyHanded(float[] o, int target) {
+
+        return AgentObservation.isItem(o[target + ObservationSchema.ENEMY_MAIN_HAND], AgentObservation.ITEM_NONE)
+                && AgentObservation.isItem(o[target + ObservationSchema.ENEMY_OFF_HAND], AgentObservation.ITEM_NONE);
+    }
+
+    /**
+     * What the fighter has to remember about the thing in front of it: whether it has ever swung, whether it swung from
+     * further off than anything man sized reaches, and how long it has gone without coming any closer.
+     *
+     * <p>Velocities arrive in the agent's own frame, and the agent is looking at what it is fighting, so the forward
+     * component is how fast the thing is going the way the agent faces: negative is coming at it, positive is going away.
+     * Knocked back by a blow, a mob slides away for a dozen ticks, and that counts as not coming rather than as movement.
+     */
+    private static void watch(Fighter me, int slot, float[] o, int target) {
+
+        if (o[target + ObservationSchema.ENEMY_SWINGING] > 0.5F) {
+
+            me.swung |= 1 << slot;
+
+            if (o[target + ObservationSchema.ENEMY_DISTANCE] * ObservationSchema.VIEW_DISTANCE > LONG_REACH_DISTANCE) {
+
+                me.longReach |= 1 << slot;
+            }
+        }
+
+        boolean coming = o[target + ObservationSchema.ENEMY_VELOCITY_FORWARD] < -STILL_SPEED;
+
+        me.holdingBack[slot] = coming ? (byte) 0 : (byte) Math.min(Byte.MAX_VALUE, me.holdingBack[slot] + 1);
+    }
+
+    /**
+     * Whether to shoot rather than close in. Something to shoot with and a line to shoot along are the whole of it,
+     * beyond a sword doing more inside its own reach than a bow needing twenty ticks: a fighter with nothing to swing
+     * shoots at any distance, since punching with a bow is worth one damage against an arrow's six.
+     */
+    private static boolean shoots(Fighter me, int ranged, int melee, float distance, boolean clear) {
+
+        if (ranged < 0) {
+
+            return false;
+        }
+
+        // A draw or a load already in hand is finished and fired, even as the target closes, as long as it cannot be put
+        // to better use: an arrow nearly drawn is most of a sword's blow away.
+        boolean holding = me.draw != DRAW_IDLE;
+
+        if (melee < 0) {
+
+            return clear || holding;
+        }
+
+        if (holding) {
+
+            return distance > ABANDON_DRAW_RANGE;
+        }
+
+        return clear && distance > SHOOT_RANGE;
+    }
+
+    /**
+     * Whether to walk away from something about to explode. Only a creeper in the league fights with empty hands and
+     * never swings, and only a creeper stands still once it is next to its target: everything else that comes that close
+     * is swinging, hopping or charging. Once it starts walking away it keeps going until it is well clear, since the fuse
+     * only winds back down past seven blocks.
+     */
+    private boolean flees(Fighter me, int slot, float[] o, int target, float distance) {
+
+        if (me.fleeing) {
+
+            me.fleeing = distance < FUSE_SAFE_RANGE;
+            return me.fleeing;
+        }
+
+        me.fleeing = distance < FUSE_RANGE && emptyHanded(o, target) && !me.hasSwung(slot)
+                && me.holdingBack[slot] >= FUSE_STILL_TICKS;
+
+        return me.fleeing;
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // Working a drawn weapon
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * Throws the aim where the shot has to go and then works the weapon: how far above the target the arc has to start,
+     * and how far ahead of the target the arc has to land.
+     *
+     * <p>Twice over, because the two answers depend on each other: where the target will be when a shot at where it is
+     * now would arrive, and then where it will be when a shot at that would.
+     */
+    private void shoot(Fighter me, float[] o, float[] a, int obs, int act, int ranged, int target, float forward,
+            float right, float up) {
+
+        int self = obs + ObservationSchema.SELF_OFFSET;
+        double view = ObservationSchema.VIEW_DISTANCE;
+        double speed = me.weapon == WEAPON_CROSSBOW ? BOLT_SPEED : ARROW_SPEED;
+
+        double aheadOf = forward * view;
+        double rightOf = right * view;
+        double flight = Math.hypot(aheadOf, rightOf) / speed;
+        double elevation = 0.0D;
+
+        for (int pass = 0; pass < 2; pass++) {
+
+            aheadOf = forward * view + o[target + ObservationSchema.ENEMY_VELOCITY_FORWARD] * VELOCITY_SCALE * flight;
+            rightOf = right * view + o[target + ObservationSchema.ENEMY_VELOCITY_RIGHT] * VELOCITY_SCALE * flight;
+
+            double aboveBy = up * view + ARROW_DROP_AT_LAUNCH
+                    + o[target + ObservationSchema.ENEMY_VELOCITY_UP] * VELOCITY_SCALE * flight;
+
+            double across = Math.hypot(aheadOf, rightOf);
+
+            elevation = elevationFor(across, aboveBy, speed);
+            flight = flightTicks(elevation, across, speed);
+        }
+
+        float shotYaw = (float) Math.toDegrees(Mth.atan2(rightOf, aheadOf));
+        float shotPitch = (float) -Math.toDegrees(elevation) - o[self + ObservationSchema.SELF_PITCH] * 90.0F;
+
+        a[act + ActionSchema.AIM_YAW] = Mth.clamp(shotYaw / MobControls.MAX_AIM_YAW_PER_TICK, -1.0F, 1.0F);
+        a[act + ActionSchema.AIM_PITCH] = Mth.clamp(shotPitch / MobControls.MAX_AIM_PITCH_PER_TICK, -1.0F, 1.0F);
+
+        this.work(me, o, a, obs, act, ranged,
+                Math.abs(shotYaw) < FIRE_CONE_DEGREES && Math.abs(shotPitch) < FIRE_CONE_DEGREES);
+    }
+
+    /**
+     * Holds the drawn weapon, and lets it go when the shot is on.
+     *
+     * <p>Nothing here counts ticks of its own. How far a draw has come is in the echo, written by the body from the item's
+     * own reckoning, and whether the body is using anything at all is in the self block, so the state below is only ever
+     * what the observation cannot say: which of the two weapons this turned out to be, and whether a bolt is held ready.
+     *
+     * <p>That matters most when this brain is not the one driving. As a teacher it labels a student's fight, and a press it
+     * asks for there never happens: a state machine that assumed its own presses had gone out would conclude, on the first
+     * tick of the first fight, that the quiver was empty, and would then never show the student a bow again. So a press is
+     * only ever concluded from once it is known to have landed, and the cooldown says that: any press with the cooldown
+     * clear sets it to full, so a cooldown that did not move says nobody pressed anything.
+     */
+    private void work(Fighter me, float[] o, float[] a, int obs, int act, int ranged, boolean aimed) {
+
+        int self = obs + ObservationSchema.SELF_OFFSET;
+        boolean using = o[self + ObservationSchema.SELF_USING] > 0.5F;
+        boolean cooling = o[self + ObservationSchema.SELF_USE_COOLDOWN] > 0.0F;
+        float charge = o[obs + ObservationSchema.ECHO_OFFSET + ECHO_USE_PROGRESS];
+
+        // A shield still up from a moment ago has the hands, and both hands share one use cooldown: a press on the main
+        // hand while the off hand is in use does not resolve at all. Nothing is pressed until it has come down, which it
+        // does on this very tick, since nothing here asks for it.
+        boolean offHandBusy = o[self + ObservationSchema.SELF_USING_OFFHAND] > 0.5F;
+
+        boolean answered = me.asked && cooling;
+        boolean ignored = me.asked && !cooling;
+        me.asked = false;
+
+        a[act + ActionSchema.SELECTED_SLOT] = ranged;
+
+        if (me.draw == DRAW_FIRING) {
+
+            // The press before this one either sent a bolt, which leaves the hands free, or started a bow drawing. That
+            // is the whole difference between the two weapons, and it only has to be seen once.
+            if (using) {
+
+                me.weapon = WEAPON_BOW;
+                me.draw = DRAW_DRAWING;
+            }
+
+            else if (ignored) {
+
+                // Nobody pressed anything, so whatever was loaded is loaded still.
+                me.draw = DRAW_LOADED;
+            }
+
+            else {
+
+                me.weapon = me.weapon == WEAPON_UNKNOWN ? WEAPON_CROSSBOW : me.weapon;
+                me.draw = DRAW_IDLE;
+                return;
+            }
+        }
+
+        if (me.draw == DRAW_DRAWING) {
+
+            if (using) {
+
+                // A bow at full draw stays there until the shot is on: holding costs nothing and loses no power, and a
+                // release decided by the aim is a release a network can learn from what it sees. A crossbow's wind is let
+                // go the moment it is in, or the body reaches the end of the use and the wind is wasted.
+                boolean release = charge >= FULL_CHARGE && (me.weapon != WEAPON_BOW || aimed);
+
+                if (!release) {
+
+                    a[act + ActionSchema.USE] = 1.0F;
+                    return;
+                }
+
+                // Letting go fires a bow and loads a crossbow. Which of the two it was is settled by the next press.
+                me.draw = me.weapon == WEAPON_BOW ? DRAW_IDLE : DRAW_LOADED;
+                return;
+            }
+
+            // Asked for a draw and nothing is drawing. A press that resolved and left the hands with nothing charged is a
+            // weapon with nothing to fire: a bow with an empty quiver does not so much as come up. A press that never went
+            // out says nothing at all, and is simply asked again.
+            me.spent = me.spent || answered && charge <= 0.0F && !offHandBusy;
+            me.draw = DRAW_IDLE;
+        }
+
+        if (me.draw == DRAW_LOADED) {
+
+            if (!aimed || cooling || offHandBusy) {
+
+                return;
+            }
+
+            a[act + ActionSchema.USE] = 1.0F;
+            me.asked = true;
+            me.draw = DRAW_FIRING;
+            return;
+        }
+
+        if (me.draw == DRAW_IDLE && !cooling && !offHandBusy) {
+
+            a[act + ActionSchema.USE] = 1.0F;
+            me.asked = true;
+            me.draw = DRAW_DRAWING;
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // The shield
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * Holds the shield up while there is nothing better to do with the hands, and asks the off hand the first time
+     * whether there is a shield in it at all.
+     *
+     * <p>It goes up against anything inside reach while the swing is still cooling, but only where the fight gives a
+     * reason for it: something with a bow in its hands that has got this close, something whose reach is longer than a
+     * man's, which in the league means a ravager, or a fight that has already cost health. A shield takes the movement
+     * keys down to a fifth, and footwork is what wins the fights the fighter already wins untouched, so it stays out of
+     * those. Where it does go up it pays twice over: a ravager that is blocked is stunned for two seconds, and it carries
+     * no axe to knock the shield aside with.
+     *
+     * <p>It also goes up for a shot already in the air, whatever the distance to whoever fired it, and that one is not a
+     * guess: only something actually on its way to the agent holds a slot. It stays down while the swing is ready and the
+     * target is in reach, since a blow landed is worth more than an arrow stopped, and it comes back up straight after.
+     *
+     * @return whether the hands are busy, and so whether the swing has to wait
+     */
+    private boolean hold(Fighter me, float[] o, float[] a, int obs, int act, int slot, int target, float distance,
+            float strength, float incoming, boolean fleeing) {
+
+        int self = obs + ObservationSchema.SELF_OFFSET;
+        boolean up = o[self + ObservationSchema.SELF_USING_OFFHAND] > 0.5F;
+
+        if (me.shieldWait > 0) {
+
+            me.shieldWait--;
+        }
+
+        // A press with the cooldown clear sets it to full, so a cooldown that moved is the proof the press went out. Without
+        // that proof nothing is concluded: while this brain is only labelling somebody else's fight its presses never
+        // happen, and a shield written off on the first tick of a fight is a shield the student is never shown.
+        if (me.askedShield && !up && o[self + ObservationSchema.SELF_USE_COOLDOWN] > 0.0F) {
+
+            // The press resolved and the off hand stayed down. Either there is nothing in it, or an axe has just knocked
+            // aside the shield that was, and no shield comes up again for five seconds.
+            if (me.shieldSeen) {
+
+                me.shieldWait = AgentMob.SHIELD_DISABLED_TICKS;
+            }
+
+            else {
+
+                me.shield = SHIELD_NONE;
+            }
+        }
+
+        me.askedShield = false;
+        me.shieldSeen |= up;
+
+        if (up) {
+
+            me.shield = SHIELD_CARRIED;
+        }
+
+        // Health short of full is the whole of "this fight is going badly": it says the opponent can reach the agent, and
+        // it is the one thing about a fight the observation says outright.
+        boolean hurt = o[self + ObservationSchema.SELF_HEALTH] < 1.0F;
+        boolean worthIt = hurt || me.reachesFar(slot) || shootsBack(o, target);
+
+        // A blow is only worth waiting for while the swing is still cooling; a shot is worth stopping whenever nothing can
+        // be hit anyway, which out past a swing's reach is always.
+        boolean againstBlows = distance <= BLOCK_RANGE && worthIt && strength < FULL_STRENGTH;
+        boolean againstShots = incoming <= BLOCK_SHOT_RANGE && distance > SWING_RANGE;
+
+        boolean wanted = !fleeing && me.shield != SHIELD_NONE && me.shieldWait <= 0 && (againstBlows || againstShots);
+
+        if (!wanted) {
+
+            // Letting go on the tick the swing is ready costs that tick's attack, which the body swallows whatever is
+            // pressed, so the swing lands on the next one.
+            return up;
+        }
+
+        a[act + ActionSchema.USE_OFFHAND] = 1.0F;
+
+        if (!up && o[self + ObservationSchema.SELF_USE_COOLDOWN] <= 0.0F) {
+
+            // A press with the cooldown clear resolves this tick, so the answer arrives on the next one.
+            me.askedShield = true;
+        }
+
+        return true;
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // Where a thrown arrow lands
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * The angle above the horizon to loose at, for a target so far away across and so far up, by halving the arc between
+     * the flattest and the steepest shot until the two agree. Bisection rather than a formula because the arrow is not a
+     * parabola: it loses a hundredth of its speed every tick as well as falling, and over twenty ticks that is a quarter
+     * of its range.
+     */
+    private static double elevationFor(double across, double rise, double speed) {
+
+        if (across < 1.0E-4D) {
+
+            return rise > 0.0D ? MAX_ELEVATION : -MAX_ELEVATION;
+        }
+
+        double low = -MAX_ELEVATION;
+        double high = MAX_ELEVATION;
+
+        for (int halving = 0; halving < 20; halving++) {
+
+            double middle = 0.5D * (low + high);
+
+            if (heightAfter(middle, across, speed) < rise) {
+
+                low = middle;
+            }
+
+            else {
+
+                high = middle;
+            }
+        }
+
+        return 0.5D * (low + high);
+    }
+
+    /**
+     * How high an arrow loosed at this angle is by the time it has covered so much ground, walked a tick at a time the
+     * way the arrow itself is: it moves at the speed it has, and only then loses a hundredth of it and a twentieth of a
+     * block of height.
+     */
+    private static double heightAfter(double elevation, double across, double speed) {
+
+        double horizontal = speed * Math.cos(elevation);
+        double vertical = speed * Math.sin(elevation);
+        double covered = 0.0D;
+        double height = 0.0D;
+
+        for (int tick = 0; tick < MAX_FLIGHT_TICKS; tick++) {
+
+            double next = covered + horizontal;
+
+            if (next >= across) {
+
+                double part = (across - covered) / Math.max(1.0E-9D, horizontal);
+                return height + vertical * part;
+            }
+
+            covered = next;
+            height += vertical;
+
+            horizontal *= ARROW_DRAG;
+            vertical = vertical * ARROW_DRAG - ARROW_GRAVITY;
+        }
+
+        return height;
+    }
+
+    /** How long that shot is in the air before it gets there, which is how far ahead of the target to aim. */
+    private static double flightTicks(double elevation, double across, double speed) {
+
+        double horizontal = speed * Math.cos(elevation);
+        double covered = 0.0D;
+
+        for (int tick = 0; tick < MAX_FLIGHT_TICKS; tick++) {
+
+            double next = covered + horizontal;
+
+            if (next >= across) {
+
+                return tick + (across - covered) / Math.max(1.0E-9D, horizontal);
+            }
+
+            covered = next;
+            horizontal *= ARROW_DRAG;
+        }
+
+        return MAX_FLIGHT_TICKS;
     }
 
     // ---------------------------------------------------------------------------------------------------------------
@@ -427,6 +1225,13 @@ public final class ScriptedBrain implements Brain {
         double dx = next % X - CENTRE;
         double dz = (next / X) % Z - CENTRE;
 
+        // Nowhere to go: a retreat with its back to a wall answers with the spot it already stands on, and dividing by
+        // the larger of two zeroes would hand the body a pair of not-a-numbers to walk along.
+        if (dx == 0.0D && dz == 0.0D) {
+
+            return;
+        }
+
         // Into the agent's own frame: forward along its look, and strafing positive to the left, which is minus right.
         double ahead = dx * -sin + dz * cos;
         double rightward = dx * -cos + dz * -sin;
@@ -531,8 +1336,8 @@ public final class ScriptedBrain implements Brain {
     }
 
     /**
-     * The offset of the closest body in an enemy slot, or -1 when nothing is in view. A slot can also hold something shot
-     * at the agent, and an arrow a block away is nearer than whatever fired it: what to fight is only ever a body.
+     * The closest body in an enemy slot, or -1 when nothing is in view. A slot can also hold something shot at the agent,
+     * and an arrow a block away is nearer than anything that fired it: what to fight is only ever a body.
      */
     private static int nearestEnemy(float[] o, int obs) {
 
@@ -554,8 +1359,33 @@ public final class ScriptedBrain implements Brain {
             if (distance < bestDistance) {
 
                 bestDistance = distance;
-                best = at;
+                best = slot;
             }
+        }
+
+        return best;
+    }
+
+    /**
+     * How far off the nearest thing shot at the agent is, in blocks, or a number past anything in view when nothing is
+     * coming. Only what is on its way is ever in a slot, so the distance is the whole question: an arrow flies three
+     * blocks a tick, and a shield that goes up while one is still twenty blocks out is a shield held up for nothing.
+     */
+    private static float incomingDistance(float[] o, int obs) {
+
+        float best = (float) ObservationSchema.VIEW_DISTANCE * 2.0F;
+
+        for (int slot = 0; slot < ObservationSchema.ENEMY_SLOTS; slot++) {
+
+            int at = obs + ObservationSchema.enemyOffset(slot);
+
+            if (o[at + ObservationSchema.ENEMY_PRESENT] < 0.5F
+                    || !AgentObservation.isProjectileKind(o[at + ObservationSchema.ENEMY_KIND])) {
+
+                continue;
+            }
+
+            best = Math.min(best, o[at + ObservationSchema.ENEMY_DISTANCE] * (float) ObservationSchema.VIEW_DISTANCE);
         }
 
         return best;

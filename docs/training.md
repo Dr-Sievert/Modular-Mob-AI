@@ -10,6 +10,25 @@ to copy a hand-written fighter first, then improve the copy with reinforcement l
 1. **The scripted teacher.** `brain/ScriptedBrain.java` wins about 98.6% against a vindicator on terrain. It plans a
    path over the agent's own terrain grid, keeps the vindicator between 2.4 and 3.1 blocks, swings only at full strength
    and never into a block, and drops down to a target stuck in a pit. It sees only what the network sees.
+
+   It also uses everything it carries, which matters because PPO only improves what it samples. Seeded from a teacher
+   that never pressed use, the first league run held use on 0 of 79,724 ticks over its last 400 fights, fired no arrows
+   and raised no shield: a bow needs twenty ticks of held use before the first arrow flies, and nothing in the reward
+   finds that by accident. So the teacher now also:
+   - **draws a bow** when the target is out of reach with a clear line, holds it to full power, aims with gravity and
+     drag worked out by bisection and leads the target, looses when the shot is on, and goes back to the sword when the
+     target closes or the quiver runs out;
+   - **winds a crossbow**, holds the bolt, and fires when aimed. A bow and a crossbow read as one item category, and it
+     tells them apart from what a release does rather than from the layout;
+   - **raises a shield** against something inside reach while its own swing cools, against anything with a bow in its
+     hands that has got close, against a reach longer than a man's, and against a shot already in the air;
+   - **blocks a ravager to stun it**, which the reach rule covers: only a ravager swings from four blocks away, and a
+     blocked ravager is stunned for two seconds and carries no axe to knock the shield aside;
+   - **backs away from a lit creeper**: empty hands, never seen to swing, and stopped coming within three blocks is a
+     creeper with its fuse lit, and it walks clear to seven and a half blocks before coming back.
+
+   All of it is decided from the observation and a little state per agent, which the network has 128 numbers of memory
+   for; see the class comment for what that state is and why every bit of it is checked against the body.
 2. **Imitation**, with `scripts\imitate.ps1 -Run <copy>`:
    - It records the teacher's fights with its movement and aim pushed off by noise (DART, 0.1 of full deflection), so
      the record includes getting back on target.

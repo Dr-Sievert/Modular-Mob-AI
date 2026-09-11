@@ -25,8 +25,8 @@ import net.sievert.modularmobai.arena.Loadout;
  * fighter, and fought with under a player's rules. Mobs keep what they spawn with: a skeleton is a skeleton because of
  * its bow.
  *
- * <p>The scripted fighter can only close in and swing, so when it fights it only ever gets something to swing, see
- * {@link #melee}.
+ * <p>The scripted fighter uses everything it carries now, but as an opponent it still only ever gets something to swing,
+ * see {@link #melee}: it is held at 1500 and every other rating is measured against it, so its strength has to stay put.
  */
 public final class Loadouts {
 
@@ -91,7 +91,7 @@ public final class Loadouts {
         return enabled;
     }
 
-    /** Whether the first thing in the hotbar is something to swing, which is all the scripted fighter knows how to use. */
+    /** Whether the first thing in the hotbar is something to swing, which is all the scripted fighter is armed with here. */
     public static boolean melee(Loadout loadout) {
 
         return !loadout.hotbar().isEmpty()

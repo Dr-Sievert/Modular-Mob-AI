@@ -67,6 +67,17 @@ are deliberate.
 
 ## Learning
 
+- **A network never learns what the teacher never did.** Seeded from a copy of a teacher that only ever swung, the first
+  league run held use on 0 of 79,724 ticks over its last 400 fights and fired no arrows at all. PPO only improves what it
+  samples, and a bow pays nothing until twenty ticks of held use have gone by, so no amount of exploration finds one. The
+  loadouts show it: bow 42% won and crossbow 48% against 75-82% for every melee loadout.
+  - The answer is the teacher, not the reward. Anything the teacher cannot do is worth building there first.
+- **A teacher that keeps state has to check it against the body.** The teacher labels a student's fight in a DAgger
+  round, and there its own presses never happen. A state machine that assumed they had would decide on the first tick of
+  the first fight that the quiver was empty and the off hand held no shield, and would never show the student either
+  again. The use cooldown settles it: any press with it clear sets it to full, so a cooldown that did not move says
+  nobody pressed anything, and nothing is concluded from a press nobody made.
+
 - **PPO made a good copy worse, twice.** A policy near its best has little to gain from a critic that hasn't learned the
   fight yet, and much to lose. What fixed it (`-FromCopy`):
   - 4x the experience per update, and smaller, bounded steps;
