@@ -62,6 +62,17 @@ public class GameTestServerMixin {
         }
     }
 
+    // The terrain suite's sites are generated a couple at a time while fights run on the ones already there. Every tick
+    // hands the sites that have finished to the fights and asks for the next ones.
+    @Inject(method = "tickServer", at = @At("TAIL"))
+    private void modular_mob_ai$generateTerrain(BooleanSupplier hasTimeLeft, CallbackInfo ci) {
+
+        if (GameTestTuning.naturalTerrain()) {
+
+            TerrainSites.tick(((MinecraftServer) (Object) this).overworld());
+        }
+    }
+
     // Fires the moment the suite finishes: the server stops its own stopwatch here and logs its summary right after.
     // Hooking the shutdown callback instead was tried first and was unreliable, because the process can exit before that
     // callback runs; this point is on the same thread as the summary, so it always fires.
