@@ -54,14 +54,15 @@ import net.sievert.modularmobai.gametest.mixin.SlimeInvoker;
  *   <li>A slime or a magma cube is always the biggest there is. The smallest slime does no damage at all, and a middling
  *       one little more.</li>
  *   <li>A slime hurts what touches it only if that is a player, so the league has it touch the agent as the game has it
- *       touch a player, see {@link SlimeInvoker}.</li>
+ *       touch a player, see {@link SlimeInvoker}. A breeze will only fight a player or an iron golem, and fights the
+ *       agent as it would a player, see {@link net.sievert.modularmobai.gametest.mixin.BreezeMixin}.</li>
  * </ul>
  *
  * <p>Most mobs fight whatever their target is, and only look for one among players, so the agent is made the target and
  * made it again whenever it lapses: a mob that loses sight of its target for a few seconds lets go of it. Neutral mobs
  * are angered the same way, and calm down again after half a minute unless angered anew, which they are. Mobs that think
- * with a brain rather than goals, the piglins and hoglins, are given the agent as their attack target in their memory;
- * a piglin also has to be angry at it, or it decides the target is not worth it.
+ * with a brain rather than goals, the piglins, hoglins, zoglin and breeze, are given the agent as their attack target in
+ * their memory; a piglin also has to be angry at it, or it decides the target is not worth it.
  *
  * <p>League fights happen at midnight with mob griefing off, see {@link League#prepareWorld}: at noon the undead burn to
  * death in the open, a spider in daylight lets its target go, and an enderman teleports away; and a creeper's crater or an
