@@ -512,7 +512,18 @@ afterEvaluate {
             sizing = 'no measurements yet, starting conservatively'
         }
 
-        def heap = providers.gradleProperty('workerHeap').getOrElse('2G')
+        // What the workers fight on, which decides how much ground a worker holds and so how big a heap it needs. The
+        // pool of kept worlds below reads these again; they are worked out here because the heap default depends on them.
+        def suite = (extraProperties['modular_mob_ai.gametest.suite'] ?: providers.gradleProperty('suite').getOrElse('')) as String
+        def onTerrain = suite == 'terrain' || suite == 'league'
+        def onLibrary = onTerrain && libraryWanted && libraryIndex.isFile()
+
+        // Nearly all of a worker's heap is the ground under and around the sites it is fighting on, so what the sites cost
+        // is what the heap has to hold. Reading them from the terrain library costs a third of generating them: measured
+        // over a full round, a worker on the library holds about 520 MB live and runs in a gigabyte, where one generating
+        // its own ground settles at about 0.95 GB and needs more. So the library gets a gigabyte and everything else two,
+        // which is what every run used to get. -PworkerHeap says otherwise.
+        def heap = providers.gradleProperty('workerHeap').getOrElse(onLibrary ? '1G' : '2G')
 
         // Every worker is a whole Minecraft server, so memory caps the count as much as cores do. Each needs its heap
         // plus about half a gigabyte the heap does not cover: measured, a worker with a 1 GB heap peaked at 1.35 GB of
@@ -712,9 +723,6 @@ afterEvaluate {
         // Worlds earlier workers generated, for as many of these as the pool has; the rest generate their own. While the
         // pool is short of worlds, one worker of every run generates a fresh one to add to it, or the pool would never grow
         // past the number of workers and those few worlds would all be used up at once.
-        def suite = (extraProperties['modular_mob_ai.gametest.suite'] ?: providers.gradleProperty('suite').getOrElse('')) as String
-        def onTerrain = suite == 'terrain' || suite == 'league'
-        def onLibrary = onTerrain && libraryWanted && libraryIndex.isFile()
         def pooled = onTerrain && terrainPoolSize > 0 && !onLibrary
         def keptWorlds = pooled ? keptTerrain() : []
 
@@ -758,6 +766,16 @@ afterEvaluate {
 
             // Appended last so they win over anything the run configuration already set.
             command += "-Xmx${heap}".toString()
+
+            // Vanilla's light engine hands readers a snapshot of where every lit section's light is by copying the whole
+            // table every time it runs (LayerLightSectionStorage.swapSectionMap, once per light update per layer). With
+            // the thousands of chunk sections a worker holds, each of the two arrays inside that copy is about a
+            // megabyte. G1 sizes its regions at a two-thousandth of the heap, clamped to at least one megabyte, so at
+            // every heap a worker runs in the regions are one megabyte and anything over half of one is a humongous
+            // object: allocated straight into the old generation, and only freed by a full collection. Four megabyte
+            // regions leave those copies ordinary young objects that die where they were born. Nothing else a worker
+            // allocates is anywhere near that big, so the only cost is coarser regions.
+            command += '-XX:G1HeapRegionSize=4m'
 
             if (workerCpus > 0) {
 
