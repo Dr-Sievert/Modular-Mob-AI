@@ -4,9 +4,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.gametest.framework.GameTestHelper;
-import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.MobSpawnType;
-import net.minecraft.world.entity.monster.Vindicator;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.AABB;
@@ -16,6 +15,7 @@ import net.sievert.modularmobai.entity.agent.AgentMob;
 import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.gametest.GameTestGroup;
 import net.sievert.modularmobai.gametest.GameTestTuning;
+import net.sievert.modularmobai.gametest.Opponents;
 import net.sievert.modularmobai.gametest.RepeatGameTest;
 import net.sievert.modularmobai.gametest.replay.FightRecorder;
 import net.sievert.modularmobai.gametest.util.TestDurationStats;
@@ -31,6 +31,8 @@ import net.sievert.modularmobai.gametest.util.TestDurationStats;
  *
  * <p>The arena never drives the agent itself. The level's driver steps every agent at the start of each tick; the arena
  * only sets the fight up and says how it ended.
+ *
+ * <p>A run can put another mob in the vindicator's place, see {@link Opponents}.
  */
 @GameTestGroup
 public class AgentVindicatorGameTest {
@@ -41,7 +43,7 @@ public class AgentVindicatorGameTest {
     private static final int FLOOR_Y = 2;
 
     private static final BlockPos AGENT_POS = new BlockPos(SIZE / 2, FLOOR_Y, 2);
-    private static final BlockPos VINDICATOR_POS = new BlockPos(SIZE / 2, FLOOR_Y, SIZE - 3);
+    private static final BlockPos OPPONENT_POS = new BlockPos(SIZE / 2, FLOOR_Y, SIZE - 3);
 
     /** How long a fight may run before it is called as a loss. A minute is well past any fight that is going to end. */
     private static final int FIGHT_TICKS = 1200;
@@ -61,31 +63,32 @@ public class AgentVindicatorGameTest {
     public static void agentFightsVindicator(GameTestHelper helper, int arena) {
 
         final AgentMob agent = helper.spawn(ModEntities.trainingAgent(), AGENT_POS);
-        final Vindicator vindicator = helper.spawn(EntityType.VINDICATOR, VINDICATOR_POS);
+        final Mob opponent = Opponents.spawn(helper, OPPONENT_POS);
 
         // spawn() skips finalizeSpawn, so a vindicator would arrive empty handed and hit for far less than one that
-        // spawned on its own. Running it here hands it the iron axe it is supposed to carry.
-        vindicator.finalizeSpawn(
+        // spawned on its own. Running it here hands it the iron axe it is supposed to carry, as it hands a skeleton its bow
+        // and a pillager its crossbow.
+        opponent.finalizeSpawn(
                 helper.getLevel(),
-                helper.getLevel().getCurrentDifficultyAt(helper.absolutePos(VINDICATOR_POS)),
+                helper.getLevel().getCurrentDifficultyAt(helper.absolutePos(OPPONENT_POS)),
                 MobSpawnType.EVENT,
                 null
         );
 
-        vindicator.setTarget(agent);
+        opponent.setTarget(agent);
 
         // Arenas sit only a few blocks apart, so without the bounds the agent would see into its neighbours and could end
         // up chasing an opponent in the next fight over. The box is the plot the test owns, with a little slack.
         final Episode episode = new Episode(FIGHT_TICKS, new AABB(
                 Vec3.atLowerCornerOf(helper.absolutePos(BlockPos.ZERO)),
-                Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(SIZE, SIZE, SIZE)))).inflate(1.0D), vindicator);
+                Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(SIZE, SIZE, SIZE)))).inflate(1.0D), opponent);
 
         agent.setHotbarItem(0, new ItemStack(Items.IRON_SWORD));
         agent.startEpisode(episode);
 
         // Null unless this is one of the fights asked to be written down for watching later. The box starts one above
         // the structure block, so the roof, the last of its nine layers, is at helper height nine.
-        final FightRecorder replay = FightRecorder.start(agent, vindicator, helper.absolutePos(new BlockPos(0, SIZE, 0)).getY());
+        final FightRecorder replay = FightRecorder.start(agent, opponent, helper.absolutePos(new BlockPos(0, SIZE, 0)).getY());
 
         helper.startSequence()
                 .thenWaitUntil(() -> {
@@ -95,7 +98,7 @@ public class AgentVindicatorGameTest {
                         replay.tick();
                     }
 
-                    if (agent.isAlive() && vindicator.isAlive() && helper.getTick() < FIGHT_TICKS) {
+                    if (agent.isAlive() && opponent.isAlive() && helper.getTick() < FIGHT_TICKS) {
 
                         throw new GameTestAssertException("Fight still going");
                     }
@@ -105,7 +108,7 @@ public class AgentVindicatorGameTest {
                     // Only the arena knows what winning meant, so it is the one that says so. An agent that died has
                     // already reported its own loss; one that is still standing next to a live opponent ran out of time,
                     // which is the other way to lose.
-                    final boolean won = !vindicator.isAlive() && agent.isAlive();
+                    final boolean won = !opponent.isAlive() && agent.isAlive();
 
                     if (won) {
 

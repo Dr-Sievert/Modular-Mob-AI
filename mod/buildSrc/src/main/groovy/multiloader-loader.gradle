@@ -145,6 +145,10 @@ afterEvaluate {
 
     runTask.doLast { reportReplays() }
 
+    // Who the agents fight, for trying them against something other than a vindicator: -Popponent=minecraft:skeleton. Set
+    // on the single process run like the replay properties, so every worker runArenas starts copies it from there.
+    runTask.systemProperty('modular_mob_ai.gametest.opponent', providers.gradleProperty('opponent').getOrElse(''))
+
     // The small tool that lives in the game test sources. It touches nothing of the game, so it runs as a plain Java
     // program in a second rather than booting a server: the observation layout the training side builds a network from,
     // and the parity check between this build's forward pass and PyTorch's.
