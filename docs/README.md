@@ -49,9 +49,9 @@ already run on the first ones. `gametest/terrain/TerrainSites` holds all of it.
 
 Generating 64 sites takes a worker about a minute and a half, so the build keeps the worlds workers generated, in
 `runs/terrain/<minecraft version>`, about 60 MB each. A later worker gets one of those and reads its sites from disk in
-seconds: the least used world first, each at most 8 times (`terrainUses`) before it is dropped and a worker that finds no
-world left generates a fresh one, so the terrain keeps changing. The pool holds up to 8 worlds (`terrainPool`, 0 turns it
-off); delete the folder to start over.
+seconds: the least used world first, each at most 8 times (`terrainUses`) before it is dropped. The pool holds 8 worlds
+(`terrainPool`, 0 turns it off), and while it is short of that, one worker of every run generates a fresh one to add, so
+the terrain keeps changing. Delete the folder to start over.
 
 A fight ends when either dies, or after 1200 ticks, a minute, which is a loss.
 

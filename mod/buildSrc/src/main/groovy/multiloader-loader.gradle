@@ -175,9 +175,9 @@ afterEvaluate {
     // Generating the terrain is most of what starting a worker on natural terrain costs, and a world generated once can be
     // fought in again. So every such worker's world is kept in runs/terrain/<minecraft version>, and later workers start
     // from one of those, reading their fight sites from disk instead of generating them: the least used first, each at
-    // most terrainUses times. A world that has been used up is dropped, and the next worker that finds none left
-    // generates a fresh one in its place, so the terrain keeps changing. A world is about 60 MB and the pool keeps
-    // terrainPool of them; -PterrainPool=0 turns it off.
+    // most terrainUses times. A world that has been used up is dropped, and while the pool is short of terrainPool
+    // worlds, one worker of every run generates a fresh one, so the terrain keeps changing. A world is about 60 MB;
+    // -PterrainPool=0 turns the pool off.
     def terrainPool = new File(new File(new File(repositoryRoot, 'runs'), 'terrain'), project.property('minecraft_version') as String)
     def terrainPoolSize = Integer.parseInt(providers.gradleProperty('terrainPool').getOrElse('8'))
     def terrainUses = Integer.parseInt(providers.gradleProperty('terrainUses').getOrElse('8'))
@@ -576,15 +576,22 @@ afterEvaluate {
         pidFile.parentFile.mkdirs()
         pidFile.text = ''
 
-        // Worlds earlier workers generated, for as many of these as the pool has; the rest generate their own.
+        // Worlds earlier workers generated, for as many of these as the pool has; the rest generate their own. While the
+        // pool is short of worlds, one worker of every run generates a fresh one to add to it, or the pool would never grow
+        // past the number of workers and those few worlds would all be used up at once.
         def suite = (extraProperties['modular_mob_ai.gametest.suite'] ?: providers.gradleProperty('suite').getOrElse('')) as String
         def pooled = suite == 'terrain' && terrainPoolSize > 0
         def keptWorlds = pooled ? keptTerrain() : []
+        def poolShort = keptWorlds.size() < terrainPoolSize
+
+        keptWorlds = keptWorlds.take(Math.max(0, workers - (pooled && poolShort ? 1 : 0)))
 
         if (pooled) {
 
-            logger.lifecycle("Terrain: ${Math.min(workers, keptWorlds.size())} of ${workers} workers start from a kept world "
-                    + "(${keptWorlds.size()} in ${terrainPool})")
+            def generating = workers - keptWorlds.size()
+
+            logger.lifecycle("Terrain: ${keptWorlds.size()} of ${workers} workers start from a world kept in ${terrainPool}, "
+                    + "${generating} generate${generating == 1 ? 's' : ''} a new one")
         }
 
         for (int worker = 0; worker < workers; worker++) {
