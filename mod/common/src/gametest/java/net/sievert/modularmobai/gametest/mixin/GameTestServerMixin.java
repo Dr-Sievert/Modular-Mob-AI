@@ -62,6 +62,24 @@ public class GameTestServerMixin {
         }
     }
 
+    // The terrain suite waits for its first site as soon as the tests have started, in the same tick, so the wait counts
+    // as starting up rather than as testing, which it would once the tick was over.
+    @Inject(
+            method = "tickServer",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/gametest/framework/GameTestServer;startTests(Lnet/minecraft/server/level/ServerLevel;)V",
+                    shift = At.Shift.AFTER
+            )
+    )
+    private void modular_mob_ai$awaitFirstSite(BooleanSupplier hasTimeLeft, CallbackInfo ci) {
+
+        if (GameTestTuning.naturalTerrain()) {
+
+            TerrainSites.awaitFirstSite(((MinecraftServer) (Object) this).overworld());
+        }
+    }
+
     // The terrain suite's sites are generated a couple at a time while fights run on the ones already there. Every tick
     // hands the sites that have finished to the fights and asks for the next ones.
     @Inject(method = "tickServer", at = @At("TAIL"))
@@ -165,8 +183,9 @@ public class GameTestServerMixin {
     }
 
     // The framework picks a random corner for its plots at the height of a flat world's floor, which on real terrain is
-    // somewhere deep under a random ocean. For the terrain suite the plots go under the fight sites instead, and choosing
-    // those sites is what starts the world generating them.
+    // somewhere deep under a random ocean that would have to be generated first. For the terrain suite the plots go deep
+    // under the spawn instead, which is loaded already, and this is also where the fight sites are chosen and start
+    // generating.
     @ModifyArg(
             method = "startTests",
             at = @At(
