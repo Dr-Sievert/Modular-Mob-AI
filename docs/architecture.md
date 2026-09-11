@@ -100,9 +100,31 @@ Each worker runs 25 fights at once on a quarter again as many sites (32), plus 4
 - Chunks unload when a site moves on (`ChunkMapMixin`). Nothing is saved while tests run (`ServerLevelMixin`), and
   vanilla skips unloading entirely for a level that doesn't save, so without that mixin workers ran out of memory.
 
-Workers keep the worlds they generate in `runs/terrain/<minecraft version>`, up to a pool of 8 (`terrainPool`), each
-reused at most 8 times (`terrainUses`). A later worker reads its first sites from disk in seconds instead of generating
-them.
+### The terrain library
+
+Generating that ground was most of what a worker did besides fighting: two to three cores, and the ring of part generated
+chunks the generator needs around every site was most of the worker's heap. So the sites are generated once and kept, by
+`scripts\terrain.ps1` (`gametest/terrain/TerrainLibrary`, the `library` suite):
+
+- Sites go in blocks of 128, each block placed on land of its own, on the same lattice the fights use. Every site is
+  checked for somewhere a fight can start; the ones that are water or cliff are listed as unusable and never handed out.
+- The build puts the builders' worlds together into `runs/terrain/<minecraft version>/library`, with an index saying where
+  the blocks are, how the lattice is laid out, and which points are unusable. 2,048 sites are about 1.6 GB.
+- Every terrain worker hard-links the library's region files into its own world, so it is on disk once however many
+  workers run, and walks the library from a place of its own. Vanilla loads a finished chunk whose neighbours are on disk
+  rather than generating it, and reads nothing further out, so no ground is generated in a worker again.
+- Nothing a worker does writes to the library: nothing is saved while tests run, a world on the library is thrown away
+  rather than saved, and `RegionFileStorageMixin` refuses a chunk write at the one place chunk data reaches a region file.
+  Entities and points of interest are not linked, so the wildlife the generator put down never appears either.
+
+Measured on one worker, 25 slots, 20,000 fights: 1.30 cores instead of 2.54, a third fewer chunk sections held, every
+site ready in 16 s instead of 64 s, and slots idle waiting for a site down from 55% to 12.8%. A tick costs the same
+either way; what the library saves is the cores and the memory that decide how many workers fit.
+
+Without a library, workers generate their own ground and keep the worlds they generate in
+`runs/terrain/<minecraft version>`, up to a pool of 8 (`terrainPool`), each reused at most 8 times (`terrainUses`); a
+later worker then reads its first sites from disk in seconds instead of generating them. `-PterrainLibrary=false` asks
+for that even when a library exists.
 
 ## The league
 
