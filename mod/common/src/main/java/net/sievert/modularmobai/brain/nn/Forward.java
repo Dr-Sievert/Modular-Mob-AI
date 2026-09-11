@@ -6,11 +6,19 @@ package net.sievert.modularmobai.brain.nn;
  * <p>Plain loops over flat arrays. Dimensions come from the {@link Topology}, so a differently shaped network needs no
  * change here; the few percent that costs against constant loop bounds does not matter at this scale.
  *
- * <p>The batch loop sits inside each layer rather than outside the whole network. Each weight row is loaded once and
- * used for four agents at a time, which keeps the row in the first level cache and gives the processor four
- * independent sums to overlap. Every sum still runs in the same order, bias first and then input by input, whether an
- * agent lands in a block of four or in the remainder, so the result for one agent never depends on who it was batched
- * with. Rollout replay depends on that.
+ * <p>Each layer runs one agent at a time and is written so the compiler can turn its innermost loop into vector
+ * instructions, which is most of what a tick spends in here. Every weight matrix is held transposed, one array per
+ * input holding that input's weight to every output, and the running sums of all the outputs sit in one array too, so
+ * the innermost loop walks along a whole row of outputs at once: an input, times its weights, added into every sum.
+ * Nothing in that loop reads what another step of it wrote, so it runs eight outputs at a time. Four inputs go through
+ * per pass, so each sum is read and written a quarter as often.
+ *
+ * <p>None of that reorders a sum. Each output still starts from its bias and takes its inputs one by one, in order, a
+ * multiply rounded and then an add rounded, which is exactly the arithmetic of one output at a time; the results are
+ * the same to the last bit. The layout only has to be that awkward because the vectoriser in this Java only takes loops
+ * whose arrays are all read from the same index: two arrays indexed from different offsets stay scalar. Agents go
+ * through one at a time, so the result for one agent never depends on who it was batched with. Rollout replay depends
+ * on that.
  *
  * <p>The GRU follows PyTorch's {@code nn.GRUCell} exactly, gates in the order reset, update, new:
  *
@@ -28,7 +36,10 @@ public final class Forward {
 
     private Forward() {}
 
-    /** Working space for one batch, grown when a batch outgrows it and reused for every tick after. */
+    /**
+     * Working space for one batch, grown when a batch outgrows it and reused for every tick after, and the weights laid
+     * out the way the loops read them.
+     */
     public static final class Scratch {
 
         private float[] input = new float[0];
@@ -36,6 +47,21 @@ public final class Forward {
         private float[] gatesIn = new float[0];
         private float[] gatesHidden = new float[0];
         private float[] layer3 = new float[0];
+
+        /** One agent's running sums for whichever layer is being worked out, as wide as the widest layer. */
+        private float[] sums = new float[0];
+
+        /**
+         * Each weight matrix transposed, {@code [in][out]}: one array per input, holding its weight to every output. Laid
+         * out from {@link #laidOut} and again whenever the weights are swapped, which in training is once an iteration: a
+         * megabyte and a half copied, against the thousands of ticks that follow.
+         */
+        private float[][] fc1;
+        private float[][] gruIh;
+        private float[][] gruHh;
+        private float[][] fc2;
+        private float[][] head;
+        private WeightSet laidOut;
 
         private void ensure(Topology topology, int agents) {
 
@@ -53,6 +79,42 @@ public final class Forward {
             this.gatesIn = new float[capacity * 3 * topology.hidden()];
             this.gatesHidden = new float[capacity * 3 * topology.hidden()];
             this.layer3 = new float[capacity * topology.h3()];
+        }
+
+        private void layOut(WeightSet weights) {
+
+            if (this.laidOut == weights) {
+
+                return;
+            }
+
+            Topology topology = weights.topology();
+            float[] w = weights.params();
+
+            this.fc1 = transpose(w, topology.fc1W(), topology.obsDim(), topology.h1());
+            this.gruIh = transpose(w, topology.gruWih(), topology.h1(), 3 * topology.hidden());
+            this.gruHh = transpose(w, topology.gruWhh(), topology.hidden(), 3 * topology.hidden());
+            this.fc2 = transpose(w, topology.fc2W(), topology.hidden(), topology.h3());
+            this.head = transpose(w, topology.outW(), topology.h3(), topology.outDim());
+
+            this.sums = new float[Math.max(Math.max(topology.h1(), 3 * topology.hidden()), Math.max(topology.h3(), topology.outDim()))];
+            this.laidOut = weights;
+        }
+
+        /** The row major {@code [out][in]} matrix at {@code from}, as one array per input. */
+        private static float[][] transpose(float[] w, int from, int in, int out) {
+
+            float[][] rows = new float[in][out];
+
+            for (int j = 0; j < out; j++) {
+
+                for (int k = 0; k < in; k++) {
+
+                    rows[k][j] = w[from + j * in + k];
+                }
+            }
+
+            return rows;
         }
     }
 
@@ -78,14 +140,15 @@ public final class Forward {
         final int out = topology.outDim();
 
         scratch.ensure(topology, agents);
+        scratch.layOut(weights);
 
         normalise(weights, obs, scratch.input, agents);
 
-        linear(scratch.input, in, scratch.layer1, h1, w, topology.fc1W(), topology.fc1B(), in, h1, agents);
+        linear(scratch.input, in, scratch.layer1, h1, scratch.fc1, w, topology.fc1B(), agents, scratch.sums);
         relu(scratch.layer1, agents * h1);
 
-        linear(scratch.layer1, h1, scratch.gatesIn, 3 * h, w, topology.gruWih(), topology.gruBih(), h1, 3 * h, agents);
-        linear(hidden, h, scratch.gatesHidden, 3 * h, w, topology.gruWhh(), topology.gruBhh(), h, 3 * h, agents);
+        linear(scratch.layer1, h1, scratch.gatesIn, 3 * h, scratch.gruIh, w, topology.gruBih(), agents, scratch.sums);
+        linear(hidden, h, scratch.gatesHidden, 3 * h, scratch.gruHh, w, topology.gruBhh(), agents, scratch.sums);
 
         final float[] gi = scratch.gatesIn;
         final float[] gh = scratch.gatesHidden;
@@ -105,10 +168,10 @@ public final class Forward {
             }
         }
 
-        linear(hidden, h, scratch.layer3, h3, w, topology.fc2W(), topology.fc2B(), h, h3, agents);
+        linear(hidden, h, scratch.layer3, h3, scratch.fc2, w, topology.fc2B(), agents, scratch.sums);
         relu(scratch.layer3, agents * h3);
 
-        linear(scratch.layer3, h3, logits, out, w, topology.outW(), topology.outB(), h3, out, agents);
+        linear(scratch.layer3, h3, logits, out, scratch.head, w, topology.outB(), agents, scratch.sums);
     }
 
     /** {@code clamp((x - mean) / std, -clip, clip)}, the same operations in the same order as the training side. */
@@ -138,57 +201,55 @@ public final class Forward {
      *
      * @param srcStride how far apart consecutive agents' inputs are in {@code src}
      * @param dstStride how far apart consecutive agents' outputs are in {@code dst}
+     * @param rows      the weights transposed, one array per input
+     * @param bias      where the layer's biases start in {@code params}
+     * @param sums      at least as wide as the layer, overwritten
      */
-    private static void linear(float[] src, int srcStride, float[] dst, int dstStride,
-                               float[] w, int weights, int bias, int in, int out, int agents) {
+    private static void linear(float[] src, int srcStride, float[] dst, int dstStride, float[][] rows,
+                               float[] params, int bias, int agents, float[] sums) {
 
-        for (int j = 0; j < out; j++) {
+        final int in = rows.length;
+        final int out = rows[0].length;
 
-            final int row = weights + j * in;
-            final float b = w[bias + j];
+        for (int agent = 0; agent < agents; agent++) {
 
-            int agent = 0;
+            final int s = agent * srcStride;
 
-            for (; agent + 4 <= agents; agent += 4) {
+            System.arraycopy(params, bias, sums, 0, out);
 
-                final int s0 = agent * srcStride;
-                final int s1 = s0 + srcStride;
-                final int s2 = s1 + srcStride;
-                final int s3 = s2 + srcStride;
+            int k = 0;
 
-                float a0 = b;
-                float a1 = b;
-                float a2 = b;
-                float a3 = b;
+            for (; k + 4 <= in; k += 4) {
 
-                for (int k = 0; k < in; k++) {
+                final float x0 = src[s + k];
+                final float x1 = src[s + k + 1];
+                final float x2 = src[s + k + 2];
+                final float x3 = src[s + k + 3];
 
-                    final float weight = w[row + k];
+                final float[] w0 = rows[k];
+                final float[] w1 = rows[k + 1];
+                final float[] w2 = rows[k + 2];
+                final float[] w3 = rows[k + 3];
 
-                    a0 += weight * src[s0 + k];
-                    a1 += weight * src[s1 + k];
-                    a2 += weight * src[s2 + k];
-                    a3 += weight * src[s3 + k];
+                // Left to right, so each sum still takes these four inputs one after another.
+                for (int j = 0; j < out; j++) {
+
+                    sums[j] = sums[j] + w0[j] * x0 + w1[j] * x1 + w2[j] * x2 + w3[j] * x3;
                 }
-
-                dst[agent * dstStride + j] = a0;
-                dst[(agent + 1) * dstStride + j] = a1;
-                dst[(agent + 2) * dstStride + j] = a2;
-                dst[(agent + 3) * dstStride + j] = a3;
             }
 
-            for (; agent < agents; agent++) {
+            for (; k < in; k++) {
 
-                final int s = agent * srcStride;
-                float a = b;
+                final float x = src[s + k];
+                final float[] weight = rows[k];
 
-                for (int k = 0; k < in; k++) {
+                for (int j = 0; j < out; j++) {
 
-                    a += w[row + k] * src[s + k];
+                    sums[j] += weight[j] * x;
                 }
-
-                dst[agent * dstStride + j] = a;
             }
+
+            System.arraycopy(sums, 0, dst, agent * dstStride, out);
         }
     }
 
