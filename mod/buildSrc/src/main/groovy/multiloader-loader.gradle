@@ -215,6 +215,13 @@ afterEvaluate {
     runTask.systemProperty('modular_mob_ai.league.opponents', providers.gradleProperty('leagueOpponents').getOrElse(''))
     runTask.systemProperty('modular_mob_ai.league.loadouts', providers.gradleProperty('leagueLoadouts').getOrElse(''))
 
+    // Where the fight sites come from, as a seed: the same number puts every worker on the same ground, which is what
+    // comparing two builds needs, because one round in a forest and the next in the mountains differ by more than most
+    // changes do. Zero, the default, lets every worker pick somewhere new. Measured with it pinned, two rounds of 24,000
+    // fights came out on the same sites with the same fights won to the unit, which is what makes a few percent readable
+    // at all. See GameTestTuning.terrainSeed; on the terrain library it picks where in the library a worker starts.
+    runTask.systemProperty('modular_mob_ai.gametest.terrainSeed', providers.gradleProperty('terrainSeed').getOrElse('0'))
+
     // The small tool that lives in the game test sources. It touches nothing of the game, so it runs as a plain Java
     // program in a second rather than booting a server: the observation layout the training side builds a network from,
     // and the parity check between this build's forward pass and PyTorch's.
@@ -526,11 +533,12 @@ afterEvaluate {
         def heap = providers.gradleProperty('workerHeap').getOrElse(onLibrary ? '1G' : '2G')
 
         // Every worker is a whole Minecraft server, so memory caps the count as much as cores do. Each needs its heap
-        // plus about half a gigabyte the heap does not cover: measured, a worker with a 1 GB heap peaked at 1.35 GB of
-        // private memory and one with 2 GB at 2.5 GB, the rest being the collector's own tables, compiled code and class
-        // data. The machine keeps a reserve for everything else running on it. Asking for more workers than fit is
-        // quietly cut down rather than allowed to push the machine into swapping, which is where a long run turns a slow
-        // afternoon into a frozen desktop.
+        // plus a little over four tenths of a gigabyte the heap does not cover, which is rounded up to half: measured
+        // over a round of 24,000 fights on the library, a worker with a 1 GB heap peaked at 1.42 GB of private memory
+        // and the same worker with the old 1.5 GB heap at 1.92 GB, the difference beyond the heap being the collector's
+        // own tables, compiled code and class data. The machine keeps a reserve for everything else running on it.
+        // Asking for more workers than fit is quietly cut down rather than allowed to push the machine into swapping,
+        // which is where a long run turns a slow afternoon into a frozen desktop.
         def memory = java.lang.management.ManagementFactory.getOperatingSystemMXBean() as com.sun.management.OperatingSystemMXBean
         def gigabyte = 1024.0d * 1024.0d * 1024.0d
         def heapGigabytes = heap.toUpperCase(Locale.ROOT).endsWith('G') ? Double.parseDouble(heap[0..-2]) : Double.parseDouble(heap[0..-2]) / 1024.0d
@@ -775,6 +783,11 @@ afterEvaluate {
             // object: allocated straight into the old generation, and only freed by a full collection. Four megabyte
             // regions leave those copies ordinary young objects that die where they were born. Nothing else a worker
             // allocates is anywhere near that big, so the only cost is coarser regions.
+            //
+            // Measured over 6,000 fights on the library, a worker at one megabyte regions collected 360 times with 12 of
+            // them full collections, and its log named a humongous allocation 137 times; at four megabytes the same
+            // fights collected 156 times with one full collection and one such mention, and spent 0.94 s in pauses
+            // against 2.78 s.
             command += '-XX:G1HeapRegionSize=4m'
 
             if (workerCpus > 0) {

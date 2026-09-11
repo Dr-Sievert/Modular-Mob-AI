@@ -97,7 +97,8 @@ mod\gradlew.bat -p mod :fabric:runGametestParallel -Psuite=terrain -Parenas=2000
 | `arenas`, `workers`, `batchSize` | fights, worker processes, fights at once per worker |
 | `brain`, `brainWeights` | `scripted` (default) or `neural` with a `.mbw` file |
 | `replayEvery`, `replayRun` | record one fight in N, into `runs\<replayRun>\replays` |
-| `workerHeap` | heap per worker |
+| `workerHeap` | heap per worker; the build picks 1G on the terrain library and 2G otherwise when this is absent |
+| `terrainSeed` | pins where the fight sites come from, so two rounds fight the same ground; 0, the default, picks somewhere new |
 | `ticksPerSecond` | ceiling on the tick rate; unthrottled by default, since a game-test server never sleeps |
 
 Fabric writes a JUnit report to `mod/fabric/build/gametest/report.xml`. The normal client and server runs also load the

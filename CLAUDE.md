@@ -57,6 +57,7 @@ scripts\viewer.ps1                     watch recorded fights in the browser, 2D 
   Variable names are case-insensitive, so `$weights` and a `-Weights` parameter are the same variable.
 - Minecraft 1.21.1, Java 21, MultiLoader: `mod/common` is shared, `mod/fabric` and `mod/neoforge` are thin. Training
   and tests run on Fabric.
-- Each training worker is a headless game-test server with a 1.5 GB heap, about 1.85 GB of memory in all. The build
-  refuses to start more workers than free memory holds, and stops a run whose free memory falls under 1.5 GB.
+- Each training worker is a headless game-test server. Its heap comes from what it fights on: 1 GB on the terrain library,
+  about 1.4 GB of memory in all; 2 GB where it generates its own ground. The build refuses to start more workers than free
+  memory holds, and stops a run whose free memory falls under 1.5 GB.
 - Starting a run that is already training is refused, rather than killing the live one.

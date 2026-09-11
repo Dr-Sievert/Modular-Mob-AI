@@ -79,7 +79,7 @@ scripts\train.ps1 -Run league -Suite league -Seed vs-copy     the league, from v
 | `-RoundSize` | 250000 | fights per round; each round starts fresh worker processes |
 | `-Workers` | 0 = auto | worker processes (game servers) |
 | `-Slots` | 25 | fights at once per worker |
-| `-Heap` | 1536M | heap per worker; it needs about 0.95 GB live, so 1 GB thrashes |
+| `-Heap` | from the suite | heap per worker: the build gives 1G on the terrain library, where a worker holds about half a gigabyte live, and 2G where a worker generates its own ground and settles at about 0.95 GB |
 | `-RolloutSteps` | 16384 (65536 with `-FromCopy`) | steps of experience per update (an iteration) |
 | `-Device` | cuda | `cpu` keeps the GPU out of it |
 | `-Suite` | terrain | `arena` is a closed 9-block box, for quick checks; `league` is every mob, the scripted fighter and the run's own checkpoints |
@@ -193,9 +193,13 @@ demos\               the teacher's recorded answers (imitation runs, or a juncti
 
 ## The machine
 
-Each worker is a whole headless Minecraft server, about 1.85 GB of memory with its 1.5 GB heap, and uses 2.5 to 4
-cores: its server thread, plus terrain generation and garbage collection. On a 32 GB machine, memory decides how many
-fit. The build protects the machine:
+Each worker is a whole headless Minecraft server and uses 2.5 to 4 cores: its server thread, plus terrain generation and
+garbage collection. On a 32 GB machine, memory decides how many fit. Nearly all of a worker's heap is the ground under
+and around the sites it is fighting on, so the build picks the heap from what the run actually fights on: **1 GB on the
+terrain library**, where the sites are read from disk and about half a gigabyte is live, measured at 1.42 GB of private
+memory in all; **2 GB** where a worker generates its own ground and settles at about 0.95 GB live. `-Heap` overrides it.
+Every worker also gets `-XX:G1HeapRegionSize=4m`, without which a gigabyte heap collects worse than a larger one; see
+[findings.md](findings.md). The build protects the machine:
 
 | Gradle property | Default | What it does |
 | --- | --- | --- |
@@ -205,6 +209,7 @@ fit. The build protects the machine:
 | `workerCpus` | auto | cores each server sees |
 | `workerStagger` | 1 | seconds between starting workers |
 | `terrainPool`, `terrainUses` | 8, 8 | kept terrain worlds, and how often each is reused |
+| `terrainSeed` | 0 = anywhere | pins where every worker's fight sites come from, so two rounds fight the same ground; what comparing two builds needs |
 
 The trainer caps itself at half the GPU's memory and falls back to the CPU if an update runs out. An update takes 0.5 to
 1.6 s on an RTX 4070 Ti SUPER.
