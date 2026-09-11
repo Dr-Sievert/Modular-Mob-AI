@@ -69,13 +69,47 @@ System properties on the game process:
   },
 
   // Optional: the reward the agent earned on each tick, T numbers. Absent when not known.
-  "reward": []
+  "reward": [],
+
+  // Optional: every projectile seen in flight, see "Projectiles" below. Absent when none were seen.
+  "projectiles": []
 }
 ```
+
+## Projectiles
+
+An addition to version 1; readers must accept files without it.
+
+A new top-level array. It is written only when the fight had projectiles (arrows, tridents, snowballs, fireballs and so
+on: every `net.minecraft.world.entity.projectile.Projectile`). A file without it means none were seen.
+
+```jsonc
+"projectiles": [
+  {
+    "type": "minecraft:arrow",   // entity type id
+    "owner": 1,                  // index into "entities" of whoever fired it; -1 for anyone else, or nobody
+    "start": 37,                 // the fight tick of its first frame
+    "x": [], "y": [], "z": [],   // one value per tick from "start" while it is in flight, the same precision as the fighters
+    "end": {                     // how its flight ended; absent if the fight ended first or it left the recorded area
+      "tick": 52,                // the fight tick it ended on
+      "hit": 0,                  // index into "entities" of the fighter it struck; -1 for a block, or it just vanished
+      "x": 12.34, "y": 70.1, "z": -5.6   // where it ended
+    }
+  }
+]
+```
+
+Rules:
+- Tracking starts on the first tick the projectile is inside the recorded area. It stops once it hits something,
+  comes to rest in a block (an arrow stuck in the ground counts as ended, `hit: -1`), is removed, or leaves the area. A
+  resting arrow is not tracked tick after tick for the minute it lingers.
+- `x`/`y`/`z` are the projectile's position on each tick, with exactly `end.tick - start + 1` values when it ended
+  (the last value is where it ended), or `ticks - start` values when the fight ended first.
+- A hit on a fighter is also a `hurt` tick in that fighter's frames, as it already is.
 
 ## Viewer conventions
 
 - North up (-z), east right (+x), like a Minecraft map. Screen x = world x, screen y = world z.
 - Agent green, opponent red.
 - Continuous actions run from -1 to 1. Buttons count as held at >= 0.5. `aimYaw`/`aimPitch` are the turn this tick as a fraction of 60 degrees.
-- Readers ignore unknown fields and handle a missing `reward`, `biome` or `iteration`.
+- Readers ignore unknown fields and handle a missing `reward`, `biome`, `iteration` or `projectiles`.
