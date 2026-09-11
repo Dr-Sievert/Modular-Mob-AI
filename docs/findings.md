@@ -35,7 +35,12 @@ are deliberate.
   - Everything learned before that fix was learned in a broken body.
 - **Swings at plants.** A player's swing breaks grass and flowers and costs no cooldown; the agent's swings used to stop
   at a fern. A swing into a block now never resets the attack cooldown, and instant-break blocks break.
-- **Traps count as solid** in the terrain grid: powder snow, sweet berry bushes, cobwebs, lava.
+- **Hazards read as hazards, not as solid (1.5 in the grid).** Read as solid, the top of a lava lake or of powder snow
+  looked like stone to stand on. The teacher walked onto them and the network copied it. Over 20,000 fights, the vs-copy
+  network died 18 times of something other than the vindicator: 13 falls (nearly all at one ravine), 2 lava, 2 powder
+  snow, 1 berry bush. Hazards now read above solid, so networks trained before still treat them as walls. The bottom
+  layer also marks drops deeper than 8 blocks. The fixed teacher dies of such causes 6 times in 20,000, and
+  `gametest/util/DeathCauses` logs every one with its position and biome.
 - **Air control is a player's:** 0.026 while sprinting.
 - **Paid by the health actually removed**, so overkill on a nearly dead vindicator pays no more.
 - **Placing was broken** before the mechanics work: blocks always faced north, and wall-mounted blocks and axe use

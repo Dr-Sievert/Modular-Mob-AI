@@ -377,8 +377,8 @@ public final class ScriptedBrain implements Brain {
 
                 // Open all the way down past the bottom of the grid: a drop of three blocks or more.
                 if (!found && mayDrop && level == 0 && open(o, obs, nx, 0, nz)
-                        && cell(o, obs, nx, FEET - 1, nz) < AgentObservation.SOLID
-                        && cell(o, obs, nx, FEET - 2, nz) < AgentObservation.SOLID) {
+                        && passable(cell(o, obs, nx, FEET - 1, nz))
+                        && passable(cell(o, obs, nx, FEET - 2, nz))) {
 
                     tail = this.visit(state(nx, -1, nz), s, tail, true);
                 }
@@ -455,20 +455,30 @@ public final class ScriptedBrain implements Brain {
         return y < 0 || y >= ObservationSchema.TERRAIN_Y ? AgentObservation.SOLID : o[obs + ObservationSchema.terrainOffset(x, y, z)];
     }
 
-    /** Room for a body standing at this level: nothing solid where its legs and head would be. */
-    private static boolean open(float[] o, int obs, int x, int level, int z) {
+    /** Air or water: somewhere a body can be. Neither solid nor a hazard, which reads above solid. */
+    private static boolean passable(float cell) {
 
-        return cell(o, obs, x, FEET + level, z) < AgentObservation.SOLID
-                && cell(o, obs, x, FEET + level + 1, z) < AgentObservation.SOLID;
+        return cell >= AgentObservation.EMPTY && cell < AgentObservation.SOLID;
     }
 
-    /** Somewhere to stand: room for a body, and ground under it or water to float in. */
+    /** Room for a body standing at this level: nothing solid, and nothing that hurts, where its legs and head would be. */
+    private static boolean open(float[] o, int obs, int x, int level, int z) {
+
+        return passable(cell(o, obs, x, FEET + level, z)) && passable(cell(o, obs, x, FEET + level + 1, z));
+    }
+
+    /**
+     * Somewhere to stand: room for a body, and ground under it or water to float in. A hazard is never ground: the top of
+     * a lava lake, a magma block or a cactus reads as a hazard, not as solid, which is what keeps the planner off them.
+     */
     private static boolean standable(float[] o, int obs, int x, int level, int z) {
 
         float under = cell(o, obs, x, FEET + level - 1, z);
         float at = cell(o, obs, x, FEET + level, z);
 
-        return open(o, obs, x, level, z) && (under >= AgentObservation.SOLID || at >= AgentObservation.FLUID);
+        boolean ground = under >= AgentObservation.SOLID && under < AgentObservation.HAZARD;
+
+        return open(o, obs, x, level, z) && (ground || at >= AgentObservation.FLUID);
     }
 
     /**

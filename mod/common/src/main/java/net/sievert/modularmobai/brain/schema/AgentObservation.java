@@ -16,7 +16,9 @@ import net.minecraft.world.item.ShieldItem;
 import net.minecraft.world.item.SwordItem;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.BaseFireBlock;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.CampfireBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.level.chunk.ChunkAccess;
@@ -47,10 +49,17 @@ public final class AgentObservation {
 
     private static final float MAX_FALL_DISTANCE = 20.0F;
 
-    /** What a terrain cell holds: see {@link #writeTerrain}. */
+    /** What a terrain cell holds: see {@link #writeTerrain} and {@link #cell}. */
     public static final float EMPTY = 0.0F;
     public static final float FLUID = 0.5F;
     public static final float SOLID = 1.0F;
+
+    /**
+     * Somewhere that hurts or kills a body that goes into it or stands on it. Above solid rather than below empty: a
+     * network trained when these read as solid keeps reading them as somewhere it cannot go, where one read below empty
+     * could take them for more open than air and walk straight in. Only standing on one is new, and learnable.
+     */
+    public static final float HAZARD = 1.5F;
 
     private static final BlockPos.MutableBlockPos SCRATCH = new BlockPos.MutableBlockPos();
 
@@ -198,8 +207,8 @@ public final class AgentObservation {
      * one vertical column at a time and resolves the chunk once per column, which is eighty one lookups, and holds onto
      * the last one because a nine wide box spans at most two chunks in each direction.
      *
-     * <p>A cell is {@link #SOLID} when something in it stops a body, or traps it, {@link #FLUID} when it holds water and
-     * nothing solid, and empty otherwise. Grass, flowers and anything else a body walks through are empty: counted as
+     * <p>A cell is {@link #HAZARD} when it hurts or kills a body in it or on it, {@link #SOLID} when something in it stops a
+     * body, {@link #FLUID} when it holds water and nothing solid, and empty otherwise. Grass, flowers and anything else a body walks through are empty: counted as
      * solid, as they once were, every meadow read as a wall at foot height all the way round, and a river as solid
      * ground, and neither a step that needs a jump nor water that needs swimming could be told from them.
      */
@@ -243,6 +252,11 @@ public final class AgentObservation {
 
                         SCRATCH.set(worldX, worldY, worldZ);
                         cell = cell(chunk, chunk.getBlockState(SCRATCH));
+
+                        if (y == 0 && cell == EMPTY) {
+
+                            cell = drop(chunk, worldX, worldY, worldZ, minY);
+                        }
                     }
 
                     out[base + ObservationSchema.terrainOffset(x, y, z)] = cell;
@@ -254,26 +268,83 @@ public final class AgentObservation {
     /**
      * What one terrain cell holds, as {@link #writeTerrain} describes. Both lookups are cached by the block state.
      *
-     * <p>A few blocks stop nothing and still catch a body: powder snow swallows it and freezes it to death, a sweet berry
-     * bush or a cobweb holds it nearly still and the bush tears at it, and lava burns. Read as empty they looked like open
-     * ground, and agents walked into them and died there, so they read as solid: somewhere a body cannot go.
+     * <p>Some blocks hurt or kill a body that goes into them or stands on them:
+     * <ul>
+     *   <li>lava and fire burn;</li>
+     *   <li>magma blocks, cactus, lit campfires, wither roses and pointed dripstone hurt;</li>
+     *   <li>powder snow swallows a body and freezes it;</li>
+     *   <li>a sweet berry bush or a cobweb holds it nearly still, and the bush tears at it.</li>
+     * </ul>
+     * Read as empty, they looked like open ground, and agents walked into them and died. Read as solid, as they were next,
+     * they stopped anyone walking into them sideways, but the top of a lava lake looked exactly like stone to stand on: the
+     * scripted fighter walked out onto lava, and the network copied it. So they read as {@link #HAZARD}: still nowhere a
+     * body can go, as solid is, and now also nowhere to stand.
      */
     private static float cell(ChunkAccess chunk, BlockState state) {
 
-        if (!state.getCollisionShape(chunk, SCRATCH).isEmpty() || state.is(Blocks.POWDER_SNOW)
-                || state.is(Blocks.SWEET_BERRY_BUSH) || state.is(Blocks.COBWEB)) {
+        if (hazard(state)) {
+
+            return HAZARD;
+        }
+
+        if (!state.getCollisionShape(chunk, SCRATCH).isEmpty()) {
 
             return SOLID;
         }
 
         FluidState fluid = state.getFluidState();
 
-        if (fluid.is(FluidTags.LAVA)) {
+        return fluid.isEmpty() ? EMPTY : FLUID;
+    }
 
-            return SOLID;
+    /**
+     * How far below the bottom of the grid a fall still lands on something, before it reads as a {@link #HAZARD}. The
+     * bottom of the grid is two blocks under the feet, so an empty cell there only says that stepping over it drops three
+     * blocks or more. How much more is what matters: agents walked off the edges of ravines whose bottom they could not
+     * see, and died of the fall. Ground found within this many blocks under that cell is a fall of at most eight, five
+     * health of twenty; deeper, or into lava or powder snow, is a hazard. Water breaks any fall, so it lands safely.
+     */
+    private static final int DROP_SCAN = 7;
+
+    /** What an empty cell at the bottom of the grid hides below it: see {@link #DROP_SCAN}. */
+    private static float drop(ChunkAccess chunk, int worldX, int worldY, int worldZ, int minY) {
+
+        for (int below = 1; below <= DROP_SCAN; below++) {
+
+            if (worldY - below < minY) {
+
+                return HAZARD;
+            }
+
+            SCRATCH.set(worldX, worldY - below, worldZ);
+            BlockState state = chunk.getBlockState(SCRATCH);
+
+            if (hazard(state)) {
+
+                return HAZARD;
+            }
+
+            if (!state.getFluidState().isEmpty() || !state.getCollisionShape(chunk, SCRATCH).isEmpty()) {
+
+                return EMPTY;
+            }
         }
 
-        return fluid.isEmpty() ? EMPTY : FLUID;
+        return HAZARD;
+    }
+
+    private static boolean hazard(BlockState state) {
+
+        return state.getFluidState().is(FluidTags.LAVA)
+                || state.getBlock() instanceof BaseFireBlock
+                || state.is(Blocks.MAGMA_BLOCK)
+                || state.is(Blocks.CACTUS)
+                || state.is(Blocks.POWDER_SNOW)
+                || state.is(Blocks.SWEET_BERRY_BUSH)
+                || state.is(Blocks.COBWEB)
+                || state.is(Blocks.WITHER_ROSE)
+                || state.is(Blocks.POINTED_DRIPSTONE)
+                || state.getBlock() instanceof CampfireBlock && state.getValue(CampfireBlock.LIT);
     }
 
     // -----------------------------------------------------------------------------------------------------------

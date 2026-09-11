@@ -47,7 +47,7 @@ crosshair within reach, as for a player.
 | hotbar | 9 | what each hotbar slot holds |
 | echo | 20 | what the body actually did last tick: moved (forward/strafe), jumped, sprinted, sneaked, turned (yaw/pitch), attacked, hit, attack strength and damage, crit, sweep, sprint knockback, used (main/off hand/on a block), selected slot, swapped weapon |
 | enemies | 10 × 18 | every hostile within 32 blocks, in ten stable slots, in its own frame: present, position (forward/up/right), distance, velocity, health, facing (sin/cos), pitch, **kind**, main and off hand item, swinging, using, sprinting |
-| terrain | 9 × 5 × 9 = 405 | the blocks around it: 0 empty, 0.5 fluid, 1 solid by collision. Traps (powder snow, berry bushes, cobwebs, lava) count as solid |
+| terrain | 9 × 5 × 9 = 405 | the blocks around it, from 2 below the feet to 2 above: 0 empty, 0.5 fluid, 1 solid by collision, 1.5 hazard. A hazard hurts or kills a body in it or on it: lava, fire, magma, cactus, lit campfires, wither roses, pointed dripstone, powder snow, berry bushes, cobwebs. An empty cell in the bottom layer reads as a hazard when the fall below it would be more than 8 blocks, or would end in a hazard |
 
 Animals and villagers never take an enemy slot. The enemy's `kind` lets one network tell a zombie from a skeleton, which
 the league relies on. The layout is fixed: every trained network depends on it, and the schema id refuses a mismatch.
