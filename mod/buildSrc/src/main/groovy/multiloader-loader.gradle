@@ -1012,8 +1012,18 @@ afterEvaluate {
 
                 if (parts.length == 8) {
 
-                    def tally = league.computeIfAbsent(parts[0]) { new long[7] }
-                    (1..7).each { tally[it - 1] += parts[it] as long }
+                    def tally = league[parts[0]]
+
+                    if (tally == null) {
+
+                        tally = [0L] * 7
+                        league[parts[0]] = tally
+                    }
+
+                    for (int index = 0; index < 7; index++) {
+
+                        tally[index] = (tally[index] as long) + Long.parseLong(parts[index + 1])
+                    }
                 }
             }
         }
