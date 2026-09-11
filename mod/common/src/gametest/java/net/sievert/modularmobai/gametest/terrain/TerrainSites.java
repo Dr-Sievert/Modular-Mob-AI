@@ -1,5 +1,6 @@
 package net.sievert.modularmobai.gametest.terrain;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.jetbrains.annotations.Nullable;
@@ -97,8 +98,13 @@ public final class TerrainSites {
     private static BlockPos origin;
 
     private static int next;
-    private static final boolean[] swept = new boolean[COUNT];
     private static final boolean[] unusable = new boolean[COUNT];
+
+    /** How often, in game ticks, the whole world is swept for wildlife. */
+    private static final int WILDLIFE_SWEEP_TICKS = 20;
+
+    /** The game time the next sweep for wildlife is due at; the first fight to ask for a site does the first. */
+    private static long nextWildlifeSweep;
 
     /** Sites with a fight on them right now. Fights end at different times, so the free ones are not simply the next. */
     private static final boolean[] inUse = new boolean[COUNT];
@@ -173,6 +179,12 @@ public final class TerrainSites {
 
         RandomSource random = level.getRandom();
 
+        if (level.getGameTime() >= nextWildlifeSweep) {
+
+            sweepWildlife(level);
+            nextWildlifeSweep = level.getGameTime() + WILDLIFE_SWEEP_TICKS;
+        }
+
         for (int attempt = 0; attempt < COUNT; attempt++) {
 
             int index = next++ % COUNT;
@@ -184,13 +196,6 @@ public final class TerrainSites {
 
             BlockPos centre = centre(index);
             load(level, centre);
-
-            if (!swept[index]) {
-
-                // Whatever the world generator put here, cows and all, would otherwise wander through every fight.
-                sweep(level, siteBox(level, centre), true);
-                swept[index] = true;
-            }
 
             for (int tries = 0; tries < PLACEMENT_TRIES; tries++) {
 
@@ -221,7 +226,7 @@ public final class TerrainSites {
             }
         }
 
-        sweep(level, site.bounds().inflate(8.0D), false);
+        sweep(level, site.bounds().inflate(8.0D));
         inUse[site.index()] = false;
     }
 
@@ -255,20 +260,38 @@ public final class TerrainSites {
         }
     }
 
-    /**
-     * @param wildlife also remove living things the fight did not bring, which only needs doing once per site since
-     *                 nothing spawns in a game test world after it is generated
-     */
-    private static void sweep(ServerLevel level, AABB box, boolean wildlife) {
+    private static void sweep(ServerLevel level, AABB box) {
 
         List<Entity> leftovers = level.getEntitiesOfClass(Entity.class, box, entity ->
-                !(entity instanceof Player)
-                        && (entity instanceof ItemEntity
-                        || entity instanceof ExperienceOrb
-                        || entity instanceof Projectile
-                        || (wildlife && entity instanceof LivingEntity && !entity.getTags().contains(TAG))));
+                entity instanceof ItemEntity || entity instanceof ExperienceOrb || entity instanceof Projectile);
 
         leftovers.forEach(Entity::discard);
+    }
+
+    /**
+     * Removes every living thing no fight brought, anywhere in the world. Whatever the world generator put down, cows and
+     * all, would otherwise wander through the fights, and each one near a fight costs as much to tick as a fighter.
+     *
+     * <p>A site cannot simply be swept once, when it is first claimed: a chunk that has just been generated only shows
+     * its animals to the world a moment after it is handed over, so a sweep that early finds nothing, and the plots the
+     * framework keeps under the lattice tick whatever lives above them too. Measured, the cows, sheep and chickens that
+     * got through outnumbered the fighters and cost a tenth of the server thread. So the whole world is swept, a second
+     * of game time apart; nothing spawns in a game test world, so each sweep only ever finds what the last one could not
+     * yet see, and bees let out of a hive.
+     */
+    private static void sweepWildlife(ServerLevel level) {
+
+        List<Entity> wildlife = new ArrayList<>();
+
+        for (Entity entity : level.getAllEntities()) {
+
+            if (entity instanceof LivingEntity && !(entity instanceof Player) && !entity.getTags().contains(TAG)) {
+
+                wildlife.add(entity);
+            }
+        }
+
+        wildlife.forEach(Entity::discard);
     }
 
     @Nullable
