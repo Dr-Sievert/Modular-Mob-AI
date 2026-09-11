@@ -16,21 +16,22 @@
 # Learning happens every -RolloutSteps steps of experience across all workers (an iteration): the workers pause, the
 # trainer runs a few epochs of PPO over exactly that experience, the new weights swap in, and the fights carry on. The
 # battles are fought in rounds of -RoundSize, each with fresh worker processes, so a worker that crashes costs at most
-# the rest of its round. Starting workers takes minutes, so a round is large enough to make that a small share of it.
+# the rest of its round. Starting workers takes about half a minute and a worker fights some seventy battles a second, so
+# a round is large enough to make that a small share of it.
 #
 # Each worker fights -Slots battles at once, on a quarter again as many terrain sites, in a -Heap sized heap. A worker
 # is bound by its one server thread, so the machine's memory, not its cores, decides how many run. Twenty five slots
 # measured the same throughput per worker as fifty, in half the memory. Most of a heap is the ground around the sites in
-# use, generated part way so that the sites could be; as sites move on it grows to 0.6-0.8 GB over a round, which a 1 GB
-# heap only held by collecting garbage without end, so the heap is 1.25 GB.
+# use, generated part way so that the sites could be; as sites move on it settles at about 0.95 GB, which a 1 GB heap
+# only held by collecting garbage without end, so the heap is 1.5 GB.
 
 param(
     [string] $Run = 'default',
     [int] $Battles = 10000,
-    [int] $RoundSize = 50000,
+    [int] $RoundSize = 250000,
     [int] $Workers = 0,
     [int] $Slots = 25,
-    [string] $Heap = '1280M',
+    [string] $Heap = '1536M',
     [int] $RolloutSteps = 16384,
     [ValidateSet('cuda', 'cpu')] [string] $Device = 'cuda',
     [ValidateSet('terrain', 'arena')] [string] $Suite = 'terrain',
