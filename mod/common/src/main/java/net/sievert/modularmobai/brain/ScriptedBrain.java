@@ -39,6 +39,11 @@ import net.sievert.modularmobai.entity.agent.MobControls;
  * tree in the way, it used to stand behind the trunk and sidestep while the target walked round it, and neither landed a
  * blow for the whole minute.
  *
+ * <p>The one thing that comes before the fight is being in something that hurts. The search keeps the agent off those
+ * cells, but a blow knocks a body about a block and does not ask the ground first, and powder snow is a trap it does not
+ * leave on its own: a body in it cannot jump out and freezes where it stands. So a hazard under the agent's own feet sends
+ * it out by the shortest way there is, and where walking gets it nowhere it breaks the block instead.
+ *
  * <h2>How a blow is thrown</h2>
  *
  * <p>Vanilla gives one swing three shapes and lets a fighter pick at most one of them. Sprinting into it adds a point of
@@ -502,6 +507,19 @@ public final class ScriptedBrain implements Brain {
         boolean inWater = o[self + ObservationSchema.SELF_IN_WATER] > 0.5F;
         a[act + ActionSchema.JUMP] = inWater ? 1.0F : 0.0F;
 
+        // Which way the agent is facing, which is what turns a grid direction into a movement key.
+        float sin = o[self + ObservationSchema.SELF_AIM_SIN];
+        float cos = o[self + ObservationSchema.SELF_AIM_COS];
+
+        // Standing in something that hurts comes before the fight, whatever the fight is doing. The planner keeps the
+        // agent off hazards, but a blow knocks it onto them, and powder snow is the one it does not come back from on its
+        // own: a body in it cannot jump out, and it freezes where it stands.
+        if (inHazard(o, obs)) {
+
+            this.getOut(o, a, obs, act, sin, cos, grounded);
+            return;
+        }
+
         int slot = nearestEnemy(o, obs);
 
         if (slot < 0) {
@@ -521,8 +539,6 @@ public final class ScriptedBrain implements Brain {
 
         // Back from the agent's frame to the world's, in blocks: forward runs along minus sine, cosine and right along
         // minus cosine, minus sine. The grid puts the agent in the middle of its own column.
-        float sin = o[self + ObservationSchema.SELF_AIM_SIN];
-        float cos = o[self + ObservationSchema.SELF_AIM_COS];
         double view = ObservationSchema.VIEW_DISTANCE;
         double targetX = CENTRE + 0.5D + (-sin * forward - cos * right) * view;
         double targetZ = CENTRE + 0.5D + (cos * forward - sin * right) * view;
@@ -883,6 +899,105 @@ public final class ScriptedBrain implements Brain {
         }
 
         return cell(o, obs, x, 0, z) >= AgentObservation.HAZARD;
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // Getting out of something that hurts
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * Whether the agent is in, or standing on, something that is hurting it. The grid marks those cells, and the planner
+     * never walks onto one, but a blow knocks a body about a block and the ground is not asked first.
+     *
+     * <p>Three of them are traps rather than wounds: powder snow, a cobweb and a sweet berry bush all hold a body where it
+     * is, and powder snow is the one that kills. A body in it cannot jump out and freezes where it stands, which is what
+     * every one of these deaths was: over 4,000 fights on the terrain library the teacher lost 15 fights to something other
+     * than the vindicator, and 14 of them were freezing.
+     */
+    private static boolean inHazard(float[] o, int obs) {
+
+        return cell(o, obs, CENTRE, FEET, CENTRE) >= AgentObservation.HAZARD
+                || cell(o, obs, CENTRE, FEET + 1, CENTRE) >= AgentObservation.HAZARD
+                || cell(o, obs, CENTRE, FEET - 1, CENTRE) >= AgentObservation.HAZARD;
+    }
+
+    /**
+     * Leaves it, by the shortest way out rather than the way the fight is. Walking is tried first and is nearly always
+     * enough: powder snow only takes a tenth off a body's speed sideways, however firmly it holds it down. Where walking
+     * gets nowhere, or there is nowhere within the grid to walk to, it breaks its way out instead, which it can do under a
+     * player's rules and which these three blocks are cheap to do it to: powder snow gives way in eight ticks, a cobweb in
+     * eight to a sword, a berry bush at a touch.
+     */
+    private void getOut(float[] o, float[] a, int obs, int act, float sin, float cos, boolean grounded) {
+
+        int start = state(CENTRE, 0, CENTRE);
+        int out = this.escape(o, obs);
+
+        if (out != start) {
+
+            this.walkTowards(out, a, act, sin, cos, grounded);
+
+            // A jump is no help: a body in powder snow cannot leave the ground, and a web or a bush is not something to
+            // jump over. So the only answer to a step that did not happen is to take the block away.
+            if (!stuck(o, obs)) {
+
+                return;
+            }
+        }
+
+        this.digOut(o, a, obs, act);
+    }
+
+    /**
+     * The nearest spot it can stand on that is not a hazard, as the first step towards it, or where it stands when the grid
+     * holds none.
+     *
+     * <p>The ordinary search is already exactly this: every spot it visits has room for a body with ground under it and
+     * nothing in it that hurts, and it visits them nearest first. The one thing that changes when the agent is standing in
+     * a hazard is what it is looking for, which is the first of them rather than one in reach of the target.
+     */
+    private int escape(float[] o, int obs) {
+
+        int reached = this.search(o, obs, false);
+        int start = state(CENTRE, 0, CENTRE);
+
+        for (int i = 0; i < reached; i++) {
+
+            int s = this.queue[i];
+
+            if (s != start && !this.dropped[s]) {
+
+                return this.firstStep(s);
+            }
+        }
+
+        return start;
+    }
+
+    /**
+     * Breaks the block it is stuck in, by looking down its own column and holding the attack, the way a player breaks
+     * anything, with whatever it swings with in hand, since a sword goes through a cobweb fifteen times faster than a fist.
+     *
+     * <p>Straight down is the whole of the aim, and it needs no choosing. Looking down its own column, the first thing a
+     * ray from the eyes meets is whatever the agent is standing in or on, since everything above that in the column is what
+     * the body itself occupies: the snow round its legs, the web round its chest, the magma under its feet. There is
+     * nothing else down there to hit by mistake.
+     */
+    private void digOut(float[] o, float[] a, int obs, int act) {
+
+        int self = obs + ObservationSchema.SELF_OFFSET;
+
+        a[act + ActionSchema.SELECTED_SLOT] = Math.max(0, meleeSlot(o, obs));
+
+        float pitch = o[self + ObservationSchema.SELF_PITCH] * 90.0F;
+        a[act + ActionSchema.AIM_PITCH] = Mth.clamp((90.0F - pitch) / MobControls.MAX_AIM_PITCH_PER_TICK, -1.0F, 1.0F);
+
+        // Only once it is looking down. A swing that meets nothing at all costs the whole attack cooldown, and sixty degrees
+        // of pitch a tick puts the aim there inside two.
+        if (pitch > 90.0F - SWING_CONE_DEGREES) {
+
+            a[act + ActionSchema.ATTACK] = 1.0F;
+        }
     }
 
     // ---------------------------------------------------------------------------------------------------------------

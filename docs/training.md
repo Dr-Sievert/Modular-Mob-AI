@@ -11,6 +11,10 @@ to copy a hand-written fighter first, then improve the copy with reinforcement l
    path over the agent's own terrain grid, keeps the vindicator between 2.4 and 3.1 blocks, swings only at full strength
    and never into a block, and drops down to a target stuck in a pit. It sees only what the network sees.
 
+   Being in something that hurts comes before the fight: a blow knocks a body onto ground the planner would never have
+   walked onto, and powder snow is the one it cannot leave by itself. It heads out by the shortest way, and breaks the
+   block when walking gets nowhere, which covers cobwebs and berry bushes too.
+
    It also uses everything it carries, which matters because PPO only improves what it samples. Seeded from a teacher
    that never pressed use, the first league run held use on 0 of 79,724 ticks over its last 400 fights, fired no arrows
    and raised no shield: a bow needs twenty ticks of held use before the first arrow flies, and nothing in the reward

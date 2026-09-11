@@ -52,6 +52,17 @@ are deliberate.
   - Everything learned before that fix was learned in a broken body.
 - **Swings at plants.** A player's swing breaks grass and flowers and costs no cooldown; the agent's swings used to stop
   at a fern. A swing into a block now never resets the attack cooldown, and instant-break blocks break.
+- **Keeping off a hazard is not the same as getting off one.** Reading hazards at 1.5 stopped the teacher walking onto
+  them, and then a vindicator's blow knocked it on anyway: over 4,000 fights on the 4,096-site terrain library the teacher
+  won 98.7% and lost 15 fights to something that was not the vindicator, **14 of them freezing** and one a fall. Powder
+  snow is the trap it never left: a body in it cannot jump out, sinks, and freezes where it stands over about forty
+  seconds, which is most of a fight.
+  - A hazard in the agent's own cell now comes before the fight. It heads for the nearest cell it can stand on that is not
+    one, by the shortest way out rather than towards the target, which is what the ordinary search already enumerates.
+  - Walking is nearly always enough, since powder snow only takes a tenth off a body's speed sideways. Where it gets
+    nowhere the teacher breaks the block instead, looking straight down its own column: the first thing a ray from the eyes
+    meets down there is whatever it is standing in or on. Powder snow gives way in eight ticks, a cobweb in eight to a
+    sword, a berry bush at a touch, and all three are the same trap.
 - **Hazards read as hazards, not as solid (1.5 in the grid).** Read as solid, the top of a lava lake or of powder snow
   looked like stone to stand on. The teacher walked onto them and the network copied it. Over 20,000 fights, the vs-copy
   network died 18 times of something other than the vindicator: 13 falls (nearly all at one ravine), 2 lava, 2 powder

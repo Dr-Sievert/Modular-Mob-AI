@@ -189,10 +189,11 @@ public final class AgentObservation {
             out[at + ObservationSchema.ENEMY_VELOCITY_RIGHT] = (float) (right(velocity.x, velocity.z, sin, cos) / VELOCITY_SCALE);
 
             // Where the enemy is looking relative to the line between us, so that facing away and facing straight at the
-            // agent are told apart without the network having to work out world directions. An arrow has no head to turn:
-            // its rotation is the way it is flying, which is exactly as useful in the same slot.
+            // agent are told apart without the network having to work out world directions. An arrow has no head to turn,
+            // and its own rotation is the way it is flying, which is exactly as useful in the same slot.
+            float heading = enemy instanceof LivingEntity looking ? looking.getYHeadRot() : enemy.getYRot();
             float bearing = (float) Mth.atan2(-delta.x, delta.z);
-            float facing = Mth.wrapDegrees(enemy.getYHeadRot()) * DEGREES_TO_RADIANS - bearing;
+            float facing = Mth.wrapDegrees(heading) * DEGREES_TO_RADIANS - bearing;
             out[at + ObservationSchema.ENEMY_FACING_SIN] = Mth.sin(facing);
             out[at + ObservationSchema.ENEMY_FACING_COS] = Mth.cos(facing);
             out[at + ObservationSchema.ENEMY_PITCH] = enemy.getXRot() / 90.0F;

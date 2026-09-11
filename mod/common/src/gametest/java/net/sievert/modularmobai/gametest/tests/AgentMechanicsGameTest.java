@@ -39,6 +39,7 @@ import net.sievert.modularmobai.arena.AgentReward;
 import net.sievert.modularmobai.arena.Episode;
 import net.sievert.modularmobai.arena.Loadout;
 import net.sievert.modularmobai.brain.Brain;
+import net.sievert.modularmobai.brain.Brains;
 import net.sievert.modularmobai.brain.BrainStep;
 import net.sievert.modularmobai.brain.schema.ActionSchema;
 import net.sievert.modularmobai.brain.schema.AgentObservation;
@@ -1073,6 +1074,88 @@ public class AgentMechanicsGameTest {
 
             return false;
         });
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // Getting out of something that hurts
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * The teacher gets itself out of powder snow, with a zombie right there to fight. A body in powder snow cannot jump out
+     * and freezes where it stands, and over 4,000 fights on the terrain library that was 14 of the teacher's 15 deaths that
+     * were not the vindicator's doing: it keeps off the stuff, and then a blow knocks it in.
+     *
+     * <p>Both ways out are covered. One block of it is walked out of, since powder snow only takes a tenth off a body's
+     * speed sideways. A patch too wide to step clear of in one is broken out of instead, which is the same escape and what
+     * a cobweb or a berry bush would need.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 220)
+    public static void theTeacherGetsOutOfPowderSnow(GameTestHelper helper) {
+
+        stuckInPowderSnow(helper, 0);
+    }
+
+    @GameTest(template = ARENA, timeoutTicks = 220)
+    public static void theTeacherBreaksOutOfPowderSnow(GameTestHelper helper) {
+
+        stuckInPowderSnow(helper, 1);
+    }
+
+    /**
+     * An agent in the middle of a square of powder snow this many blocks either side, driven by the scripted fighter with a
+     * zombie to fight, which has to be out of it before the fight.
+     */
+    private static void stuckInPowderSnow(GameTestHelper helper, int radius) {
+
+        BlockPos feet = new BlockPos(4, 2, 3);
+
+        for (int x = -radius; x <= radius; x++) {
+
+            for (int z = -radius; z <= radius; z++) {
+
+                helper.setBlock(feet.offset(x, 0, z), Blocks.POWDER_SNOW);
+            }
+        }
+
+        AgentMob agent = agent(helper, feet, 0.0F, 0.0F);
+        Mob opponent = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new BlockPos(4, 2, 6));
+
+        agent.startEpisode(new Episode(FIGHT_TICKS, bounds(helper), opponent));
+        Loadout.SWORD.equip(agent);
+
+        // The scripted fighter, not the test's own presses: what is being checked is what it decides to do about the snow.
+        agent.brain().use(Brains.scripted());
+
+        run(helper, tick -> {
+
+            if (tick == 1) {
+
+                helper.assertTrue(inPowderSnow(helper, agent), "The agent did not start in the snow");
+            }
+
+            // Long enough to walk a block, or to break two of them at eight ticks each with a few to spare for turning.
+            if (tick == 60) {
+
+                helper.assertFalse(inPowderSnow(helper, agent), "The agent is still in powder snow after 60 ticks");
+                helper.assertTrue(agent.isAlive(), "The agent died getting out");
+                return true;
+            }
+
+            return false;
+        });
+    }
+
+    /**
+     * Whether the block the agent's feet are in, or the one its head is in, is powder snow. Straight out of the level at
+     * the agent's own position, since the agent knows where it is in the world and turning that back into a position in the
+     * test would only be a rotation to get wrong.
+     */
+    private static boolean inPowderSnow(GameTestHelper helper, AgentMob agent) {
+
+        BlockPos feet = agent.blockPosition();
+
+        return helper.getLevel().getBlockState(feet).is(Blocks.POWDER_SNOW)
+                || helper.getLevel().getBlockState(feet.above()).is(Blocks.POWDER_SNOW);
     }
 
     /** An arrow in the air from wherever, with whatever velocity, as if somebody had loosed it. */

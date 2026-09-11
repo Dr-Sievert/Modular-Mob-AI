@@ -1,5 +1,6 @@
 package net.sievert.modularmobai.brain.schema;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.jetbrains.annotations.Nullable;
@@ -64,6 +65,10 @@ public final class EnemySlots {
     private final Entity[] occupants = new Entity[ObservationSchema.ENEMY_SLOTS];
     private final int[] graceRemaining = new int[ObservationSchema.ENEMY_SLOTS];
 
+    /** What the one walk over the surroundings found, kept for the life of the view rather than allocated every tick. */
+    private final List<LivingEntity> bodies = new ArrayList<>();
+    private final List<Projectile> shots = new ArrayList<>();
+
     private int inRangeCount;
 
     /**
@@ -82,16 +87,34 @@ public final class EnemySlots {
 
         double viewSq = ObservationSchema.VIEW_DISTANCE * ObservationSchema.VIEW_DISTANCE;
 
-        List<LivingEntity> candidates = owner.level().getEntitiesOfClass(LivingEntity.class, view,
-                other -> other != owner && other.isAlive() && hostile(owner, other) && owner.distanceToSqr(other) <= viewSq);
+        // One walk over what is around, not two. Asking the level twice, once for bodies and once for shots, would walk the
+        // same entity sections twice, and this is done for every agent on every tick of a run.
+        this.bodies.clear();
+        this.shots.clear();
+
+        for (Entity other : owner.level().getEntities(owner, view, candidate -> owner.distanceToSqr(candidate) <= viewSq)) {
+
+            if (other instanceof LivingEntity living) {
+
+                if (living.isAlive() && hostile(owner, living)) {
+
+                    this.bodies.add(living);
+                }
+            }
+
+            else if (other instanceof Projectile shot && shot.isAlive() && incoming(owner, shot)) {
+
+                this.shots.add(shot);
+            }
+        }
 
         // Bodies only. A count that grew with every arrow in the air would tell a network trained on it that it was
         // outnumbered whenever a skeleton opened fire.
-        this.inRangeCount = candidates.size();
+        this.inRangeCount = this.bodies.size();
 
         this.expireLeases(owner, viewSq);
 
-        for (LivingEntity candidate : candidates) {
+        for (LivingEntity candidate : this.bodies) {
 
             if (this.slotOf(candidate) >= 0) {
 
@@ -112,7 +135,7 @@ public final class EnemySlots {
             }
         }
 
-        this.leaseProjectiles(owner, view, viewSq);
+        this.leaseProjectiles(owner);
     }
 
     /**
@@ -134,20 +157,17 @@ public final class EnemySlots {
      * Gives whatever slots are left over to the projectiles coming at the agent, nearest first. Nothing is ever evicted
      * for one: a fight with ten bodies in view is a fight where an arrow is the least of it.
      */
-    private void leaseProjectiles(LivingEntity owner, AABB view, double viewSq) {
+    private void leaseProjectiles(LivingEntity owner) {
 
-        if (this.firstFreeSlot() < 0) {
+        if (this.shots.isEmpty() || this.firstFreeSlot() < 0) {
 
             return;
         }
 
-        List<Projectile> flying = owner.level().getEntitiesOfClass(Projectile.class, view,
-                shot -> shot.isAlive() && owner.distanceToSqr(shot) <= viewSq && incoming(owner, shot));
-
         // Nearest first, so the one about to land keeps its slot when there are more shots than slots left.
-        flying.sort((first, second) -> Double.compare(owner.distanceToSqr(first), owner.distanceToSqr(second)));
+        this.shots.sort((first, second) -> Double.compare(owner.distanceToSqr(first), owner.distanceToSqr(second)));
 
-        for (Projectile shot : flying) {
+        for (Projectile shot : this.shots) {
 
             if (this.slotOf(shot) >= 0) {
 
@@ -234,7 +254,7 @@ public final class EnemySlots {
             // One that has come over to the agent's side, or can no longer be fought at all, a player gone creative, is let
             // go at once rather than held while it stays close. Nothing else is: a wolf that stops targeting the agent is
             // still a wolf that just bit it.
-            else if (Allegiance.allied(owner, occupant) || !owner.canAttack((LivingEntity) occupant)) {
+            else if (occupant instanceof LivingEntity body && (Allegiance.allied(owner, body) || !owner.canAttack(body))) {
 
                 this.occupants[slot] = null;
                 continue;
