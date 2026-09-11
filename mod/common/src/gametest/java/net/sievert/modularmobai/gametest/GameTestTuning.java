@@ -156,6 +156,16 @@ public final class GameTestTuning {
     }
 
     /**
+     * Whether a run writes its world to disk. Off unless asked for: nothing ever reads a game test world back, since the
+     * next run clears the folder it was in, and saving it costs the server thread on every tick while the tests run and
+     * then again for every chunk as the server stops. Turn it on for a run whose world is meant to be kept.
+     */
+    public static boolean saveWorld() {
+
+        return Boolean.getBoolean("modular_mob_ai.gametest.saveWorld");
+    }
+
+    /**
      * Where the terrain suite puts its fight sites, as a seed; zero, the default, lets every run pick somewhere new. The
      * world's own seed never changes, so a fixed one here puts every run on the same ground, which is what comparing
      * two builds needs: one run in a forest and the next in the mountains differ by more than most changes do.

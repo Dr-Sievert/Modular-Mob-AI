@@ -74,6 +74,7 @@ neoForge {
             systemProperty 'modular_mob_ai.gametest.ticksPerSecond', providers.gradleProperty('ticksPerSecond').getOrElse('')
             systemProperty 'modular_mob_ai.gametest.reusePlots', providers.gradleProperty('reusePlots').getOrElse('')
             systemProperty 'modular_mob_ai.gametest.terrainSeed', providers.gradleProperty('terrainSeed').getOrElse('')
+            systemProperty 'modular_mob_ai.gametest.saveWorld', providers.gradleProperty('saveWorld').getOrElse('')
 
             // Name a file to write the per tick dataset; a relative path lands in the run directory.
             systemProperty 'modular_mob_ai.gametest.capture', providers.gradleProperty('capture').getOrElse('')
