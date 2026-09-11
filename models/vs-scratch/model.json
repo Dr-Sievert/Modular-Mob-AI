@@ -1,0 +1,12 @@
+{
+    "run":  "vs-scratch",
+    "published":  "2026-09-11T22:03:34+02:00",
+    "code":  "674d26a",
+    "weights":  "best evaluated, iteration 650",
+    "iteration":  650,
+    "fights":  500,
+    "won":  78.6,
+    "lost":  18.4,
+    "timed_out":  3,
+    "state":  true
+}

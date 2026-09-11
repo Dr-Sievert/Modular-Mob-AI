@@ -18,12 +18,12 @@ is for whoever is left.
 
 from __future__ import annotations
 
-import os
 import shutil
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import files
 from .rollout import EXTENSION, ShardHeader, read_header
 from .weights import EXTENSION as WEIGHT_EXTENSION
 
@@ -209,7 +209,7 @@ class RunDirectory:
         file = self.path / STATUS_FILE
         temporary = file.with_suffix(".tmp")
         temporary.write_text(f"{state} {iteration} {rounds_done}\n", encoding="utf-8")
-        os.replace(temporary, file)
+        files.replace(temporary, file)
 
     def markers(self) -> tuple[set[tuple[int, int]], set[int]]:
         """What the build has said: which workers died, as (round, worker), and which rounds are over."""

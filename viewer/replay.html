@@ -111,8 +111,34 @@ svg { display: block; }
 .more { display: block; width: calc(100% - 8px); margin: 4px; padding: 5px; font-size: 12px; color: var(--muted);
   background: transparent; border: 1px dashed var(--line2); border-radius: 7px; cursor: pointer; }
 .side-empty { padding: 20px 14px; color: var(--muted); font-size: 12px; text-align: center; line-height: 1.6; }
-.side-foot { padding: 8px; border-top: 1px solid var(--line); display: flex; gap: 6px; }
+.side-foot { padding: 8px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 6px; }
 .side-foot .btn { flex: 1; }
+.side-foot .wide { flex-basis: 100%; }
+.side-note { flex-basis: 100%; font-size: 11px; line-height: 1.45; color: var(--faint); padding: 0 2px; }
+.side-note code, .modal-card code { font: 11px var(--mono); color: #cfd6e2; }
+.btn.danger { color: #ffb3bc; border-color: rgba(255,77,97,.38); }
+.btn.danger:hover { background: rgba(255,77,97,.16); border-color: rgba(255,77,97,.6); }
+/* Ticking replays to delete them, when served. */
+.pick { width: 14px; height: 14px; margin: 0; flex: none; accent-color: var(--cyan); cursor: pointer; }
+.side-list.picking .item { grid-template-columns: 14px 42px minmax(0, 1fr) auto 22px; gap: 8px; padding-right: 4px; }
+.del { width: 22px; height: 22px; display: grid; place-items: center; flex: none; border: 0; border-radius: 6px;
+  background: transparent; color: var(--faint); cursor: pointer; opacity: 0; }
+.del svg { width: 13px; height: 13px; }
+.item:hover .del, .group-head:hover .del { opacity: 1; }
+.del:hover { color: #ff8d9b; background: rgba(255,77,97,.14); }
+.group-head .del { margin-left: 2px; }
+.item.old { opacity: .6; }
+.badge.old { color: var(--muted); background: transparent; box-shadow: inset 0 0 0 1px var(--line2); }
+.select-bar { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.select-bar b { color: var(--text); }
+.select-bar span { margin-right: auto; }
+.old-note { margin: 4px 2px 6px; padding: 7px 9px; border-radius: 8px; font-size: 11.5px; line-height: 1.45; color: var(--muted);
+  background: rgba(255,181,71,.07); border: 1px solid rgba(255,181,71,.25); }
+.linkish { border: 0; padding: 0; background: none; color: var(--cyan); cursor: pointer; text-decoration: underline; font-size: inherit; }
+.confirm-card { width: min(460px, 92vw); }
+.confirm-card .row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.confirm-list { margin: 8px 0; padding-left: 20px; color: var(--muted); max-height: 220px; overflow: auto; }
+.confirm-list b { color: var(--text); font-weight: 600; }
 
 /* ---- the map ------------------------------------------------------------------------------------------------ */
 .stage { grid-area: stage; position: relative; min-width: 0; min-height: 0; overflow: hidden;
@@ -320,11 +346,18 @@ kbd { font: 11px var(--mono); padding: 1px 6px; border-radius: 5px; background: 
       <label class="check" id="auto-wrap" hidden title="When the open replay has finished playing, open the newest one of its run and play it">
         <input type="checkbox" id="auto-open"> Auto-open newest
       </label>
+      <div class="select-bar" id="select-bar" hidden title="Shift-click to tick every replay between two">
+        <span id="sel-count"></span>
+        <button class="btn small" id="btn-sel-clear">Clear</button>
+        <button class="btn small danger" id="btn-sel-del">Delete…</button>
+      </div>
     </div>
     <div class="side-list" id="side-list"></div>
     <div class="side-foot">
       <button class="btn small" id="btn-files">Open files</button>
       <button class="btn small" id="btn-folder">Open folder</button>
+      <button class="btn small danger wide" id="btn-del-all" hidden title="Delete every replay of every run, after asking">Delete all replays…</button>
+      <div class="side-note" id="del-note">Deleting replays needs the viewer served by <code>scripts\viewer.ps1</code>; a page opened from disk or baked by <code>--export</code> cannot delete files.</div>
     </div>
   </aside>
 
@@ -340,7 +373,7 @@ kbd { font: 11px var(--mono); padding: 1px 6px; border-radius: 5px; background: 
       <button class="tool" data-tool="trails" title="Trails of the last 2 seconds (T)"><span class="label">Trails</span> <kbd>T</kbd></button>
       <button class="tool" data-tool="contours" data-only="2d" title="Contour lines (K)"><span class="label">Contours</span> <kbd>K</kbd></button>
       <button class="tool" data-tool="elevation" title="Tint the terrain by elevation instead of map colours (E)"><span class="label">Elevation</span> <kbd>E</kbd></button>
-      <button class="tool" data-tool="blocks" data-only="3d" title="Block textures on the tops of grass, sand, stone, dirt, snow and leaves, from your Minecraft jar (B)"><span class="label">Blocks</span> <kbd>B</kbd></button>
+      <button class="tool" data-tool="blocks" data-only="3d" title="Every block in its own texture from your Minecraft jar, or in its map colour (B)"><span class="label">Textures</span> <kbd>B</kbd></button>
       <button class="tool" data-tool="grid" data-only="2d" title="Chunk grid, every 16 blocks (G)"><span class="label">Chunks</span> <kbd>G</kbd></button>
     </div>
     <div class="compass glass" id="compass3d" hidden title="North"><span>N</span></div>
@@ -439,18 +472,27 @@ kbd { font: 11px var(--mono); padding: 1px 6px; border-radius: 5px; background: 
       <kbd>C</kbd><span>Follow camera, which keeps both fighters in view. Dragging the map, or panning in 3D, turns it off.</span>
       <kbd>0</kbd><span>Show the whole terrain.</span>
       <kbd>T K E G</kbd><span>Trails, contour lines, elevation tint, chunk grid.</span>
-      <kbd>B</kbd><span>Block textures on the terrain in 3D, when the viewer is served with a Minecraft jar.</span>
+      <kbd>B</kbd><span>Blocks in 3D in their own textures, when the viewer is served with a Minecraft jar, or in their map colours.</span>
       <kbd>H</kbd><span>Show or hide the charts under the timeline.</span>
       <kbd>L</kbd><span>Show or hide the replay list.</span>
     </div>
     <h4>Reading the map</h4>
     <p>North is up and east is right, like a Minecraft map. The agent is green, its opponent red, each drawn at the real hitbox width with a health ring. The cone shows where each one faces; the agent's aim ray follows its look direction in 3D and ends where it meets the ground (&times;) or the opponent's hitbox (ring). The shadow shifts further south-east the higher a fighter is off the ground.</p>
     <p>Projectiles fly in their owner's colour with a short trail, their shadow showing how high they are. An arrow that hit a block stays where it landed; a ring marks where each flight ended. On the timeline, a tick is a shot, a triangle a hit on a fighter, and a circle a hit on a block.</p>
-    <p>The 3D view shows the same moment. Served by <code>scripts\viewer.ps1</code> with a Minecraft jar in the Gradle cache, the fighters are their Minecraft mobs, textures read from your own jar: the head follows the look, the body lags towards where the mob walks, the arms swing on attacks, a mob flashes red when hurt and falls over at 0 health. Otherwise they are their hitboxes, with a visor at eye height; either way name and health float above them. Under tree tops the ground is a guess from the nearest open ground, and under water the bed is a guess from the distance to the shore; the replay only records the top block of each column.</p>
+    <p>The 3D view shows the same moment. Served by <code>scripts\viewer.ps1</code> with a Minecraft jar in the Gradle cache, the fighters are their Minecraft mobs, textures read from your own jar: the head follows the look, the body lags towards where the mob walks, the arms swing on attacks, a mob flashes red when hurt and falls over at 0 health. Otherwise they are their hitboxes, with a visor at eye height; either way name and health float above them. The ground is the real blocks of the site, recorded when the fight started: trees with open ground under their leaves, plants, vines and roots, water with its bed. Served with a Minecraft jar every block has its own texture, otherwise its map colour. A fighter hidden behind blocks shows through them as a see-through silhouette.</p>
+    <p>Served by <code>scripts\viewer.ps1</code>, replays can be deleted from the list: the bin on a replay or a run, or tick replays (Shift-click for a range, the box on a run for all of it) and delete them together. It always asks first.</p>
     <h4>Numbers</h4>
     <p><b>Aim error</b> is the angle between the agent's look direction (from its eyes) and the direction to the centre of the opponent's hitbox. Yaw "right" means the agent looks to the right of the opponent; pitch "low" means below it. <b>On target</b> means the look ray passes through the opponent's hitbox.</p>
     <p><b>Actions</b> are what the brain asked for before the game applied its limits. Buttons count as held at 0.5 or more. <code>aimYaw</code> and <code>aimPitch</code> are the turn this tick as a fraction of 60&deg;.</p>
     <p style="margin-top:14px"><button class="btn small" id="btn-help-close">Close</button></p>
+  </div>
+</div>
+
+<div class="modal" id="confirm" hidden>
+  <div class="modal-card glass confirm-card" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
+    <h2 id="confirm-title"></h2>
+    <div id="confirm-text"></div>
+    <div class="row"><button class="btn small" id="confirm-no">Cancel</button><button class="btn small danger" id="confirm-yes">Delete</button></div>
   </div>
 </div>
 
@@ -479,6 +521,7 @@ const HURT_TICKS = 10;                  // how long a hurt pulse lasts (the game
 const REACH = 3;                        // blocks; only used to shade "in reach" on the distance chart and panel
 const FIGHTER_COLORS = ['#37e07a', '#ff4d61', '#ff9f43', '#f472b6', '#a78bfa', '#4cc9f0'];
 const WATER = 0x4040FF, PLANT = 0x007C00;
+const OLD_FORMAT = 'the old replay format, without blocks, which this viewer no longer draws';
 
 const AXES = [
   { name: 'moveForward', label: 'forward' },
@@ -495,15 +538,6 @@ const BUTTONS = [
   { name: 'useOffhand', label: 'offhand', color: '#f472b6' },
 ];
 const SLOT_COLORS = ['#3b4656', '#4cc9f0', '#ffb547', '#a78bfa', '#2dd4bf', '#f472b6', '#ff7a59', '#9ccc65', '#e7ecf3'];
-
-// Vanilla map colours, only to name the block under the mouse.
-const MAP_COLOR_NAMES = {
-  0x7FB238: 'grass', 0xF7E9A3: 'sand', 0xC7C7C7: 'wool', 0xFF0000: 'lava / fire', 0xA0A0FF: 'ice', 0xA7A7A7: 'metal',
-  0x007C00: 'leaves / plants', 0xFFFFFF: 'snow', 0xA4A8B8: 'clay', 0x976D4D: 'dirt', 0x707070: 'stone', 0x4040FF: 'water',
-  0x8F7748: 'wood', 0xFFFCF5: 'quartz', 0xD87F33: 'orange', 0xE5E533: 'yellow', 0x7FCC19: 'lime', 0x4C4C4C: 'grey',
-  0x999999: 'light grey', 0x664C33: 'brown', 0x667F33: 'green', 0x993333: 'red', 0x191919: 'black', 0x815631: 'podzol',
-  0x700200: 'netherrack', 0x646464: 'deepslate', 0xD8AF93: 'raw iron', 0x7FA796: 'glow lichen', 0xD1B1A1: 'terracotta',
-};
 
 const FONT = '"Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif';   // for canvas text
 const MONO = '"Cascadia Mono", Consolas, ui-monospace, monospace';
@@ -566,6 +600,7 @@ function prepareReplay(raw, name) {
     throw new Error('not a replay (no frames or entities)');
   }
   if (raw.format && raw.format !== 'mmai-replay') throw new Error('format "' + raw.format + '" is not mmai-replay');
+  if (!raw.blocks || typeof raw.blocks !== 'object') throw new Error(OLD_FORMAT);
 
   const firstX = raw.frames[0] && Array.isArray(raw.frames[0].x) ? raw.frames[0].x.length : 0;
   const T = Math.max(1, (raw.ticks | 0) || firstX);
@@ -610,7 +645,7 @@ function prepareReplay(raw, name) {
     },
   };
 
-  rp.terrain = prepareTerrain(raw.terrain);
+  rp.terrain = prepareTerrain(raw.blocks);
   prepareActions(rp, raw.actions);
 
   // Reward: optional. Cumulative is what the agent had earned by the end of each tick.
@@ -711,79 +746,116 @@ function projectileAt(p, t) {
   return { pos, dir, i };
 }
 
-function prepareTerrain(t) {
-  if (!t || !(t.width > 0) || !(t.depth > 0) || !Array.isArray(t.height)) return null;
-  const W = t.width | 0, D = t.depth | 0, n = W * D;
-  const height = new Int32Array(n), color = new Int32Array(n);
-  for (let i = 0; i < n; i++) {
-    height[i] = t.height[i] | 0;
-    color[i] = Array.isArray(t.color) ? (t.color[i] | 0) : 0x7FB238;
-  }
-  // Short grass and flowers share the map colour of leaves and stand one block above the ground. For shading, contours
-  // and the aim ray they count as the ground next to them, or plains would read as a chequerboard of one-block steps;
-  // tree tops, several blocks up, stay where they are.
-  // Plants settle from land first; whatever can only settle from water afterwards is a lily pad.
-  const solid = Int32Array.from(height), settled = new Uint8Array(n), pad = new Uint8Array(n);
-  const spread = (queue, isPad) => {
-    for (let q = 0; q < queue.length; q++) {
-      const i = queue[q], x = i % W, z = (i / W) | 0;
-      for (let dz = -1; dz <= 1; dz++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          const nx = x + dx, nz = z + dz, j = nz * W + nx;
-          if (nx < 0 || nz < 0 || nx >= W || nz >= D || settled[j]) continue;
-          if (height[j] - 1 <= solid[i]) { solid[j] = height[j] - 1; settled[j] = 1; pad[j] = isPad; queue.push(j); }
-        }
-      }
-    }
-  };
-  const landCells = [], waterCells = [];
-  for (let i = 0; i < n; i++) if (color[i] !== PLANT) { settled[i] = 1; (color[i] === WATER ? waterCells : landCells).push(i); }
-  spread(landCells, 0);
-  spread(waterCells, 1);
-
-  // Under tree tops the heightmap says nothing about the ground. It spreads in from the nearest column that is not a
-  // tree top, and the leaves hang from the top down to three blocks above it, at most four blocks deep. That keeps the
-  // space under a tree open in 3D and for the aim ray. A low bush (two blocks or less) stays one solid column.
-  const ground = Int32Array.from(solid), floorColor = Int32Array.from(color), canopy = new Int32Array(n).fill(-1e9);
-  const isTop = i => color[i] === PLANT && solid[i] === height[i];
-  const known = new Uint8Array(n), front = [];
-  for (let i = 0; i < n; i++) if (!isTop(i)) { known[i] = 1; front.push(i); }
-  for (let q = 0; q < front.length; q++) {
-    const i = front[q], x = i % W, z = (i / W) | 0;
-    for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, z > 0 ? i - W : -1, z < D - 1 ? i + W : -1]) {
-      if (j < 0 || known[j]) continue;
-      known[j] = 1;
-      ground[j] = ground[i];
-      floorColor[j] = floorColor[i];
-      front.push(j);
-    }
-  }
-  for (let i = 0; i < n; i++) {
-    if (!isTop(i) || !known[i]) continue;
-    if (height[i] - ground[i] <= 2) { ground[i] = height[i]; floorColor[i] = color[i]; continue; }
-    canopy[i] = Math.max(ground[i] + 3, height[i] - 3);
+/**
+ * The site's blocks, from the replay's palette and runs, and what the map draws from them. Every column gets the top
+ * block that stops movement or holds water, as the game's MOTION_BLOCKING heightmap has it: grass and flowers are left
+ * out, since counted as the ground they turn a flat meadow into a chequerboard of one-block steps. A column keeps the
+ * colour a Minecraft map would give that block, or the snow or carpet lying on it, and notes a plant standing on it.
+ */
+function prepareTerrain(b) {
+  const W = b.width | 0, H = b.height | 0, D = b.depth | 0, n = W * H * D;
+  if (!(W > 0 && H > 0 && D > 0) || !Array.isArray(b.palette) || !Array.isArray(b.runs)) throw new Error('no blocks in the replay');
+  const colors = Array.isArray(b.color) ? b.color : [], flags = Array.isArray(b.flags) ? b.flags : [];
+  const pal = b.palette.map((id, k) => paletteEntry(String(id), colors[k] | 0, flags[k] | 0));
+  if (!pal.length) pal.push(paletteEntry('minecraft:air', 0, 0));
+  const cells = new Uint16Array(n);
+  for (let r = 0, at = 0; r + 1 < b.runs.length && at < n; r += 2) {
+    const k = b.runs[r] | 0, len = Math.max(0, b.runs[r + 1] | 0);
+    if (k > 0 && k < pal.length) cells.fill(k, at, Math.min(n, at + len));
+    at += len;
   }
 
-  // Distance from the shore, in blocks, for every water cell: a breadth-first walk out from the land.
-  const shore = new Float32Array(n).fill(1e9), walk = new Int32Array(n);
+  const x0 = +b.x || 0, y0 = +b.y || 0, z0 = +b.z || 0, WD = W * D;
+  const height = new Int32Array(WD), color = new Int32Array(WD), top = new Uint16Array(WD), tuft = new Uint8Array(WD);
+  for (let i = 0; i < WD; i++) {
+    let y = H - 1, cover = -1;
+    for (; y >= 0; y--) {
+      const k = cells[y * WD + i], e = pal[k];
+      if (e.air) continue;
+      if (e.solid || e.fluid) break;
+      if (cover < 0) cover = k;
+    }
+    const k = y >= 0 ? cells[y * WD + i] : 0, lying = cover >= 0 ? pal[cover] : null;
+    height[i] = y0 + y;
+    top[i] = lying && lying.color !== PLANT && lying.color ? cover : k;
+    color[i] = pal[top[i]].color;
+    tuft[i] = lying && lying.color === PLANT ? 1 : 0;
+  }
+
+  // Distance from the shore, in blocks, for every water column: a breadth-first walk out from the land.
+  const shore = new Float32Array(WD).fill(1e9), walk = new Int32Array(WD);
   let wn = 0;
-  for (let i = 0; i < n; i++) if (color[i] !== WATER) { shore[i] = 0; walk[wn++] = i; }
+  for (let i = 0; i < WD; i++) if (color[i] !== WATER) { shore[i] = 0; walk[wn++] = i; }
   for (let q = 0; q < wn; q++) {
     const i = walk[q], x = i % W, z = (i / W) | 0;
     for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, z > 0 ? i - W : -1, z < D - 1 ? i + W : -1]) {
       if (j >= 0 && shore[j] > shore[i] + 1) { shore[j] = shore[i] + 1; walk[wn++] = j; }
     }
   }
-  for (let i = 0; i < n; i++) if (shore[i] > 1e8) shore[i] = 8;   // a map with no land at all
+  for (let i = 0; i < WD; i++) if (shore[i] > 1e8) shore[i] = 8;   // a map with no land at all
 
   let minY = Infinity, maxY = -Infinity;
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < WD; i++) {
     if (color[i] === WATER) continue;
-    if (solid[i] < minY) minY = solid[i];
-    if (solid[i] > maxY) maxY = solid[i];
+    if (height[i] < minY) minY = height[i];
+    if (height[i] > maxY) maxY = height[i];
   }
-  if (!isFinite(minY)) { minY = 0; maxY = 1; }
-  return { x: +t.x || 0, z: +t.z || 0, W, D, height, solid, ground, floorColor, canopy, shore, pad, color, minY, maxY };
+  if (!isFinite(minY)) { minY = y0; maxY = y0 + H - 1; }
+  return { x: x0, y: y0, z: z0, W, H, D, cells, pal, height, solid: height, color, top, tuft, shore, minY, maxY };
+}
+
+// Blocks the 3D view never draws: air, and the invisible blocks of structures and the game test framework. A bubble
+// column is only its water.
+const HIDDEN_BLOCKS = new Set(['air', 'cave_air', 'void_air', 'barrier', 'light', 'structure_void', 'moving_piston', 'bubble_column']);
+
+// Blocks drawn as two crossed planes, the way Minecraft draws plants.
+const CROSS_BLOCKS = new RegExp('^(' + ['short_grass', 'tall_grass', 'fern', 'large_fern', 'dead_bush', 'sugar_cane',
+  'hanging_roots', 'seagrass', 'tall_seagrass', 'kelp', 'kelp_plant', 'sweet_berry_bush', 'cobweb', 'bamboo', 'bamboo_sapling',
+  'mangrove_propagule', 'spore_blossom', 'pointed_dripstone', 'small_dripleaf', 'big_dripleaf_stem', 'cave_vines(_plant)?',
+  'weeping_vines(_plant)?', 'twisting_vines(_plant)?', '(crimson|warped)_(roots|fungus)', 'nether_sprouts', 'wheat',
+  'carrots', 'potatoes', 'beetroots', 'torchflower(_crop)?', 'pitcher_(plant|crop)', 'dandelion', 'poppy', 'blue_orchid',
+  'allium', 'azure_bluet', '[a-z]+_tulip', 'oxeye_daisy', 'cornflower', 'lily_of_the_valley', 'wither_rose', 'sunflower',
+  'lilac', 'rose_bush', 'peony', '[a-z_]+_sapling', '(brown|red)_mushroom', '([a-z]+_)?(wall_)?torch', '(soul_)?fire',
+].join('|') + ')$');
+
+// Small things drawn as a token on the floor of their block rather than as a whole cube.
+const TOKEN_BLOCKS = /(_button|_sign|_banner|_head|_skull|flower_pot|^potted_.*|candle|lantern|^chain|^lever|^tripwire.*|^bell|^ladder)$/;
+
+/**
+ * A palette entry, "minecraft:oak_log[axis=y]" with its map colour and flags, and the shape the 3D view gives it:
+ * a cube, a box (slabs, snow, carpets, cactus), stairs, two crossed planes (plants), flat faces against its sides
+ * (vines), a flat plate (lily pads), or a fluid.
+ */
+function paletteEntry(id, color, flags) {
+  const m = /^(?:([a-z0-9_.-]+):)?([a-z0-9_/.-]+)(?:\[(.*)\])?$/.exec(id) || [];
+  const name = m[2] || 'air', props = {};
+  (m[3] || '').split(',').forEach(kv => { const [k, v] = kv.split('='); if (k && v !== undefined) props[k] = v; });
+  const e = { id, name, vanilla: !m[1] || m[1] === 'minecraft', props, color: color & 0xFFFFFF,
+    opaque: !!(flags & 1), solid: !!(flags & 2), fluid: !!(flags & 4) };
+  e.water = e.fluid && name !== 'lava';
+  e.shape = blockShape(name, props);
+  e.air = e.shape.kind === 'none';
+  return e;
+}
+
+function blockShape(n, p) {
+  const box = (x0, y0, z0, x1, y1, z1) => ({ kind: 'box', box: [x0, y0, z0, x1, y1, z1] });
+  if (HIDDEN_BLOCKS.has(n)) return { kind: 'none' };
+  if (n === 'water' || n === 'lava') return { kind: 'fluid' };
+  if (CROSS_BLOCKS.test(n)) return { kind: 'cross' };
+  if (n === 'vine' || n === 'glow_lichen' || n === 'sculk_vein') return { kind: 'faces' };
+  if (n === 'lily_pad') return { kind: 'flat', y: 1 / 64 };
+  if (n === 'pink_petals') return { kind: 'flat', y: 1 / 16 };
+  if (/_slab$/.test(n)) return p.type === 'double' ? { kind: 'cube' } : p.type === 'top' ? box(0, 0.5, 0, 1, 1, 1) : box(0, 0, 0, 1, 0.5, 1);
+  if (/_stairs$/.test(n)) return { kind: 'stairs', facing: p.facing || 'north', top: p.half === 'top' };
+  if (n === 'snow') return (+p.layers || 1) >= 8 ? { kind: 'cube' } : box(0, 0, 0, 1, (+p.layers || 1) / 8, 1);
+  if (/(_carpet|_pressure_plate|rail)$/.test(n)) return box(0, 0, 0, 1, 1 / 16, 1);
+  if (n === 'dirt_path' || n === 'farmland') return box(0, 0, 0, 1, 15 / 16, 1);
+  if (n === 'cactus') return box(1 / 16, 0, 1 / 16, 15 / 16, 1, 15 / 16);
+  if (/_wall$/.test(n)) return box(0.25, 0, 0.25, 0.75, 1, 0.75);
+  if (/(_fence|_fence_gate|_pane|^iron_bars)$/.test(n)) return box(0.375, 0, 0.375, 0.625, 1, 0.625);
+  if (TOKEN_BLOCKS.test(n)) return box(0.3, 0, 0.3, 0.7, 0.45, 0.7);
+  return { kind: 'cube' };
 }
 
 function prepareActions(rp, actions) {
@@ -988,8 +1060,8 @@ function renderTerrain(tr, elevation) {
       let base;
       if (elevation) base = ramp(HYPSO, (hgt - minY) / span);
       else if (color[i] === 0) base = [34, 38, 46];
-      else if (color[i] === PLANT && hgt < tr.height[i]) base = [72, 150, 38];   // grass tufts: halfway to grass
       else base = [(color[i] >> 16) & 255, (color[i] >> 8) & 255, color[i] & 255];
+      if (!elevation && tr.tuft[i]) base = [lerp(base[0], 50, 0.35), lerp(base[1], 138, 0.35), lerp(base[2], 30, 0.35)];   // grass and flowers on it
       const lift = elevation ? 1 : 0.93 + 0.14 * (hgt - minY) / span;   // higher ground a touch brighter
       const shade = light[i] * lift;
       const tex = elevation ? 0.03 : (TEXTURE[color[i]] || 0.04);
@@ -1031,7 +1103,7 @@ function buildContours(tr) {
   const { W, D, color, minY, maxY } = tr, height = tr.solid;
   const interval = [1, 2, 4, 5, 8, 10, 16, 20, 32].find(i => (maxY - minY) / i <= 12) || 64;
   const minor = new Path2D(), major = new Path2D();
-  const skip = i => color[i] === WATER || (color[i] === PLANT && height[i] === tr.height[i]);
+  const skip = i => color[i] === WATER || tr.pal[tr.top[i]].name.endsWith('_leaves');
   const add = (a, b, x0, z0, x1, z1) => {
     if (skip(a) || skip(b)) return;
     const la = Math.floor(height[a] / interval), lb = Math.floor(height[b] / interval);
@@ -1257,17 +1329,31 @@ function cellAt(tr, x, z) {
   return cx < 0 || cz < 0 || cx >= tr.W || cz >= tr.D ? -1 : cz * tr.W + cx;
 }
 
-/** The ground under a world position (the feet height of something standing there), or null off the map. */
-function groundTop(tr, x, z) {
-  const i = cellAt(tr, x, z);
-  return i < 0 ? null : tr.ground[i] + 1;
+/**
+ * The block at a world position: its palette entry, or null outside the recorded blocks. Below them counts as ground,
+ * since the blocks go down past the lowest ground of the site.
+ */
+function blockAt(tr, x, y, z) {
+  const cx = Math.floor(x - tr.x), cy = Math.floor(y - tr.y), cz = Math.floor(z - tr.z);
+  if (cx < 0 || cz < 0 || cx >= tr.W || cz >= tr.D || cy >= tr.H) return null;
+  return cy < 0 ? GROUND : tr.pal[tr.cells[(cy * tr.D + cz) * tr.W + cx]];
+}
+const GROUND = { solid: true, opaque: true };
+
+/** The top of the ground under a point (the feet height of something standing there), or null off the map. */
+function groundBelow(tr, x, y, z) {
+  if (cellAt(tr, x, z) < 0) return null;
+  for (let at = Math.floor(y - 0.01); at >= tr.y - 1; at--) {
+    const e = blockAt(tr, x, at, z);
+    if (e && e.solid) return at + 1;
+  }
+  return null;
 }
 
-/** Whether a point is inside the terrain: below the ground, or among a tree's leaves. */
+/** Whether a point is inside a block that stops movement: the ground, a tree's leaves or its trunk, not grass or water. */
 function solidAt(tr, x, y, z) {
-  const i = cellAt(tr, x, z);
-  if (i < 0) return false;
-  return y < tr.ground[i] + 1 || (y >= tr.canopy[i] && y < tr.height[i] + 1);
+  const e = blockAt(tr, x, y, z);
+  return !!e && e.solid;
 }
 
 function updateReadout() {
@@ -1277,10 +1363,10 @@ function updateReadout() {
   const cx = Math.floor(wx - tr.x), cz = Math.floor(wz - tr.z);
   if (cx < 0 || cz < 0 || cx >= tr.W || cz >= tr.D) { box.hidden = true; return; }
   const i = cz * tr.W + cx, col = tr.color[i];
-  const what = MAP_COLOR_NAMES[col] || (col ? hex(col) : 'no colour');
   box.hidden = false;
   box.innerHTML = `x <b>${Math.floor(wx)}</b>  z <b>${Math.floor(wz)}</b>  ·  top y <b>${tr.height[i]}</b>  ·  ` +
-      `<span style="display:inline-block;width:9px;height:9px;border-radius:2px;vertical-align:-1px;background:${hex(col)}"></span> ${what}`;
+      `<span style="display:inline-block;width:9px;height:9px;border-radius:2px;vertical-align:-1px;background:${hex(col)}"></span> ` +
+      escapeHtml(prettyId(tr.pal[tr.top[i]].name).toLowerCase());
 }
 
 /** Where the agent's look ray ends: on the opponent's hitbox, on the ground, or after 40 blocks. */
@@ -1351,7 +1437,7 @@ function drawMap() {
   const t = state.tick, ti = currentTick();
   const poses = rp.ents.map(e => {
     const x = sampleAt(e.x, t), y = sampleAt(e.y, t), z = sampleAt(e.z, t);
-    const top = groundTop(tr, x, z);
+    const top = groundBelow(tr, x, y, z);
     return {
       e, x, y, z, yaw: sampleAt(e.yaw, t, true), pitch: sampleAt(e.pitch, t),
       hp: e.health[ti], dead: e.health[ti] <= 0, above: top === null ? 0 : Math.max(0, y - top),
@@ -1507,7 +1593,7 @@ function drawShots(ctx, rp, t, Z, tr) {
     }
     ctx.globalAlpha = 1;
 
-    const top = groundTop(tr, s.pos[0], s.pos[2]), above = top === null ? 0 : Math.max(0, s.pos[1] - top);
+    const top = groundBelow(tr, s.pos[0], s.pos[1], s.pos[2]), above = top === null ? 0 : Math.max(0, s.pos[1] - top);
     const off = 1.5 + above * Math.max(Z, 8) * 0.45;
     ctx.fillStyle = 'rgba(0,0,0,.3)';
     ctx.beginPath(); ctx.ellipse(X + off, Y + off, 3, 2.2, 0, 0, Math.PI * 2); ctx.fill();
@@ -2458,8 +2544,11 @@ const lib = {
   cache: new Map(),      // server replays already fetched and prepared, most recent last
   opening: null,
   sideChosen: null,      // the user's own choice to show or hide the list, once made
+  selected: new Set(),   // keys of the ticked replays, which only a served page has
+  anchor: null,          // the replay ticked last, where a shift-click range starts
 };
 const GROUP_LIMIT = 150;
+const TRASH = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4.5h11M6.5 4.5V3a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1.5M4 4.5l.7 8.6a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9l.7-8.6"/></svg>';
 
 /** What the list shows for a replay, from the file itself or from the server's cheap read of it. */
 function summaryOf(raw) {
@@ -2479,9 +2568,11 @@ function visibleItems(g) {
 }
 
 function renderList() {
-  const box = $('side-list'), scroll = box.scrollTop;
+  const box = $('side-list'), scroll = box.scrollTop, picking = !!lib.server;
   const total = lib.groups.reduce((n, g) => n + g.items.length, 0);
   $('side-count').textContent = total ? String(total) : '';
+  box.classList.toggle('picking', picking);
+  updateSelectBar();
   if (!lib.groups.length) {
     box.innerHTML = `<div class="side-empty">${lib.server ? 'No replays under <b>runs/*/replays</b> yet.<br>They show up here while training writes them.' :
         'Nothing open yet.<br>Drop replay files anywhere on the page.'}</div>`;
@@ -2489,23 +2580,33 @@ function renderList() {
   }
   const short = { win: 'win', loss: 'loss', timeout: 'time' };
   const html = [];
+  const old = lib.groups.reduce((n, g) => n + g.items.filter(it => it.old).length, 0);
+  if (old) {
+    html.push(`<div class="old-note">${old === 1 ? 'One replay is' : old + ' replays are'} in the old format, without blocks, which this ` +
+        `viewer no longer draws. <button class="linkish" data-select-old>Select ${old === 1 ? 'it' : 'them'}</button> to delete.</div>`);
+  }
   lib.groups.forEach(g => {
     const items = visibleItems(g);
     const when = g.time ? `<span class="gtime">${timeAgo(g.time)}</span>` : '';
+    const ticked = picking && items.length > 0 && items.every(it => lib.selected.has(it.key));
     html.push(`<div class="group${g.open ? ' open' : ''}" data-group="${escapeHtml(g.id)}">` +
-        `<div class="group-head"><svg class="caret" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5 8 6l-3.5 3.5"/></svg>` +
-        `<span class="gname">${escapeHtml(g.title)}</span><span class="gcount">${items.length}${items.length !== g.items.length ? ' of ' + g.items.length : ''}</span>${when}</div><div class="group-items">`);
+        `<div class="group-head">${picking ? `<input type="checkbox" class="pick" data-pick-group title="Select every replay of this run"${ticked ? ' checked' : ''}>` : ''}` +
+        `<svg class="caret" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5 8 6l-3.5 3.5"/></svg>` +
+        `<span class="gname">${escapeHtml(g.title)}</span><span class="gcount">${items.length}${items.length !== g.items.length ? ' of ' + g.items.length : ''}</span>${when}` +
+        `${picking && g.items.length ? `<button class="del" data-del-group title="Delete every replay of this run">${TRASH}</button>` : ''}</div><div class="group-items">`);
     if (g.open) {
       const shown = lib.expanded.has(g.id) ? items : items.slice(0, GROUP_LIMIT);
       shown.forEach(it => {
-        const s = it.summary || {}, o = outcomeClass(s.outcome);
+        const s = it.summary || {}, o = it.old ? 'old' : outcomeClass(s.outcome);
         const secs = s.ticks ? (s.ticks / (s.tickRate || 20)).toFixed(1) + ' s' : '';
-        const sub = [s.iteration != null ? 'it ' + s.iteration : null, s.biome ? prettyId(s.biome) : null,
+        const sub = it.old ? 'old format, can’t be shown' : [s.iteration != null ? 'it ' + s.iteration : null, s.biome ? prettyId(s.biome) : null,
           s.ticks ? s.ticks + ' ticks' : null].filter(Boolean).join(' · ') || it.name;
-        html.push(`<div class="item${it.key === lib.active ? ' active' : ''}" data-key="${escapeHtml(it.key)}" title="${escapeHtml(it.name)}">` +
-            `<span class="badge ${o}">${short[o] || '?'}</span><div style="min-width:0"><div class="item-title">${escapeHtml(itemTitle(it))}` +
+        html.push(`<div class="item${it.key === lib.active ? ' active' : ''}${it.old ? ' old' : ''}" data-key="${escapeHtml(it.key)}" title="${escapeHtml(it.name)}">` +
+            (picking ? `<input type="checkbox" class="pick"${lib.selected.has(it.key) ? ' checked' : ''}>` : '') +
+            `<span class="badge ${o}">${it.old ? 'old' : short[o] || '?'}</span><div style="min-width:0"><div class="item-title">${escapeHtml(itemTitle(it))}` +
             `${it.isNew ? '<span class="new-dot"></span>' : ''}</div><div class="item-sub">${escapeHtml(sub)}</div></div>` +
-            `<div class="item-len">${secs}</div></div>`);
+            `<div class="item-len">${secs}</div>` +
+            (picking ? `<button class="del" data-del title="Delete this replay">${TRASH}</button>` : '') + '</div>');
       });
       if (shown.length < items.length) html.push(`<button class="more" data-more="${escapeHtml(g.id)}">Show all ${items.length}</button>`);
       if (!items.length) html.push(`<div class="side-empty" style="padding:8px">${g.items.length ? 'None match the filter.' : 'No replays yet.'}</div>`);
@@ -2513,6 +2614,11 @@ function renderList() {
     html.push('</div></div>');
   });
   box.innerHTML = html.join('');
+  // A run with some of its replays ticked shows a half-ticked box, which only a script can set.
+  box.querySelectorAll('[data-pick-group]').forEach(cb => {
+    const g = lib.groups.find(x => x.id === cb.closest('.group').dataset.group), items = g ? visibleItems(g) : [];
+    cb.indeterminate = !cb.checked && items.some(it => lib.selected.has(it.key));
+  });
   box.scrollTop = scroll;
 }
 
@@ -2521,7 +2627,7 @@ function findItem(key) {
   return null;
 }
 
-/** Items in the order the list shows them, for stepping with the arrow keys. */
+/** Items in the order the list shows them, for stepping with the arrow keys and for shift-click ranges. */
 function flatVisible() {
   const out = [];
   lib.groups.forEach(g => { if (g.open) visibleItems(g).slice(0, lib.expanded.has(g.id) ? Infinity : GROUP_LIMIT).forEach(it => out.push(it)); });
@@ -2529,15 +2635,50 @@ function flatVisible() {
 }
 
 function stepItem(dir) {
-  const list = flatVisible();
+  const list = flatVisible().filter(it => !it.old);
   if (!list.length) return;
   const i = list.findIndex(it => it.key === lib.active);
   const next = list[clamp(i < 0 ? 0 : i + dir, 0, list.length - 1)];
   if (next && next.key !== lib.active) openItem(next);
 }
 
+/** Ticks or clears a replay; with Shift, every replay the list shows between it and the one ticked last. */
+function pickItem(it, on, range) {
+  let keys = [it.key];
+  if (range && lib.anchor) {
+    const list = flatVisible(), a = list.findIndex(x => x.key === lib.anchor), b = list.findIndex(x => x.key === it.key);
+    if (a >= 0 && b >= 0) keys = list.slice(Math.min(a, b), Math.max(a, b) + 1).map(x => x.key);
+  }
+  keys.forEach(k => (on ? lib.selected.add(k) : lib.selected.delete(k)));
+  lib.anchor = it.key;
+  renderList();
+}
+
 function initList() {
   $('side-list').addEventListener('click', e => {
+    const pick = e.target.closest('.pick');
+    if (pick) {
+      if (pick.hasAttribute('data-pick-group')) {
+        const g = lib.groups.find(x => x.id === pick.closest('.group').dataset.group);
+        if (g) visibleItems(g).forEach(it => (pick.checked ? lib.selected.add(it.key) : lib.selected.delete(it.key)));
+        renderList();
+      } else {
+        const it = findItem(pick.closest('.item').dataset.key);
+        if (it) pickItem(it, pick.checked, e.shiftKey);
+      }
+      return;
+    }
+    const del = e.target.closest('.del');
+    if (del) {
+      if (del.hasAttribute('data-del-group')) askDeleteRun(lib.groups.find(x => x.id === del.closest('.group').dataset.group));
+      else askDeleteItems([findItem(del.closest('.item').dataset.key)].filter(Boolean));
+      return;
+    }
+    if (e.target.closest('[data-select-old]')) {
+      lib.groups.forEach(g => g.items.forEach(it => { if (it.old) lib.selected.add(it.key); }));
+      renderList();
+      return;
+    }
     const more = e.target.closest('[data-more]');
     if (more) { lib.expanded.add(more.dataset.more); renderList(); return; }
     const head = e.target.closest('.group-head');
@@ -2549,6 +2690,9 @@ function initList() {
     const row = e.target.closest('.item');
     if (row) {
       const it = findItem(row.dataset.key);
+      // With Shift, a click anywhere on the row ticks it, as it does on the box.
+      if (it && lib.server && e.shiftKey) { pickItem(it, !lib.selected.has(it.key), true); return; }
+      if (it && it.old) { toast(it.name + ' is in ' + OLD_FORMAT + '. Tick it to delete it.', 5000); return; }
       if (it) openItem(it);
       if (window.innerWidth <= 1180) setSide(false, true);
     }
@@ -2560,6 +2704,12 @@ function initList() {
     [...$('filters').children].forEach(x => x.classList.toggle('on', x === b));
     renderList();
   });
+  $('btn-sel-clear').onclick = () => { lib.selected.clear(); renderList(); };
+  $('btn-sel-del').onclick = () => askDeleteItems([...lib.selected].map(findItem).filter(Boolean));
+  $('btn-del-all').onclick = askDeleteAll;
+  $('confirm-yes').onclick = () => confirmDelete.answer && confirmDelete.answer(true);
+  $('confirm-no').onclick = () => confirmDelete.answer && confirmDelete.answer(false);
+  $('confirm').addEventListener('click', e => { if (e.target === $('confirm') && confirmDelete.answer) confirmDelete.answer(false); });
   try { lib.autoOpen = localStorage.getItem('mmai-replay-auto') === '1'; } catch (e) { /* ignore */ }
   $('auto-open').checked = lib.autoOpen;
   $('auto-open').addEventListener('change', e => {
@@ -2567,6 +2717,72 @@ function initList() {
     try { localStorage.setItem('mmai-replay-auto', lib.autoOpen ? '1' : '0'); } catch (err) { /* ignore */ }
     if (lib.autoOpen) autoOpenIfIdle();
   });
+}
+
+// ---- deleting replays ----
+//
+// Only a page served by viewer/serve.py can delete, and only through it: the server takes run and file names, never
+// paths, and deletes nothing but finished replays straight inside runs/<name>/replays/. Every way to delete asks first,
+// saying how many files from which runs.
+
+function updateSelectBar() {
+  const n = lib.selected.size, runs = new Set([...lib.selected].map(k => (findItem(k) || {}).run));
+  $('select-bar').hidden = !lib.server || n === 0;
+  $('sel-count').innerHTML = `<b>${n}</b> selected` + (runs.size > 1 ? ` from ${runs.size} runs` : '');
+}
+
+/** Asks before something that cannot be undone, in the page's own dialog; resolves true to go ahead. */
+function confirmDelete(title, html) {
+  if (confirmDelete.answer) confirmDelete.answer(false);
+  return new Promise(resolve => {
+    $('confirm-title').textContent = title;
+    $('confirm-text').innerHTML = html + '<p>The files are deleted from disk, not moved to the recycle bin.</p>';
+    $('confirm').hidden = false;
+    $('confirm-yes').focus();
+    confirmDelete.answer = ok => { $('confirm').hidden = true; confirmDelete.answer = null; resolve(ok); };
+  });
+}
+
+const plural = (n, word) => n + ' ' + word + (n === 1 ? '' : 's');
+
+/** Sends a delete to the server, then reads the list again at once. */
+async function deleteReplays(request) {
+  try {
+    const r = await fetch('api/delete', { method: 'POST', cache: 'no-store', body: JSON.stringify(request),
+      headers: { 'Content-Type': 'application/json', 'X-Replay-Viewer': '1' } });
+    if (!r.ok) throw new Error(r.status === 501 ? 'this viewer server is too old to delete; start scripts\\viewer.ps1 again' : 'HTTP ' + r.status);
+    const res = await r.json();
+    toast('Deleted ' + plural(res.deleted, 'replay') + (res.failed.length ? '; ' + res.failed.length + ' could not be deleted' : '') + '.', 4000);
+  } catch (err) {
+    toast('Could not delete: ' + err.message, 7000);
+  }
+  lib.server.etag = null;
+  await pollServer();
+}
+
+async function askDeleteItems(items) {
+  if (!lib.server || !items.length) return;
+  const byRun = new Map();
+  items.forEach(it => byRun.set(it.run, (byRun.get(it.run) || 0) + 1));
+  const title = items.length === 1 ? 'Delete ' + itemTitle(items[0]) + '?' : 'Delete ' + plural(items.length, 'replay') + '?';
+  const html = items.length === 1 ? `<p><code>runs/${escapeHtml(items[0].run)}/replays/${escapeHtml(items[0].file)}</code></p>`
+    : '<ul class="confirm-list">' + [...byRun].map(([run, n]) => `<li>${plural(n, 'replay')} from <b>${escapeHtml(run)}</b></li>`).join('') + '</ul>';
+  if (await confirmDelete(title, html)) await deleteReplays({ replays: items.map(it => ({ run: it.run, file: it.file })) });
+}
+
+async function askDeleteRun(g) {
+  if (!lib.server || !g || !g.items.length) return;
+  const html = `<p>Every replay in <code>runs/${escapeHtml(g.title)}/replays/</code>: ${plural(g.items.length, 'file')} now, and any ` +
+      'the game finishes writing before this goes through.</p>';
+  if (await confirmDelete('Delete all ' + plural(g.items.length, 'replay') + ' of ' + g.title + '?', html)) await deleteReplays({ runs: [g.title] });
+}
+
+async function askDeleteAll() {
+  const groups = lib.groups.filter(g => g.server && g.items.length), total = groups.reduce((n, g) => n + g.items.length, 0);
+  if (!lib.server || !total) { toast('There are no replays to delete.'); return; }
+  const html = '<p>Every replay of every run, everything in <code>runs/*/replays/</code>:</p><ul class="confirm-list">' +
+      groups.map(g => `<li>${plural(g.items.length, 'replay')} from <b>${escapeHtml(g.title)}</b></li>`).join('') + '</ul>';
+  if (await confirmDelete('Delete all ' + plural(total, 'replay') + '?', html)) await deleteReplays({ all: true });
 }
 
 function setSide(visible, chosen) {
@@ -2734,6 +2950,8 @@ async function startServerMode() {
   syncTools();
   $('live').hidden = false;
   $('auto-wrap').hidden = false;
+  $('btn-del-all').hidden = false;
+  $('del-note').hidden = true;
   $('empty-title').textContent = 'Waiting for replays';
   $('empty-text').innerHTML = lib.server.wantRun
     ? `Nothing in <code>runs/${escapeHtml(lib.server.wantRun)}/replays/</code> yet. Replays show up here as the game writes them.`
@@ -2767,6 +2985,8 @@ async function pollServer() {
 function applyRuns(runs) {
   const s = lib.server, fresh = [];
   const known = new Map(lib.groups.filter(g => g.server).map(g => [g.id, g]));
+  // A run whose replays were all deleted, or that has not written any yet, only shows when the address asks for it.
+  runs = runs.filter(run => run.replays.length || run.name === s.wantRun);
   const groups = runs.map((run, index) => {
     const id = 'run:' + run.name;
     const g = known.get(id) || { id, title: run.name, server: true, items: [],
@@ -2781,6 +3001,7 @@ function applyRuns(runs) {
       }
       it.mtime = f.mtime * 1000;
       it.size = f.size;
+      it.old = !!f.old;
       ['outcome', 'ticks', 'iteration', 'biome', 'worker', 'fight', 'brain'].forEach(k => { if (f[k] != null) it.summary[k] = f[k]; });
       return it;
     });
@@ -2788,6 +3009,9 @@ function applyRuns(runs) {
     return g;
   });
   lib.groups = lib.groups.filter(g => !g.server).concat(groups);
+  // Ticks on replays that are gone, deleted from here or from outside, go with them.
+  const present = new Set(groups.flatMap(g => g.items.map(it => it.key)));
+  lib.selected.forEach(k => { if (!present.has(k)) lib.selected.delete(k); });
   renderList();
 
   if (s.first) {
@@ -2795,13 +3019,18 @@ function applyRuns(runs) {
     autoSide();
     // Open what the address asks for, else the newest replay of the asked-for run, else the newest of all.
     let pick = null;
+    const newest = g => g.items.find(it => !it.old) || null;
     if (s.wantRun) {
       const g = groups.find(x => x.title === s.wantRun);
-      if (g) pick = (s.wantFile && g.items.find(it => it.file === s.wantFile)) || g.items[0] || null;
+      if (g) pick = (s.wantFile && g.items.find(it => it.file === s.wantFile && !it.old)) || newest(g);
     } else {
-      pick = groups.reduce((best, g) => (g.items[0] && (!best || g.items[0].mtime > best.mtime) ? g.items[0] : best), null);
+      pick = groups.reduce((best, g) => (newest(g) && (!best || newest(g).mtime > best.mtime) ? newest(g) : best), null);
     }
     if (pick) openItem(pick, { tick: pick.file === s.wantFile ? s.wantTick : null, zoom: s.wantZoom });
+    else if (groups.some(g => g.items.length && (!s.wantRun || g.title === s.wantRun))) {
+      $('empty-title').textContent = 'Only old replays here';
+      $('empty-text').textContent = 'These replays are in ' + OLD_FORMAT + '. Tick them in the list to delete them.';
+    }
   } else if (fresh.length) {
     autoOpenIfIdle();
   }
@@ -2816,7 +3045,7 @@ function newestItem(run) {
   let best = null;
   lib.groups.forEach(g => {
     if (!g.server) return;
-    g.items.forEach(it => { if ((!run || it.run === run) && (!best || it.mtime > best.mtime)) best = it; });
+    g.items.forEach(it => { if (!it.old && (!run || it.run === run) && (!best || it.mtime > best.mtime)) best = it; });
   });
   return best;
 }
@@ -2886,9 +3115,10 @@ function init3D(THREE) {
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(0x0c0f14, 180, 460);
   const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 1500);
-  scene.add(new THREE.HemisphereLight(0xe2efff, 0x4a3f30, 1.4));
-  // The sun comes from the north-west, like the 2D map's shading.
-  const sun = new THREE.DirectionalLight(0xfff2de, 2.4);
+  // Much of the light is the sky's, which keeps what lies in shade, under trees above all, about as light as the game
+  // keeps it. The sun comes from the north-west, like the 2D map's shading.
+  scene.add(new THREE.HemisphereLight(0xe2efff, 0x4a3f30, 2.1));
+  const sun = new THREE.DirectionalLight(0xfff2de, 1.9);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.bias = -0.0004;
@@ -2937,175 +3167,461 @@ const LINEAR = Array.from({ length: 256 }, (_, v) => {
 const lin = (rgb, k) => rgb.map(v => LINEAR[clamp(Math.round(v * (k || 1)), 0, 255)]);
 const rgbOf = c => [(c >> 16) & 255, (c >> 8) & 255, c & 255];
 const mixRgb = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
-const TUFT_RGB = [72, 150, 38], DIRT_RGB = [140, 100, 70], STONE_RGB = [112, 112, 112];
+const DIRT_RGB = [134, 96, 67];
 
-// Block textures for the tops of columns, when served with a Minecraft jar. A replay knows each column's map colour,
-// not its block, so only a few colours get a plausible block; grass and leaves are grey in the jar and take a tint.
-const BLOCK_TILES = ['white', 'grass_block_top', 'sand', 'stone', 'dirt', 'snow', 'oak_leaves', 'podzol_top', 'red_sand'];
-const COLOR_BLOCKS = {
-  0x7FB238: ['grass_block_top', [145, 189, 89]], 0xF7E9A3: ['sand'], 0x707070: ['stone'], 0x976D4D: ['dirt'],
-  0xFFFFFF: ['snow'], 0x007C00: ['oak_leaves', [89, 174, 48]], 0x815631: ['podzol_top'], 0xD87F33: ['red_sand'],
+// ---- Blocks -----------------------------------------------------------------------------------------------------
+//
+// The site block by block. Every face of a block that meets air or something see-through becomes a quad, all of them
+// in one mesh for the ground, plants and trees, and one for the water, so a site of a quarter of a million blocks is two
+// draw calls. Plants are two crossed planes, vines flat against their sides, slabs, snow and stairs boxes of roughly
+// their shape. Served with a Minecraft jar, every face takes its block's own texture from the jar, put together into
+// one atlas in the page; otherwise, and with B off, blocks are their map colours. Where one block's corner is hidden by
+// its neighbours it is darkened, the way the game's smooth lighting does it.
+
+// Grass, foliage and water colours for the biomes whose colours stand out; the rest take the plains' colours. The game
+// takes these from its colour maps by a biome's temperature and rainfall, and blends them from block to block.
+const BIOME_TINTS = {
+  plains: [0x91BD59, 0x77AB2F], forest: [0x79C05A, 0x59AE30], flower_forest: [0x79C05A, 0x59AE30],
+  birch_forest: [0x88BB67, 0x6BA941], old_growth_birch_forest: [0x88BB67, 0x6BA941], dark_forest: [0x507A32, 0x59AE30],
+  swamp: [0x6A7039, 0x6A7039, 0x617B64], mangrove_swamp: [0x6A7039, 0x8DB127, 0x3A7A6A],
+  jungle: [0x59C93C, 0x30BB0B], bamboo_jungle: [0x59C93C, 0x30BB0B], sparse_jungle: [0x64C73F, 0x3EB80F],
+  taiga: [0x86B783, 0x68A464], old_growth_pine_taiga: [0x86B87F, 0x68A55F], old_growth_spruce_taiga: [0x86B87F, 0x68A55F],
+  snowy_taiga: [0x80B497, 0x60A17B], snowy_plains: [0x80B497, 0x60A17B], ice_spikes: [0x80B497, 0x60A17B],
+  savanna: [0xBFB755, 0xAEA42A], savanna_plateau: [0xBFB755, 0xAEA42A], windswept_savanna: [0xBFB755, 0xAEA42A],
+  desert: [0xBFB755, 0xAEA42A], badlands: [0x90814D, 0x9E814D], wooded_badlands: [0x90814D, 0x9E814D],
+  eroded_badlands: [0x90814D, 0x9E814D], cherry_grove: [0xB6DB61, 0xB6DB61, 0x5DB7EF], meadow: [0x83BB6D, 0x63A948, 0x0E4ECF],
+  warm_ocean: [, , 0x43D5EE], lukewarm_ocean: [, , 0x45ADF2], cold_ocean: [, , 0x3D57D6], frozen_ocean: [, , 0x3938C9],
+  frozen_river: [, , 0x3938C9],
 };
-const ATLAS = 64, CELL = 20;   // 16-pixel tiles in 20-pixel cells: two pixels of wrapped border keep mipmaps clean
 
-/** The tiles side by side on one small texture, built once from the jar. Resolves to null when there is no jar. */
-function loadBlockAtlas() {
-  if (v3.atlasPromise) return v3.atlasPromise;
-  v3.atlasPromise = Promise.all(BLOCK_TILES.slice(1).map(name => new Promise(resolve => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => resolve(null);
-    img.src = 'mc/textures/block/' + name + '.png';
-  }))).then(images => {
-    if (images.some(img => !img)) return null;
-    const canvas = document.createElement('canvas');
-    canvas.width = canvas.height = ATLAS;
-    const c = canvas.getContext('2d');
-    c.imageSmoothingEnabled = false;
-    [null, ...images].forEach((img, i) => {
-      const x = (i % 3) * CELL, y = Math.floor(i / 3) * CELL;
-      c.save();
-      c.beginPath(); c.rect(x, y, CELL, CELL); c.clip();
-      c.fillStyle = img ? '#3c3c3c' : '#ffffff';     // leaves have holes; show dark leaves through them
-      c.fillRect(x, y, CELL, CELL);
-      if (img) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) c.drawImage(img, 0, 0, 16, 16, x + 2 + dx * 16, y + 2 + dy * 16, 16, 16);
-      c.restore();
-    });
-    // A tinted tile is grey and on average darker than white; its gain brings its average back to the tint, so
-    // textured tops come out as bright as the flat colours they replace.
-    const gains = {}, px = c.getImageData(0, 0, ATLAS, ATLAS).data;
-    Object.values(COLOR_BLOCKS).filter(b => b[1]).forEach(([name]) => {
-      const i = BLOCK_TILES.indexOf(name), x0 = (i % 3) * CELL + 2, y0 = Math.floor(i / 3) * CELL + 2;
-      let sum = 0;
-      for (let y = y0; y < y0 + 16; y++) {
-        for (let x = x0; x < x0 + 16; x++) {
-          const p = (y * ATLAS + x) * 4;
-          sum += 0.2126 * LINEAR[px[p]] + 0.7152 * LINEAR[px[p + 1]] + 0.0722 * LINEAR[px[p + 2]];
-        }
-      }
-      gains[name] = clamp(256 / Math.max(sum, 1e-3), 1, 3);
-    });
-    const tex = new v3.T.CanvasTexture(canvas);
-    tex.colorSpace = v3.T.SRGBColorSpace;
-    tex.magFilter = v3.T.NearestFilter;
-    tex.minFilter = v3.T.NearestMipmapLinearFilter;
-    tex.userData.keep = true;
-    tex.userData.gains = gains;
-    return tex;
-  });
-  return v3.atlasPromise;
+function biomeTints(biome) {
+  const t = BIOME_TINTS[String(biome || '').replace(/^minecraft:/, '')] || [];
+  return { grass: t[0] || 0x91BD59, foliage: t[1] || 0x77AB2F, water: t[2] || 0x3F76E4,
+    spruce: 0x619961, birch: 0x80A755, lily: 0x208030 };
 }
 
-/** Texture coordinates of a tile's 16 pixels in the atlas: [u0, v0, u1, v1]. */
-function tileUV(name) {
-  const i = Math.max(0, BLOCK_TILES.indexOf(name)), x = (i % 3) * CELL + 2, y = Math.floor(i / 3) * CELL + 2;
-  return [x / ATLAS, 1 - y / ATLAS, (x + 16) / ATLAS, 1 - (y + 16) / ATLAS];
+// The tint each block's grey texture takes in the game.
+const BLOCK_TINTS = { grass_block: 'grass', short_grass: 'grass', tall_grass: 'grass', fern: 'grass', large_fern: 'grass',
+  sugar_cane: 'grass', oak_leaves: 'foliage', jungle_leaves: 'foliage', acacia_leaves: 'foliage', dark_oak_leaves: 'foliage',
+  mangrove_leaves: 'foliage', vine: 'foliage', spruce_leaves: 'spruce', birch_leaves: 'birch', lily_pad: 'lily' };
+
+/**
+ * The textures of a block's six faces (down, up, north, south, west, east), or of its planes for a plant, from the
+ * names the jar has. A face is { tex, tint, overlay, rot }: a texture, the tint it takes, a second texture drawn tinted
+ * over it (the grass on a grass block's side), and whether it lies on its side (a log lying down). Follows the jar's
+ * own naming, <name>, or <name>_top, _bottom and _side where it has those, with the exceptions Minecraft's block models
+ * make. Faces the jar has nothing for are null, and drawn in the block's map colour.
+ */
+function blockTextures(e, has) {
+  if (!e.vanilla) return null;
+  const n = e.name.replace(/^(waxed_|infested_)/, ''), p = e.props, kind = e.shape.kind, tint = BLOCK_TINTS[n] || null;
+  const first = (...names) => names.find(x => x && has(x)) || null;
+  const face = (tex, t) => (tex ? { tex, tint: t === undefined ? tint : t } : null);
+  const six = (down, up, side) => [down, up, side, side, side, side];
+
+  if (kind === 'none') return null;
+  if (kind === 'fluid') { const lava = face(first('lava_still'), null); return lava && six(lava, lava, lava); }   // water is its own mesh
+  if (kind === 'cross' || kind === 'flat' || kind === 'faces') {
+    let tex = n;
+    if (p.half) tex = n + (p.half === 'upper' ? '_top' : '_bottom');
+    else if (n === 'sweet_berry_bush' || n === 'wheat' || n === 'beetroots') tex = n + '_stage' + (p.age | 0);
+    else if (n === 'carrots' || n === 'potatoes') tex = n + '_stage' + [0, 0, 1, 1, 2, 2, 2, 3][p.age | 0];
+    else if (/^cave_vines/.test(n)) tex = n + (p.berries === 'true' ? '_lit' : '');
+    else if (n === 'mangrove_propagule' && p.hanging === 'true') tex = 'mangrove_propagule_hanging';
+    else if (n === 'pointed_dripstone') tex = 'pointed_dripstone_' + (p.vertical_direction || 'up') + '_' + (p.thickness || 'tip');
+    else if (n === 'bamboo') tex = 'bamboo_stalk';
+    else if (/torch$/.test(n)) tex = n.replace('wall_', '');
+    else if (/fire$/.test(n)) tex = n + '_0';
+    const plane = face(first(tex, n, n + '_top'));
+    return plane && six(plane, plane, plane);
+  }
+  if (n === 'grass_block' || n === 'podzol' || n === 'mycelium') {
+    const snowy = p.snowy === 'true';
+    const side = snowy ? face('grass_block_snow', null) : n === 'grass_block'
+      ? { tex: 'grass_block_side', overlay: 'grass_block_side_overlay', tint: 'grass' } : face(n + '_side');
+    return six(face('dirt', null), face(n + '_top'), side);
+  }
+  if (n === 'dirt_path') return six(face('dirt'), face('dirt_path_top'), face('dirt_path_side'));
+  if (n === 'farmland') return six(face('dirt'), face(p.moisture === '7' ? 'farmland_moist' : 'farmland'), face('dirt'));
+  if (n === 'snow' || n === 'snow_block') return six(face('snow'), face('snow'), face('snow'));
+
+  // The material a shaped block is made of: oak planks for oak stairs, white wool for a white carpet, stone bricks for a
+  // stone brick wall.
+  const material = n.replace(/_(slab|stairs|fence_gate|fence|wall|pane|carpet|pressure_plate|button)$/, '');
+  const bases = [n, material, material + 's', material + '_planks', material + '_wool', material + '_block',
+    material.replace(/_block$/, ''), material.replace(/^(smooth|cut|chiseled|polished)_/, ''),
+    n.replace(/_wood$/, '_log').replace(/_hyphae$/, '_stem')];
+  const role = suffixes => first(...bases.flatMap(b => suffixes.map(s => b + s)));
+  const wood = /_(wood|hyphae)$/.test(n);
+  let side = wood ? first(n.replace(/_wood$/, '_log').replace(/_hyphae$/, '_stem')) : role(['_side', '']);
+  let up = wood ? side : role(['_top', '_end', '']), down = wood ? side : role(['_bottom', '_top', '_end', '']);
+  if (!side) side = up;
+  if (!side) return null;
+  const faces = six(face(down || up), face(up), face(side));
+  // A log, a pillar or a basalt column lying down: its ends face along its axis, and the bark on its long sides runs
+  // along it.
+  if (p.axis === 'x' || p.axis === 'z') {
+    const end = face(up), bark = face(side), rolled = Object.assign({}, bark, { rot: true });
+    return p.axis === 'x' ? [rolled, rolled, rolled, rolled, end, end] : [bark, bark, end, end, rolled, rolled];
+  }
+  return faces;
+}
+
+// ---- textures from the jar, put together into one atlas per replay ----
+
+const blockImages = new Map();   // texture name -> Promise of an image, or null when the server has none
+
+function loadBlockImage(name) {
+  if (!blockImages.has(name)) {
+    blockImages.set(name, new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = 'mc/textures/block/' + name + '.png';
+    }));
+  }
+  return blockImages.get(name);
+}
+
+/** The names of the block textures in the jar, asked for once; an empty set without one. */
+function blockTextureNames() {
+  if (!v3.blockNames) {
+    v3.blockNames = fetch('api/blocks', { cache: 'no-store' }).then(r => (r.ok ? r.json() : { textures: [] }))
+      .then(j => new Set(j.textures || [])).catch(() => new Set());
+  }
+  return v3.blockNames;
+}
+
+const TILE = 16, CELL = 20;   // 16-pixel tiles in 20-pixel cells: two pixels of wrapped border keep mipmaps clean
+
+/**
+ * Tiles side by side on one texture, each drawn by a function into a 16 by 16 ImageData, with mipmaps that keep a
+ * cutout texture's coverage: a pixel of a smaller level is solid when any of the four it stands for is, so leaves stay
+ * leaves from far away instead of wearing through to nothing. Returns the texture and each tile's [u0, v0, u1, v1],
+ * v0 at the top of the tile.
+ */
+function makeAtlas(draws) {
+  const THREE = v3.T, per = Math.ceil(Math.sqrt(draws.length));
+  let S = 64;
+  while (S < per * CELL) S *= 2;
+  const data = new Uint8Array(S * S * 4), rects = [];
+  draws.forEach((draw, k) => {
+    const px = draw(), x0 = (k % per) * CELL, y0 = Math.floor(k / per) * CELL;
+    for (let y = -2; y < TILE + 2; y++) {
+      for (let x = -2; x < TILE + 2; x++) {
+        const s = (((y + TILE) % TILE) * TILE + (x + TILE) % TILE) * 4, d = ((y0 + 2 + y) * S + x0 + 2 + x) * 4;
+        data[d] = px[s]; data[d + 1] = px[s + 1]; data[d + 2] = px[s + 2]; data[d + 3] = px[s + 3];
+      }
+    }
+    rects.push([(x0 + 2) / S, (y0 + 2) / S, (x0 + 2 + TILE) / S, (y0 + 2 + TILE) / S]);
+  });
+  const mipmaps = [{ data, width: S, height: S }];
+  for (let size = S / 2, src = data; size >= 1; size /= 2) {
+    const out = new Uint8Array(size * size * 4), w = size * 2;
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        let r = 0, g = 0, b = 0, a = 0, solid = 0;
+        for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+          const s = ((y * 2 + dy) * w + x * 2 + dx) * 4;
+          if (src[s + 3] < 128) continue;
+          r += src[s]; g += src[s + 1]; b += src[s + 2]; a = Math.max(a, src[s + 3]); solid++;
+        }
+        const d = (y * size + x) * 4;
+        if (solid) { out[d] = r / solid; out[d + 1] = g / solid; out[d + 2] = b / solid; out[d + 3] = a; }
+      }
+    }
+    mipmaps.push({ data: out, width: size, height: size });
+    src = out;
+  }
+  const tex = new THREE.DataTexture(data, S, S, THREE.RGBAFormat);
+  tex.mipmaps = mipmaps;
+  tex.generateMipmaps = false;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestMipmapLinearFilter;
+  tex.anisotropy = Math.min(4, v3.renderer.capabilities.getMaxAnisotropy());
+  tex.needsUpdate = true;
+  tex.userData.keep = true;
+  return { tex, rects };
+}
+
+/** A tile's 16 by 16 pixels: the first frame of a texture, tinted, with an overlay drawn over it tinted too. */
+function tilePixels(img, tint, overlay, overlayTint) {
+  const c = v3.scratch || (v3.scratch = document.createElement('canvas').getContext('2d', { willReadFrequently: true }));
+  c.canvas.width = c.canvas.height = TILE;
+  const read = (image, rgb) => {
+    c.clearRect(0, 0, TILE, TILE);
+    c.drawImage(image, 0, 0, TILE, TILE, 0, 0, TILE, TILE);
+    const px = c.getImageData(0, 0, TILE, TILE).data;
+    if (rgb) for (let p = 0; p < px.length; p += 4) { px[p] = px[p] * rgb[0] / 255; px[p + 1] = px[p + 1] * rgb[1] / 255; px[p + 2] = px[p + 2] * rgb[2] / 255; }
+    return px;
+  };
+  const px = read(img, tint);
+  if (overlay) {
+    const top = read(overlay, overlayTint);
+    for (let p = 0; p < px.length; p += 4) {
+      const a = top[p + 3] / 255;
+      px[p] = lerp(px[p], top[p], a); px[p + 1] = lerp(px[p + 1], top[p + 1], a); px[p + 2] = lerp(px[p + 2], top[p + 2], a);
+    }
+  }
+  return px;
+}
+
+// Tiles of the page's own, for blocks drawn in their map colours: a faintly grained white, which leaves the colour
+// much as it is, the clumps of a tree's leaves, and the shapes of grass blades and of a vine's tangle, which give plants
+// and vines their outline without any texture from the jar.
+function plainPixels(kind) {
+  const px = new Uint8ClampedArray(TILE * TILE * 4);
+  for (let y = 0; y < TILE; y++) {
+    for (let x = 0; x < TILE; x++) {
+      let on = true, shade = 200 + 55 * hash2(x * 3 + 1, y * 5 + 2);
+      if (kind === 'blades') {
+        on = [[1, 9, 0.3], [4, 3, -0.2], [7, 1, 0.1], [10, 5, -0.3], [13, 8, 0.25]].some(([bx, tip, lean]) =>
+          y >= tip && Math.abs(x - (bx + lean * (TILE - y))) < 0.5 + 1.1 * (y - tip) / (TILE - tip));
+      } else if (kind === 'tangle') {
+        on = hash2(x >> 1, y >> 1) < 0.55 || (x + y) % 7 === 0;
+      } else if (kind === 'leafy') {
+        shade = 150 + 105 * Math.max(hash2(x >> 1, y >> 1), hash2(x, y) * 0.8);
+      } else {
+        shade = 232 + 23 * hash2(x * 7 + 3, y * 11 + 1);
+      }
+      const p = (y * TILE + x) * 4;
+      px[p] = px[p + 1] = px[p + 2] = shade;
+      px[p + 3] = on ? 255 : 0;
+    }
+  }
+  return px;
+}
+
+const PLAIN_TILES = ['white', 'blades', 'tangle', 'leafy'];
+
+/** The atlas for blocks drawn in their map colours, the same for every replay. */
+function plainAtlas() {
+  if (!v3.plain) {
+    const { tex, rects } = makeAtlas(PLAIN_TILES.map(k => () => plainPixels(k)));
+    v3.plain = { tex, white: rects[0], blades: rects[1], tangle: rects[2], leafy: rects[3] };
+  }
+  return v3.plain;
 }
 
 /**
- * Voxel terrain: one column per heightmap cell, as a single mesh of the faces that can be seen. Tree tops become a
- * layer of leaves over open ground. Under water the bed sits deeper the further it is from the shore, below a
- * see-through surface. The map's edges run down to a base, so the site reads as a block cut out of the world.
+ * Textures for every block of a replay: an atlas of the tiles its palette needs, and for every palette entry the
+ * rectangle each face takes from it. Resolves to null without a jar. Kept on the terrain, as a promise and, once it is
+ * done, as `textures`, so it is built once a replay.
  */
-function buildTerrain3D(tr, elevation, atlas) {
-  const THREE = v3.T, { W, D, height, ground, canopy, color, floorColor, shore, pad } = tr;
-  // With the block atlas, the tops of known colours carry their block's texture, tinted where the jar's is grey;
-  // everything else points at the atlas's white tile, which leaves the flat shaded colour as it was.
-  const textured = !!atlas && !elevation, white = tileUV('white');
-  const flatUV = [(white[0] + white[2]) / 2, (white[1] + white[3]) / 2];
-  const blockTop = (key, treeTop, jit) => {
-    const b = textured && COLOR_BLOCKS[key === PLANT && !treeTop ? 0x7FB238 : key];   // tufts sit on grass
-    if (!b) return null;
-    const gain = (b[1] && atlas.userData.gains[b[0]]) || 1;
-    return { uv: tileUV(b[0]), color: lin(b[1] || [255, 255, 255], jit).map(v => v * gain) };
-  };
-  const n = W * D, span = Math.max(1, tr.maxY - tr.minY), BASE = tr.minY - 6;
-  // Lily pads float on water: the column is water, its surface one below the pad's recorded height.
-  const isWater = i => color[i] === WATER || pad[i] === 1;
-  const surfaceBlock = i => (color[i] === WATER ? height[i] : tr.solid[i]);
-  const floor = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    floor[i] = !isWater(i) ? ground[i] + 1 : surfaceBlock(i) + 1 - (pad[i] ? 1 : clamp(Math.round(1 + shore[i] * 0.8), 1, 5));
-  }
+function loadBlockLook(tr, biome) {
+  if (tr.look) return tr.look;
+  const look = tr.look = blockTextureNames().then(async names => {
+    if (!names.size) return null;
+    const tints = biomeTints(biome), keys = new Map(), faces = tr.pal.map(e => blockTextures(e, n => names.has(n)));
+    faces.forEach(list => (list || []).forEach(f => {
+      if (!f) return;
+      f.key = f.tex + '|' + (f.tint || '') + '|' + (f.overlay || '');
+      if (!keys.has(f.key)) keys.set(f.key, f);
+    }));
+    const specs = [...keys.values()], images = new Map();
+    await Promise.all([...new Set(specs.flatMap(f => [f.tex, f.overlay].filter(Boolean)))].map(async n => images.set(n, await loadBlockImage(n))));
+    const usable = specs.filter(f => images.get(f.tex));
+    const rgb = t => (t ? rgbOf(tints[t]) : null);
+    // The page's own tiles first, for any block the jar has no texture for.
+    const { tex, rects } = makeAtlas([...PLAIN_TILES.map(k => () => plainPixels(k)),
+      ...usable.map(f => () => tilePixels(images.get(f.tex), f.overlay ? null : rgb(f.tint), images.get(f.overlay), rgb(f.tint)))]);
+    // Another replay was opened meanwhile, or this one again, which started over.
+    if (tr.look !== look || !v3.rp || v3.rp.terrain !== tr) {
+      tex.dispose();
+      if (tr.look === look) tr.look = null;
+      return null;
+    }
+    const rectOf = new Map(usable.map((f, k) => [f.key, rects[k + PLAIN_TILES.length]]));
+    tr.textures = { tex, white: rects[0], blades: rects[1], tangle: rects[2], leafy: rects[3],
+      faces: faces.map(list => list && list.map(f => (f && rectOf.has(f.key) ? { r: rectOf.get(f.key), rot: !!f.rot } : null))) };
+    return tr.textures;
+  }).catch(err => { console.error(err); return null; });
+  return look;
+}
 
-  const topRgb = i => {
-    if (isWater(i)) return mixRgb([196, 182, 136], [44, 70, 88], clamp((surfaceBlock(i) + 1 - floor[i]) / 5, 0, 1));
-    if (elevation) return ramp(HYPSO, (ground[i] - tr.minY) / span);
-    const c = floorColor[i];
-    if (c === PLANT) return TUFT_RGB;
-    return c ? rgbOf(c) : [34, 38, 46];
+/** Frees a replay's atlas once it leaves the scene; opening it again builds it again from the images already loaded. */
+function forgetBlockLook(tr) {
+  if (tr.textures) tr.textures.tex.dispose();
+  tr.look = tr.textures = null;
+}
+
+// ---- the meshes ----
+
+// Each face of a block: which way it looks, and its corners as a unit cube's, bottom left, bottom right, top right and
+// top left seen from outside. Down, up, north (-z), south (+z), west (-x), east (+x).
+const FACES = [
+  { n: [0, -1, 0], c: [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]] },
+  { n: [0, 1, 0], c: [[0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0]] },
+  { n: [0, 0, -1], c: [[1, 0, 0], [0, 0, 0], [0, 1, 0], [1, 1, 0]] },
+  { n: [0, 0, 1], c: [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]] },
+  { n: [-1, 0, 0], c: [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]] },
+  { n: [1, 0, 0], c: [[1, 0, 1], [1, 0, 0], [1, 1, 0], [1, 1, 1]] },
+];
+// For every corner of every face, the three blocks in front of it that can shade it: the two beside it and the one
+// diagonally across, as offsets from the block.
+const AO_NEIGHBOURS = FACES.map(({ n, c }) => {
+  const axes = [0, 1, 2].filter(a => n[a] === 0);
+  return c.map(corner => {
+    const side = axes.map(a => { const d = [...n]; d[a] = corner[a] ? 1 : -1; return d; });
+    return [side[0], side[1], [0, 1, 2].map(a => side[0][a] + side[1][a] - n[a])];
+  });
+});
+const AO_SHADE = [1, 0.8, 0.64, 0.5];
+const AIR_BLOCK = { air: true, shape: { kind: 'none' } }, BELOW_BLOCK = { opaque: true, shape: { kind: 'cube' } };
+
+/**
+ * The site's meshes. `look` is the atlas and each palette entry's faces from loadBlockLook, or null for map colours;
+ * `elevation` tints by height instead. Returns the ground mesh and the water mesh.
+ */
+function buildTerrain3D(tr, look, elevation, biome) {
+  const THREE = v3.T, { W, H, D, cells, pal } = tr, WD = W * D, y0 = tr.y, plain = plainAtlas();
+  const atlas = look && !elevation ? look : null, tints = biomeTints(biome), span = Math.max(1, tr.maxY - tr.minY);
+  const at = (x, y, z) => (x < 0 || z < 0 || x >= W || z >= D || y >= H ? AIR_BLOCK : y < 0 ? BELOW_BLOCK : pal[cells[(y * D + z) * W + x]]);
+
+  // What each palette entry draws with: per face a rectangle of the atlas, whether it lies on its side, and a colour.
+  const WHITE = [1, 1, 1];
+  const looks = pal.map((e, k) => {
+    const faces = atlas && atlas.faces[k], base = lin(rgbOf(e.color || 0x808080));
+    return [0, 1, 2, 3, 4, 5].map(f => {
+      const t = faces && faces[f];
+      if (t) return { r: t.r, rot: t.rot, rgb: WHITE };
+      const kind = e.shape.kind, tiles = atlas || plain;
+      const r = kind === 'cross' ? tiles.blades : kind === 'faces' ? tiles.tangle : /_leaves$/.test(e.name) ? tiles.leafy : tiles.white;
+      // Without textures a grass block is its green only on top, and earth on its sides, as it is in the game.
+      const grassy = f > 1 && (e.name === 'grass_block' || e.name === 'podzol' || e.name === 'mycelium');
+      return { r, rot: false, rgb: grassy ? lin(mixRgb(rgbOf(e.color), DIRT_RGB, 0.65)) : base };
+    });
+  });
+
+  const make = () => ({ P: [], N: [], C: [], U: [], I: [] });
+  const land = make(), wet = make();
+  // One vertex; the shade darkens the look's colour for smooth lighting and the cut sides of the site.
+  const vert = (b, x, y, z, n, u, v, rgb, shade) => {
+    b.P.push(x, y, z); b.N.push(n[0], n[1], n[2]); b.U.push(u, v);
+    b.C.push(rgb[0] * shade, rgb[1] * shade, rgb[2] * shade);
   };
-  const sideRgb = (i, top) => {
-    if (elevation || isWater(i)) return top.map(v => v * 0.88);
-    const c = floorColor[i];
-    if (c === 0x7FB238 || c === PLANT) return mixRgb(top, DIRT_RGB, 0.6);   // grass blocks have dirt sides
-    if (c === 0xFFFFFF) return mixRgb(top, STONE_RGB, 0.35);
-    return top.map(v => v * 0.9);
+  const rgbAt = (lk, y) => (elevation ? lin(ramp(HYPSO, clamp((y0 + y - tr.minY) / span, 0, 1))) : lk.rgb);
+
+  /**
+   * One face of a box inside the block at (x, y, z), the box in fractions of the block. The texture is cropped to the
+   * part of the face the box covers, the way the game's models map it. `ao` shades each corner.
+   */
+  const boxFace = (b, f, x, y, z, bx, lk, ao, edge) => {
+    const F = FACES[f], r = lk.r, rgb = rgbAt(lk, y), k = b.P.length / 3;
+    for (let j = 0; j < 4; j++) {
+      const c = F.c[j], px = c[0] ? bx[3] : bx[0], py = c[1] ? bx[4] : bx[1], pz = c[2] ? bx[5] : bx[2];
+      let s = f === 2 ? 1 - px : f === 5 ? 1 - pz : f === 4 ? pz : px;
+      let t = f === 0 ? pz : f === 1 ? 1 - pz : py;
+      if (lk.rot) { const q = s; s = t; t = 1 - q; }
+      vert(b, x + px, y0 + y + py, z + pz, F.n, r[0] + s * (r[2] - r[0]), r[3] + t * (r[1] - r[3]), rgb, (ao ? AO_SHADE[ao[j]] : 1) * edge);
+    }
+    // Split along the diagonal whose corners are lighter, or smooth lighting shows a crease.
+    if (ao && ao[0] + ao[2] > ao[1] + ao[3]) b.I.push(k + 1, k + 2, k + 3, k + 1, k + 3, k);
+    else b.I.push(k, k + 1, k + 2, k, k + 2, k + 3);
+  };
+  // A flat quad through the block, seen from both sides, lit as if it looked up: a plant's plane, a vine, a lily pad.
+  const plane = (b, pts, lk, y) => {
+    const r = lk.r, rgb = rgbAt(lk, y), k = b.P.length / 3, uv = [[r[0], r[3]], [r[2], r[3]], [r[2], r[1]], [r[0], r[1]]];
+    pts.forEach((p, j) => vert(b, p[0], y0 + p[1], p[2], FACES[1].n, uv[j][0], uv[j][1], rgb, 1));
+    b.I.push(k, k + 1, k + 2, k, k + 2, k + 3, k, k + 2, k + 1, k, k + 3, k + 2);
+  };
+  const ao = [0, 0, 0, 0];
+  const shadeCorners = (f, x, y, z) => {
+    for (let j = 0; j < 4; j++) {
+      const [a, b, c] = AO_NEIGHBOURS[f][j];
+      const s1 = at(x + a[0], y + a[1], z + a[2]).opaque, s2 = at(x + b[0], y + b[1], z + b[2]).opaque;
+      ao[j] = s1 && s2 ? 3 : (s1 ? 1 : 0) + (s2 ? 1 : 0) + (at(x + c[0], y + c[1], z + c[2]).opaque ? 1 : 0);
+    }
+    return ao;
+  };
+  // Faces on the outside of the site are its cut: darker, and darker still further down.
+  const edgeShade = (f, x, y, z) => {
+    const n = FACES[f].n, nx = x + n[0], nz = z + n[2];
+    return nx < 0 || nz < 0 || nx >= W || nz >= D ? 0.4 + 0.3 * y / H : 1;
+  };
+  const FULL = [0, 0, 0, 1, 1, 1];
+  // A box's face is hidden by an opaque neighbour only where it lies on the side of the block.
+  const onSide = (f, bx) => (f === 0 ? bx[1] === 0 : f === 1 ? bx[4] === 1 : f === 2 ? bx[2] === 0 : f === 3 ? bx[5] === 1 : f === 4 ? bx[0] === 0 : bx[3] === 1);
+  const drawBox = (x, y, z, lk, bx, skip) => {
+    for (let f = 0; f < 6; f++) {
+      if (skip && skip[f]) continue;
+      const n = FACES[f].n;
+      if (onSide(f, bx) && at(x + n[0], y + n[1], z + n[2]).opaque) continue;
+      boxFace(land, f, x, y, z, bx, lk[f], null, edgeShade(f, x, y, z));
+    }
+  };
+  const fluidTop = (e, above) => (above.fluid && above.water === e.water ? 1 : e.props.level > 0 && e.props.level < 8 ? (8 - e.props.level) / 9 : 8 / 9);
+
+  // Water in the biome's own colour, darker the deeper it is.
+  const waterRgb = rgbOf(tints.water), shallow = lin(waterRgb, 1.1), deep = lin(waterRgb, 0.42);
+  const waterCell = (x, y, z, e) => {
+    const top = fluidTop(e, at(x, y + 1, z));
+    let depth = 0;
+    while (depth < 8 && at(x, y - 1 - depth, z).water) depth++;
+    const rgb = mixRgb(shallow, deep, Math.min(1, depth / 6));
+    for (let f = 0; f < 6; f++) {
+      const n = FACES[f].n, nb = at(x + n[0], y + n[1], z + n[2]);
+      if (nb.water || nb.opaque || (f === 1 && top === 1)) continue;
+      const k = wet.P.length / 3;
+      FACES[f].c.forEach(c => {
+        const px = x + c[0], py = y0 + y + (c[1] ? top : 0), pz = z + c[2];
+        wet.P.push(px, py, pz); wet.N.push(n[0], n[1], n[2]); wet.U.push(px / 8, pz / 8);
+        wet.C.push(...(f === 1 ? rgb : mixRgb(rgb, deep, 0.4)));
+      });
+      wet.I.push(k, k + 1, k + 2, k, k + 2, k + 3);
+    }
   };
 
-  // The land's texture coordinates point into the block atlas; the water's are its position, for the ripples.
-  const make = water => ({ P: [], N: [], C: [], U: [], I: [], water });
-  const land = make(false), wet = make(true);
-  const vert = (b, x, y, z, nx, ny, nz, c, uv) => {
-    b.P.push(x, y, z); b.N.push(nx, ny, nz); b.C.push(c[0], c[1], c[2]);
-    if (b.water) b.U.push(x / 8, z / 8);
-    else b.U.push(uv ? uv[0] : flatUV[0], uv ? uv[1] : flatUV[1]);
-  };
-  const close = b => { const k = b.P.length / 3 - 4; b.I.push(k, k + 1, k + 2, k, k + 2, k + 3); };
-  // Corners go counter-clockwise seen from the side the face looks to.
-  const top = (b, x, z, y, c, t) => {
-    vert(b, x, y, z, 0, 1, 0, c, t && [t[0], t[1]]); vert(b, x, y, z + 1, 0, 1, 0, c, t && [t[0], t[3]]);
-    vert(b, x + 1, y, z + 1, 0, 1, 0, c, t && [t[2], t[3]]); vert(b, x + 1, y, z, 0, 1, 0, c, t && [t[2], t[1]]);
-    close(b);
-  };
-  const bottom = (b, x, z, y, c) => {
-    vert(b, x, y, z, 0, -1, 0, c); vert(b, x + 1, y, z, 0, -1, 0, c); vert(b, x + 1, y, z + 1, 0, -1, 0, c); vert(b, x, y, z + 1, 0, -1, 0, c);
-    close(b);
-  };
-  const wall = (b, side, x, z, y0, y1, low, high) => {
-    const x1 = x + 1, z1 = z + 1;
-    if (side === 0) { vert(b, x1, y0, z, 0, 0, -1, low); vert(b, x, y0, z, 0, 0, -1, low); vert(b, x, y1, z, 0, 0, -1, high); vert(b, x1, y1, z, 0, 0, -1, high); }
-    else if (side === 1) { vert(b, x, y0, z1, 0, 0, 1, low); vert(b, x1, y0, z1, 0, 0, 1, low); vert(b, x1, y1, z1, 0, 0, 1, high); vert(b, x, y1, z1, 0, 0, 1, high); }
-    else if (side === 2) { vert(b, x, y0, z, -1, 0, 0, low); vert(b, x, y0, z1, -1, 0, 0, low); vert(b, x, y1, z1, -1, 0, 0, high); vert(b, x, y1, z, -1, 0, 0, high); }
-    else { vert(b, x1, y0, z1, 1, 0, 0, low); vert(b, x1, y0, z, 1, 0, 0, low); vert(b, x1, y1, z, 1, 0, 0, high); vert(b, x1, y1, z1, 1, 0, 0, high); }
-    close(b);
-  };
-  const SIDES = [[0, 0, -1], [1, 0, 1], [2, -1, 0], [3, 1, 0]];   // north, south, west, east
-  const dim = (c, k) => c.map(v => v * k);
-
-  for (let z = 0; z < D; z++) {
-    for (let x = 0; x < W; x++) {
-      const i = z * W + x, jit = 0.93 + 0.14 * hash2(x * 7 + 3, z * 13 + 5), fl = floor[i];
-      const tRgb = topRgb(i), cSide = lin(sideRgb(i, tRgb), jit);
-      const block = isWater(i) ? null : blockTop(floorColor[i], false, jit);
-      top(land, x, z, fl, block ? block.color : lin(tRgb, jit), block && block.uv);
-      for (const [side, dx, dz] of SIDES) {
-        const nx = x + dx, nz = z + dz, inside = nx >= 0 && nz >= 0 && nx < W && nz < D;
-        const nf = inside ? floor[nz * W + nx] : BASE;
-        // Walls darken towards their foot, and fade into the dark along the map's edge.
-        if (nf < fl) wall(land, side, x, z, nf, fl, dim(cSide, inside ? 0.62 : 0.25), cSide);
-      }
-      if (canopy[i] > -1e8) {
-        const cb = canopy[i], ct = height[i] + 1, leaf = elevation ? ramp(HYPSO, (height[i] - tr.minY) / span) : rgbOf(color[i]);
-        const cl = lin(leaf, jit);
-        const leaves = blockTop(color[i], true, jit);
-        top(land, x, z, ct, leaves ? leaves.color : cl, leaves && leaves.uv);
-        bottom(land, x, z, cb, dim(cl, 0.5));
-        for (const [side, dx, dz] of SIDES) {
-          const nx = x + dx, nz = z + dz, k = nz * W + nx;
-          if (nx >= 0 && nz >= 0 && nx < W && nz < D && canopy[k] > -1e8 && canopy[k] <= cb && height[k] + 1 >= ct) continue;
-          wall(land, side, x, z, cb, ct, dim(cl, 0.72), cl);
-        }
-      }
-      if (isWater(i)) {
-        const surface = surfaceBlock(i) + 0.875, t = Math.pow(clamp(shore[i] / 5, 0, 1), 0.8);
-        const cw = lin([lerp(110, 30, t), lerp(196, 92, t), lerp(240, 178, t)]);
-        top(wet, x, z, surface, cw);
-        if (pad[i]) top(land, x, z, surface + 0.03, lin(elevation ? TUFT_RGB : [52, 128, 36], jit));
-        for (const [side, dx, dz] of SIDES) {
-          const nx = x + dx, nz = z + dz, inside = nx >= 0 && nz >= 0 && nx < W && nz < D, k = nz * W + nx;
-          const nf = inside ? (isWater(k) ? surface : floor[k]) : BASE;
-          if (nf < surface - 1e-3) wall(wet, side, x, z, Math.max(nf, fl), surface, dim(cw, 0.7), cw);
+  for (let y = 0; y < H; y++) {
+    for (let z = 0; z < D; z++) {
+      for (let x = 0, i = y * WD + z * W; x < W; x++, i++) {
+        const k = cells[i];
+        if (k === 0) continue;
+        const e = pal[k], kind = e.shape.kind, lk = looks[k];
+        if (e.water) waterCell(x, y, z, e);
+        if (kind === 'none' || (kind === 'fluid' && e.water)) continue;
+        if (kind === 'cube') {
+          // Glass and ice hide each other's faces, as leaves do when they are drawn without their holes.
+          const same = /glass|ice$/.test(e.name) || (!atlas && /_leaves$|^mangrove_roots$/.test(e.name));
+          for (let f = 0; f < 6; f++) {
+            const n = FACES[f].n, nb = at(x + n[0], y + n[1], z + n[2]);
+            if (nb.opaque || (same && nb === e)) continue;
+            boxFace(land, f, x, y, z, FULL, lk[f], shadeCorners(f, x, y, z), edgeShade(f, x, y, z));
+          }
+        } else if (kind === 'box') {
+          drawBox(x, y, z, lk, e.shape.box);
+        } else if (kind === 'stairs') {
+          // The slab half, and a quarter block on top of it on the side the stairs face; upside down for top stairs.
+          const { facing, top } = e.shape, lo = top ? 0.5 : 0, hi = top ? 1 : 0.5, q = top ? [0, 0.5] : [0.5, 1];
+          const quarter = { north: [0, q[0], 0, 1, q[1], 0.5], south: [0, q[0], 0.5, 1, q[1], 1], west: [0, q[0], 0, 0.5, q[1], 1],
+            east: [0.5, q[0], 0, 1, q[1], 1] }[facing];
+          const open = { north: [0, lo, 0.5, 1, hi, 1], south: [0, lo, 0, 1, hi, 0.5], west: [0.5, lo, 0, 1, hi, 1], east: [0, lo, 0, 0.5, hi, 1] }[facing];
+          if (!quarter) continue;
+          drawBox(x, y, z, lk, [0, lo, 0, 1, hi, 1], top ? [true] : [false, true]);
+          drawBox(x, y, z, lk, quarter, top ? [false, true] : [true]);
+          // The half of the slab the quarter leaves open.
+          boxFace(land, top ? 0 : 1, x, y, z, open, lk[top ? 0 : 1], null, 1);
+        } else if (kind === 'cross') {
+          const a = 0.1, b = 0.9, lf = lk[0];
+          plane(land, [[x + a, y, z + a], [x + b, y, z + b], [x + b, y + 1, z + b], [x + a, y + 1, z + a]], lf, y);
+          plane(land, [[x + a, y, z + b], [x + b, y, z + a], [x + b, y + 1, z + a], [x + a, y + 1, z + b]], lf, y);
+        } else if (kind === 'faces') {
+          // Vines and lichen lie against the sides their properties name, just inside the block.
+          const p = e.props, d = 0.05, lf = lk[0];
+          if (p.north === 'true') plane(land, [[x, y, z + d], [x + 1, y, z + d], [x + 1, y + 1, z + d], [x, y + 1, z + d]], lf, y);
+          if (p.south === 'true') plane(land, [[x + 1, y, z + 1 - d], [x, y, z + 1 - d], [x, y + 1, z + 1 - d], [x + 1, y + 1, z + 1 - d]], lf, y);
+          if (p.west === 'true') plane(land, [[x + d, y, z + 1], [x + d, y, z], [x + d, y + 1, z], [x + d, y + 1, z + 1]], lf, y);
+          if (p.east === 'true') plane(land, [[x + 1 - d, y, z], [x + 1 - d, y, z + 1], [x + 1 - d, y + 1, z + 1], [x + 1 - d, y + 1, z]], lf, y);
+          if (p.up === 'true') plane(land, [[x, y + 1 - d, z + 1], [x + 1, y + 1 - d, z + 1], [x + 1, y + 1 - d, z], [x, y + 1 - d, z]], lf, y);
+          if (p.down === 'true') plane(land, [[x, y + d, z], [x + 1, y + d, z], [x + 1, y + d, z + 1], [x, y + d, z + 1]], lf, y);
+        } else if (kind === 'flat') {
+          const h = e.shape.y;
+          plane(land, [[x, y + h, z + 1], [x + 1, y + h, z + 1], [x + 1, y + h, z], [x, y + h, z]], lk[1], y);
+        } else if (kind === 'fluid') {
+          // Lava, glowing: brighter than the light it is in.
+          const glow = lk.map(l => Object.assign({}, l, { rgb: l.rgb.map(v => v * 1.8) }));
+          drawBox(x, y, z, glow, [0, 0, 0, 1, fluidTop(e, at(x, y + 1, z)), 1]);
         }
       }
     }
@@ -3121,7 +3637,8 @@ function buildTerrain3D(tr, elevation, atlas) {
     g.computeBoundingSphere();
     return g;
   };
-  const terrain = new THREE.Mesh(geometry(land), new THREE.MeshLambertMaterial({ vertexColors: true, map: textured ? atlas : null }));
+  const terrain = new THREE.Mesh(geometry(land), new THREE.MeshLambertMaterial({ vertexColors: true,
+    map: atlas ? atlas.tex : plain.tex, alphaTest: 0.5 }));
   terrain.castShadow = true;
   terrain.receiveShadow = true;
   let water = null;
@@ -3255,8 +3772,8 @@ function updateMobNote() {
   if (!state.view3d || mobsAvailable()) { note.hidden = true; return; }
   note.hidden = false;
   note.textContent = lib.server
-    ? 'Mobs are boxes: no Minecraft 1.21.1 jar in the Gradle cache. Build the mod once, or start the viewer with -MinecraftJar.'
-    : 'Mobs are boxes here. Their textures come from your own Minecraft jar, through scripts\\viewer.ps1.';
+    ? 'Mobs are boxes and blocks their map colours: no Minecraft 1.21.1 jar in the Gradle cache. Build the mod once, or start the viewer with -MinecraftJar.'
+    : 'Mobs are boxes and blocks their map colours here. Their textures come from your own Minecraft jar, through scripts\\viewer.ps1.';
 }
 
 // ---- Minecraft mobs ---------------------------------------------------------------------------------------------
@@ -3642,25 +4159,20 @@ function poseFighterMob(f, p, poses, k, t, ti, swingQ, hurtQ) {
   f.rig.mat.emissive.setRGB(0.22 * red, 0, 0);
 }
 
-/** Puts a replay in the scene: terrain once, fighters, projectiles, and the camera where it should start. */
+/** Puts a replay in the scene: its blocks once, fighters, projectiles, and the camera where it should start. */
 function setReplay3D(rp) {
   const THREE = v3.T;
   if (v3.root) { disposeTree(v3.root); v3.scene.remove(v3.root); }
+  if (v3.rp && v3.rp.terrain !== rp.terrain) forgetBlockLook(v3.rp.terrain);
   const root = v3.root = new THREE.Group();
   v3.scene.add(root);
   v3.rp = rp;
   const tr = rp.terrain;
-  v3.origin = tr ? [tr.x, tr.z] : [Math.floor(rp.ents[0].x[0]) - 40, Math.floor(rp.ents[0].z[0]) - 40];
+  v3.origin = [tr.x, tr.z];
   v3.terrain = v3.water = null;
-  if (tr) rebuildTerrain3D();
-  else {
-    const grid = new THREE.GridHelper(80, 80, 0x3a4656, 0x222a35);
-    grid.position.set(40, Math.floor(rp.ents[0].y[0]), 40);
-    root.add(grid);
-  }
+  rebuildTerrain3D();
   // The sun's shadows cover the whole site.
-  const size = tr ? Math.max(tr.W, tr.D) : 80, cx = tr ? tr.W / 2 : 40, cz = tr ? tr.D / 2 : 40;
-  const cy = tr ? (tr.minY + tr.maxY) / 2 : rp.ents[0].y[0];
+  const size = Math.max(tr.W, tr.D), cx = tr.W / 2, cz = tr.D / 2, cy = (tr.minY + tr.maxY) / 2;
   v3.sun.position.set(cx - 55, cy + 100, cz - 40);
   v3.sun.target.position.set(cx, cy, cz);
   const cam = v3.sun.shadow.camera, half = size * 0.75 + 8;
@@ -3671,11 +4183,8 @@ function setReplay3D(rp) {
   v3.fighters.forEach(f => root.add(f.g, f.trail));
   if (mobsAvailable()) {
     v3.fighters.forEach(attachMob);
-    // Block textures for the terrain arrive once; the flat terrain above stands in until then.
-    if (!v3.atlas) loadBlockAtlas().then(atlas => {
-      v3.atlas = atlas;
-      if (atlas && state.blocks && v3.rp === rp) rebuildTerrain3D();
-    });
+    // The blocks' textures arrive once the jar has handed them over; the blocks in their map colours stand in until then.
+    loadBlockLook(tr, rp.meta.biome).then(look => { if (look && state.blocks && v3.rp === rp) rebuildTerrain3D(); });
   }
   updateMobNote();
   const rayMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 });
@@ -3688,15 +4197,18 @@ function setReplay3D(rp) {
   else fit3D(false);
 }
 
+/** Builds the site's meshes again, for another look: textures on or off, the elevation tint on or off. */
 function rebuildTerrain3D() {
-  const tr = v3.rp && v3.rp.terrain;
+  const rp = v3.rp, tr = rp && rp.terrain;
   if (!tr) return;
   [v3.terrain, v3.water].forEach(m => { if (m) { disposeTree(m); v3.root.remove(m); } });
-  const built = buildTerrain3D(tr, state.elevation, state.blocks ? v3.atlas : null);
+  // The textures only once they are in: until then, and for good without a jar, the map colours.
+  const built = buildTerrain3D(tr, state.blocks ? tr.textures || null : null, state.elevation, rp.meta.biome);
   v3.terrain = built.terrain;
   v3.water = built.water;
   v3.root.add(v3.terrain);
   if (v3.water) v3.root.add(v3.water);
+  dirty = true;
 }
 
 // World and scene coordinates.
@@ -3712,8 +4224,7 @@ function followGoal3D() {
 function fit3D(animate) {
   const rp = state.rp;
   if (!rp || !v3.ready) return;
-  const tr = rp.terrain;
-  const goal = tr ? { x: tr.W / 2, y: (tr.minY + tr.maxY) / 2, z: tr.D / 2, dist: Math.max(tr.W, tr.D) * 1.3 } : followGoal3D();
+  const tr = rp.terrain, goal = { x: tr.W / 2, y: (tr.minY + tr.maxY) / 2, z: tr.D / 2, dist: Math.max(tr.W, tr.D) * 1.3 };
   if (state.follow) setFollow(false);
   if (animate) v3.goal = goal; else { Object.assign(v3.orbit, goal); v3.goal = null; }
   dirty = true;
@@ -4024,6 +4535,8 @@ async function setView3D(on) {
     $('readout').hidden = true;
     resize3D();
     if (!v3.angles && v3.rp !== state.rp) preset3D('iso');
+  } else {
+    resizeMap();   // the window may have changed size while the map was hidden, which it cannot measure
   }
   syncTools();
   dirty = true;
@@ -4164,8 +4677,8 @@ function onPlaybackEnd() {
 }
 
 function initControls() {
-  // Clicking a button never leaves it focused, so Space always means play and pause.
-  document.addEventListener('mousedown', e => { if (e.target.closest('button')) e.preventDefault(); });
+  // Clicking a button or a replay's box never leaves it focused, so Space always means play and pause.
+  document.addEventListener('mousedown', e => { if (e.target.closest('button, .pick')) e.preventDefault(); });
 
   $('btn-play').onclick = togglePlay;
   $('btn-start').onclick = () => { pause(); seek(0); };
@@ -4228,6 +4741,11 @@ function initControls() {
 
 function onKey(e) {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
+  // While the page asks before deleting, Escape says no and nothing else is a shortcut; Enter says yes, on its button.
+  if (confirmDelete.answer) {
+    if (e.key === 'Escape') { confirmDelete.answer(false); e.preventDefault(); }
+    return;
+  }
   const tag = e.target.tagName;
   if ((e.key === ' ' || e.key === 'Enter') && (tag === 'BUTTON' || tag === 'INPUT')) return;   // keyboard users' own focus
   if (e.key === 'Escape') {

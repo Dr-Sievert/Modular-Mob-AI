@@ -1,6 +1,10 @@
-# Fight replay format, version 1
+# Fight replay format, version 2
 
 One JSON file per recorded fight, UTF-8, no gzip. Written by the game (Java), read by `viewer/replay.html`.
+
+Version 2 records the site block by block, in `blocks`, instead of version 1's top-down `terrain` of one height and one
+colour per column. Readers need `blocks`; the viewer no longer draws version 1 replays, and lists them only to be
+deleted.
 
 ## Where
 
@@ -21,7 +25,7 @@ System properties on the game process:
 ```jsonc
 {
   "format": "mmai-replay",
-  "version": 1,
+  "version": 2,
 
   "run": "imitate",            // training run name, or null
   "iteration": 42,             // iteration of the weights driving the agent when the fight started, or null
@@ -34,14 +38,9 @@ System properties on the game process:
   "ticks": 187,                // T: frames recorded, one per server tick of the fight
   "tickRate": 20,
 
-  // Top-down terrain covering at least the whole fight site (80x80 blocks for terrain fights).
-  "terrain": {
-    "x": -1040, "z": 2080,     // world block coordinates of cell (0, 0), the north-west corner
-    "width": 80, "depth": 80,  // W cells along +x (east), D cells along +z (south)
-    "height": [/* W*D ints */],// y of the topmost non-air block of each column; index = dz * W + dx
-                               // (in the closed arena: the topmost one under its roof, so the floor and walls show)
-    "color":  [/* W*D ints */] // that block's map colour, 0xRRGGBB (BlockState#getMapColor(level, pos).col); 0 = none
-  },
+  // The site's blocks as they were when the fight started, see "Blocks" below.
+  "blocks": { "x": -1040, "y": 58, "z": 2080, "width": 80, "height": 41, "depth": 80,
+              "palette": [], "color": [], "flags": [], "runs": [] },
 
   // Index 0 is always the agent, index 1 its opponent. More entries may follow later (more opponents).
   "entities": [
@@ -76,6 +75,53 @@ System properties on the game process:
   "projectiles": []
 }
 ```
+
+## Blocks
+
+Every block of a box around the fight, read once as the fight starts: the site's whole horizontal extent (the 80 by 80
+blocks of a terrain fight, the box and its walls in the closed arena), from a few layers under the lowest ground of the
+site up to the highest block standing on it. Downwards it goes at most as far as the fighters may perceive, 16 blocks
+under the lower of them, so a pit or a pond bed is kept; upwards up to 32 blocks past what they may perceive, so a tall
+tree or a cliff is kept whole. Under a roof, as in the closed arena, it stops below the roof.
+
+```jsonc
+"blocks": {
+  "x": -1040, "y": 58, "z": 2080,        // world block coordinates of cell (0, 0, 0), the lowest north-west corner
+  "width": 80, "height": 41, "depth": 80, // W cells along +x (east), H up (+y), D along +z (south)
+
+  // Every block state the box holds, index 0 always "minecraft:air" (all kinds of air). The id, then in brackets only
+  // the properties that change how the block looks or its shape, in the game's order: axis, facing, half, type, shape,
+  // layers, waterlogged, age, lit, snowy, level, the connections north/east/south/west/up/down, and a few more.
+  // Properties that do not show, like a leaf's distance from a log, are left out, so such states share an entry.
+  "palette": ["minecraft:air", "minecraft:stone", "minecraft:oak_log[axis=y]", "minecraft:grass_block[snowy=false]",
+              "minecraft:water[level=0]", "minecraft:vine[east=false,north=true,south=false,up=false,west=false]"],
+
+  // Per palette entry: its map colour, 0xRRGGBB (BlockState#getMapColor(level, pos).col; 0 for none), the colour to
+  // draw it in without Minecraft's textures.
+  "color": [0, 7368816, 9402184, 8368696, 4210943, 31744],
+
+  // Per palette entry, bits: 1 = a full opaque cube, which hides the faces of blocks next to it
+  // (BlockState#isSolidRender); 2 = it stops movement (BlockState#blocksMotion: ground, leaves, logs, not grass,
+  // flowers or snow layers); 4 = it holds a fluid (water, lava, anything waterlogged, kelp, seagrass).
+  // A column's top block with 2 or 4 set is what the game's MOTION_BLOCKING heightmap gives.
+  "flags": [0, 3, 3, 3, 4, 0],
+
+  // The cells as palette indices, run-length encoded as pairs: index, count, index, count, …, adding up to W*H*D.
+  // Cells go layer by layer from the bottom; in a layer, row by row from north to south; in a row, from west to east.
+  // Cell (dx, dy, dz) is number (dy * D + dz) * W + dx.
+  "runs": [1, 12800, 3, 4, 0, 2, 2, 1, 0, 76 /* , … */]
+}
+```
+
+Rules:
+- The box is read from chunks that are already loaded; recording never loads or generates one. A site's chunks always
+  are. A chunk that is not stays air.
+- Every block that is not air is in the palette, including invisible ones such as barriers; a reader decides what to
+  draw.
+- Sizes, measured over 700 terrain fights in 20 biomes: an 80 by 80 site is 25 to 45 layers high (up to 75 on a
+  cliff), with 11,000 to 21,000 runs and 15 to 40 palette entries. That is 50 to 100 kB of `blocks`, up to 180 kB in a
+  jungle, whose canopy breaks the runs up, and 60 to 110 kB for a whole replay. A fight that runs its full minute adds
+  about 150 kB of frames and actions, so the largest replays, jungle fights that timed out, come to 300 kB.
 
 ## Projectiles
 

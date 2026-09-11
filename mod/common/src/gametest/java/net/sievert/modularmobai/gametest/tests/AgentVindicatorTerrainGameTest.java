@@ -20,6 +20,7 @@ import net.sievert.modularmobai.gametest.Opponents;
 import net.sievert.modularmobai.gametest.RepeatGameTest;
 import net.sievert.modularmobai.gametest.replay.FightRecorder;
 import net.sievert.modularmobai.gametest.terrain.TerrainSites;
+import net.sievert.modularmobai.gametest.util.DeathCauses;
 import net.sievert.modularmobai.gametest.util.TestDurationStats;
 
 /**
@@ -238,6 +239,11 @@ public class AgentVindicatorTerrainGameTest {
             else if (this.agent.isAlive()) {
 
                 this.episode.reward().lost();
+            }
+
+            else {
+
+                DeathCauses.record(this.agent, this.opponent);
             }
 
             // Every slot started in the same batch, so any slot's own tick count is the server's since then.

@@ -1,0 +1,12 @@
+{
+    "run":  "vs-copy",
+    "published":  "2026-09-11T22:08:30+02:00",
+    "code":  "3719972",
+    "weights":  "best evaluated, iteration 650",
+    "iteration":  650,
+    "fights":  553,
+    "won":  99.8,
+    "lost":  0.2,
+    "timed_out":  0,
+    "state":  true
+}

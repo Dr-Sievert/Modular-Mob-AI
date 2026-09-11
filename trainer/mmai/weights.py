@@ -21,6 +21,8 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from . import files
+
 MAGIC = b"MBW1"
 VERSION = 1
 EXTENSION = ".mbw"
@@ -143,7 +145,7 @@ def export(path: str | Path, actor, schema_id: int, iteration: int) -> Path:
         file.flush()
         os.fsync(file.fileno())
 
-    os.replace(temporary, path)
+    files.replace(temporary, path)
     return path
 
 

@@ -6,15 +6,19 @@ Serves the fight replay viewer, viewer/replay.html, with a live list of every ru
     python viewer/serve.py --port 8800      try that port first
     python viewer/serve.py --no-browser     only print the address
 
-    python viewer/serve.py --minecraft-jar PATH   take mob textures from that Minecraft client jar
+    python viewer/serve.py --minecraft-jar PATH   take mob and block textures from that Minecraft client jar
     python viewer/serve.py --export [FILE] [--run NAME | --path FILE_OR_FOLDER] [--count 20]
         bakes the newest replays into a standalone copy of the page, runs/<name>/replays.html unless FILE is given;
         the copy carries three.js inline, so its 3D view works without the vendor folder
 
-The 3D view draws real Minecraft mobs when it can read their textures from the user's own Minecraft client jar, which
-the mod's build already downloaded into the Gradle cache (Fabric Loom's or NeoForge's). Mojang's licence does not
-allow handing those textures on, so they are read from the jar while serving and kept only in memory: never written
-to disk, never put into an export. The agent's skin is the mod's own. Without a jar the 3D view draws boxes.
+The 3D view draws real Minecraft mobs and blocks when it can read their textures from the user's own Minecraft client
+jar, which the mod's build already downloaded into the Gradle cache (Fabric Loom's or NeoForge's). Mojang's licence
+does not allow handing those textures on, so they are read from the jar while serving and kept only in memory: never
+written to disk, never put into an export. The agent's skin is the mod's own. Without a jar the 3D view draws boxes
+for the mobs and the blocks in their map colours.
+
+The page can also delete replays, through POST /api/delete. Like everything else here it answers only to the page on
+this machine, and it only ever deletes finished replays, *.json files straight inside runs/<name>/replays/.
 
 Standard library only, so any Python 3.7 or newer runs it. Everything is found from this file's own location: the
 repository is the folder above viewer/, and replays are runs/<name>/replays/*.json. The server listens on 127.0.0.1
@@ -42,7 +46,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 APP = 'mmai-replay-viewer'
-VERSION = 3     # what this server can serve; an older one still running is not reused (1: no 3D, 2: no textures)
+VERSION = 4     # what this server can serve; an older one still running is not reused (1: no 3D, 2: no textures,
+                # 3: no block textures and no deleting)
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 RUNS = ROOT / 'runs'
@@ -56,10 +61,11 @@ DEFAULT_PORT = 8765
 PLACEHOLDER = '__MMAI_REPLAYS__'
 THREE_PLACEHOLDER = '__MMAI_THREE__'
 VENDOR_TYPES = {'.cjs': 'text/javascript; charset=utf-8', '.js': 'text/javascript; charset=utf-8'}
+FORMAT = 2      # the replay format version the page draws; older replays have no blocks, and are listed only to be deleted
 
-# The few top-level fields the list shows. The recorder writes them before the terrain, so the first few kilobytes of
+# The few top-level fields the list shows. The recorder writes them before the blocks, so the first few kilobytes of
 # a file hold them and the rest never needs reading just to list it.
-_FIELD = re.compile(r'"(outcome|ticks|iteration|biome|worker|fight|brain|run)"\s*:\s*("(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?|null)')
+_FIELD = re.compile(r'"(version|outcome|ticks|iteration|biome|worker|fight|brain|run)"\s*:\s*("(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?|null)')
 _headers = {}
 
 
@@ -114,6 +120,8 @@ def list_runs():
                 seen.add(entry.path)
                 replay = {'file': entry.name, 'size': stat.st_size, 'mtime': round(stat.st_mtime, 3)}
                 replay.update(read_header(entry.path, stat))
+                if not isinstance(replay.get('version'), int) or replay['version'] < FORMAT:
+                    replay['old'] = True
                 replays.append(replay)
             replays.sort(key=lambda r: r['mtime'], reverse=True)
             newest = replays[0]['mtime'] if replays else folder.stat().st_mtime
@@ -124,18 +132,79 @@ def list_runs():
     return runs
 
 
-def replay_path(run, file):
-    """The file for /api/replay/<run>/<file>, or None for anything that is not a replay inside runs/."""
-    for part in (run, file):
-        if not part or part in ('.', '..') or any(c in part for c in '/\\:\0'):
-            return None
-    if not is_replay_name(file):
+def plain_name(part):
+    """A single file or folder name, with nothing in it that could lead anywhere else."""
+    return isinstance(part, str) and part not in ('', '.', '..') and not any(c in part for c in '/\\:\0')
+
+
+def replay_folder(run):
+    """
+    runs/<run>/replays for a plain run name, or None. The folder has to be exactly there once every link is followed:
+    one that is a link or junction to somewhere else is refused, so nothing outside runs/ is ever read or deleted.
+    """
+    if not plain_name(run):
         return None
     folder = RUNS / run / 'replays'
-    path = folder / file
-    if not path.is_file() or not same_path(path.parent, folder):
+    expected = os.path.join(os.path.realpath(str(RUNS)), run, 'replays')
+    if not folder.is_dir() or os.path.normcase(os.path.realpath(str(folder))) != os.path.normcase(expected):
         return None
-    return path
+    return folder
+
+
+def replay_file(folder, file):
+    """A finished replay straight inside a folder replay_folder gave: a plain file, never a link to one elsewhere."""
+    if not folder or not plain_name(file) or not is_replay_name(file):
+        return None
+    path = folder / file
+    return path if path.is_file() and not path.is_symlink() else None
+
+
+def replay_path(run, file):
+    """The replay runs/<run>/replays/<file>, or None for anything that is not a finished replay file right there."""
+    return replay_file(replay_folder(run), file)
+
+
+def delete_replays(request):
+    """
+    Deletes what the page asked for: {"replays": [{"run", "file"}...], "runs": [...], "all": true}, any of them. Every
+    file has to be a finished replay straight inside a runs/<name>/replays/ folder replay_folder accepts, or nothing is
+    deleted for it. Each folder is checked once, which keeps deleting a run of twenty thousand replays quick.
+    """
+    folders, targets, refused = {}, {}, []
+
+    def folder_of(run):
+        if not plain_name(run):
+            return None
+        if run not in folders:
+            folders[run] = replay_folder(run)
+        return folders[run]
+
+    listed = lambda key: request.get(key) if isinstance(request.get(key), list) else []
+    for entry in listed('replays'):
+        entry = entry if isinstance(entry, dict) else {}
+        path = replay_file(folder_of(entry.get('run')), entry.get('file'))
+        if path:
+            targets[str(path)] = path
+        else:
+            refused.append('%s/%s' % (entry.get('run'), entry.get('file')))
+    runs = [r for r in listed('runs') if isinstance(r, str)]
+    if request.get('all') is True and RUNS.is_dir():
+        runs += [d.name for d in RUNS.iterdir() if d.is_dir()]
+    for run in runs:
+        folder = folder_of(run)
+        try:
+            names = [e.name for e in os.scandir(folder)] if folder else []
+        except OSError:
+            names = []
+        targets.update((str(p), p) for p in (replay_file(folder, n) for n in names) if p)
+    deleted = 0
+    for path in targets.values():
+        try:
+            path.unlink()
+            deleted += 1
+        except OSError:
+            refused.append(path.name)
+    return {'deleted': deleted, 'failed': refused}
 
 
 def jar_version(path):
@@ -200,10 +269,18 @@ class Textures:
                     self.cache[path] = None
             return self.cache[path]
 
+    def blocks(self):
+        """The names of every block texture in the jar, so the page can tell which ones a block may have without asking."""
+        if not self.zip:
+            return []
+        prefix = 'assets/minecraft/textures/block/'
+        return sorted(n[len(prefix):-4] for n in self.zip.namelist() if n.startswith(prefix) and n.endswith('.png')
+                      and '/' not in n[len(prefix):])
+
     def describe(self):
         if not self.zip:
             return {'minecraft': False, 'agent': AGENT_SKIN.is_file()}
-        return {'minecraft': True, 'version': self.version, 'jar': self.jar.name, 'agent': AGENT_SKIN.is_file()}
+        return {'minecraft': True, 'version': self.version, 'jar': self.jar.name, 'agent': AGENT_SKIN.is_file(), 'blocks': True}
 
 
 TEXTURES = Textures(None, None, '')
@@ -220,18 +297,39 @@ def vendor_path(name):
 class Handler(BaseHTTPRequestHandler):
     server_version = 'MmaiReplayViewer/1'
 
-    def do_GET(self):
+    def local_request(self):
         # Answer only to the addresses the page is opened on, which keeps other websites from reading replays
         # through DNS rebinding.
         port = self.server.server_address[1]
         if (self.headers.get('Host') or '').lower() not in ('127.0.0.1:%d' % port, 'localhost:%d' % port):
             self.send_error(403, 'Local requests only')
+            return False
+        return True
+
+    def from_the_page(self):
+        """
+        Whether a request that changes something comes from the page itself. Another website open in the same browser
+        can send a plain form POST here, but not one with a JSON body and this header: for those the browser asks first,
+        and this server never says yes. The origin and fetch-site checks are the same rule again, for browsers that say.
+        """
+        port = self.server.server_address[1]
+        origin = self.headers.get('Origin')
+        site = self.headers.get('Sec-Fetch-Site')
+        return (self.headers.get('X-Replay-Viewer') == '1'
+                and (self.headers.get('Content-Type') or '').split(';')[0].strip() == 'application/json'
+                and (origin is None or origin.lower() in ('http://127.0.0.1:%d' % port, 'http://localhost:%d' % port))
+                and (site is None or site == 'same-origin'))
+
+    def do_GET(self):
+        if not self.local_request():
             return
         path = urllib.parse.unquote(urllib.parse.urlsplit(self.path).path)
         if path in ('/', '/index.html', '/replay.html'):
             self.send_bytes(PAGE.read_bytes(), 'text/html; charset=utf-8')
         elif path == '/api/ping':
             self.send_json({'app': APP, 'version': VERSION, 'root': str(ROOT), 'pid': os.getpid(), 'textures': TEXTURES.describe()})
+        elif path == '/api/blocks':
+            self.send_json({'textures': TEXTURES.blocks()})
         elif path.startswith('/mc/'):
             body = TEXTURES.read(path[len('/mc/'):])
             if body is None:
@@ -263,6 +361,29 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
         else:
             self.send_error(404)
+
+    def do_POST(self):
+        if not self.local_request():
+            return
+        if urllib.parse.urlsplit(self.path).path != '/api/delete':
+            self.send_error(404)
+            return
+        if not self.from_the_page():
+            self.send_error(403, 'Only the viewer page may delete replays')
+            return
+        try:
+            length = int(self.headers.get('Content-Length') or 0)
+            request = json.loads(self.rfile.read(length).decode('utf-8')) if 0 < length <= 4 << 20 else None
+        except (ValueError, UnicodeDecodeError):
+            request = None
+        if not isinstance(request, dict):
+            self.send_error(400, 'Expected a JSON object')
+            return
+        result = delete_replays(request)
+        if result['deleted'] or result['failed']:
+            print('%s  Deleted %d replay%s%s' % (time.strftime('%H:%M:%S'), result['deleted'], '' if result['deleted'] == 1 else 's',
+                                                '; could not delete %d' % len(result['failed']) if result['failed'] else ''))
+        self.send_json(result)
 
     def send_bytes(self, body, content_type, extra=None):
         headers = {'Cache-Control': 'no-store'}
@@ -402,10 +523,10 @@ def serve(args):
     print('Replay viewer: ' + url)
     print('Lists every %s. Ctrl+C or closing this window stops it.' % os.path.join(str(RUNS), '*', 'replays'))
     if TEXTURES.zip:
-        print('Mob textures from Minecraft %s, %s: %s' % (TEXTURES.version, TEXTURES.how, TEXTURES.jar))
+        print('Mob and block textures from Minecraft %s, %s: %s' % (TEXTURES.version, TEXTURES.how, TEXTURES.jar))
     elif not args.minecraft_jar:
-        print('No Minecraft client jar in the Gradle cache, so the 3D view draws boxes. Build the mod once, or pass '
-              '--minecraft-jar PATH.')
+        print('No Minecraft client jar in the Gradle cache, so the 3D view draws boxes and map colours. Build the mod '
+              'once, or pass --minecraft-jar PATH.')
     if not args.no_browser:
         threading.Timer(0.3, webbrowser.open, [url]).start()
     try:
@@ -444,9 +565,12 @@ def export(args):
     for path in files:
         text = path.read_text(encoding='utf-8-sig').strip()
         try:
-            json.loads(text)
+            replay = json.loads(text)
         except ValueError as error:
             print('Skipping %s: %s' % (path.name, error))
+            continue
+        if not isinstance(replay, dict) or 'blocks' not in replay:
+            print('Skipping %s: the old replay format, without blocks, which the page no longer draws' % path.name)
             continue
         texts.append(text)
     if not texts:
@@ -478,8 +602,8 @@ def main():
     parser.add_argument('--run', help='open the newest replay of this run')
     parser.add_argument('--port', type=int, default=0, help='port to try first (default %d)' % DEFAULT_PORT)
     parser.add_argument('--no-browser', action='store_true', help='do not open a browser')
-    parser.add_argument('--minecraft-jar', metavar='PATH', help='a Minecraft client jar to read mob textures from, '
-                        'instead of searching the Gradle cache')
+    parser.add_argument('--minecraft-jar', metavar='PATH', help='a Minecraft client jar to read mob and block textures '
+                        'from, instead of searching the Gradle cache')
     parser.add_argument('--export', nargs='?', const='', default=None, metavar='FILE',
                         help='write a standalone page with replays baked in, instead of serving')
     parser.add_argument('--path', help='with --export: a replay file or folder to take replays from')

@@ -13,7 +13,6 @@ matching, something about the network has drifted apart and every ratio in the u
 
 from __future__ import annotations
 
-import os
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -22,7 +21,7 @@ import numpy as np
 import torch
 from torch import Tensor
 
-from . import log
+from . import files, log
 from .model import INITIAL_LOG_STD, Actor, Critic, PolicyHeads, RewardScaler, RunningNormalizer
 from .rollout import Segment, pack_by_rows
 from .schema import Schema
@@ -797,7 +796,7 @@ class Trainer:
             temporary,
         )
 
-        os.replace(temporary, path)
+        files.replace(temporary, path)
 
     def load(self, path: Path) -> None:
         state = torch.load(path, map_location=self.device, weights_only=False)
