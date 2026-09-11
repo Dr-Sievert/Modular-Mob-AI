@@ -316,6 +316,12 @@ afterEvaluate {
         // Below this much free memory the workers are stopped rather than left to take the machine down with them.
         def minimumFreeGigabytes = Double.parseDouble(providers.gradleProperty('memoryFloor').getOrElse('1.5'))
 
+        // Anything else a worker's virtual machine should be started with, split on spaces: a profiler, or a collector to
+        // try out, without editing the build. A relative file lands in the worker's own folder, which the next run clears.
+        //
+        //   -PworkerJvmArgs="-XX:StartFlightRecording=delay=60s,duration=120s,filename=worker.jfr,settings=profile"
+        def workerJvmArgs = providers.gradleProperty('workerJvmArgs').getOrElse('').trim()
+
         def javaExe = runTask.javaLauncher.get().executablePath.asFile.absolutePath
 
         def jvmArgs = []
@@ -493,6 +499,11 @@ afterEvaluate {
                 command += "-XX:ActiveProcessorCount=${workerCpus}".toString()
             }
 
+            if (!workerJvmArgs.isEmpty()) {
+
+                command += (workerJvmArgs.split(/\s+/) as List)
+            }
+
             if (!requestedArenas.isEmpty()) {
 
                 command += "-Dmodular_mob_ai.gametest.arenas=${requestedArenas}".toString()
@@ -666,6 +677,9 @@ afterEvaluate {
         def testSeconds = []
         def wins = 0L
         def losses = 0L
+        def steadyArenaRates = []
+        def steadyServerRates = []
+        def steadyCpuRates = []
 
         processes.each { entry ->
 
@@ -696,6 +710,15 @@ afterEvaluate {
                 else if (trimmed.startsWith('#seconds')) {
 
                     testSeconds += Double.parseDouble(trimmed.split(/\s+/)[1])
+                }
+
+                else if (trimmed.startsWith('#steady')) {
+
+                    def parts = trimmed.split(/\s+/)
+
+                    steadyArenaRates += Double.parseDouble(parts[1])
+                    steadyServerRates += Double.parseDouble(parts[2])
+                    steadyCpuRates += Double.parseDouble(parts[3])
                 }
 
                 else if (!trimmed.isEmpty() && !trimmed.startsWith('#')) {
@@ -738,6 +761,18 @@ afterEvaluate {
                 println String.format(Locale.ROOT, "  server ticks %,d in %.2f s of testing", serverTicks, testingSeconds)
                 println String.format(Locale.ROOT, "  arena ticks  %,d (%,.1f per second of testing)", arenaTicks, arenaTicks / testingSeconds)
                 println String.format(Locale.ROOT, "  dead ticks   %.1f%% of %,d batch slots", dead * 100.0d, slots)
+            }
+
+            // The middle of each worker's run, with every slot busy: what a change to the cost of a tick shows up in,
+            // free of how the first and last fights of the run happened to fall. Added up, since the workers run at once.
+            // The last figure counts only the processor time each server thread actually got, so it holds still while
+            // other work on the machine comes and goes.
+            if (!steadyArenaRates.isEmpty()) {
+
+                println String.format(Locale.ROOT, "  steady       %,.1f arena ticks per second from %d workers, %.1f server ticks per second each",
+                        steadyArenaRates.sum() as double, steadyArenaRates.size(), (steadyServerRates.sum() as double) / steadyServerRates.size())
+                println String.format(Locale.ROOT, "               %,.1f arena ticks per second of server thread processor time, per worker",
+                        (steadyCpuRates.sum() as double) / steadyCpuRates.size())
             }
 
             println String.format(Locale.ROOT, "  wall clock   %.2f s, %.2f s of it starting %,d workers",

@@ -4,6 +4,7 @@ import net.sievert.modularmobai.gametest.GameTestBenchmark;
 import net.sievert.modularmobai.gametest.GameTestTuning;
 
 import java.io.IOException;
+import java.lang.management.ManagementFactory;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -30,6 +31,26 @@ public final class TestDurationStats {
     private final List<Long> ticks = new ArrayList<>();
     private final int[] outcomes = new int[Outcome.values().length];
 
+    /**
+     * A stretch in the middle of the run, from the run that finishes a tenth of the set to the one that finishes nine
+     * tenths, timed on its own. The rate over the whole run folds in the slots all starting at once and the last few
+     * fights running their clock out with most slots already empty, and both of those move with luck rather than with
+     * what a tick costs. In the middle every slot is busy, which is what two builds should be compared on.
+     *
+     * <p>The stretch is also timed in processor time on the thread that records it, the server thread, which is the one
+     * a worker waits on. On a machine busy with other work the wall clock also counts the moments that thread spent
+     * waiting for a core, and that moves with whatever else is running; this does not.
+     */
+    private long ticksSoFar;
+    private long windowStartNanos;
+    private long windowStartCpuNanos;
+    private long windowStartTicks;
+    private long windowStartServerTick = -1L;
+    private long windowEndNanos;
+    private long windowEndCpuNanos;
+    private long windowEndTicks;
+    private long windowEndServerTick = -1L;
+
     public TestDurationStats(String label, int expectedRuns) {
 
         this.label = label;
@@ -52,11 +73,37 @@ public final class TestDurationStats {
      */
     public synchronized void record(long ticks, Outcome outcome) {
 
+        this.record(ticks, outcome, -1L);
+    }
+
+    /**
+     * @param serverTick A tick count that advances once a server tick, such as the test's own, so the middle of the run
+     *                   can say how many server ticks it took as well as how long; -1 when there is none to hand.
+     */
+    public synchronized void record(long ticks, Outcome outcome, long serverTick) {
+
         this.ticks.add(ticks);
+        this.ticksSoFar += ticks;
 
         if (outcome != null) {
 
             this.outcomes[outcome.ordinal()]++;
+        }
+
+        if (this.ticks.size() == Math.max(1, this.expectedRuns / 10)) {
+
+            this.windowStartNanos = System.nanoTime();
+            this.windowStartCpuNanos = ManagementFactory.getThreadMXBean().getCurrentThreadCpuTime();
+            this.windowStartTicks = this.ticksSoFar;
+            this.windowStartServerTick = serverTick;
+        }
+
+        if (this.ticks.size() == this.expectedRuns * 9 / 10) {
+
+            this.windowEndNanos = System.nanoTime();
+            this.windowEndCpuNanos = ManagementFactory.getThreadMXBean().getCurrentThreadCpuTime();
+            this.windowEndTicks = this.ticksSoFar;
+            this.windowEndServerTick = serverTick;
         }
 
         this.publishProgress();
@@ -70,6 +117,31 @@ public final class TestDurationStats {
         this.report();
         this.ticks.clear();
         java.util.Arrays.fill(this.outcomes, 0);
+        this.ticksSoFar = 0L;
+        this.windowStartNanos = 0L;
+        this.windowEndNanos = 0L;
+    }
+
+    /** Arena ticks per second over the middle of the run, or zero when the run was too short to have one. */
+    private double steadyArenaTicksPerSecond() {
+
+        final double seconds = (this.windowEndNanos - this.windowStartNanos) / 1_000_000_000.0D;
+        return this.windowEndNanos > this.windowStartNanos ? (this.windowEndTicks - this.windowStartTicks) / seconds : 0.0D;
+    }
+
+    /** Server ticks per second over the middle of the run, or zero when nobody said which tick it was. */
+    private double steadyServerTicksPerSecond() {
+
+        final double seconds = (this.windowEndNanos - this.windowStartNanos) / 1_000_000_000.0D;
+        return this.windowEndNanos > this.windowStartNanos && this.windowStartServerTick >= 0L && this.windowEndServerTick >= 0L
+                ? (this.windowEndServerTick - this.windowStartServerTick) / seconds : 0.0D;
+    }
+
+    /** Arena ticks per second of the server thread's own processor time over the middle of the run, or zero. */
+    private double steadyArenaTicksPerCpuSecond() {
+
+        final double seconds = (this.windowEndCpuNanos - this.windowStartCpuNanos) / 1_000_000_000.0D;
+        return this.windowEndNanos > this.windowStartNanos && seconds > 0.0D ? (this.windowEndTicks - this.windowStartTicks) / seconds : 0.0D;
     }
 
     /**
@@ -96,6 +168,14 @@ public final class TestDurationStats {
 
             System.out.println(String.format(Locale.ROOT, "  won     %,7d (%5.1f%%)", wins, 100.0D * wins / (wins + losses)));
             System.out.println(String.format(Locale.ROOT, "  lost    %,7d (%5.1f%%)", losses, 100.0D * losses / (wins + losses)));
+        }
+
+        if (this.steadyArenaTicksPerSecond() > 0.0D) {
+
+            System.out.println(String.format(Locale.ROOT, "  steady  %,.1f arena ticks and %,.1f server ticks per second, over the middle 80%%",
+                    this.steadyArenaTicksPerSecond(), this.steadyServerTicksPerSecond()));
+            System.out.println(String.format(Locale.ROOT, "          %,.1f arena ticks per second of server thread processor time",
+                    this.steadyArenaTicksPerCpuSecond()));
         }
 
         System.out.println("=".repeat(header.length()));
@@ -155,6 +235,13 @@ public final class TestDurationStats {
         // Counts rather than raw values, since unlike the durations these combine across workers by adding up.
         out.append("#wins ").append(this.outcomes[Outcome.WIN.ordinal()]).append(System.lineSeparator());
         out.append("#losses ").append(this.outcomes[Outcome.LOSS.ordinal()]).append(System.lineSeparator());
+
+        // Rates rather than counts, since each worker's middle stretch is its own; they add up across workers all the same.
+        if (this.steadyArenaTicksPerSecond() > 0.0D) {
+
+            out.append(String.format(Locale.ROOT, "#steady %.3f %.3f %.3f", this.steadyArenaTicksPerSecond(), this.steadyServerTicksPerSecond(),
+                    this.steadyArenaTicksPerCpuSecond())).append(System.lineSeparator());
+        }
 
         try {
 

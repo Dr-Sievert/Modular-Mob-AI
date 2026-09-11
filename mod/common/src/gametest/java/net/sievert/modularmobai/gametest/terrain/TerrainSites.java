@@ -371,7 +371,7 @@ public final class TerrainSites {
 
         BiomeSource biomes = level.getChunkSource().getGenerator().getBiomeSource();
         Climate.Sampler climate = level.getChunkSource().randomState().sampler();
-        RandomSource random = level.getRandom();
+        RandomSource random = GameTestTuning.terrainSeed() != 0L ? RandomSource.create(GameTestTuning.terrainSeed()) : level.getRandom();
 
         BlockPos best = BlockPos.ZERO;
         int bestLand = -1;

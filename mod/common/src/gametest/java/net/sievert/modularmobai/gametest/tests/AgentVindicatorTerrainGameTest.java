@@ -221,8 +221,9 @@ public class AgentVindicatorTerrainGameTest {
                 this.episode.reward().lost();
             }
 
+            // Every slot started in the same batch, so any slot's own tick count is the server's since then.
             TIME_TO_RESOLVE.record(this.helper.getTick() - this.started,
-                    won ? TestDurationStats.Outcome.WIN : TestDurationStats.Outcome.LOSS);
+                    won ? TestDurationStats.Outcome.WIN : TestDurationStats.Outcome.LOSS, this.helper.getTick());
 
             // After the reward above, so the replay's last tick carries what the ending paid.
             if (this.replay != null) {

@@ -155,6 +155,26 @@ public final class GameTestTuning {
         return "terrain".equals(suite());
     }
 
+    /**
+     * Where the terrain suite puts its fight sites, as a seed; zero, the default, lets every run pick somewhere new. The
+     * world's own seed never changes, so a fixed one here puts every run on the same ground, which is what comparing
+     * two builds needs: one run in a forest and the next in the mountains differ by more than most changes do.
+     */
+    public static long terrainSeed() {
+
+        final String property = System.getProperty("modular_mob_ai.gametest.terrainSeed");
+
+        try {
+
+            return property == null || property.isBlank() ? 0L : Long.parseLong(property.trim());
+        }
+
+        catch (NumberFormatException exception) {
+
+            return 0L;
+        }
+    }
+
     private static int intProperty(String name, int fallback) {
 
         final String property = System.getProperty("modular_mob_ai.gametest." + name);
