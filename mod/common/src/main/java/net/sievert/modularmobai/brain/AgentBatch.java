@@ -37,14 +37,18 @@ public final class AgentBatch {
         this.agents.add(agent);
     }
 
-    /** Steps every agent added since the last run, then forgets them; the driver adds them again next tick. */
-    public void run() {
+    /**
+     * Steps every agent added since the last run, then forgets them; the driver adds them again next tick.
+     *
+     * @return whether there was anyone to step
+     */
+    public boolean run() {
 
         int count = this.agents.size();
 
         if (count == 0) {
 
-            return;
+            return false;
         }
 
         int memory = this.brain.hiddenSize();
@@ -118,5 +122,6 @@ public final class AgentBatch {
         }
 
         this.agents.clear();
+        return true;
     }
 }
