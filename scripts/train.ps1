@@ -41,6 +41,10 @@ param(
     # learn alone for longer first, explores less, and is pulled back towards the teacher's own answers throughout.
     [switch] $FromCopy,
 
+    # Everything the build and both sides of it say, rather than the short feed: a line every few iterations with the
+    # training win rate and pace, every evaluation, every round, and anything that went wrong.
+    [switch] $Full,
+
     [string] $Extra = ''
 )
 
@@ -57,7 +61,6 @@ if (-not (Test-Path $Python)) {
 $workerArguments = if ($Workers -gt 0) { @("-Pworkers=$Workers", "-PmaxWorkers=$Workers") } else { @('-Pworkers=64', '-PmaxWorkers=16') }
 
 $directory = Get-RunDirectory $Run
-Write-Host "Training run '$Run' in $directory on $Suite, $(if ($Battles -gt 0) { "$Battles battles" } else { 'until stopped' }). Watch with: scripts\watch.ps1 -Run $Run"
 
 if ($FromCopy) {
 
@@ -66,10 +69,54 @@ if ($FromCopy) {
         $RolloutSteps = 65536
     }
 
+    # A copy's run stops on its own once evaluation says it has stopped getting better, so by default it runs until then.
+    if (-not $PSBoundParameters.ContainsKey('Battles')) {
+
+        $Battles = 0
+    }
+
     $Extra = "--learning-rate 5e-5 --clip 0.1 --target-kl 0.01 --critic-warmup 30 --entropy-coef 0.001 --teacher-weight 0.5 $Extra"
 }
 
-Invoke-Gradle (@(
+Write-Host "Training run '$Run' in $directory on $Suite, $(if ($Battles -gt 0) { "$Battles battles" } else { 'until evaluation says it is done, or stopped' }). Watch with: scripts\watch.ps1 -Run $Run"
+
+$started = Get-Date
+
+# The short feed: of all the build prints, only what says how the run is going. Every fifth iteration's win rate and
+# pace, evaluations and new bests, rounds, the end, and anything that went wrong, each on one line.
+function Format-Feed([string] $Line) {
+
+    $clock = '{0:hh\:mm\:ss}' -f ((Get-Date) - $started)
+
+    if ($Line -match 'iteration +(\d+) +steps +([\d,]+) +episodes +(\d+) +win +([\d.]+)%.*length +([\d.]+).*?(\d+\.\d)m\s*$') {
+
+        if ([int]$Matches[1] % 5 -eq 0) {
+
+            return '{0}  iteration {1,5}  training win {2,5}%  fights {3,4}  fight length {4,6} ticks' -f $clock, $Matches[1], $Matches[4], $Matches[3], $Matches[5]
+        }
+
+        return $null
+    }
+
+    if ($Line -match 'mmai\.eval\s+(.*)$' -or $Line -match 'mmai\.train\s+(done: .*)$') {
+
+        return "$clock  $($Matches[1])"
+    }
+
+    if ($Line -match '^(=====.*=====|Round \d+:.*|Training finished.*|Evaluation says.*|Started \d+ game test workers[^(]*)') {
+
+        return "$clock  $($Matches[1].Trim())"
+    }
+
+    if ($Line -match 'Traceback|Error|FAILED|What went wrong|Exception|already training') {
+
+        return "$clock  $Line"
+    }
+
+    return $null
+}
+
+$arguments = (@(
     ':fabric:runTraining',
     "-Prun=$Run",
     "-Psuite=$Suite",
@@ -82,3 +129,21 @@ Invoke-Gradle (@(
     "-PreplayEvery=$ReplayEvery",
     "-PtrainArgs=--device $Device $Extra".Trim()
 ) + $workerArguments)
+
+if ($Full) {
+
+    Invoke-Gradle $arguments
+}
+
+else {
+
+    Invoke-Gradle $arguments | ForEach-Object {
+
+        $feed = Format-Feed "$_"
+
+        if ($feed) {
+
+            Write-Host $feed
+        }
+    }
+}

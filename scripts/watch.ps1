@@ -4,12 +4,14 @@
 #   scripts\watch.ps1                  refresh every 3 seconds until Ctrl+C
 #   scripts\watch.ps1 -Run wide
 #   scripts\watch.ps1 -Once            print once and exit
+#   scripts\watch.ps1 -Brief           only the win rates, the pace and the evaluations
 
 param(
     [string] $Run = 'default',
     [int] $Every = 3,
     [int] $Rows = 15,
-    [switch] $Once
+    [switch] $Once,
+    [switch] $Brief
 )
 
 . "$PSScriptRoot\_common.ps1"
@@ -116,7 +118,15 @@ function Show-Run {
 
         # "learn s" is only the trainer's update. "wall s" is the whole gap since the iteration before, nearly all of it
         # the game playing out the next batch of steps, so that is the one more workers shrink.
-        $lines.Add(('{0,9} {1,12} {2,6} {3,6} {4,8} {5,7} {6,7} {7,7} {8,8} {9,7} {10,6}' -f 'iteration', 'steps', 'fights', 'win %', 'return', 'length', 'entropy', 'kl', 'drift', 'learn s', 'wall s'))
+        if ($Brief) {
+
+            $lines.Add(('{0,8} {1,9} {2,7} {3,13} {4,7}' -f 'time', 'iteration', 'fights', 'training win', 'wall s'))
+        }
+
+        else {
+
+            $lines.Add(('{0,9} {1,12} {2,6} {3,6} {4,8} {5,7} {6,7} {7,7} {8,8} {9,7} {10,6}' -f 'iteration', 'steps', 'fights', 'win %', 'return', 'length', 'entropy', 'kl', 'drift', 'learn s', 'wall s'))
+        }
 
         $shown = @($iterations | Select-Object -Last ($Rows + 1))
 
@@ -131,7 +141,15 @@ function Show-Run {
                 $wall = '{0:N0}' -f $(if ($seconds -lt 0) { $seconds + 86400 } else { $seconds })
             }
 
-            $lines.Add(('{0,9} {1,12} {2,6} {3,6} {4,8} {5,7} {6,7} {7,7} {8,8} {9,7} {10,6}' -f $row.iteration, $row.steps, $row.episodes, $row.win, $row.return, $row.length, $row.ent, $row.kl, $row.drift, $row.seconds, $wall))
+            if ($Brief) {
+
+                $lines.Add(('{0,8} {1,9} {2,7} {3,12}% {4,7}' -f $row.time, $row.iteration, $row.episodes, $row.win, $wall))
+            }
+
+            else {
+
+                $lines.Add(('{0,9} {1,12} {2,6} {3,6} {4,8} {5,7} {6,7} {7,7} {8,8} {9,7} {10,6}' -f $row.iteration, $row.steps, $row.episodes, $row.win, $row.return, $row.length, $row.ent, $row.kl, $row.drift, $row.seconds, $wall))
+            }
         }
 
         # Win rate is noisy iteration to iteration; the trend over the last few dozen is what says it is learning.
@@ -156,7 +174,7 @@ function Show-Run {
 
     # Evaluation: each checkpoint on its most likely action, which is the fighter the run would ship.
     $table = Join-Path $directory 'eval.csv'
-    $evaluated = @(Import-Csv $table -ErrorAction SilentlyContinue)
+    $evaluated = @(if (Test-Path $table) { Import-Csv $table })
 
     if ($evaluated.Count -gt 0) {
 

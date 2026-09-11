@@ -62,7 +62,8 @@ function Start-Run([string] $Name, [string] $Arguments) {
     $directory = Get-RunDirectory $Name
     New-Item -ItemType Directory -Force $directory | Out-Null
 
-    $command = "& '$PSScriptRoot\train.ps1' -Run $Name -Workers $WorkersEach $Arguments *> '$directory\console.log'"
+    # Everything goes into the console log, for when something needs looking into; watch.ps1 is the view to follow it by.
+    $command = "& '$PSScriptRoot\train.ps1' -Run $Name -Workers $WorkersEach -Full $Arguments *> '$directory\console.log'"
     Start-Process powershell.exe -ArgumentList @('-NoProfile', '-Command', $command) -WindowStyle Hidden | Out-Null
 
     Write-Host "Started '$Name'; its build output goes to $directory\console.log"
