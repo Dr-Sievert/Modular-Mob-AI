@@ -55,6 +55,23 @@ are deliberate.
 - **The machine blue-screened under load (2026-09-11).** The i7-14700KF was on microcode 0x11F, below Intel's fix for
   13th and 14th gen instability (0x12B). A BIOS update (A.K0, microcode 0x137) fixed it; crashes since are code bugs.
 
+## Perception
+
+- **The layout had one spare slot left in it, and a drawn weapon needed it.** Nothing in the observation said how far a
+  use had charged, so a network holding a bow could not tell a full draw from a tick of one. The echo's twentieth field
+  was kept spare for exactly this; filling it moved nothing, so `schema.json` is byte for byte what it was (id
+  `3e475bda`) and every published network still loads.
+  - The number is the item's own, not a count of ticks: a bow's is the power its arrow would leave at, which is not
+    linear in the draw, and a crossbow's is the fraction of its wind. Both reach one at the moment letting go is worth
+    it, so one rule works for either without knowing which is held.
+- **An arrow must never become the nearest enemy.** Putting shots into the enemy slots is the only place they could go,
+  and a slot is where "what to fight" is read from: a skeleton twelve blocks off with an arrow a block from the agent
+  would have the agent turning to swing at the arrow. So bodies hold their slots against every projectile, a body
+  arriving evicts a projectile before anything alive, and the teacher's nearest enemy skips them outright.
+- **Only a shot that is coming is worth a slot.** Most arrows in a fight are lying in the grass or flying past: one
+  earns a slot while it is moving, while the agent is ahead of it, and while its line would pass within a block and a
+  half. Without that, slots filled with litter.
+
 ## Mechanics (a player's rules, and bugs that broke them)
 
 - **Forward movement did nothing before commit c38efe9.** Vanilla's `Mob.setSpeed` also writes the forward input, and it
@@ -64,12 +81,32 @@ are deliberate.
   - Everything learned before that fix was learned in a broken body.
 - **Swings at plants.** A player's swing breaks grass and flowers and costs no cooldown; the agent's swings used to stop
   at a fern. A swing into a block now never resets the attack cooldown, and instant-break blocks break.
+- **Keeping off a hazard is not the same as getting off one.** Reading hazards at 1.5 stopped the teacher walking onto
+  them, and then a vindicator's blow knocked it on anyway: over 4,000 fights on the 4,096-site terrain library the teacher
+  won 98.7% and lost 15 fights to something that was not the vindicator, **14 of them freezing** and one a fall. Powder
+  snow is the trap it never left: a body in it cannot jump out, sinks, and freezes where it stands over about forty
+  seconds, which is most of a fight.
+  - A hazard in the agent's own cell now comes before the fight. It heads for the nearest cell it can stand on that is not
+    one, by the shortest way out rather than towards the target, which is what the ordinary search already enumerates.
+  - Walking is nearly always enough, since powder snow only takes a tenth off a body's speed sideways. Where it gets
+    nowhere the teacher breaks the block instead, looking straight down its own column: the first thing a ray from the eyes
+    meets down there is whatever it is standing in or on. Powder snow gives way in eight ticks, a cobweb in eight to a
+    sword, a berry bush at a touch, and all three are the same trap.
 - **Hazards read as hazards, not as solid (1.5 in the grid).** Read as solid, the top of a lava lake or of powder snow
   looked like stone to stand on. The teacher walked onto them and the network copied it. Over 20,000 fights, the vs-copy
   network died 18 times of something other than the vindicator: 13 falls (nearly all at one ravine), 2 lava, 2 powder
   snow, 1 berry bush. Hazards now read above solid, so networks trained before still treat them as walls. The bottom
   layer also marks drops deeper than 8 blocks. The fixed teacher dies of such causes 6 times in 20,000, and
   `gametest/util/DeathCauses` logs every one with its position and biome.
+- **One swing, three shapes, pick one.** Sprinting into a blow adds a point of knockback; falling into it adds half again
+  the damage and only counts if the fighter is not sprinting; standing still with a sword sweeps, and either of the other
+  two cancels that. So a fighter chooses per blow, and there is no swing that both crits and knocks back.
+  - **A sprint needs no reset here.** A player has to let the key go and press it again, because the blow cancels the
+    sprint. The agent's body reads the sprint control fresh every tick, so asking for it on the tick of the swing is the
+    whole of it.
+  - **The knockback is thrown along the agent's own look**, which is what makes a hazard behind the target reachable: the
+    push is `-(sin yaw, -cos yaw)` normalised, which is the agent's forward. A mob the ground kills still counts as the
+    agent's win.
 - **Air control is a player's:** 0.026 while sprinting.
 - **Paid by the health actually removed**, so overkill on a nearly dead vindicator pays no more.
 - **Placing was broken** before the mechanics work: blocks always faced north, and wall-mounted blocks and axe use
@@ -78,6 +115,17 @@ are deliberate.
   boxed in before it took a step.
 
 ## Learning
+
+- **A network never learns what the teacher never did.** Seeded from a copy of a teacher that only ever swung, the first
+  league run held use on 0 of 79,724 ticks over its last 400 fights and fired no arrows at all. PPO only improves what it
+  samples, and a bow pays nothing until twenty ticks of held use have gone by, so no amount of exploration finds one. The
+  loadouts show it: bow 42% won and crossbow 48% against 75-82% for every melee loadout.
+  - The answer is the teacher, not the reward. Anything the teacher cannot do is worth building there first.
+- **A teacher that keeps state has to check it against the body.** The teacher labels a student's fight in a DAgger
+  round, and there its own presses never happen. A state machine that assumed they had would decide on the first tick of
+  the first fight that the quiver was empty and the off hand held no shield, and would never show the student either
+  again. The use cooldown settles it: any press with it clear sets it to full, so a cooldown that did not move says
+  nobody pressed anything, and nothing is concluded from a press nobody made.
 
 - **PPO made a good copy worse, twice.** A policy near its best has little to gain from a critic that hasn't learned the
   fight yet, and much to lose. What fixed it (`-FromCopy`):

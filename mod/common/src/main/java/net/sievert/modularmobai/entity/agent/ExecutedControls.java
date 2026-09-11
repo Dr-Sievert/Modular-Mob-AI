@@ -51,6 +51,16 @@ public final class ExecutedControls {
     public boolean using;
     public boolean usingOffhand;
 
+    /**
+     * How far the item in use has charged, from 0 at the first tick of a use to 1 fully charged, and 0 with nothing in
+     * use. For a bow that is the power the arrow would leave at, which is what a player watches the string for; for a
+     * crossbow, how much of its wind is in; for anything with a use that simply runs its course, how much of it has run.
+     *
+     * <p>Held here rather than worked out from the entity because everything else in this record is: a use that started or
+     * ended on this very tick is only knowable while the hands are being settled.
+     */
+    public float useProgress;
+
     /** The use went to the block under the aim and the block took it, which is what placing a block looks like here. */
     public boolean usedOnBlock;
 
@@ -78,6 +88,7 @@ public final class ExecutedControls {
         this.attackSprintKnockback = false;
         this.using = false;
         this.usingOffhand = false;
+        this.useProgress = 0.0F;
         this.usedOnBlock = false;
         this.selectedSlot = 0;
         this.swappedWeapon = false;

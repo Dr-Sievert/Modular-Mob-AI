@@ -261,11 +261,11 @@ public final class League {
 
         List<Loadout> loadouts = Loadouts.enabled();
 
-        // The scripted fighter can only swing, on either side; see Loadouts#melee.
-        List<Loadout> agentLoadouts = scriptedAgents() ? melee(loadouts) : loadouts;
+        // Whatever drives the agent gets every loadout there is. The scripted fighter draws a bow and raises a shield now,
+        // so a run of it that left those out would not be a measurement of the teacher the network copies.
         Loadout loadout = directory == null
-                ? agentLoadouts.get((int) (fight % agentLoadouts.size()))
-                : agentLoadouts.get(random.nextInt(agentLoadouts.size()));
+                ? loadouts.get((int) (fight % loadouts.size()))
+                : loadouts.get(random.nextInt(loadouts.size()));
 
         Roster.Member member = Roster.named(name);
 
@@ -279,6 +279,9 @@ public final class League {
 
         if (name.equals(SCRIPTED)) {
 
+            // The one player whose strength has to stay where it is: every rating in the league is measured against the
+            // scripted fighter, held at 1500, so handing it the bow it can now draw would move the whole scale under a run
+            // that is already going. Melee only, as it has always fought here.
             brain = scripted();
             opponentLoadouts = melee(loadouts);
         }

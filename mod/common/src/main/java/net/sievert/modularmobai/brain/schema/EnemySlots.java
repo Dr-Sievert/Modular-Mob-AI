@@ -1,11 +1,15 @@
 package net.sievert.modularmobai.brain.schema;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.jetbrains.annotations.Nullable;
 
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import net.sievert.modularmobai.allegiance.Allegiance;
 
 /**
@@ -19,11 +23,51 @@ import net.sievert.modularmobai.allegiance.Allegiance;
  * <p>Leases survive an opponent briefly leaving the view, expire when it dies or stays away, and the nearest opponents
  * win the slots when there are more opponents than slots. Anything that could not be given a slot still shows up in the
  * count, so the agent knows it is outnumbered even when it cannot see by whom.
+ *
+ * <h2>Arrows in the air</h2>
+ *
+ * <p>A slot can also hold something that was shot at the agent. Half the league fights at a distance, and until now an
+ * arrow already in the air was not in the observation at all: the agent could see the skeleton and its bow, and never the
+ * shot. There is nothing else in the vector an arrow could go in, and the enemy block already carries a position, a
+ * velocity and a kind, which is the whole of what there is to say about one.
+ *
+ * <p>Two rules keep that from spoiling what the slots mean:
+ *
+ * <ul>
+ *   <li><b>Bodies come first and are never displaced.</b> Projectiles take only the slots nothing living wants, and a
+ *       body arriving with no free slot evicts a projectile before it evicts anything alive. Otherwise a trained
+ *       network's nearest enemy could quietly become an arrow two blocks away while the skeleton that fired it fell out
+ *       of the view.</li>
+ *   <li><b>Only what is actually coming.</b> An arrow lying in the grass, one flying past and one the agent fired itself
+ *       are not threats, and a slot spent on them is a slot wasted. A projectile earns one only while it is moving, while
+ *       the agent is still ahead of it, and while its line would pass close enough to hit; see {@link #incoming}.</li>
+ * </ul>
  */
 public final class EnemySlots {
 
-    private final LivingEntity[] occupants = new LivingEntity[ObservationSchema.ENEMY_SLOTS];
+    /**
+     * Slower than this, in blocks a tick, and a projectile is not going anywhere: an arrow stuck in the ground or in a
+     * block keeps its entity for a minute afterwards, and a dropped one lies where it fell.
+     */
+    private static final double PROJECTILE_SPEED_FLOOR = 0.15D;
+
+    /**
+     * How close to the agent a projectile's line has to pass for it to be worth a slot. A body is six tenths of a block
+     * wide and a raised shield covers a cone in front, so a block and a half either side is everything that could hit and
+     * a little of what a flinch is still reasonable about.
+     */
+    private static final double PROJECTILE_MISS = 1.5D;
+
+    /**
+     * Occupants by slot. Living for all but a projectile, which is why this is not a {@code LivingEntity[]}: an arrow is
+     * an entity and nothing more.
+     */
+    private final Entity[] occupants = new Entity[ObservationSchema.ENEMY_SLOTS];
     private final int[] graceRemaining = new int[ObservationSchema.ENEMY_SLOTS];
+
+    /** What the one walk over the surroundings found, kept for the life of the view rather than allocated every tick. */
+    private final List<LivingEntity> bodies = new ArrayList<>();
+    private final List<Projectile> shots = new ArrayList<>();
 
     private int inRangeCount;
 
@@ -43,14 +87,34 @@ public final class EnemySlots {
 
         double viewSq = ObservationSchema.VIEW_DISTANCE * ObservationSchema.VIEW_DISTANCE;
 
-        List<LivingEntity> candidates = owner.level().getEntitiesOfClass(LivingEntity.class, view,
-                other -> other != owner && other.isAlive() && hostile(owner, other) && owner.distanceToSqr(other) <= viewSq);
+        // One walk over what is around, not two. Asking the level twice, once for bodies and once for shots, would walk the
+        // same entity sections twice, and this is done for every agent on every tick of a run.
+        this.bodies.clear();
+        this.shots.clear();
 
-        this.inRangeCount = candidates.size();
+        for (Entity other : owner.level().getEntities(owner, view, candidate -> owner.distanceToSqr(candidate) <= viewSq)) {
+
+            if (other instanceof LivingEntity living) {
+
+                if (living.isAlive() && hostile(owner, living)) {
+
+                    this.bodies.add(living);
+                }
+            }
+
+            else if (other instanceof Projectile shot && shot.isAlive() && incoming(owner, shot)) {
+
+                this.shots.add(shot);
+            }
+        }
+
+        // Bodies only. A count that grew with every arrow in the air would tell a network trained on it that it was
+        // outnumbered whenever a skeleton opened fire.
+        this.inRangeCount = this.bodies.size();
 
         this.expireLeases(owner, viewSq);
 
-        for (LivingEntity candidate : candidates) {
+        for (LivingEntity candidate : this.bodies) {
 
             if (this.slotOf(candidate) >= 0) {
 
@@ -70,6 +134,8 @@ public final class EnemySlots {
                 this.graceRemaining[slot] = ObservationSchema.LEASE_GRACE_TICKS;
             }
         }
+
+        this.leaseProjectiles(owner);
     }
 
     /**
@@ -87,21 +153,108 @@ public final class EnemySlots {
         return Allegiance.isEnemy(owner, other);
     }
 
+    /**
+     * Gives whatever slots are left over to the projectiles coming at the agent, nearest first. Nothing is ever evicted
+     * for one: a fight with ten bodies in view is a fight where an arrow is the least of it.
+     */
+    private void leaseProjectiles(LivingEntity owner) {
+
+        if (this.shots.isEmpty() || this.firstFreeSlot() < 0) {
+
+            return;
+        }
+
+        // Nearest first, so the one about to land keeps its slot when there are more shots than slots left.
+        this.shots.sort((first, second) -> Double.compare(owner.distanceToSqr(first), owner.distanceToSqr(second)));
+
+        for (Projectile shot : this.shots) {
+
+            if (this.slotOf(shot) >= 0) {
+
+                continue;
+            }
+
+            int slot = this.firstFreeSlot();
+
+            if (slot < 0) {
+
+                return;
+            }
+
+            this.occupants[slot] = shot;
+            this.graceRemaining[slot] = ObservationSchema.LEASE_GRACE_TICKS;
+        }
+    }
+
+    /**
+     * Whether a projectile is one the agent has any reason to care about: not its own or an ally's, still travelling,
+     * with the agent ahead of it rather than behind, and on a line that would pass close enough to hit.
+     *
+     * <p>The last two come out of the same two numbers. Along the line of flight, how far ahead of the shot the agent is
+     * says whether it is still coming; across it, how far the shot would miss by says whether it is coming at the agent or
+     * merely past it. Nothing here follows the arc down: over the few blocks an arrow covers before it arrives it falls a
+     * fraction of the block and a half this allows.
+     */
+    private static boolean incoming(LivingEntity owner, Projectile shot) {
+
+        Entity shooter = shot.getOwner();
+
+        if (shooter == owner || shooter instanceof LivingEntity living && !Allegiance.isEnemy(owner, living)) {
+
+            return false;
+        }
+
+        Vec3 velocity = shot.getDeltaMovement();
+        double speed = velocity.length();
+
+        if (speed < PROJECTILE_SPEED_FLOOR) {
+
+            return false;
+        }
+
+        Vec3 toOwner = owner.getBoundingBox().getCenter().subtract(shot.position());
+        double along = toOwner.dot(velocity) / speed;
+
+        if (along <= 0.0D) {
+
+            return false;
+        }
+
+        return toOwner.lengthSqr() - along * along <= PROJECTILE_MISS * PROJECTILE_MISS;
+    }
+
     private void expireLeases(LivingEntity owner, double viewSq) {
 
         for (int slot = 0; slot < this.occupants.length; slot++) {
 
-            LivingEntity occupant = this.occupants[slot];
+            Entity occupant = this.occupants[slot];
 
             if (occupant == null) {
 
                 continue;
             }
 
+            if (!occupant.isAlive() || occupant.isRemoved()) {
+
+                this.occupants[slot] = null;
+                continue;
+            }
+
+            // A projectile is let go the moment it stops coming, since a slot held for an arrow lying in the grass or one
+            // that has already flown past is a slot held for nothing.
+            if (occupant instanceof Projectile shot) {
+
+                if (!incoming(owner, shot)) {
+
+                    this.occupants[slot] = null;
+                    continue;
+                }
+            }
+
             // One that has come over to the agent's side, or can no longer be fought at all, a player gone creative, is let
             // go at once rather than held while it stays close. Nothing else is: a wolf that stops targeting the agent is
             // still a wolf that just bit it.
-            if (!occupant.isAlive() || occupant.isRemoved() || Allegiance.allied(owner, occupant) || !owner.canAttack(occupant)) {
+            else if (occupant instanceof LivingEntity body && (Allegiance.allied(owner, body) || !owner.canAttack(body))) {
 
                 this.occupants[slot] = null;
                 continue;
@@ -122,17 +275,21 @@ public final class EnemySlots {
     }
 
     /**
-     * The slot held by whichever leaseholder is furthest away, but only if the newcomer is actually closer. Evicting for
-     * something further off would just churn the slots for nothing.
+     * The slot to take for a newcomer that found none free: a projectile's before anything alive, and otherwise the one
+     * held by whichever body is furthest away, but only if the newcomer is actually closer. Evicting a body for one
+     * further off would just churn the slots for nothing.
      */
     private int slotToEvictFor(LivingEntity owner, LivingEntity candidate) {
+
+        int furthestShot = -1;
+        double furthestShotSq = -1.0D;
 
         int furthest = -1;
         double furthestSq = owner.distanceToSqr(candidate);
 
         for (int slot = 0; slot < this.occupants.length; slot++) {
 
-            LivingEntity occupant = this.occupants[slot];
+            Entity occupant = this.occupants[slot];
 
             if (occupant == null) {
 
@@ -141,6 +298,17 @@ public final class EnemySlots {
 
             double distanceSq = owner.distanceToSqr(occupant);
 
+            if (occupant instanceof Projectile) {
+
+                if (distanceSq > furthestShotSq) {
+
+                    furthestShotSq = distanceSq;
+                    furthestShot = slot;
+                }
+
+                continue;
+            }
+
             if (distanceSq > furthestSq) {
 
                 furthestSq = distanceSq;
@@ -148,7 +316,7 @@ public final class EnemySlots {
             }
         }
 
-        return furthest;
+        return furthestShot >= 0 ? furthestShot : furthest;
     }
 
     private int firstFreeSlot() {
@@ -164,7 +332,7 @@ public final class EnemySlots {
         return -1;
     }
 
-    private int slotOf(LivingEntity entity) {
+    private int slotOf(Entity entity) {
 
         for (int slot = 0; slot < this.occupants.length; slot++) {
 
@@ -178,12 +346,12 @@ public final class EnemySlots {
     }
 
     @Nullable
-    public LivingEntity occupant(int slot) {
+    public Entity occupant(int slot) {
 
         return this.occupants[slot];
     }
 
-    /** Everything in view, including whatever could not be given a slot. */
+    /** Everything alive in view, including whatever could not be given a slot. Arrows are not counted. */
     public int inRangeCount() {
 
         return this.inRangeCount;
@@ -192,7 +360,7 @@ public final class EnemySlots {
     /** Whether no slot is held: nothing in view, and nothing that only just stepped out of it. */
     public boolean isEmpty() {
 
-        for (LivingEntity occupant : this.occupants) {
+        for (Entity occupant : this.occupants) {
 
             if (occupant != null) {
 

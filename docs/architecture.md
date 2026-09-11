@@ -45,13 +45,31 @@ crosshair within reach, as for a player.
 | --- | --- | --- |
 | self | 20 | health, velocity (forward/up/right), on ground, in water, attack strength, use cooldown, using (main/off hand), sprinting, crouching, fall distance, body offset (sin/cos), pitch, aim (sin/cos), hurt time, enemies in range |
 | hotbar | 9 | what each hotbar slot holds |
-| echo | 20 | what the body actually did last tick: moved (forward/strafe), jumped, sprinted, sneaked, turned (yaw/pitch), attacked, hit, attack strength and damage, crit, sweep, sprint knockback, used (main/off hand/on a block), selected slot, swapped weapon |
-| enemies | 10 × 18 | every hostile within 32 blocks, in ten stable slots, in its own frame: present, position (forward/up/right), distance, velocity, health, facing (sin/cos), pitch, **kind**, main and off hand item, swinging, using, sprinting |
+| echo | 20 | what the body actually did last tick: moved (forward/strafe), jumped, sprinted, sneaked, turned (yaw/pitch), attacked, hit, attack strength and damage, crit, sweep, sprint knockback, used (main/off hand/on a block), selected slot, swapped weapon, **how far the use has charged** |
+| enemies | 10 × 18 | every hostile within 32 blocks, and anything shot at the agent, in ten stable slots, in its own frame: present, position (forward/up/right), distance, velocity, health, facing (sin/cos), pitch, **kind**, main and off hand item, swinging, using, sprinting |
 | terrain | 9 × 5 × 9 = 405 | the blocks around it, from 2 below the feet to 2 above: 0 empty, 0.5 fluid, 1 solid by collision, 1.5 hazard. A hazard hurts or kills a body in it or on it: lava, fire, magma, cactus, lit campfires, wither roses, pointed dripstone, powder snow, berry bushes, cobwebs. An empty cell in the bottom layer reads as a hazard when the fall below it would be more than 8 blocks, or would end in a hazard |
 
-Animals and villagers never take an enemy slot. The enemy's `kind` lets one network tell a zombie from a skeleton, which
-the league relies on. The layout is fixed: every trained network depends on it, and the schema id refuses a mismatch.
-Field constants are in `brain/schema/ObservationSchema.java`, and the encoder is `AgentObservation.java`.
+Animals and villagers never take an enemy slot. The enemy's `kind` says what sort of thing it is: another agent, a
+player, a monster, something else alive, or, below zero, something shot at the agent. The layout is fixed: every trained
+network depends on it, and the schema id refuses a mismatch. Field constants are in
+`brain/schema/ObservationSchema.java`, and the encoder is `AgentObservation.java`.
+
+**The use charge** (the echo's last field) is how far the item in use has come, as the item itself reckons it: a bow
+gives the power its arrow would leave at, a crossbow the fraction of its wind that is in, anything else how much of its
+use duration has run. Both weapons read 1 at the moment letting go is worth it, so one number says "loose now" for
+either. Nothing else in the observation says a bow is nearly drawn, and a bow needs twenty ticks of held use before an
+arrow ever flies.
+
+**Shots in the enemy slots** (`EnemySlots`): a slot can hold an arrow, a bolt, a wind charge or any other projectile on
+its way to the agent, with a `kind` of its own below zero and its health, hands, swing and use left at zero, since an
+arrow has none of those. Two rules keep that from spoiling what a slot means:
+- Bodies come first and are never displaced. Projectiles take only the slots nothing alive wants, and a body arriving
+  with no free slot evicts a projectile before anything else. Otherwise a network's nearest enemy could quietly become
+  an arrow two blocks away while the skeleton that fired it fell out of the view.
+- Only what is actually coming. A projectile earns a slot while it is still moving, while the agent is ahead of it
+  rather than behind, and while its line would pass within a block and a half. Its own arrows and an ally's never do.
+
+`inRangeCount`, which the self block carries, still counts bodies only.
 
 ## What it controls: 11 controls, 19 network outputs
 
