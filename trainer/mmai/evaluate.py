@@ -13,12 +13,11 @@ those up per checkpoint, keeps the best weights, and says when the run has stopp
 
 from __future__ import annotations
 
-import os
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import log
+from . import files, log
 from .run import RunDirectory
 
 logger = log.get("eval")
@@ -121,7 +120,7 @@ class Evaluator:
         self.current = iteration
         temporary = self.folder / "target.tmp"
         temporary.write_text(str(iteration), encoding="utf-8")
-        os.replace(temporary, target)
+        files.replace(temporary, target)
         logger.info("evaluating iteration %d", iteration)
 
     def _judge(self, iteration: int) -> None:
@@ -132,7 +131,10 @@ class Evaluator:
         if self.best is None or result.rate > self.judged[self.best].rate:
             self.best = iteration
             self.since_best = 0
-            shutil.copyfile(self.run.weights_file(iteration), self.best_file)
+            # Swapped in whole like everything else here: scripts\publish.ps1 copies it out while the run goes on.
+            temporary = self.best_file.with_suffix(".tmp")
+            shutil.copyfile(self.run.weights_file(iteration), temporary)
+            files.replace(temporary, self.best_file)
             verdict = "new best"
         else:
             self.since_best += 1
@@ -180,7 +182,7 @@ class Evaluator:
 
         temporary = self.table.with_suffix(".tmp")
         temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        os.replace(temporary, self.table)
+        files.replace(temporary, self.table)
 
     def _resume(self) -> None:
         """Picks a resumed run's evaluation up where it was: what was judged, and which was best."""
