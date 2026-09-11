@@ -9,6 +9,7 @@ import net.minecraft.world.level.levelgen.presets.WorldPresets;
 import org.slf4j.Logger;
 import net.sievert.modularmobai.gametest.GameTestBenchmark;
 import net.sievert.modularmobai.gametest.GameTestTuning;
+import net.sievert.modularmobai.gametest.terrain.TerrainLibrary;
 import net.sievert.modularmobai.gametest.terrain.TerrainSites;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -74,18 +75,24 @@ public class GameTestServerMixin {
     )
     private void modular_mob_ai$awaitFirstSite(BooleanSupplier hasTimeLeft, CallbackInfo ci) {
 
-        if (GameTestTuning.naturalTerrain()) {
+        if (GameTestTuning.naturalTerrain() && !GameTestTuning.buildingLibrary()) {
 
             TerrainSites.awaitFirstSite(((MinecraftServer) (Object) this).overworld());
         }
     }
 
     // The terrain suite's sites are generated a couple at a time while fights run on the ones already there. Every tick
-    // hands the sites that have finished to the fights and asks for the next ones.
+    // hands the sites that have finished to the fights and asks for the next ones. Building the terrain library, it
+    // generates and checks the library's sites instead.
     @Inject(method = "tickServer", at = @At("TAIL"))
     private void modular_mob_ai$generateTerrain(BooleanSupplier hasTimeLeft, CallbackInfo ci) {
 
-        if (GameTestTuning.naturalTerrain()) {
+        if (GameTestTuning.buildingLibrary()) {
+
+            TerrainLibrary.tick(((MinecraftServer) (Object) this).overworld());
+        }
+
+        else if (GameTestTuning.naturalTerrain()) {
 
             TerrainSites.tick(((MinecraftServer) (Object) this).overworld());
         }
@@ -125,7 +132,12 @@ public class GameTestServerMixin {
     )
     private void modular_mob_ai$reportTerrain(BooleanSupplier hasTimeLeft, CallbackInfo ci) {
 
-        if (GameTestTuning.naturalTerrain()) {
+        if (GameTestTuning.buildingLibrary()) {
+
+            TerrainLibrary.finish();
+        }
+
+        else if (GameTestTuning.naturalTerrain()) {
 
             TerrainSites.finish();
         }
@@ -195,6 +207,11 @@ public class GameTestServerMixin {
             index = 0
     )
     private BlockPos modular_mob_ai$terrainOrigin(BlockPos corner) {
+
+        if (GameTestTuning.buildingLibrary()) {
+
+            return TerrainLibrary.start(((MinecraftServer) (Object) this).overworld());
+        }
 
         return GameTestTuning.naturalTerrain() ? TerrainSites.start(((MinecraftServer) (Object) this).overworld()) : corner;
     }

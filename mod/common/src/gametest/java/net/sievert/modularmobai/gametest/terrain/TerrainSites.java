@@ -60,6 +60,11 @@ import net.sievert.modularmobai.gametest.GameTestTuning;
  * and a site past its fights keeps being used until one is, so fights never wait on the generator for this. A site where
  * fights run out the clock twice, or with nowhere to stand, is taken out of use straight away: that is the ground,
  * not the fighting. Timeouts still count as the losses they are.
+ *
+ * <p>With a terrain library, which the build links in whenever there is one, none of the ground is generated here at
+ * all. The lattice is the library's, every site and spare is read from disk ready made, and the points the library found
+ * no fight could start on are never used; see {@link TerrainLibrary}. A worker starts somewhere of its own in the
+ * library and walks on through it, point after point, the way it would walk its own lattice.
  */
 public final class TerrainSites {
 
@@ -72,16 +77,16 @@ public final class TerrainSites {
      * Chunks kept loaded and ticking either side of a site's centre chunk: two, so a fight has five chunks, eighty
      * blocks, of open ground each way, and starts in the middle of it.
      */
-    private static final int RADIUS_CHUNKS = 2;
+    static final int RADIUS_CHUNKS = 2;
     private static final int SIZE = (2 * RADIUS_CHUNKS + 1) * 16;
 
     /**
      * Blocks between site centres: eight chunks, so three chunks of dead ground separate one fight from the next. The
-     * worlds kept in runs/terrain were generated for this layout; delete them after changing it, or workers generate the
-     * new sites anyway, only slower.
+     * worlds kept in runs/terrain and the terrain library were generated for this layout; delete them after changing it,
+     * or workers generate the new sites anyway, only slower, and a library says what it was built with.
      */
-    private static final int SPACING = 128;
-    private static final int COLUMNS = 8;
+    static final int SPACING = 128;
+    static final int COLUMNS = 8;
 
     /**
      * More than run at once, which is fifty unless a run asks for other batches: every fight in progress holds a site,
@@ -138,11 +143,22 @@ public final class TerrainSites {
     /** Fights on a site that run out the clock before it is taken out of use: two says it is the ground, not luck. */
     private static final int SITE_TIMEOUTS = 2;
 
-    /** Sites generated ahead in the lattice, ready to take the place of one that has had its fights. */
-    private static final int SPARES = 4;
+    /**
+     * Sites generated ahead in the lattice, ready to take the place of one that has had its fights. From the library a
+     * spare is read in a fraction of a second rather than generated, so two do, and each one held ready is a site's
+     * worth of memory.
+     */
+    private static final int SPARES = GameTestTuning.library() != null ? 2 : 4;
 
     @Nullable
     private static BlockPos origin;
+
+    /** The terrain library the sites come from, when the build linked one in; null when this worker generates its own. */
+    @Nullable
+    private static TerrainLibrary.Index library;
+
+    /** The library point the next site or spare is taken from. */
+    private static int libraryCursor;
 
     private static int next;
     private static final boolean[] unusable = new boolean[COUNT];
@@ -231,9 +247,23 @@ public final class TerrainSites {
 
         if (origin == null) {
 
-            BlockPos kept = keptOrigin();
+            library = openLibrary();
 
-            origin = kept != null ? kept : chooseOrigin(level);
+            if (library != null) {
+
+                startLibrary();
+                startedAt = System.nanoTime();
+
+                Constants.LOG.info("Terrain arenas: {} sites from the terrain library, {} of its {} points usable, starting at "
+                        + "point {}", COUNT, library.usableCount(), library.points(), lattice[0]);
+
+                return plots(level);
+            }
+
+            BlockPos kept = keptOrigin();
+            RandomSource random = GameTestTuning.terrainSeed() != 0L ? RandomSource.create(GameTestTuning.terrainSeed()) : level.getRandom();
+
+            origin = kept != null ? kept : chooseOrigin(level, random, COUNT);
             startedAt = System.nanoTime();
 
             Constants.LOG.info("Terrain arenas: {} sites from {} in {}{}", COUNT, origin.toShortString(),
@@ -245,6 +275,88 @@ public final class TerrainSites {
     }
 
     /**
+     * The library the build named, or null when there is none or it cannot be used: unreadable, laid out for another
+     * spacing, or too small to walk through without a site ever landing where another still is.
+     */
+    @Nullable
+    private static TerrainLibrary.Index openLibrary() {
+
+        String path = GameTestTuning.library();
+
+        if (path == null) {
+
+            return null;
+        }
+
+        try {
+
+            TerrainLibrary.Index index = TerrainLibrary.Index.read(Path.of(path));
+
+            if (index.spacing() != SPACING || index.columns() != COLUMNS) {
+
+                Constants.LOG.warn("The terrain library at {} was built {} blocks apart in {} columns, and sites here are {} apart in "
+                        + "{}; generating instead. Build it again with scripts\\terrain.ps1", path, index.spacing(), index.columns(),
+                        SPACING, COLUMNS);
+                return null;
+            }
+
+            if (index.usableCount() < 4 * (COUNT + SPARES)) {
+
+                Constants.LOG.warn("The terrain library at {} has only {} usable sites, too few for {} at a time; generating instead",
+                        path, index.usableCount(), COUNT + SPARES);
+                return null;
+            }
+
+            return index;
+        }
+
+        catch (IOException | RuntimeException exception) {
+
+            Constants.LOG.warn("Could not read the terrain library at {}, generating instead: {}", path, exception.toString());
+            return null;
+        }
+    }
+
+    /**
+     * Puts the sites on the first usable points from somewhere of this worker's own in the library: the same place for
+     * the same terrain seed and worker, anywhere otherwise, and always at the start of a row, so the sites in use sit
+     * side by side and share the ground around them.
+     */
+    private static void startLibrary() {
+
+        RandomSource random = GameTestTuning.terrainSeed() != 0L
+                ? RandomSource.create(GameTestTuning.terrainSeed() * 31L + GameTestTuning.shardIndex())
+                : RandomSource.create();
+
+        libraryCursor = random.nextInt(Math.max(1, library.points() / COLUMNS)) * COLUMNS;
+
+        for (int site = 0; site < COUNT; site++) {
+
+            lattice[site] = nextLibraryPoint();
+        }
+
+        // Every site and spare is on disk already, which the requests treat as quick, see tick.
+        keptSites = COUNT;
+        origin = library.centre(lattice[0]);
+    }
+
+    /** The next usable point of the library, walking on from the last and round past its end. */
+    private static int nextLibraryPoint() {
+
+        for (int step = 0; step < library.points(); step++) {
+
+            int point = Math.floorMod(libraryCursor++, library.points());
+
+            if (library.usable(point)) {
+
+                return point;
+            }
+        }
+
+        throw new IllegalStateException("The terrain library has no usable sites");
+    }
+
+    /**
      * Where the framework's plots go: deep under the spawn, far from any site. The server loads the seven by seven chunks
      * around the spawn before anything else, and fifty plots, as many as run at once, fill exactly those: eight to a row,
      * nine blocks wide with five between, each with the few blocks the framework clears around it. More spill over into
@@ -252,7 +364,7 @@ public final class TerrainSites {
      * each, so anywhere else they waited for terrain to be generated: under the first site they held up the first fight,
      * and kept the ground between it and its neighbours ticking.
      */
-    private static BlockPos plots(ServerLevel level) {
+    static BlockPos plots(ServerLevel level) {
 
         ChunkPos spawn = new ChunkPos(level.getSharedSpawnPos());
 
@@ -267,7 +379,8 @@ public final class TerrainSites {
 
         String path = GameTestTuning.terrainFile();
 
-        if (path == null || origin == null) {
+        // A world on the library is never kept: all of it is in the library already.
+        if (path == null || origin == null || library != null) {
 
             return;
         }
@@ -286,12 +399,12 @@ public final class TerrainSites {
 
     /**
      * Whether nobody keeps this world once the worker exits: no pool asked for it, or it came from the pool with every
-     * site already generated, so the kept copy has all of it already. Saving such a world only writes files that are
-     * deleted before the next run.
+     * site already generated, so the kept copy has all of it already, or its sites came from the terrain library, whose
+     * files it must never write. Saving such a world only writes files that are deleted before the next run.
      */
     public static synchronized boolean throwaway() {
 
-        return GameTestTuning.terrainFile() == null || keptSites >= COUNT;
+        return GameTestTuning.terrainFile() == null || keptSites >= COUNT || GameTestTuning.library() != null;
     }
 
     /**
@@ -468,7 +581,7 @@ public final class TerrainSites {
 
         while (spareCount < SPARES && loading < GENERATING) {
 
-            spares[spareCount] = nextLattice++;
+            spares[spareCount] = library != null ? nextLibraryPoint() : nextLattice++;
             spareReady[spareCount] = false;
             force(level, point(spares[spareCount]), true);
             spareCount++;
@@ -531,10 +644,14 @@ public final class TerrainSites {
         return point(lattice[index]);
     }
 
-    /** The centre of a point of the lattice, which runs on in rows of {@link #COLUMNS} as far as it is ever needed. */
+    /**
+     * The centre of a point of the lattice, which runs on in rows of {@link #COLUMNS} as far as it is ever needed, or of
+     * the library's.
+     */
     private static BlockPos point(int latticeIndex) {
 
-        return origin.offset((latticeIndex % COLUMNS) * SPACING, 0, (latticeIndex / COLUMNS) * SPACING);
+        return library != null ? library.centre(latticeIndex)
+                : origin.offset((latticeIndex % COLUMNS) * SPACING, 0, (latticeIndex / COLUMNS) * SPACING);
     }
 
     /** The whole loaded area of a site, from bedrock to the sky. */
@@ -552,7 +669,7 @@ public final class TerrainSites {
      * asks, and the generator works through them on every thread it has. Let go, a site's chunks unload, which is what
      * keeps a worker that moves its sites on hundreds of times in the same memory.
      */
-    private static void force(ServerLevel level, BlockPos centre, boolean keep) {
+    static void force(ServerLevel level, BlockPos centre, boolean keep) {
 
         int chunkX = centre.getX() >> 4;
         int chunkZ = centre.getZ() >> 4;
@@ -567,7 +684,7 @@ public final class TerrainSites {
     }
 
     /** Whether every chunk of a site is loaded, with its entities, and ticking, which is when a fight can go on it. */
-    private static boolean loaded(ServerLevel level, BlockPos centre) {
+    static boolean loaded(ServerLevel level, BlockPos centre) {
 
         int chunkX = centre.getX() >> 4;
         int chunkZ = centre.getZ() >> 4;
@@ -622,7 +739,7 @@ public final class TerrainSites {
     }
 
     @Nullable
-    private static Site place(ServerLevel level, int index, BlockPos centre, RandomSource random) {
+    static Site place(ServerLevel level, int index, BlockPos centre, RandomSource random) {
 
         int x = centre.getX() + Mth.nextInt(random, -JITTER, JITTER);
         int z = centre.getZ() + Mth.nextInt(random, -JITTER, JITTER);
@@ -756,11 +873,10 @@ public final class TerrainSites {
      * Somewhere the lattice lands mostly on land. Asked of the biome source directly, which answers without generating a
      * single chunk, so trying hundreds of places costs next to nothing.
      */
-    private static BlockPos chooseOrigin(ServerLevel level) {
+    static BlockPos chooseOrigin(ServerLevel level, RandomSource random, int points) {
 
         BiomeSource biomes = level.getChunkSource().getGenerator().getBiomeSource();
         Climate.Sampler climate = level.getChunkSource().randomState().sampler();
-        RandomSource random = GameTestTuning.terrainSeed() != 0L ? RandomSource.create(GameTestTuning.terrainSeed()) : level.getRandom();
 
         BlockPos best = BlockPos.ZERO;
         int bestLand = -1;
@@ -777,7 +893,7 @@ public final class TerrainSites {
             for (int sample = 0; sample < samples; sample++) {
 
                 // Spread over the whole lattice, not just its corner.
-                int site = sample * COUNT / samples + COLUMNS / 2;
+                int site = sample * points / samples + COLUMNS / 2;
                 int sx = x + (site % COLUMNS) * SPACING;
                 int sz = z + (site / COLUMNS) * SPACING;
 

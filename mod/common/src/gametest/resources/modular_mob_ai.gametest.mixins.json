@@ -10,6 +10,7 @@
     "GameTestServerMixin",
     "LevelMixin",
     "MinecraftServerMixin",
+    "RegionFileStorageMixin",
     "ServerChunkCacheMixin",
     "ServerLevelMixin",
     "SlimeInvoker",
