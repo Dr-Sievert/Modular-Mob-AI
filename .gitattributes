@@ -13,3 +13,9 @@
 *.pyd binary
 *.cfg text eol=lf
 *.jks binary
+*.mbw binary
+*.mbr binary
+*.pt binary
+*.npy binary
+*.npz binary
+*.nbt binary
