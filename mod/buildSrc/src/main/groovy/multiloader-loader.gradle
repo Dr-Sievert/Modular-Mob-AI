@@ -718,7 +718,9 @@ afterEvaluate {
 
         while (processes.any { it.process.isAlive() }) {
 
-            Thread.sleep(2000)
+            // Every two seconds, or at once when a worker exits, so the last one to finish is not left for up to two
+            // seconds of the wall clock.
+            processes.find { it.process.isAlive() }?.process?.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)
             checkHealth()
 
             // A worker that stops while the rest carry on either finished its share early or fell over. Only a nonzero

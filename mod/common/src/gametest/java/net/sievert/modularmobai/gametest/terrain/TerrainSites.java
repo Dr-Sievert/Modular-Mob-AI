@@ -213,6 +213,16 @@ public final class TerrainSites {
     }
 
     /**
+     * Whether nobody keeps this world once the worker exits: no pool asked for it, or it came from the pool with every
+     * site already generated, so the kept copy has all of it already. Saving such a world only writes files that are
+     * deleted before the next run.
+     */
+    public static synchronized boolean throwaway() {
+
+        return GameTestTuning.terrainFile() == null || keptSites >= COUNT;
+    }
+
+    /**
      * Keeps the lattice coming: marks the sites the generator has finished as ready for fights, and asks for the next in
      * their place. Called every server tick rather than only when a fight wants a site, so generating carries on while
      * every slot is busy.
