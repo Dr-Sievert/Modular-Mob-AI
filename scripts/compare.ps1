@@ -6,10 +6,8 @@
 #   scripts\compare.ps1 -Copy vindicator5 -Battles 500000
 #   scripts\compare.ps1 -CopyWorkers 4 -ScratchWorkers 4      an even split
 #
-# Both run in the background, so this returns once they have started. Watch them in two terminals:
-#   scripts\watch.ps1 -Run <prefix>-copy
-#   scripts\watch.ps1 -Run <prefix>-scratch
-# the fights themselves with scripts\viewer.ps1, and stop both with scripts\stop.ps1.
+# Both run in the background, so this returns once they have started. Watch both with scripts\watch.ps1, the fights
+# themselves with scripts\viewer.ps1, and stop both with scripts\stop.ps1.
 #
 # The copy's run stops on its own once evaluation says it has stopped getting better. A run from nothing wins nothing
 # for a long time, and "ten checkpoints without a new best" would end it before it had started, so it only stops at
@@ -80,7 +78,6 @@ Start-Run "$Prefix-scratch" $ScratchWorkers "-Battles $ScratchBattles -Extra '--
 
 Write-Host ''
 Write-Host 'Both are running in the background. Watch them with:'
-Write-Host "  scripts\watch.ps1 -Run $Prefix-copy"
-Write-Host "  scripts\watch.ps1 -Run $Prefix-scratch"
+Write-Host '  scripts\watch.ps1'
 Write-Host '  scripts\viewer.ps1'
 Write-Host 'Stop both with scripts\stop.ps1'
