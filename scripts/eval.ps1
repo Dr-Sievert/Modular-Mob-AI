@@ -3,6 +3,7 @@
 #   scripts\eval.ps1                          the newest weights of run 'default', 2,000 fights on natural terrain
 #   scripts\eval.ps1 -Run wide -Iteration 400
 #   scripts\eval.ps1 -Arenas 400 -Suite arena
+#   scripts\eval.ps1 -Weights models\vs-copy\best.mbw   a network from anywhere, such as one scripts\publish.ps1 put in git
 #
 # Starting the workers costs the same however many fights follow, and 2,000 fights put the win rate within about a
 # point either way, where 400 leave it within two and a half.
@@ -11,6 +12,7 @@
 param(
     [string] $Run = 'default',
     [int] $Iteration = -1,
+    [string] $Weights = '',
     [int] $Arenas = 2000,
     [int] $Workers = 8,
     [int] $Slots = 25,
@@ -23,21 +25,30 @@ param(
 
 Test-MachineStability
 
-$weights = Join-Path (Get-RunDirectory $Run) 'weights'
+# PowerShell names are not case sensitive, so the run's weight folder cannot be called $weights beside -Weights.
+$folder = Join-Path (Get-RunDirectory $Run) 'weights'
 
-if ($Iteration -ge 0) {
+if ($Weights) {
 
-    $file = Join-Path $weights ('{0:D6}.mbw' -f $Iteration)
+    $file = (Resolve-Path $Weights -ErrorAction SilentlyContinue).Path
+
+    # Named after the folder it came from, so models\vs-copy\best.mbw gives replays in runs\eval-vs-copy-best.
+    $Run = Split-Path (Split-Path $file -Parent) -Leaf
+}
+
+elseif ($Iteration -ge 0) {
+
+    $file = Join-Path $folder ('{0:D6}.mbw' -f $Iteration)
 }
 
 else {
 
-    $file = (Get-ChildItem $weights -Filter '*.mbw' -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -Last 1).FullName
+    $file = (Get-ChildItem $folder -Filter '*.mbw' -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -Last 1).FullName
 }
 
 if (-not $file -or -not (Test-Path $file)) {
 
-    throw "No weights found in $weights"
+    throw "No weights found at $(if ($Weights) { $Weights } else { $folder })"
 }
 
 Write-Host "Evaluating $file over $Arenas arenas"
