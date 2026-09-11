@@ -3411,7 +3411,7 @@ function plainAtlas() {
  */
 function loadBlockLook(tr, biome) {
   if (tr.look) return tr.look;
-  tr.look = blockTextureNames().then(async names => {
+  const look = tr.look = blockTextureNames().then(async names => {
     if (!names.size) return null;
     const tints = biomeTints(biome), keys = new Map(), faces = tr.pal.map(e => blockTextures(e, n => names.has(n)));
     faces.forEach(list => (list || []).forEach(f => {
@@ -3426,12 +3426,24 @@ function loadBlockLook(tr, biome) {
     // The page's own tiles first, for any block the jar has no texture for.
     const { tex, rects } = makeAtlas([...PLAIN_TILES.map(k => () => plainPixels(k)),
       ...usable.map(f => () => tilePixels(images.get(f.tex), f.overlay ? null : rgb(f.tint), images.get(f.overlay), rgb(f.tint)))]);
+    // Another replay was opened meanwhile, or this one again, which started over.
+    if (tr.look !== look || !v3.rp || v3.rp.terrain !== tr) {
+      tex.dispose();
+      if (tr.look === look) tr.look = null;
+      return null;
+    }
     const rectOf = new Map(usable.map((f, k) => [f.key, rects[k + PLAIN_TILES.length]]));
     tr.textures = { tex, white: rects[0], blades: rects[1], tangle: rects[2], leafy: rects[3],
       faces: faces.map(list => list && list.map(f => (f && rectOf.has(f.key) ? { r: rectOf.get(f.key), rot: !!f.rot } : null))) };
     return tr.textures;
   }).catch(err => { console.error(err); return null; });
-  return tr.look;
+  return look;
+}
+
+/** Frees a replay's atlas once it leaves the scene; opening it again builds it again from the images already loaded. */
+function forgetBlockLook(tr) {
+  if (tr.textures) tr.textures.tex.dispose();
+  tr.look = tr.textures = null;
 }
 
 // ---- the meshes ----
@@ -4151,6 +4163,7 @@ function poseFighterMob(f, p, poses, k, t, ti, swingQ, hurtQ) {
 function setReplay3D(rp) {
   const THREE = v3.T;
   if (v3.root) { disposeTree(v3.root); v3.scene.remove(v3.root); }
+  if (v3.rp && v3.rp.terrain !== rp.terrain) forgetBlockLook(v3.rp.terrain);
   const root = v3.root = new THREE.Group();
   v3.scene.add(root);
   v3.rp = rp;
