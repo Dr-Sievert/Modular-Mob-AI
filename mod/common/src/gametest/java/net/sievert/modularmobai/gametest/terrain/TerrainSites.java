@@ -127,8 +127,13 @@ public final class TerrainSites {
      */
     public record Site(int index, BlockPos agent, BlockPos opponent, AABB bounds) {}
 
-    /** Fights a site hosts before it is swapped for fresh ground, once a spare is ready to take its place. */
-    private static final int SITE_FIGHTS = 25;
+    /**
+     * Fights a site hosts before it is swapped for fresh ground, once a spare is ready to take its place. Every swap
+     * generates a new site and the ring of part generated chunks around it, which is most of what a worker's other cores
+     * do: at twenty five, a worker running flat out generated a new site several times a second. A site that keeps
+     * running out the clock is swapped sooner anyway, see {@link #SITE_TIMEOUTS}.
+     */
+    private static final int SITE_FIGHTS = 100;
 
     /** Fights on a site that run out the clock before it is taken out of use: two says it is the ground, not luck. */
     private static final int SITE_TIMEOUTS = 2;

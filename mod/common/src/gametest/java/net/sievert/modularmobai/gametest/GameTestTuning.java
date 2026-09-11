@@ -152,7 +152,8 @@ public final class GameTestTuning {
     /**
      * Which fights to run: {@code arena}, the agent against a vindicator in a closed nine block box on a flat world, which
      * boots in seconds and is the quick check; or {@code terrain}, the same fight out in the open on natural ground,
-     * which is what training uses.
+     * which is what training uses. {@code mechanics} runs no fights at all, only short tests of the agent's body against a
+     * player's rules, in the arena's box.
      */
     public static String suite() {
 
