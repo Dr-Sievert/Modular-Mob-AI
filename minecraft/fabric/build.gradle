@@ -1,0 +1,84 @@
+plugins {
+    id 'multiloader-loader'
+    id 'fabric-loom'
+}
+dependencies {
+    minecraft "com.mojang:minecraft:${minecraft_version}"
+    mappings loom.layered {
+        officialMojangMappings()
+        parchment("org.parchmentmc.data:parchment-${parchment_minecraft}:${parchment_version}@zip")
+    }
+    modImplementation "net.fabricmc:fabric-loader:${fabric_loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${fabric_version}"
+}
+
+loom {
+    def aw = project(':common').file("src/main/resources/${mod_id}.accesswidener")
+    if (aw.exists()) {
+        accessWidenerPath.set(aw)
+    }
+    mixin {
+        defaultRefmapName.set("${mod_id}.refmap.json")
+    }
+    runs {
+        client {
+            client()
+            setConfigName('Fabric Client')
+            ideConfigGenerated(true)
+            runDir('runs/client')
+        }
+        server {
+            server()
+            setConfigName('Fabric Server')
+            ideConfigGenerated(true)
+            runDir('runs/server')
+        }
+    }
+}
+
+// Game test wiring. The client and server runs also load the game test source set so the tests can be driven by hand with
+// '/test runall' in a normal dev world, while runGametest boots a headless server that runs them all and exits.
+loom {
+    // Without this the loader treats the game test output directories as a separate mod and the test structures under
+    // data/ are never added to the mod's resources. Declaring the source sets groups them into one mod on the classpath.
+    mods {
+        "${mod_id}" {
+            sourceSet sourceSets.main
+            sourceSet sourceSets.gametest
+        }
+    }
+
+    runs {
+        client {
+            source(sourceSets.gametest)
+        }
+        server {
+            source(sourceSets.gametest)
+        }
+        gametest {
+            server()
+            setConfigName('Fabric Game Test')
+            ideConfigGenerated(true)
+            source(sourceSets.gametest)
+            runDir('runs/gametest')
+            vmArg('-Dfabric-api.gametest')
+
+            // Per run overrides for the knobs on GameTestTuning, whose defaults are the fastest measured settings.
+            vmArg("-Dmodular_mob_ai.gametest.batchSize=${providers.gradleProperty('batchSize').getOrElse('')}")
+            vmArg("-Dmodular_mob_ai.gametest.ticksPerSecond=${providers.gradleProperty('ticksPerSecond').getOrElse('')}")
+            vmArg("-Dmodular_mob_ai.gametest.reusePlots=${providers.gradleProperty('reusePlots').getOrElse('')}")
+
+            // Name a file to write the per tick dataset; a relative path lands in the run directory.
+            vmArg("-Dmodular_mob_ai.gametest.capture=${providers.gradleProperty('capture').getOrElse('')}")
+
+            // Overrides the arena count the test declares, without recompiling.
+            vmArg("-Dmodular_mob_ai.gametest.arenas=${providers.gradleProperty('arenas').getOrElse('')}")
+
+            // Which brain drives the agents: scripted (the default) needs nothing, remote needs the training process.
+            vmArg("-Dmodular_mob_ai.brain=${providers.gradleProperty('brain').getOrElse('')}")
+            vmArg("-Dmodular_mob_ai.brain.host=${providers.gradleProperty('brainHost').getOrElse('')}")
+            vmArg("-Dmodular_mob_ai.brain.port=${providers.gradleProperty('brainPort').getOrElse('')}")
+            vmArg("-Dfabric-api.gametest.report-file=${project.layout.buildDirectory.get().asFile}/gametest/report.xml")
+        }
+    }
+}

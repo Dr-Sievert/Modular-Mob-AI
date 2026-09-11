@@ -23,6 +23,9 @@ plugins {
 
 // This should match the folder name of the project, or else IDEA may complain (see https://youtrack.jetbrains.com/issue/IDEA-317606)
 rootProject.name = 'Modular-Mob-AI'
-include('common')
-include('fabric')
-include('neoforge')
+// Everything Minecraft related lives under a single folder, so the root stays free for the rest of the project.
+// The project paths stay flat, so a subproject is still :common, :fabric or :neoforge no matter where its files sit.
+['common', 'fabric', 'neoforge'].each { name ->
+    include(name)
+    project(":$name").projectDir = file("minecraft/$name")
+}

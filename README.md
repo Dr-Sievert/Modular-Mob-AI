@@ -24,14 +24,14 @@ Loader specific projects such as the `fabric` and `neoforge` project are used to
 
 ## Game Tests
 Game tests live in a `gametest` source set that sits next to `main` in every project. Like the main sources, the tests are
-written once in `common/src/gametest` and compiled into each loader project, so a single test runs on both Fabric and
+written once in `minecraft/common/src/gametest` and compiled into each loader project, so a single test runs on both Fabric and
 NeoForge. The whole game test framework is vanilla, only the registration of a test holder is loader specific.
 
 | Path | Holds |
 | --- | --- |
-| `common/src/gametest` | The test framework, the utilities, the game test mixins, and the tests themselves. |
-| `fabric/src/gametest` | The `fabric-gametest` entry point and the Fabric implementation of the game test services. |
-| `neoforge/src/gametest` | The `@GameTestHolder` entry point and the NeoForge implementation of the game test services. |
+| `minecraft/common/src/gametest` | The test framework, the utilities, the game test mixins, and the tests themselves. |
+| `minecraft/fabric/src/gametest` | The `fabric-gametest` entry point and the Fabric implementation of the game test services. |
+| `minecraft/neoforge/src/gametest` | The `@GameTestHolder` entry point and the NeoForge implementation of the game test services. |
 
 Run them headless, which boots a server, runs every test, and exits:
 
@@ -40,14 +40,14 @@ gradlew :fabric:runGametest
 gradlew :neoforge:runGameTestServer
 ```
 
-Fabric writes a JUnit report to `fabric/build/gametest/report.xml`. The normal client and server runs also load the game
+Fabric writes a JUnit report to `minecraft/fabric/build/gametest/report.xml`. The normal client and server runs also load the game
 test source set, so tests can be driven by hand in a dev world with `/test runall`.
 
 ### Writing a test
-Add a class under `common/src/gametest/java/net/sievert/modularmobai/gametest/tests`, annotate it with `@GameTestGroup`, and
+Add a class under `minecraft/common/src/gametest/java/net/sievert/modularmobai/gametest/tests`, annotate it with `@GameTestGroup`, and
 list it in `ModularMobAiGameTests`. Each `@GameTest` method resolves its structure as `<namespace>:gametest/<path>/<template>`, so
 `@GameTest(template = "arena")` in a group with no path loads
-`common/src/gametest/resources/data/modular_mob_ai/structure/gametest/arena.nbt`. Those structures only need to declare
+`minecraft/common/src/gametest/resources/data/modular_mob_ai/structure/gametest/arena.nbt`. Those structures only need to declare
 the size of the region the test owns; building the scenery inside it is the test's job.
 
 Tests must not import loader specific code. Anything a test needs from a loader goes through `GameTestServices`, which

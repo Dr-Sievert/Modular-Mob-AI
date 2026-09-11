@@ -321,6 +321,18 @@ afterEvaluate {
 
                     command += "-Dmodular_mob_ai.gametest.capture=${new File(dir, providers.gradleProperty('capture').get()).absolutePath}".toString()
                 }
+
+                // Which brain drives the agents. Every worker connects to the same training process; the shard index
+                // already on the command line is what tells it which worker is which.
+                ['brain', 'brainHost', 'brainPort'].each { name ->
+
+                    if (providers.gradleProperty(name).isPresent()) {
+
+                        def key = name == 'brain' ? 'modular_mob_ai.brain' : 'modular_mob_ai.brain.' + name.substring(5).toLowerCase()
+                        command += "-D${key}=${providers.gradleProperty(name).get()}".toString()
+                    }
+                }
+
                 command += "-Dfabric-api.gametest.report-file=${new File(dir, 'report.xml').absolutePath}".toString()
 
                 command += classpathArgs
@@ -415,6 +427,8 @@ afterEvaluate {
             def durations = []
             def serverTicks = 0L
             def testSeconds = []
+            def wins = 0L
+            def losses = 0L
 
             processes.each { entry ->
 
@@ -430,6 +444,16 @@ afterEvaluate {
                     if (trimmed.startsWith('#serverTicks')) {
 
                         serverTicks += trimmed.split(/\s+/)[1] as long
+                    }
+
+                    else if (trimmed.startsWith('#wins')) {
+
+                        wins += trimmed.split(/\s+/)[1] as long
+                    }
+
+                    else if (trimmed.startsWith('#losses')) {
+
+                        losses += trimmed.split(/\s+/)[1] as long
                     }
 
                     else if (trimmed.startsWith('#seconds')) {
@@ -453,19 +477,34 @@ afterEvaluate {
 
                 def fmt = { double ticks -> String.format(Locale.ROOT, "%7.1f ticks (%5.2f seconds)", ticks, ticks / 20.0d) }
 
-                println "========= Villager time to death over ${durations.size()} runs, ${workers} workers ========="
+                println "========= Arena results over ${durations.size()} runs, ${workers} workers ========="
                 println "  minimum      " + fmt(durations.min() as double)
                 println "  maximum      " + fmt(durations.max() as double)
                 println "  average      " + fmt(average)
+
+                if (wins + losses > 0L) {
+
+                    println String.format(Locale.ROOT, "  won          %,7d (%5.1f%%)", wins, 100.0d * wins / (wins + losses))
+                    println String.format(Locale.ROOT, "  lost         %,7d (%5.1f%%)", losses, 100.0d * losses / (wins + losses))
+                }
+
+                // Throughput is measured against the time the workers spent testing, never the wall clock. They boot
+                // alongside each other, so the testing window is however long the slowest one took; dividing by the wall
+                // clock instead folds half a minute of starting virtual machines into a figure that is supposed to say
+                // how fast arenas run, and makes a short run look far slower than a long one on the same machine.
+                def testingSeconds = testSeconds.isEmpty() ? seconds : testSeconds.max() as double
 
                 if (serverTicks > 0L) {
 
                     def dead = 1.0d - arenaTicks / (double) (serverTicks * slots)
 
-                    println String.format(Locale.ROOT, "  server ticks %,d in %.2f s", serverTicks, seconds)
-                    println String.format(Locale.ROOT, "  arena ticks  %,d (%,.1f per second)", arenaTicks, arenaTicks / seconds)
+                    println String.format(Locale.ROOT, "  server ticks %,d in %.2f s of testing", serverTicks, testingSeconds)
+                    println String.format(Locale.ROOT, "  arena ticks  %,d (%,.1f per second of testing)", arenaTicks, arenaTicks / testingSeconds)
                     println String.format(Locale.ROOT, "  dead ticks   %.1f%% of %,d batch slots", dead * 100.0d, slots)
                 }
+
+                println String.format(Locale.ROOT, "  wall clock   %.2f s, %.2f s of it starting %,d workers",
+                        seconds, Math.max(0.0d, seconds - testingSeconds), workers)
 
                 println "=" * 60
             }

@@ -1,0 +1,6 @@
+# Only numpy is needed to run the server against a stub policy, which is enough to prove the connection.
+numpy>=1.26
+
+# The network itself. Install the build that matches your CUDA version from https://pytorch.org rather than this line if
+# you want the GPU.
+torch>=2.2
