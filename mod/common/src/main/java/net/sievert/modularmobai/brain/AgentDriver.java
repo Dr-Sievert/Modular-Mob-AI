@@ -27,7 +27,7 @@ public final class AgentDriver {
 
     private static final EntityTypeTest<Entity, AgentMob> AGENTS = EntityTypeTest.forClass(AgentMob.class);
 
-    /** One per brain ever seen here, kept so their buffers are reused tick after tick. */
+    /** One per brain driving anyone here, kept so their buffers are reused tick after tick. */
     private final Map<Brain, AgentBatch> batches = new IdentityHashMap<>();
 
     private long lastTick = Long.MIN_VALUE;
@@ -63,9 +63,9 @@ public final class AgentDriver {
             this.batches.computeIfAbsent(state.brain(), AgentBatch::new).add(agent);
         }
 
-        for (AgentBatch batch : this.batches.values()) {
-
-            batch.run();
-        }
+        // A brain that drove nobody this tick is done here for now: a checkpoint whose evaluation fight is over, a frozen
+        // copy the league has stopped fielding. Its batch goes with it, or this map would keep every set of weights ever
+        // fought with alive for the rest of the process; one that comes back simply gets a new batch.
+        this.batches.values().removeIf(batch -> !batch.run());
     }
 }

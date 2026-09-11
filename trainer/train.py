@@ -28,6 +28,7 @@ import numpy as np
 
 from mmai import log
 from mmai.evaluate import Evaluator
+from mmai.league import League
 from mmai.ppo import Config, Trainer
 from mmai.rollout import ShardHeader, read_header, read_shard
 from mmai.run import TRAINING, WAITING, RunDirectory, Workers
@@ -219,6 +220,12 @@ def loop(run: RunDirectory, trainer: Trainer, config: Config, schema: Schema, ke
     evaluator = Evaluator(run, config.checkpoint_every, config.eval_fights, config.eval_patience, config.eval_target)
     done = False
 
+    # A league run's matchmaking and ratings, brought up to date before the first round so its workers start from them.
+    league = League(run, config) if config.league else None
+
+    if league is not None:
+        league.update(trainer.iteration)
+
     while True:
         iteration = trainer.iteration
 
@@ -262,6 +269,9 @@ def loop(run: RunDirectory, trainer: Trainer, config: Config, schema: Schema, ke
         # Done is said once, and the round under way is still learned from to its end: the build only stops starting
         # new ones, and the workers already fighting wait on this side for their next weights.
         reason = evaluator.update(trainer.iteration)
+
+        if league is not None:
+            league.update(trainer.iteration)
 
         if reason and not done:
             done = True

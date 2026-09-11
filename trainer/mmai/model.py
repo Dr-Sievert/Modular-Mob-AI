@@ -259,9 +259,11 @@ class RunningNormalizer:
         self.floor = floor
 
     def update(self, batch: Tensor) -> None:
+        """Takes in a batch of rows, which may be on any device; the statistics themselves stay on the CPU."""
+
         batch = batch.reshape(-1, batch.shape[-1]).to(torch.float64)
-        batch_mean = batch.mean(0)
-        batch_var = batch.var(0, unbiased=False)
+        batch_mean = batch.mean(0).cpu()
+        batch_var = batch.var(0, unbiased=False).cpu()
         batch_count = batch.shape[0]
 
         delta = batch_mean - self.mean

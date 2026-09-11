@@ -6,24 +6,38 @@
 #   scripts\test.ps1 -Arenas 200
 #   scripts\test.ps1 -Terrain -Replays  every fight written down for watching, in runs\gametest\replays
 #   scripts\test.ps1 -Mechanics         no fights: the agent's bows, shields, blocks and the rest against a player's rules
+#   scripts\test.ps1 -League            54 fights on terrain, twice round every league opponent, then how each went
+#   scripts\test.ps1 -League -Weights runs\x\best.mbw
+#                                       a network drives the agents instead, and fights a frozen copy of itself as well
 #   scripts\test.ps1 -Play              the agent in a real game: networks in the jar, /mmai, sides, Infinity loadouts
-#   scripts\test.ps1 -Play -Loader neoforge   the same on NeoForge
+#   scripts\test.ps1 -Play -Loader neoforge   any suite on NeoForge rather than Fabric
 
 param(
     [int] $Arenas = 20,
     [switch] $Terrain,
     [switch] $Mechanics,
+    [switch] $League,
     [switch] $Play,
+    [string] $Weights = '',
     [switch] $Replays,
     [ValidateSet('fabric', 'neoforge')] [string] $Loader = 'fabric'
 )
 
 . "$PSScriptRoot\_common.ps1"
 
-$suite = if ($Play) { 'play' } elseif ($Mechanics) { 'mechanics' } elseif ($Terrain) { 'terrain' } else { 'arena' }
+$suite = if ($Play) { 'play' } elseif ($Mechanics) { 'mechanics' } elseif ($League) { 'league' } elseif ($Terrain) { 'terrain' } else { 'arena' }
 $replayEvery = if ($Replays) { 1 } else { 0 }
+
+# Twice round the league's twenty six mobs and the scripted fighter, unless asked for another number.
+if ($League -and -not $PSBoundParameters.ContainsKey('Arenas')) {
+
+    $Arenas = 54
+}
+
+# The game runs in a folder of its own under mod\, so a path relative to here would not be found from there.
+$brain = if ($Weights) { @('-Pbrain=neural', "-PbrainWeights=$((Resolve-Path $Weights).Path)") } else { @() }
 
 # The two loaders name their headless test run differently.
 $task = if ($Loader -eq 'neoforge') { ':neoforge:runGameTestServer' } else { ':fabric:runGametest' }
 
-Invoke-Gradle @($task, "-Parenas=$Arenas", "-Psuite=$suite", "-PreplayEvery=$replayEvery")
+Invoke-Gradle (@($task, "-Parenas=$Arenas", "-Psuite=$suite", "-PreplayEvery=$replayEvery") + $brain)

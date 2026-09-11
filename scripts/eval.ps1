@@ -4,6 +4,8 @@
 #   scripts\eval.ps1 -Run wide -Iteration 400
 #   scripts\eval.ps1 -Arenas 400 -Suite arena
 #   scripts\eval.ps1 -Weights models\vs-copy\best.mbw   a network from anywhere, such as one scripts\publish.ps1 put in git
+#   scripts\eval.ps1 -Run league -Suite league   round every league opponent in turn, a frozen copy of itself included,
+#                                               and a table of how it went against each at the end
 #
 # Starting the workers costs the same however many fights follow, and 2,000 fights put the win rate within about a
 # point either way, where 400 leave it within two and a half.
@@ -17,7 +19,7 @@ param(
     [int] $Workers = 8,
     [int] $Slots = 25,
     [string] $Heap = '1280M',
-    [ValidateSet('terrain', 'arena')] [string] $Suite = 'terrain',
+    [ValidateSet('terrain', 'arena', 'league')] [string] $Suite = 'terrain',
     [int] $ReplayEvery = 0
 )
 

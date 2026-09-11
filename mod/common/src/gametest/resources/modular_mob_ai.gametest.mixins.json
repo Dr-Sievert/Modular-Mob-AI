@@ -4,6 +4,7 @@
   "package": "net.sievert.modularmobai.gametest.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "BreezeMixin",
     "ChunkMapMixin",
     "GameTestBatchFactoryMixin",
     "GameTestServerMixin",
@@ -11,6 +12,7 @@
     "MinecraftServerMixin",
     "ServerChunkCacheMixin",
     "ServerLevelMixin",
+    "SlimeInvoker",
     "VillagerMixin"
   ],
   "client": [],

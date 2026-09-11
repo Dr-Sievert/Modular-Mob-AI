@@ -110,6 +110,34 @@ class Config:
     eval_patience: int = 10
     eval_target: float = 0.995
 
+    # The league, for a run on the league suite, which the build turns on; see league.py. Off for every other suite.
+    league: bool = False
+
+    # Frozen checkpoints the agent meets in self play: this many, the newest league_recent of them and the rest spread
+    # over the run so far. They get league_self_play of the training fights, the mobs and the scripted fighter the rest.
+    league_pool: int = 8
+    league_recent: int = 4
+    league_self_play: float = 0.2
+
+    # Of each of those two shares, how much is spread evenly over its opponents whatever the agent's chances, so none
+    # is forgotten. The rest goes by how close to an even fight each one is.
+    league_floor: float = 0.25
+
+    # What the agent's training fights against an opponent still count for an iteration later, and how many fights'
+    # worth the ratings' guess at its chances is worth beside them.
+    league_decay: float = 0.98
+    league_prior: float = 10.0
+
+    # Elo: how far one rated fight moves a rating, twice that for a player's first league_provisional of them, where
+    # everyone starts, and whose rating never moves, so the scale means the same in every run.
+    league_k: float = 16.0
+    league_provisional: int = 30
+    league_initial: float = 1500.0
+    league_anchor: str = "scripted"
+
+    # How many of the most recent fights against each opponent, and with each loadout, the tables go by.
+    league_window: int = 200
+
 
 @dataclass
 class Replayed:
@@ -230,7 +258,7 @@ class Trainer:
 
         # The statistics move after the update, never before it: the log probabilities the game recorded were worked out
         # behind the ones it was given, and shifting them first would make every ratio in this update a lie.
-        self._refresh_normalizer(segments)
+        self._refresh_normalizer(segments, batch)
 
         drift = max((float(np.abs(replayed[index].log_probs - segments[index].log_probs).max())
                      for index in range(len(segments)) if segments[index].steps > 0), default=0.0)
@@ -330,6 +358,19 @@ class Trainer:
             log_probs = log_probs.cpu().numpy()
             starts = hidden.cpu().numpy()
 
+            lengths = np.array([segments[index].steps for index in group], dtype=np.int64)
+            done = np.array([segments[index].done for index in group], dtype=bool)
+
+            # Nothing follows a fight that ended; one that was only cut off is worth whatever the critic says.
+            bootstraps = np.where(done, 0.0, values[np.arange(len(group)), lengths].astype(np.float64))
+
+            rewards = np.zeros((len(group), width), dtype=np.float32)
+
+            for row, index in enumerate(group):
+                rewards[row, : lengths[row]] = scaled[index]
+
+            advantages_all = self._advantages(rewards, values, lengths, bootstraps, done)
+
             for row, index in enumerate(group):
                 segment = segments[index]
                 steps = segment.steps
@@ -337,10 +378,9 @@ class Trainer:
                 # The memory going into a step is the memory coming out of the one before it.
                 hidden_in = np.concatenate([starts[row : row + 1], memory[row, : steps - 1]], axis=0)
 
-                # Nothing follows a fight that ended; one that was only cut off is worth whatever the critic says.
-                bootstrap = 0.0 if segment.done else float(values[row, steps])
-
-                advantages, returns = self._advantages(scaled[index], values[row, :steps], bootstrap, segment.done)
+                bootstrap = float(bootstraps[row])
+                advantages = advantages_all[row, :steps]
+                returns = advantages + values[row, :steps]
 
                 replayed[index] = Replayed(
                     hidden_in=hidden_in,
@@ -355,69 +395,78 @@ class Trainer:
 
         return [item for item in replayed if item is not None]
 
-    def _advantages(self, rewards: np.ndarray, values: np.ndarray, bootstrap: float, done: bool):
-        """Generalised advantage estimation over one segment."""
+    def _advantages(self, rewards: np.ndarray, values: np.ndarray, lengths: np.ndarray, bootstraps: np.ndarray,
+                    done: np.ndarray) -> np.ndarray:
+        """Generalised advantage estimation over a padded group of segments at once, a time step at a time from the end.
+
+        Every segment gets exactly the arithmetic it would on its own, in doubles and in the same order, and the result is
+        rounded to a float the same way: only the loop over segments has gone, which in Python was a call per step.
+        """
 
         config = self.config
-        steps = rewards.shape[0]
-        advantages = np.zeros(steps, dtype=np.float32)
-        running = 0.0
+        rows, width = rewards.shape
+        advantages = np.zeros((rows, width), dtype=np.float32)
+        running = np.zeros(rows, dtype=np.float64)
+        everyone = np.arange(rows)
 
-        for step in reversed(range(steps)):
-            last = step == steps - 1
-            following = bootstrap if last else float(values[step + 1])
-            carries = 0.0 if (last and done) else 1.0
+        for step in range(int(lengths.max(initial=0)) - 1, -1, -1):
+            active = lengths > step
 
-            delta = float(rewards[step]) + config.gamma * following * carries - float(values[step])
-            running = delta + config.gamma * config.gae_lambda * carries * running
-            advantages[step] = running
+            if not active.any():
+                continue
 
-        return advantages, advantages + values
+            last = lengths - 1 == step
+            following = np.where(last, bootstraps, values[everyone, np.minimum(step + 1, width - 1)].astype(np.float64))
+            carries = np.where(last & done, 0.0, 1.0)
+
+            delta = rewards[:, step].astype(np.float64) + config.gamma * following * carries - values[:, step].astype(np.float64)
+            running = np.where(active, delta + config.gamma * config.gae_lambda * carries * running, running)
+            advantages[:, step] = np.where(active, running, 0.0)
+
+        return advantages
 
     def _chunks(self, segments: list[Segment], replayed: list[Replayed]) -> dict[str, Tensor]:
-        """Cuts the segments into fixed length chunks, each remembering the memory it starts from."""
+        """Cuts the segments into fixed length chunks, each remembering the memory it starts from.
+
+        Every chunk is the next seq_len steps of its segment, zero padded at the end of the segment, in segment order.
+        Worked out as one index per chunk and step into all the segments' steps laid end to end, and gathered on the
+        device, rather than a slice and a pad per chunk and field.
+        """
 
         length = self.config.seq_len
+        device = self.device
 
-        obs, hidden_in, memory, actions, log_probs, advantages, returns, values, mask = [], [], [], [], [], [], [], [], []
+        steps = np.array([segment.steps for segment in segments], dtype=np.int64)
+        offsets = np.cumsum(steps) - steps
+        per_segment = -(-steps // length)
+        owner = np.repeat(np.arange(len(segments)), per_segment)
+        first = (np.arange(int(per_segment.sum())) - np.repeat(np.cumsum(per_segment) - per_segment, per_segment)) * length
 
-        for segment, data in zip(segments, replayed):
-            for start in range(0, segment.steps, length):
-                end = min(start + length, segment.steps)
-                size = end - start
-                pad = length - size
+        position = first[:, None] + np.arange(length)[None, :]
+        valid = position < steps[owner][:, None]
+        rows = np.where(valid, offsets[owner][:, None] + position, 0)
 
-                def padded(array: np.ndarray) -> np.ndarray:
-                    piece = array[start:end]
+        rows_on_device = torch.from_numpy(rows).to(device)
+        valid_on_device = torch.from_numpy(valid).to(device)
 
-                    if pad == 0:
-                        return piece
+        def gathered(pieces: list[np.ndarray]) -> Tensor:
+            flat = torch.from_numpy(np.concatenate(pieces)).to(device)
+            chunks = flat[rows_on_device]
+            chunks[~valid_on_device] = 0
+            return chunks
 
-                    return np.concatenate([piece, np.zeros((pad,) + piece.shape[1:], dtype=piece.dtype)])
-
-                obs.append(padded(segment.obs[: segment.steps]))
-                actions.append(padded(segment.actions))
-                log_probs.append(padded(segment.log_probs))
-                hidden_in.append(data.hidden_in[start])
-                memory.append(padded(data.memory))
-                advantages.append(padded(data.advantages))
-                returns.append(padded(data.returns))
-                values.append(padded(data.values))
-                mask.append(np.concatenate([np.ones(size, dtype=bool), np.zeros(pad, dtype=bool)]))
-
-        def stacked(arrays: list[np.ndarray]) -> Tensor:
-            return torch.from_numpy(np.stack(arrays)).to(self.device)
+        hidden_in = torch.from_numpy(np.concatenate([data.hidden_in for data in replayed])).to(device)
 
         return {
-            "obs": stacked(obs),
-            "hidden": stacked(hidden_in),
-            "memory": stacked(memory),
-            "actions": stacked(actions),
-            "log_probs": stacked(log_probs),
-            "advantages": stacked(advantages),
-            "returns": stacked(returns),
-            "values": stacked(values),
-            "mask": stacked(mask),
+            "obs": gathered([segment.obs[: segment.steps] for segment in segments]),
+            "hidden": hidden_in[torch.from_numpy(offsets[owner] + first).to(device)],
+            "memory": gathered([data.memory for data in replayed]),
+            "actions": gathered([segment.actions for segment in segments]),
+            "log_probs": gathered([segment.log_probs for segment in segments]),
+            "advantages": gathered([data.advantages for data in replayed]),
+            "returns": gathered([data.returns for data in replayed]),
+            "values": gathered([data.values for data in replayed]),
+            "mask": valid_on_device,
         }
 
     def _learn(self, batch: dict[str, Tensor]) -> dict:
@@ -670,12 +719,15 @@ class Trainer:
 
         return log_prob
 
-    def _refresh_normalizer(self, segments: list[Segment]) -> None:
+    def _refresh_normalizer(self, segments: list[Segment], batch: dict[str, Tensor]) -> None:
+        """Every observation the iteration saw, the rows each segment ended on included, from the chunks already on the
+        device: laid end to end and turned into doubles on the CPU it was a fifth of a second of every update."""
+
         if not segments:
             return
 
-        rows = np.concatenate([segment.obs for segment in segments])
-        self.normalizer.update(torch.from_numpy(rows))
+        ends = torch.from_numpy(np.stack([segment.obs[segment.steps] for segment in segments])).to(self.device)
+        self.normalizer.update(torch.cat([batch["obs"][batch["mask"]], ends]))
         self.normalizer.into(self.actor)
 
     def _fall_back_to_cpu(self) -> None:

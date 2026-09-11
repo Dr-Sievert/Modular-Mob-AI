@@ -1,0 +1,158 @@
+# The league of a run on the league suite: every player by rating with its tier, how the agent does against each
+# opponent, and with each loadout. Only reads the files the trainer keeps in runs\<run>\league, so it can be run at any
+# time, during the run or after it.
+#
+#   scripts\league.ps1 -Run league              the tier list, the newest checkpoints in it, and the tables
+#   scripts\league.ps1 -Run league -All         every checkpoint that has been rated, not only the newest
+#   scripts\league.ps1 -Test                    the league's unit tests: the Elo arithmetic, matchmaking, the pool
+#
+# Ratings are Elo, from evaluation fights only: a checkpoint on its most likely action against an opponent drawn evenly
+# from everyone, one point for a win, half for a timeout or a draw. The scripted fighter is held at 1500, so the scale
+# means the same in every run. A tier is 150 points wide, which is what a 70% expected score over the tier below comes
+# to; the scripted fighter sits at the bottom of B.
+
+param(
+    [string] $Run = 'default',
+    [int] $Checkpoints = 8,
+    [switch] $All,
+    [switch] $Test
+)
+
+. "$PSScriptRoot\_common.ps1"
+
+if ($Test) {
+
+    # unittest reports on stderr, which Windows PowerShell would take for an error.
+    $ErrorActionPreference = 'Continue'
+
+    Push-Location (Join-Path $Root 'trainer')
+
+    try {
+
+        & $Python -m unittest discover -s tests -v
+    }
+
+    finally {
+
+        Pop-Location
+    }
+
+    if ($LASTEXITCODE -ne 0) {
+
+        throw 'The league''s unit tests failed'
+    }
+
+    return
+}
+
+$directory = Get-RunDirectory $Run
+$league = Join-Path $directory 'league'
+
+if (-not (Test-Path (Join-Path $league 'ratings.csv'))) {
+
+    throw "No league in $league yet. Start one with scripts\train.ps1 -Run $Run -Suite league"
+}
+
+# A table the trainer writes, or nothing while it has not written it yet.
+function Read-Table([string] $File) {
+
+    return @(if (Test-Path $File) { Import-Csv $File })
+}
+
+$ratings = Read-Table (Join-Path $league 'ratings.csv')
+$opponents = Read-Table (Join-Path $league 'opponents.csv')
+$loadouts = Read-Table (Join-Path $league 'loadouts.csv')
+
+# The checkpoint evaluation judged best, which is the one in best.mbw; none until the first has been judged.
+$best = @(Read-Table (Join-Path $directory 'eval.csv') | Where-Object { $_.best -eq '1' }) | Select-Object -Last 1
+$bestName = if ($best) { 'iteration-{0:D6}' -f [int]$best.iteration } else { '' }
+
+function Get-Tier([double] $Rating) {
+
+    foreach ($tier in @(@(1800, 'S'), @(1650, 'A'), @(1500, 'B'), @(1350, 'C'), @(1200, 'D'), @(1050, 'E'))) {
+
+        if ($Rating -ge $tier[0]) {
+
+            return $tier[1]
+        }
+    }
+
+    return 'F'
+}
+
+function Format-Percent([int] $Count, [int] $Of) {
+
+    if ($Of -le 0) {
+
+        return '-'
+    }
+
+    return '{0:N1}' -f (100.0 * $Count / $Of)
+}
+
+# Every mob and the scripted fighter, rated or not yet; of the checkpoints, the newest few that have been rated and the
+# best, or all of them.
+$rated = @($ratings | Where-Object { $_.kind -eq 'checkpoint' -and [int]$_.games -gt 0 } | Sort-Object { $_.player } -Descending)
+$shownCheckpoints = if ($All) { $rated } else { @($rated | Select-Object -First $Checkpoints) + @($rated | Where-Object { $_.player -eq $bestName }) }
+$shownNames = @($shownCheckpoints | ForEach-Object { $_.player } | Select-Object -Unique)
+
+$shown = @($ratings | Where-Object { $_.kind -ne 'checkpoint' -or $shownNames -contains $_.player })
+$totalRated = ($ratings | Where-Object { $_.kind -eq 'checkpoint' } | Measure-Object -Property games -Sum).Sum
+
+Write-Host ("League of run '{0}': {1:N0} rated fights, {2} players, {3} checkpoints rated" -f $Run, $totalRated, $ratings.Count, $rated.Count)
+Write-Host ''
+Write-Host 'Tier list, by rating, with each player''s own rated fights. The scripted fighter is held at 1500; a tier is 150 points.'
+Write-Host ('{0,4}  {1,-4} {2,-20} {3,7} {4,7} {5,6} {6,6} {7,6}' -f '#', 'tier', 'player', 'rating', 'rated', 'won', 'lost', 'drawn')
+
+$rank = 0
+
+foreach ($player in $shown) {
+
+    $rank++
+    $note = if ($player.player -eq $bestName) { '   <- best, in best.mbw' } elseif ([int]$player.games -eq 0) { '   not rated yet' } else { '' }
+
+    Write-Host ('{0,4}  {1,-4} {2,-20} {3,7:N0} {4,7} {5,6} {6,6} {7,6}{8}' -f $rank, (Get-Tier ([double]$player.rating)), $player.player,
+            [double]$player.rating, $player.games, $player.wins, $player.losses, $player.draws, $note)
+}
+
+if (-not $All -and $rated.Count -gt $shownNames.Count) {
+
+    Write-Host ("      {0} older checkpoints left out; -All shows every one" -f ($rated.Count - $shownNames.Count))
+}
+
+if ($opponents.Count -gt 0) {
+
+    Write-Host ''
+    Write-Host 'Against each opponent: the last fights of each kind. Evaluation plays a checkpoint on its most likely action;'
+    Write-Host 'training is the agent exploring. Share is how many of the training fights go to it now.'
+    Write-Host ('{0,-20} {1,7} {2,7}   {3,6} {4,6} {5,6} {6,9} {7,6}   {8,6} {9,6}' -f 'opponent', 'rating', 'share %',
+            'eval', 'won %', 'lost %', 'timeout %', 'draw %', 'train', 'won %')
+
+    foreach ($row in $opponents | Sort-Object { [double]$_.rating } -Descending) {
+
+        $fights = [int]$row.eval_fights
+        $trained = [int]$row.train_fights
+
+        Write-Host ('{0,-20} {1,7:N0} {2,7:N1}   {3,6} {4,6} {5,6} {6,9} {7,6}   {8,6} {9,6}' -f $row.opponent, [double]$row.rating,
+                (100.0 * [double]$row.share), $fights, (Format-Percent $row.eval_wins $fights), (Format-Percent $row.eval_losses $fights),
+                (Format-Percent $row.eval_timeouts $fights), (Format-Percent $row.eval_draws $fights), $trained,
+                (Format-Percent $row.train_wins $trained))
+    }
+}
+
+if ($loadouts.Count -gt 0) {
+
+    Write-Host ''
+    Write-Host 'With each loadout the agent carried: the last fights of each kind.'
+    Write-Host ('{0,-20} {1,6} {2,6} {3,6} {4,9} {5,6}   {6,6} {7,6}' -f 'loadout', 'eval', 'won %', 'lost %', 'timeout %', 'draw %', 'train', 'won %')
+
+    foreach ($row in $loadouts) {
+
+        $fights = [int]$row.eval_fights
+        $trained = [int]$row.train_fights
+
+        Write-Host ('{0,-20} {1,6} {2,6} {3,6} {4,9} {5,6}   {6,6} {7,6}' -f $row.loadout, $fights, (Format-Percent $row.eval_wins $fights),
+                (Format-Percent $row.eval_losses $fights), (Format-Percent $row.eval_timeouts $fights), (Format-Percent $row.eval_draws $fights),
+                $trained, (Format-Percent $row.train_wins $trained))
+    }
+}
