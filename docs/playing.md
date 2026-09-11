@@ -30,7 +30,7 @@ scripts\play.ps1 -World arena             straight into the saved world 'arena' 
 **Check the network loaded.** As soon as a world opens, `logs\latest.log` in the game directory says:
 
 ```
-Loaded C:\...\models\vs-copy\best.mbw from iteration 650: Topology[obsDim=634, ...]
+Loaded C:\...\models\vs-copy\best.mbw from iteration 650: 634 -> 256 -> GRU 128 -> 128 -> 19 (331,019 parameters)
 Agents with no brain of their own run on best.mbw from C:\...\models\vs-copy, iteration 650
 ```
 

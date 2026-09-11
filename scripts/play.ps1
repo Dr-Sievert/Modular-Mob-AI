@@ -10,7 +10,7 @@
 # It is the development client, so the mod is the one in this checkout, built on the way. Every network under models\
 # can be named in the game as well, /mmai brain @e vs-scratch, including ones published after the last build. The log
 # says which network is driving as soon as a world opens:
-#   Loaded ...\models\vs-copy\best.mbw from iteration 650
+#   Loaded ...\models\vs-copy\best.mbw from iteration 650: 634 -> 256 -> GRU 128 -> 128 -> 19 (331,019 parameters)
 #   Agents with no brain of their own run on best.mbw from ...\models\vs-copy, iteration 650
 #
 # In the world: /mmai spawn, /mmai loadout, /mmai brain, /mmai ally, /mmai enemy, /mmai info. See docs\playing.md.

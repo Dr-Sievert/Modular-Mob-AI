@@ -91,7 +91,7 @@ mod\gradlew.bat -p mod :fabric:runGametestParallel -Psuite=terrain -Parenas=2000
 
 | Property | What it does |
 | --- | --- |
-| `suite` | `arena` (closed box), `terrain` (natural ground, what training uses), `mechanics`, `play`, `baseline` (villager against vindicator, no agent) |
+| `suite` | `arena` (closed box), `terrain` (natural ground, what training uses), `league` (terrain, a new opponent every fight), `mechanics`, `play`, `baseline` (villager against vindicator, no agent) |
 | `arenas`, `workers`, `batchSize` | fights, worker processes, fights at once per worker |
 | `brain`, `brainWeights` | `scripted` (default) or `neural` with a `.mbw` file |
 | `replayEvery`, `replayRun` | record one fight in N, into `runs\<replayRun>\replays` |

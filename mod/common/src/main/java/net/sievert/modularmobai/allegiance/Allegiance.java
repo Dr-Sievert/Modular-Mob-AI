@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -203,7 +204,7 @@ public final class Allegiance {
             throw new IllegalArgumentException("Nobody to ally");
         }
 
-        PlayerTeam team = members.stream().map(Allegiance::teamOf).filter(java.util.Objects::nonNull).findFirst()
+        PlayerTeam team = members.stream().map(Allegiance::teamOf).filter(Objects::nonNull).findFirst()
                 .orElseGet(() -> newTeam(members.iterator().next().level().getScoreboard()));
 
         for (Entity member : members) {
@@ -238,7 +239,7 @@ public final class Allegiance {
 
         Scoreboard scoreboard = first.iterator().next().level().getScoreboard();
 
-        PlayerTeam firstTeam = first.stream().map(Allegiance::teamOf).filter(java.util.Objects::nonNull).findFirst()
+        PlayerTeam firstTeam = first.stream().map(Allegiance::teamOf).filter(Objects::nonNull).findFirst()
                 .orElseGet(() -> newTeam(scoreboard));
 
         PlayerTeam secondTeam = second.stream().map(Allegiance::teamOf)
