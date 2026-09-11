@@ -8,6 +8,7 @@
     "AxeItemMixin",
     "BlockItemMixin",
     "LivingEntityMixin",
+    "MobMixin",
     "ProjectileWeaponItemInvoker"
   ],
   "client": [],

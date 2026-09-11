@@ -55,6 +55,14 @@ loom {
         server {
             source(sourceSets.gametest)
         }
+
+        // Which brain drives the agents in a development game, and where networks are looked for by name: what
+        // scripts\play.ps1 passes. Left out, a game runs on its config file, config/modular_mob_ai.properties.
+        [client, server].each { run ->
+            run.vmArg("-Dmodular_mob_ai.brain=${providers.gradleProperty('brain').getOrElse('')}")
+            run.vmArg("-Dmodular_mob_ai.brain.weights=${providers.gradleProperty('brainWeights').getOrElse('')}")
+            run.vmArg("-Dmodular_mob_ai.models=${providers.gradleProperty('models').getOrElse('')}")
+        }
         gametest {
             server()
             setConfigName('Fabric Game Test')

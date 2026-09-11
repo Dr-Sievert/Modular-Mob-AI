@@ -112,9 +112,24 @@ public final class GameTestTuning {
         return property == null || property.isBlank() ? null : property.trim();
     }
 
+    /**
+     * The play suite runs one test at a time, see {@link #soloTests()}; every other suite takes the framework's batches
+     * unless told otherwise.
+     */
     public static int batchSize() {
 
-        return intProperty("batchSize", BATCH_SIZE);
+        return intProperty("batchSize", soloTests() ? 1 : BATCH_SIZE);
+    }
+
+    /**
+     * Whether each test has the world to itself: the play suite's do. Its agents are the ones met in a real game, with no
+     * arena bounding what they see, and a view of 32 blocks reaches across the five block gaps between plots into the
+     * tests either side, where the zombie next door would be the enemy an agent goes for. So its tests run one at a time,
+     * each on the plot the one before it had, cleared first, which takes everything that test left behind with it.
+     */
+    public static boolean soloTests() {
+
+        return "play".equals(suite());
     }
 
     /** How many tests the framework runs at once: the batch size when one is set, fifty, vanilla's own, when not. */
@@ -141,19 +156,21 @@ public final class GameTestTuning {
 
     /**
      * On natural terrain the plots are only bookkeeping underground, but every new one still means generating real
-     * chunks, which is far dearer than clearing the old ones. So there the default flips to reusing them.
+     * chunks, which is far dearer than clearing the old ones. So there the default flips to reusing them, and so it does
+     * for the play suite, whose tests each want the world to themselves, see {@link #soloTests()}.
      */
     public static boolean reusePlots() {
 
         final String property = System.getProperty("modular_mob_ai.gametest.reusePlots");
-        return property == null || property.isBlank() ? REUSE_PLOTS || naturalTerrain() : Boolean.parseBoolean(property);
+        return property == null || property.isBlank() ? REUSE_PLOTS || naturalTerrain() || soloTests() : Boolean.parseBoolean(property);
     }
 
     /**
      * Which fights to run: {@code arena}, the agent against a vindicator in a closed nine block box on a flat world, which
      * boots in seconds and is the quick check; or {@code terrain}, the same fight out in the open on natural ground,
      * which is what training uses. {@code mechanics} runs no fights at all, only short tests of the agent's body against a
-     * player's rules, in the arena's box.
+     * player's rules, in the arena's box. {@code play} is the agent in a real game: the networks the jar carries, the
+     * /mmai commands, sides, and the loadouts a real game gets.
      */
     public static String suite() {
 

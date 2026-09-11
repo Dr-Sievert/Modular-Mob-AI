@@ -114,9 +114,13 @@ mod/                    the Gradle build (MultiLoader: common + fabric + neoforg
     brain/schema/         what an agent sees and does: observation layout and encoder, enemy slots, action layout
     brain/nn/             the network runtime in plain Java: topology, weight file, forward pass, heads, rollout writer
     arena/                a fight someone set up: loadouts, the reward, what the agent may see
-    mixin/                vanilla changes the agent needs (placing, axes, damage payment, bow access)
+    allegiance/           sides: vanilla teams, the agent's enemy rule, mobs going after other teams (see playing.md)
+    command/              /mmai (see playing.md)
+    mixin/                vanilla changes the agent needs (placing, axes, damage payment, bow access, friendly fire,
+                          mobs' goal for other teams)
+    Config.java           config/modular_mob_ai.properties, read by agents in a real game only
   common/src/gametest/java/net/sievert/modularmobai/gametest/
-    tests/                the fights (closed arena, natural terrain) and the mechanics suite
+    tests/                the fights (closed arena, natural terrain), the mechanics suite and the play suite
     terrain/              the terrain sites
     replay/               fight recording for the viewer (FightRecorder, SiteBlocks)
     mixin/                game-test-only server changes: no saving, chunk unloading, no idle chunk ticking

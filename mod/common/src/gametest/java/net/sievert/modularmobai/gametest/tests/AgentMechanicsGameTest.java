@@ -957,16 +957,16 @@ public class AgentMechanicsGameTest {
     /**
      * A brain with nothing of its own to say: it hands each agent back whatever the test last pressed on its controls.
      * The presses still go out through the action vector and come back in through {@link ActionSchema}, as a network's
-     * would.
+     * would. The play suite drives its agents with it too.
      */
-    private static final class HeldControls implements Brain {
+    static final class HeldControls implements Brain {
 
         private static final HeldControls INSTANCE = new HeldControls();
 
         /** Every agent this drives, by entity id, which is what a step names its rows by. */
         private final Int2ObjectMap<AgentMob> agents = new Int2ObjectOpenHashMap<>();
 
-        private static void drive(AgentMob agent) {
+        static void drive(AgentMob agent) {
 
             INSTANCE.agents.put(agent.getId(), agent);
             agent.brain().use(INSTANCE);

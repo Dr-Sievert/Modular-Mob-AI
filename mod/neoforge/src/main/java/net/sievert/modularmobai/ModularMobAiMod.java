@@ -11,14 +11,19 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
+import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.common.DeferredSpawnEggItem;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
+import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent;
+import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.tick.LevelTickEvent;
 import net.neoforged.neoforge.registries.DeferredRegister;
 import net.sievert.modularmobai.brain.AgentDriver;
+import net.sievert.modularmobai.brain.Brains;
+import net.sievert.modularmobai.command.AgentCommands;
 import net.sievert.modularmobai.entity.agent.AgentMobRenderer;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 import net.sievert.modularmobai.entity.ModEntities;
@@ -51,6 +56,8 @@ public class ModularMobAiMod {
 
     public ModularMobAiMod(IEventBus eventBus) {
 
+        Config.load(FMLPaths.GAMEDIR.get(), FMLPaths.CONFIGDIR.get());
+
         ENTITY_TYPES.register(eventBus);
         ITEMS.register(eventBus);
 
@@ -60,6 +67,11 @@ public class ModularMobAiMod {
 
         // Every agent in a level gets its actions at the start of the level's tick, before any entity moves.
         NeoForge.EVENT_BUS.addListener(ModularMobAiMod::driveAgents);
+
+        NeoForge.EVENT_BUS.addListener(ModularMobAiMod::registerCommands);
+
+        // The log says which network drives the agents as soon as a world is open.
+        NeoForge.EVENT_BUS.addListener(ModularMobAiMod::serverStarted);
     }
 
     private static void driveAgents(LevelTickEvent.Pre event) {
@@ -68,6 +80,16 @@ public class ModularMobAiMod {
 
             AgentDriver.tick(level);
         }
+    }
+
+    private static void registerCommands(RegisterCommandsEvent event) {
+
+        AgentCommands.register(event.getDispatcher());
+    }
+
+    private static void serverStarted(ServerStartedEvent event) {
+
+        Brains.serverStarted(event.getServer());
     }
 
     private static void handOver(FMLCommonSetupEvent event) {
