@@ -13,6 +13,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.util.Mth;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.Property;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -66,20 +67,40 @@ final class SiteBlocks {
         int depth = Mth.ceil(area.maxZ) - north;
 
         // Up to the highest block standing on the site, which may be a tree or a cliff somewhat above what the fighters
-        // perceive, but never into the roof of a closed arena, which seen from outside would hide the whole fight.
+        // perceive, but never into the roof of a closed arena, which seen from outside would hide the whole fight. Down to
+        // a few layers under the lowest ground, as the heightmaps have it: the top block that stops movement, leaves left
+        // out and the bed of any water, is the lower of the two heightmaps that leave those out. Under a roof they only
+        // see the roof, so there the blocks go all the way down.
         int surface = Integer.MIN_VALUE;
+        int ground = Integer.MAX_VALUE;
 
         for (int dz = 0; dz < depth; dz++) {
 
             for (int dx = 0; dx < width; dx++) {
 
-                surface = Math.max(surface, level.getHeight(Heightmap.Types.WORLD_SURFACE, west + dx, north + dz));
+                int x = west + dx;
+                int z = north + dz;
+                int bed = Math.min(level.getHeight(Heightmap.Types.OCEAN_FLOOR, x, z),
+                        level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z)) - 1;
+
+                surface = Math.max(surface, level.getHeight(Heightmap.Types.WORLD_SURFACE, x, z));
+
+                if (bed < ceiling - 1) {
+
+                    ground = Math.min(ground, bed);
+                }
             }
         }
 
         int floor = Math.max(level.getMinBuildHeight(), Mth.floor(area.minY));
         int roof = Math.min(Math.min(ceiling, level.getMaxBuildHeight()),
                 Math.max(Mth.ceil(area.maxY), Math.min(surface, Mth.ceil(area.maxY) + OVERHANG)));
+
+        if (ground != Integer.MAX_VALUE) {
+
+            floor = Math.min(Math.max(floor, ground - BASE), roof - 1);
+        }
+
         int height = Math.max(1, roof - floor);
 
         Palette palette = new Palette(level);
@@ -104,6 +125,11 @@ final class SiteBlocks {
                 int z0 = Math.max(north, chunkZ << 4);
                 int z1 = Math.min(north + depth, (chunkZ << 4) + 16);
 
+                // Neighbouring blocks are mostly the same block, stone next to stone, and one seen just before needs no
+                // look-up in the palette.
+                BlockState last = Blocks.AIR.defaultBlockState();
+                int lastIndex = 0;
+
                 for (int y = floor; y < roof; y++) {
 
                     LevelChunkSection section = chunk.getSection(chunk.getSectionIndex(y));
@@ -119,10 +145,13 @@ final class SiteBlocks {
 
                             BlockState state = section.getBlockState(x & 15, y & 15, z & 15);
 
-                            if (!state.isAir()) {
+                            if (state != last) {
 
-                                cells[((y - floor) * depth + (z - north)) * width + (x - west)] = palette.index(state, pos.set(x, y, z));
+                                last = state;
+                                lastIndex = state.isAir() ? 0 : palette.index(state, pos.set(x, y, z));
                             }
+
+                            cells[((y - floor) * depth + (z - north)) * width + (x - west)] = lastIndex;
                         }
                     }
                 }
