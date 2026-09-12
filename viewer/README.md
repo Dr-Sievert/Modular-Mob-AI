@@ -15,6 +15,9 @@ the league standings of every run that has one: see [the league page](#the-leagu
     the answer is kept until a replay appears, goes or is written over. `/` searches it — an opponent, a loadout, a
     biome, a ground, an iteration or a file name — and what each fight was comes from the run's per-fight records; see
     [../docs/viewer.md](../docs/viewer.md).
+  - A checkout with no `runs\` of its own — a git worktree, which is where development happens — reads the main
+    checkout's, found out of the `.git` file the worktree carries and never through a junction, and writes nothing
+    into it.
   - `-League` opens the league standings instead of a replay, and the *League* button in the header goes there too.
   - `-Run imitate` opens that run's newest replay. `-Port 8800` tries that port first; the default is 8765, then the
     next free one.
@@ -103,7 +106,9 @@ event marker jumps there. Press `?` in the page for how to read the views and wh
 What it shows and where every number comes from is in [../docs/viewer.md](../docs/viewer.md). In short: a run picker and
 a second run to read beside it, the tier list with the rating over the checkpoints as a curve, the per-opponent,
 per-loadout and per-ground tables as `scripts\league.ps1` prints them, the per-model stats out of the workers' per-fight
-records, a win rate for every opponent by loadout, and rows that link into the recorded fights of that matchup.
+records, and a matrix of every pairing of an opponent and a loadout: how it went, and how much of the curriculum
+matchmaking is giving it. Every row and every cell opens the recorded fights of that matchup, or, where a run recorded
+none of them, the `scripts\eval.ps1` line that records forty.
 
 The server serves it through three endpoints, all of them read-only:
 

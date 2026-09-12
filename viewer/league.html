@@ -110,10 +110,12 @@ tr.sep td { border-top: 1px solid var(--line2); }
 .watch { display: inline-block; padding: 0 5px; border-radius: 5px; border: 1px solid var(--line2); color: var(--muted);
   background: transparent; cursor: pointer; font: 11px var(--mono); }
 .watch:hover { color: var(--text); border-color: var(--cyan); }
-/* A row with nothing recorded still says how many fights it is about, and still opens: the drawer is where the command
-   that would record some lives. It is drawn flat so a column of them does not read as a column of buttons. */
-.watch.none { border-color: transparent; color: var(--faint); }
-.watch.none:hover { border-color: var(--line2); color: var(--muted); }
+/* A row with nothing recorded is a control like any other: the drawer behind it holds the command that records some,
+   which is the whole answer to "why can I only watch some of these". It was drawn flat once, so that a column of them
+   would not read as a column of buttons, and it read instead as a row the page had nothing for. Dashed keeps the two
+   apart at a glance without taking the offer away. */
+.watch.none { border-style: dashed; color: var(--faint); }
+.watch.none:hover { color: var(--text); }
 
 /* ---- the rating curve --------------------------------------------------------------------------------------- */
 .chart { width: 100%; height: 230px; }
@@ -126,8 +128,15 @@ tr.sep td { border-top: 1px solid var(--line2); }
 .legend i { display: inline-block; width: 18px; height: 3px; border-radius: 2px; vertical-align: 3px; margin-right: 5px; }
 
 /* ---- the matrix --------------------------------------------------------------------------------------------- */
-.matrix td.cell { font: 11.5px var(--mono); text-align: center; padding: 3px 6px; }
+.matrix td.cell { font: 11.5px var(--mono); text-align: center; padding: 3px 6px; position: relative; cursor: pointer; }
 .matrix td.cell.none { color: var(--faint); }
+.matrix td.cell:hover { box-shadow: inset 0 0 0 1px var(--cyan); }
+/* The share of the training fights the pairing is drawn in, under the cell that says how it went: two different things
+   about one pairing, so the second is a line along the bottom rather than a second number to read. */
+.matrix td.cell i { position: absolute; left: 1px; bottom: 1px; height: 2px; border-radius: 1px; background: var(--violet); }
+.matrix .picked { display: inline-flex; gap: 4px; align-items: center; }
+.matrix-note { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 14px;
+  border-bottom: 1px solid var(--line); background: var(--bg2); font-size: 11.5px; color: var(--muted); }
 
 /* ---- the drawer of recorded fights -------------------------------------------------------------------------- */
 .drawer { position: fixed; right: 0; top: 0; bottom: 0; width: min(420px, 92vw); background: var(--bg2); z-index: 20;
@@ -212,6 +221,7 @@ const state = {
   run: '',
   vs: '',
   tab: 'tiers',
+  cells: 'won',
   model: null,
   data: null,
   other: null,
@@ -351,6 +361,7 @@ function readAddress() {
   state.run = query.get('run') || '';
   state.vs = query.get('vs') || '';
   state.tab = TABS.some(([name]) => name === query.get('tab')) ? query.get('tab') : 'tiers';
+  state.cells = CELLS.some(([name]) => name === query.get('cells')) ? query.get('cells') : 'won';
   const model = query.get('model');
   state.model = model && /^\d+$/.test(model) ? Number(model) : null;
 }
@@ -360,6 +371,7 @@ function writeAddress() {
   if (state.run) query.set('run', state.run);
   if (state.vs) query.set('vs', state.vs);
   if (state.tab !== 'tiers') query.set('tab', state.tab);
+  if (state.cells !== 'won') query.set('cells', state.cells);
   if (state.model !== null) query.set('model', String(state.model));
   const url = location.pathname + (query.toString() ? '?' + query : '');
   history.replaceState(null, '', url);
@@ -414,10 +426,10 @@ function table(key, columns, rows, options) {
 const indexes = new WeakMap();
 
 function index(data) {
-  if (!data) return { opponent: new Map(), loadout: new Map(), site: new Map() };
+  if (!data) return { opponent: new Map(), loadout: new Map(), site: new Map(), pair: new Map(), model: new Map() };
   const already = indexes.get(data);
   if (already) return already;
-  const of = { opponent: new Map(), loadout: new Map(), site: new Map() };
+  const of = { opponent: new Map(), loadout: new Map(), site: new Map(), pair: new Map(), model: new Map() };
   const file = (map, key, fight) => {
     if (key === undefined || key === null || key === '') return;
     if (!map.has(key)) map.set(key, []);
@@ -429,6 +441,8 @@ function index(data) {
     file(of.site, fight.site, fight);
     file(of.opponent, fight.iteration + '\t' + fight.opponent, fight);
     file(of.loadout, fight.iteration + '\t' + fight.loadout, fight);
+    file(of.pair, fight.opponent + '\t' + fight.loadout, fight);
+    file(of.model, fight.iteration, fight);
   }
   indexes.set(data, of);
   return of;
@@ -469,8 +483,8 @@ function recordingNote(data) {
  * A row's recorded fights against the fights it is about: "▸ 3 / 214", or "0 / 214" for a row with none. It is the
  * second number that stops an empty cell reading as a page that has lost something — a run records one fight in 200 per
  * worker, so most matchups were never written down at all, and the difference between "none recorded" and "none played"
- * is the whole of what this column is for. Both open the drawer: with none, that is where the command that would record
- * some is.
+ * is the whole of what this column is for. Every row is a control, and no row is ever a dead end: one with recordings
+ * opens the list of them, one with none opens the command that records forty of exactly that matchup.
  */
 function watch(data, title, what, key, fought, ask) {
   const fights = recorded(data, what, key);
@@ -478,6 +492,7 @@ function watch(data, title, what, key, fought, ask) {
   const label = (fights.length ? '▸ ' + fights.length : '0') + (total ? ' / ' + total.toLocaleString() : '');
   const every = recording(data).every;
   return el('button', {
+    type: 'button',
     class: 'watch' + (fights.length ? '' : ' none'),
     title: (fights.length ? fights.length + ' of ' : 'None of ') + (total ? total.toLocaleString() + ' fights' : 'these fights')
            + ' recorded' + (every ? '; training records one fight in ' + every + ' per worker' : '')
@@ -487,17 +502,27 @@ function watch(data, title, what, key, fought, ask) {
 }
 
 /**
+ * A player's name as PowerShell has to be given it. A rung of the difficulty ladder is zombie(hard), and parentheses in
+ * an unquoted argument start a sub-expression: pasted as it stands, the shell would go looking for a command called
+ * hard. Anything but a plain word is quoted, which costs a pair of quotes on a squad and saves the command being wrong.
+ */
+function shellName(name) {
+  return /^[A-Za-z0-9_.-]+$/.test(name) ? name : "'" + String(name).replace(/'/g, "''") + "'";
+}
+
+/**
  * The command that would record fights of this row, from the repository root. An evaluation is the one thing that can be
- * pointed at a matchup: it takes the opponents and the loadouts to fight, and -ReplayEvery 1 writes every fight down.
- * The kind of ground cannot be asked for, so a row about the ground gets the command without it.
+ * pointed at a matchup: it takes the opponents and the loadouts to fight, and -ReplayEvery 1 writes every fight down. A
+ * cell of the matrix asks for both at once, which is one pairing and nothing else. The kind of ground cannot be asked
+ * for, so a row about the ground gets the command without it.
  */
 function recordCommand(run, ask) {
   const weights = ask.iteration === undefined || ask.iteration === null
     ? '-Weights runs\\' + run + '\\best.mbw'
     : '-Run ' + run + ' -Iteration ' + ask.iteration;
   return 'scripts\\eval.ps1 ' + weights + ' -Suite league -Arenas 40 -ReplayEvery 1'
-    + (ask.opponent && ask.opponent !== '-' ? ' -Opponents ' + ask.opponent : '')
-    + (ask.loadout && ask.loadout !== '-' ? ' -Loadouts ' + ask.loadout : '');
+    + (ask.opponent && ask.opponent !== '-' ? ' -Opponents ' + shellName(ask.opponent) : '')
+    + (ask.loadout && ask.loadout !== '-' ? ' -Loadouts ' + shellName(ask.loadout) : '');
 }
 
 /** The head of the drawer: how much of this row was recorded, and, when that is nothing, how to record some. */
@@ -886,6 +911,10 @@ function modelTable(data) {
       title: 'Arrows and bolts loosed per fight' },
     { name: 'armed', value: (one) => one.fights && one.shot_fights / one.fights, num: true,
       title: 'Fights in which it fired at all' },
+    // Every replay of that iteration, which is more than the evaluation fights this row counts: a training fight of the
+    // same iteration is still that checkpoint's body being driven, and is still worth watching.
+    { name: 'recorded', value: (one) => recorded(data, 'model', one.iteration).length, num: true,
+      title: 'Recorded fights of this checkpoint, of the evaluation fights this row counts' },
   ];
 
   return table('models', columns, rows, {
@@ -908,7 +937,9 @@ function modelTable(data) {
       el('td', { class: 'num', text: one.fights ? (one.swaps / one.fights).toFixed(1) : '–' }),
       el('td', { class: 'num', text: one.fights ? (one.uses / one.fights).toFixed(1) : '–' }),
       el('td', { class: 'num', text: one.fights ? (one.shots / one.fights).toFixed(1) : '–' }),
-      el('td', { class: 'num dim', text: percent(one.shot_fights, one.fights) })),
+      el('td', { class: 'num dim', text: percent(one.shot_fights, one.fights) }),
+      el('td', {}, watch(data, 'iteration-' + String(one.iteration).padStart(6, '0'), 'model', one.iteration, one.fights,
+        { iteration: one.iteration }))),
   });
 }
 
@@ -976,36 +1007,130 @@ function modelDetail(data) {
 // ---------------------------------------------------------------------------------------------------------------------
 
 /**
- * Win rate for every opponent against every loadout, over every fight of the run. Sparse by design: matchmaking sends the
- * fights where the fight is even, and the loadout is drawn afresh every fight, so a cell with four fights in it says
- * little and is greyed out for saying it.
+ * What the pair table says, by 'opponent\tloadout': the share of the training fights the matchmaking is drawing that
+ * pairing in now, the chance it reckons the agent has in it, and the faded record that chance leans on. A run trained
+ * before the trainer drew pairings has no league\pairs.csv, and this is simply empty; see trainer\mmai\league.py.
+ */
+function pairings(data) {
+  const of = new Map();
+  for (const row of data.tables.pairs || []) {
+    if (!row.loadout || !row.opponent) continue;
+    of.set(row.opponent + '\t' + row.loadout, { share: number(row.share) || 0, chance: number(row.chance) || 0,
+                                                fights: number(row.fights) || 0, wins: number(row.wins) || 0 });
+  }
+  return of;
+}
+
+/** What the number in a matrix cell is. The colour and the line under it follow it; see matrix. */
+const CELLS = [['won', 'won'], ['share', 'share'], ['chance', 'chance']];
+
+/**
+ * The two things worth knowing about one pairing at once: how it has gone, and how much of the curriculum it is being
+ * given. The colour and the number are the first — the win rate over every fight of the run, green above half and red
+ * below — and the violet line along the bottom of a cell is the second, that pairing's share of the training fights
+ * against the largest share in the table. What the number is can be swapped for the share itself or for the chance the
+ * trainer estimates, which is what it draws on: a pairing whose chance is near half is where it is sending the fights.
+ *
+ * Sparse by design. Matchmaking draws the pairing, so a pairing the agent always wins gets little more than the floor
+ * that keeps everything coming round, and a cell of four fights says little. A row or a column can also come from the
+ * pair table alone: a pairing with a share and no fights yet is where the fights are about to go.
  */
 function matrix(data) {
-  const cells = data.fights.cells;
-  const loadouts = Object.keys(data.fights.loadouts).sort();
-  const opponents = Object.keys(data.fights.opponents).sort();
-  if (!opponents.length) return el('div', { class: 'empty', text: 'No fights recorded yet.' });
+  const cells = data.fights.cells, pairs = pairings(data);
+  const loadouts = new Set(Object.keys(data.fights.loadouts));
+  const opponents = new Set(Object.keys(data.fights.opponents));
+  for (const key of pairs.keys()) {
+    const [opponent, loadout] = key.split('\t');
+    opponents.add(opponent);
+    loadouts.add(loadout);
+  }
+  if (!opponents.size) return el('div', { class: 'empty', text: 'No fights recorded yet.' });
+
+  const columns = [...loadouts].sort(), rows = [...opponents].sort();
+  const shown = pairs.size ? state.cells : 'won';
+  const most = Math.max(0, ...[...pairs.values()].map((one) => one.share)) || 1;
+  // Where each loadout's fights go in all, which is the column's own share of the curriculum.
+  const perLoadout = {};
+  for (const [key, one] of pairs) perLoadout[key.split('\t')[1]] = (perLoadout[key.split('\t')[1]] || 0) + one.share;
 
   const head = el('tr', {}, el('th', { class: 'left flat', text: 'opponent' }),
-    loadouts.map((one) => el('th', { class: 'flat num', text: one })),
+    columns.map((one) => el('th', { class: 'flat num', text: one,
+      title: perLoadout[one] ? one + ' is drawn in ' + percent(perLoadout[one], 1, 1) + ' of the training fights' : null })),
     el('th', { class: 'flat num', text: 'all' }));
 
-  const body = el('tbody', {}, opponents.map((opponent) => el('tr', {},
+  const body = el('tbody', {}, rows.map((opponent) => el('tr', {},
     el('td', { text: opponent }),
-    loadouts.map((loadout) => {
-      const cell = cells[opponent + '\t' + loadout];
-      if (!cell || !cell[0]) return el('td', { class: 'cell none', text: '·' });
-      const rate = cell[1] / cell[0];
+    columns.map((loadout) => {
+      const key = opponent + '\t' + loadout;
+      const cell = cells[key], pair = pairs.get(key);
+      const fought = cell ? cell[0] : 0;
+      const rate = fought ? cell[1] / fought : null;
+      const value = shown === 'share' ? (pair ? pair.share : null)
+                  : shown === 'chance' ? (pair ? pair.chance : null) : rate;
+      const seen = recorded(data, 'pair', key).length;
+      const tint = value === null ? null
+        : shown === 'share'
+          ? 'background: rgba(167,139,250,' + (0.06 + 0.34 * value / most).toFixed(3) + ')'
+          : 'background: rgba(' + (value > 0.5 ? '55,224,122,' : '255,77,97,')
+            + (0.06 + 0.34 * Math.abs(value - 0.5) * 2).toFixed(3) + ')';
       return el('td', {
-        class: 'cell', title: cell[1] + ' of ' + cell[0] + ' fights won',
-        style: 'background: rgba(' + (rate > 0.5 ? '55,224,122,' : '255,77,97,')
-               + (0.06 + 0.34 * Math.abs(rate - 0.5) * 2).toFixed(3) + ')',
-      }, percent(cell[1], cell[0], 0));
+        class: 'cell' + (value === null ? ' none' : ''), 'data-o': opponent, 'data-l': loadout, style: tint,
+        title: [loadout + ' against ' + opponent,
+                fought ? cell[1] + ' of ' + fought + ' fights won' : 'No fights yet',
+                pair ? percent(pair.share, 1, 2) + ' of the training fights, at a chance of ' + percent(pair.chance, 1, 0)
+                       + (pair.fights >= 0.05 ? ' over ' + pair.fights.toFixed(1) + ' faded fights' : ' guessed, nothing recent')
+                     : null,
+                seen ? seen + ' recorded; click to watch them' : 'Nothing recorded; click for the command that records some',
+               ].filter(Boolean).join('\n'),
+      }, value === null ? '·' : percent(value, 1, shown === 'share' ? 2 : 0),
+         pair && pair.share > 0 && shown !== 'share'
+           ? el('i', { style: 'width: calc(' + (100 * pair.share / most).toFixed(1) + '% - 2px)' }) : null);
     }),
-    el('td', { class: 'cell dim', title: 'Every loadout',
+    // The last column is the opponent whatever the agent carried, and opens the fights against it, as its row in the
+    // other tables does.
+    el('td', { class: 'cell dim', 'data-o': opponent, title: 'Every loadout; click for the fights against ' + opponent,
                text: percent((data.fights.opponents[opponent] || [0, 0])[1], (data.fights.opponents[opponent] || [0, 0])[0], 0) }))));
 
-  return el('div', { class: 'scroll' }, el('table', { class: 'matrix' }, el('thead', {}, head), body));
+  // One listener for the whole table rather than one per cell: fifteen hundred pairings is fifteen hundred cells, and
+  // every one of them opens the same drawer with a different pairing in it.
+  const board = el('table', {
+    class: 'matrix',
+    onclick: (event) => {
+      const cell = event.target.closest('td[data-o]');
+      if (!cell) return;
+      const opponent = cell.getAttribute('data-o'), loadout = cell.getAttribute('data-l');
+      if (loadout === null) {
+        openDrawer(data, 'Fights against ' + opponent, recorded(data, 'opponent', opponent),
+          { fought: (data.fights.opponents[opponent] || [0])[0], ask: { opponent } });
+        return;
+      }
+      openDrawer(data, loadout + ' against ' + opponent, recorded(data, 'pair', opponent + '\t' + loadout),
+        { fought: (cells[opponent + '\t' + loadout] || [0])[0], ask: { opponent, loadout } });
+    },
+  }, el('thead', {}, head), body);
+
+  return el('div', { class: 'scroll' }, board);
+}
+
+/** What a cell shows, and what the line under it means. A run with no pair table has only the one thing to show. */
+function matrixControls(data) {
+  if (!pairings(data).size) {
+    // A plain note rather than the bar of buttons: there is nothing to choose between, and it should read as a sentence.
+    return el('div', { class: 'note' }, 'This run has no ', el('code', { text: 'league\\pairs.csv' }), ', so nothing here '
+      + 'says where its fights are being sent: it was started before the matchmaking drew the pairing. The cells are its '
+      + 'win rate and nothing else.');
+  }
+  return el('div', { class: 'matrix-note' },
+    el('span', { text: 'The number in a cell:' }),
+    el('span', { class: 'picked' }, CELLS.map(([key, name]) => el('button', {
+      type: 'button', class: 'btn small' + (state.cells === key ? ' on' : ''), text: name,
+      title: key === 'won' ? 'The win rate over every fight of the run'
+           : key === 'share' ? 'The share of the training fights this pairing is drawn in now'
+           : 'The chance the trainer reckons the agent has in it, which is what it draws on',
+      onclick: () => { state.cells = key; writeAddress(); draw(); },
+    }))),
+    el('span', { class: 'faint', text: '· the violet line under a cell is its share of the training fights, against the '
+      + 'largest in the table · click a cell for its recorded fights' }));
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -1204,14 +1329,18 @@ function draw() {
       el('div', { class: 'note' }, 'A model is a checkpoint that was evaluated: its fights are the ones played on its most '
         + 'likely action, and the ones the trainer rates. Swaps, uses and shots are what the body actually did, not what '
         + 'the network asked for.'),
+      recordingNote(data),
       modelTable(data)));
     main.append(modelDetail(data));
   } else if (state.tab === 'matrix') {
     main.append(el('div', { class: 'card' },
-      el('h2', {}, 'Win rate by opponent and loadout', el('small', { text: 'every fight of the run' })),
-      el('div', { class: 'note' }, 'Green is above half, red below; a dot is a pairing that has not come up. The loadout is '
-        + 'drawn afresh every fight and matchmaking picks the opponent, so the counts are uneven by design — hover a '
-        + 'cell for its fights.'),
+      el('h2', {}, 'Every pairing of an opponent and a loadout', el('small', { text: 'every fight of the run' })),
+      el('div', { class: 'note' }, 'Green is above half, red below; a dot is a pairing that has not come up. What '
+        + 'matchmaking draws is the pairing — the loadout and the opponent together — and it sends the fights where the '
+        + 'agent wins about half of them, so the counts are uneven by design. Only evaluation fights still draw both '
+        + 'evenly, since every rating in the league is measured on those. Hover a cell for what is behind it, or click '
+        + 'it to watch a fight of that pairing.'),
+      matrixControls(data),
       matrix(data)));
   } else if (state.tab === 'compare') {
     main.append(compare(data, state.other));

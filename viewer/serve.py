@@ -33,9 +33,11 @@ first few hundred bytes, but the opponent sits in "entities" behind fifty to a h
 it from the file would mean reading the file. The records have it a line a fight, and the run has already written them.
 
 Standard library only, so any Python 3.7 or newer runs it. Everything is found from this file's own location: the
-repository is the folder above viewer/, and replays are runs/<name>/replays/*.json. The server listens on 127.0.0.1
-only, and leaves runs/.replay-viewer.json behind while it runs so a second start opens the browser on it instead.
-The 3D view's three.js is viewer/vendor/three.cjs, the official build of the version named in viewer/README.md.
+repository is the folder above viewer/, and replays are runs/<name>/replays/*.json. A checkout with no runs of its own
+reads the main checkout's instead, since development happens in a worktree and a worktree has none; see find_runs.
+The server listens on 127.0.0.1 only, and leaves runs/.replay-viewer.json behind while it runs so a second start opens
+the browser on it instead. The 3D view's three.js is viewer/vendor/three.cjs, the official build of the version named
+in viewer/README.md.
 """
 
 import argparse
@@ -58,18 +60,17 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 APP = 'mmai-replay-viewer'
-VERSION = 6     # what this server can serve; an older one still running is not reused (1: no 3D, 2: no textures,
-                # 3: no block textures and no deleting, 4: no league page, 5: no matchups for the replay list)
+VERSION = 7     # what this server can serve; an older one still running is not reused (1: no 3D, 2: no textures,
+                # 3: no block textures and no deleting, 4: no league page, 5: no matchups for the replay list,
+                # 6: no pair table, so the league page's matrix cannot say where the fights are being sent)
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
-RUNS = ROOT / 'runs'
 PAGE = HERE / 'replay.html'
 LEAGUE_PAGE = HERE / 'league.html'
 VENDOR = HERE / 'vendor'
 AGENT_SKIN = ROOT / 'mod' / 'common' / 'src' / 'main' / 'resources' / 'assets' / 'modular_mob_ai' / 'textures' / 'entity' / 'agent.png'
 MINECRAFT = '1.21.1'    # the version the mod is built against, whose jar is preferred
 TEXTURE_PATH = re.compile(r'^textures/[a-z0-9_/.-]+\.png$')
-LOCK = RUNS / '.replay-viewer.json'
 DEFAULT_PORT = 8765
 PLACEHOLDER = '__MMAI_REPLAYS__'
 THREE_PLACEHOLDER = '__MMAI_THREE__'
@@ -94,6 +95,51 @@ _listing = {'key': None, 'body': b''}
 
 def same_path(a, b):
     return os.path.normcase(os.path.realpath(str(a))) == os.path.normcase(os.path.realpath(str(b)))
+
+
+def main_checkout(root):
+    """
+    The checkout a git worktree was made from, or None for one that is not a worktree. A worktree's .git is a file
+    holding "gitdir: <main>/.git/worktrees/<name>", so the checkout is the folder above the .git in that path. Read out
+    of the file rather than asked of git, since this server needs nothing but Python on the machine.
+    """
+    marker = root / '.git'
+    try:
+        if not marker.is_file():
+            return None
+        line = marker.read_text(encoding='utf-8').strip()
+    except OSError:
+        return None
+    if not line.startswith('gitdir:'):
+        return None
+    gitdir = Path(line[len('gitdir:'):].strip())
+    for folder in [gitdir] + list(gitdir.parents):
+        if folder.name == '.git':
+            return folder.parent
+    return None
+
+
+def find_runs():
+    """
+    The runs folder to serve, and whether it is this checkout's own. The repository's rule is that development happens
+    in a git worktree, since a Gradle build in the checkout a run trains from breaks that run — and a worktree has no
+    runs of its own, so a viewer started there would list nothing at all and say the machine had never trained. It
+    reads the main checkout's instead, found the way scripts\\_common.ps1 finds the trainer's environment: through
+    git's own files. Never through a junction, which is what cost this machine its PyTorch once.
+
+    A borrowed folder is only read from. Nothing is written into another checkout's runs, not even the lock file that
+    says where this viewer is listening, so a viewer serving the main checkout keeps the port a plain start finds.
+    """
+    own = ROOT / 'runs'
+    if own.is_dir():
+        return own, True
+    main = main_checkout(ROOT)
+    borrowed = (main / 'runs') if main else None
+    return (borrowed, False) if borrowed and borrowed.is_dir() else (own, True)
+
+
+RUNS, OWN_RUNS = find_runs()
+LOCK = (RUNS / '.replay-viewer.json') if OWN_RUNS else None
 
 
 def is_replay_name(name):
@@ -282,7 +328,13 @@ def delete_replays(request):
 # The trainer's tables, as trainer/mmai/league.py writes them, and what the run's own evaluation is in. Its
 # evaluations.csv is left out on purpose: the same thing, a checkpoint's record against each opponent, comes out of the
 # per-fight records with the loadouts and the deaths beside it, and it is one of the two tables that grows without end.
-LEAGUE_TABLES = ('ratings', 'opponents', 'loadouts', 'ground', 'matchmaking')
+#
+# pairs.csv is the matchmaking one row deeper: what the workers draw is a pairing, one loadout against one opponent, so
+# it holds each pairing's share of the training fights and the chance the trainer estimates the agent has in it. It is
+# newer than the runs training today and a run that has none simply has no such table; read_table gives an empty one and
+# the page draws what it always did. It is loadouts times opponents, 490 rows at the start of a league run and about
+# 1,530 once every rung of the difficulty ladder is open, so it is read whole with the rest of them.
+LEAGUE_TABLES = ('ratings', 'opponents', 'loadouts', 'ground', 'matchmaking', 'pairs')
 EVAL_TABLE = 'eval.csv'
 
 # Where each field of a per-fight record is, as the game's gametest/league/League#write puts them. The columns grow to
@@ -888,8 +940,8 @@ def running_port():
     ports = []
     try:
         ports.append(int(json.loads(LOCK.read_text(encoding='utf-8'))['port']))
-    except (OSError, ValueError, KeyError, TypeError):
-        pass
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        pass    # no lock, or none of ours: the default port is tried anyway
     if DEFAULT_PORT not in ports:
         ports.append(DEFAULT_PORT)
     direct = urllib.request.build_opener(urllib.request.ProxyHandler({}))   # never through a proxy
@@ -956,11 +1008,14 @@ def serve(args):
 
     server = bind(args.port or DEFAULT_PORT)
     port = server.server_address[1]
-    RUNS.mkdir(exist_ok=True)
-    LOCK.write_text(json.dumps({'app': APP, 'port': port, 'pid': os.getpid()}), encoding='utf-8')
+    if OWN_RUNS:
+        RUNS.mkdir(exist_ok=True)
+        LOCK.write_text(json.dumps({'app': APP, 'port': port, 'pid': os.getpid()}), encoding='utf-8')
     url = address(port, args.run, args.league)
     print('Replay viewer: ' + url)
     print('Lists every %s. Ctrl+C or closing this window stops it.' % os.path.join(str(RUNS), '*', 'replays'))
+    if not OWN_RUNS:
+        print('This checkout has no runs of its own, so it reads the main checkout\'s and writes nothing there.')
     print('League standings of every run with one: %s' % address(port, '', True))
     if TEXTURES.zip:
         print('Mob and block textures from Minecraft %s, %s: %s' % (TEXTURES.version, TEXTURES.how, TEXTURES.jar))
@@ -976,7 +1031,7 @@ def serve(args):
     finally:
         server.server_close()
         try:
-            if json.loads(LOCK.read_text(encoding='utf-8')).get('pid') == os.getpid():
+            if LOCK and json.loads(LOCK.read_text(encoding='utf-8')).get('pid') == os.getpid():
                 LOCK.unlink()
         except (OSError, ValueError):
             pass

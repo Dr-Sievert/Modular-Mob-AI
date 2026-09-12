@@ -15,6 +15,12 @@ scripts\viewer.ps1 -MinecraftJar <jar>     take textures from that jar instead o
 and `viewer\league.html`, and *League* in the replay page's header opens the second. Starting it again replaces an older
 running viewer rather than starting a second one. Ctrl+C stops it.
 
+A checkout with no `runs\` of its own reads the main checkout's, found the way `scripts\_common.ps1` finds the trainer's
+environment: out of the `.git` file a worktree carries, never through a junction. Development happens in a worktree,
+which has no runs at all, and a viewer there used to say the machine had never trained. Nothing is written into a
+borrowed folder, not even the lock file that says where this viewer is listening, so the viewer serving the main
+checkout keeps the port a plain start finds.
+
 ## The list
 
 Every replay under `runs\*\replays`, whether or not one has been opened: twenty four thousand of them list in about a
@@ -30,6 +36,9 @@ written over, so the page can ask every three seconds while training writes.
   with no `league\results` simply says less.
 - **/** or the box at the top filters the list: `pillager`, `bow lava`, `it 1389`, `w00-f0416`. Several words all have to
   match, and a run with anything that matches opens itself.
+- The list is the server's answer, not what has been opened: it is there from the first paint, and until the answer
+  arrives the page says it is looking. It used to say *nothing under `runs\*\replays`* in that second instead, which on a
+  machine with twenty five thousand replays on it reads as a page that can only show what has been dropped on it.
 
 ## Watching
 
@@ -77,28 +86,42 @@ all of them sortable by any column, all of them live while a run trains:
 | Opponents | What `scripts\league.ps1` prints: rating, share, the last 200 evaluation and training fights against each, and beside them every fight of the run against it. |
 | Loadouts and ground | The same per loadout, and the ground table with what finished the other side. The `ground` column is the one to watch: a fight the terrain ends is the agent's win either way, so it is the only sign that the agent has learned to knock things into lava. |
 | Models | Every evaluated checkpoint from the per-fight records: its rating, its record, the average fight, the item it held longest, what it died of most, and its swaps, uses and shots a fight. Pick one for its record against each opponent and with each loadout, every weapon it held and everything it died of. |
-| Opponent by loadout | Win rate for every pairing over every fight of the run, green above half and red below. |
+| Opponent by loadout | Every pairing of an opponent and a loadout over every fight of the run: the win rate, green above half and red below, and under each cell the share of the training fights that pairing is being given. A cell's number can be swapped for that share or for the chance the trainer estimates. |
 | Two runs | Two lineages side by side: both rating curves on one chart, both tier lists, and the players they share. That last table is the point — the scripted fighter is held at 1500 in both, and a published network both runs field is rated by each on its own fights, so two ratings within a tier of each other mean the lists can be read together. See [training.md](training.md), `-LeagueModels`. |
 
-The last column of a row is its recorded fights against the fights it is about, `▸ 4 / 1 812` or `0 / 214`. Both open a
-drawer: with recordings, a list of them, each a link into the replay viewer at that fight; with none, what the run
-recorded and the command that would record some,
+**Every row offers a fight to watch**, and so does every cell of the pairing matrix. The last column of a row is its
+recorded fights against the fights it is about, `▸ 4 / 1 812` or `0 / 214`, and both open the same drawer: with
+recordings, a list of them, each a link into the replay viewer at that fight; with none, what the run recorded and the
+command that would record some,
 
 ```
 scripts\eval.ps1 -Weights runs\<run>\best.mbw -Suite league -Arenas 40 -ReplayEvery 1 -Opponents ravager
 ```
 
-which leaves forty fights of that matchup in `runs\eval-<run>-best\replays`. **A 0 there is not a page that lost
-something.** A run records one fight in 200 per worker (`scripts\train.ps1 -ReplayEvery`), and those few land across a
-hundred opponents and fifteen loadouts, so most matchups were never written down at all: league768 has 1,400 replays of
-335,947 fights, and 25 of its 142 opponents have none. The one in 200 is measured from the gaps between the replay names
-a run left, not assumed, since nothing a run writes down says what it was started with.
+which leaves forty fights of that matchup in `runs\eval-<run>-best\replays`. A cell of the matrix asks for the pairing,
+`-Opponents 'bee(hard)' -Loadouts bow`, and a model row for that checkpoint, `-Run <run> -Iteration 2525`. A name that is
+not a plain word is quoted, since `zombie(hard)` unquoted sends PowerShell looking for a command called `hard`.
+
+**A 0 there is not a page that lost something**, which is why the row with none is drawn dashed rather than left blank: a
+run records one fight in 200 per worker (`scripts\train.ps1 -ReplayEvery`), and those few land across a hundred opponents
+and fifteen loadouts, so most matchups were never written down at all: league768 has 2,506 replays of 604,463 fights,
+and 26 of the 191 players it has met have none. The one in 200 is measured from the gaps between the replay names a run
+left, not assumed, since nothing a run writes down says what it was started with.
+
+**The pairing matrix** is the one table that says where the fights are going as well as how they went. What matchmaking
+draws is the pairing, a loadout and an opponent together, so `league\pairs.csv` holds each pairing's share of the
+training fights and the chance the trainer reckons the agent has in it; the page shows the share as a violet line under
+the cell, against the largest share in the table, and the buttons above swap the cell's number between the win rate, that
+share and that chance. A pairing with a share and no fights yet is a row of dots with a line under it — where the fights
+are about to go. A run started before the trainer drew pairings has no `pairs.csv`, and says so: its cells are the win
+rate and nothing else.
 
 Everything comes from files a league run already writes, and nothing is written: the trainer's tables in
-`runs\<run>\league\`, the run's `eval.csv`, and the workers' per-fight records in `runs\<run>\league\results\`. Those
-last run to hundreds of thousands of lines, so they are added up once when the page first asks and then only read on
-from where they got to — a quarter of a million fights takes about a second the first time and nothing after, and two
-million took under seven. A row's link is checked against the replays actually on disk, so it never points at a fight
+`runs\<run>\league\` — `ratings`, `opponents`, `loadouts`, `ground`, `matchmaking` and `pairs` — the run's `eval.csv`,
+and the workers' per-fight records in `runs\<run>\league\results\`. Those last run to hundreds of thousands of lines, so
+they are added up once when the page first asks and then only read on from where they got to — a quarter of a million
+fights takes about a second the first time and nothing after, and two million took under seven. A row's link is checked
+against the replays actually on disk, so it never points at a fight
 that was never written. The recorded fights kept per run are capped, high enough to cover every replay a run can have on
 disk: at 4,000 the longest run on this machine had 7,875 replays and the older half of them silently lost their labels.
 

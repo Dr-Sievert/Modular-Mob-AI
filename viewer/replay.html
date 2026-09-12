@@ -2759,8 +2759,9 @@ function renderList() {
   box.classList.toggle('picking', picking);
   updateSelectBar();
   if (!lib.groups.length) {
-    box.innerHTML = `<div class="side-empty">${lib.server ? 'No replays under <b>runs/*/replays</b> yet.<br>They show up here while training writes them.' :
-        'Nothing open yet.<br>Drop replay files anywhere on the page.'}</div>`;
+    box.innerHTML = `<div class="side-empty">${!lib.server ? 'Nothing open yet.<br>Drop replay files anywhere on the page.' :
+        !lib.server.answered ? 'Looking for what is under <b>runs/*/replays</b>…' :
+        'No replays under <b>runs/*/replays</b> yet.<br>They show up here while training writes them.'}</div>`;
     return;
   }
   const short = { win: 'win', loss: 'loss', timeout: 'time' };
@@ -3149,7 +3150,7 @@ async function startServerMode() {
     return false;
   }
   const params = new URLSearchParams(location.search);
-  lib.server = { etag: null, first: true, wantRun: params.get('run'), wantFile: params.get('replay'),
+  lib.server = { etag: null, first: true, answered: false, wantRun: params.get('run'), wantFile: params.get('replay'),
     wantTick: params.has('t') ? Math.max(0, parseInt(params.get('t'), 10) || 0) : null,
     wantZoom: params.has('zoom') ? clamp(parseFloat(params.get('zoom')) || 1, 0.12, 10) : null, textures: info.textures || null };
   updateMobNote();
@@ -3160,10 +3161,16 @@ async function startServerMode() {
   $('del-note').hidden = true;
   // The league standings live in a page of their own, and only a served page can reach it: it reads a run's files.
   $('btn-league').hidden = false;
-  $('empty-title').textContent = 'Waiting for replays';
+  // Until the server has answered, this page knows nothing about what is on disk, and saying "nothing under
+  // runs/*/replays" is how a machine with twenty five thousand replays on it came to look like a page that can only
+  // show what has been dropped on it: the list of every run is a second or so behind the first paint, and that second
+  // said the opposite of the truth. It says it is looking, and the list opens straight away to be filled in.
+  $('empty-title').textContent = 'Looking for replays';
   $('empty-text').innerHTML = lib.server.wantRun
-    ? `Nothing in <code>runs/${escapeHtml(lib.server.wantRun)}/replays/</code> yet. Replays show up here as the game writes them.`
-    : 'Nothing under <code>runs/*/replays/</code> yet. Replays show up here as the game writes them.';
+    ? `Reading <code>runs/${escapeHtml(lib.server.wantRun)}/replays/</code>…`
+    : 'Reading <code>runs/*/replays/</code>… every replay of every run lists here, and only the one you open is fetched.';
+  autoSide();
+  renderList();
   await pollServer();
   setInterval(pollServer, 3000);
   return true;
@@ -3192,6 +3199,7 @@ async function pollServer() {
 
 function applyRuns(runs) {
   const s = lib.server, fresh = [];
+  s.answered = true;
   const known = new Map(lib.groups.filter(g => g.server).map(g => [g.id, g]));
   // A run whose replays were all deleted, or that has not written any yet, only shows when the address asks for it.
   runs = runs.filter(run => run.replays.length || run.name === s.wantRun);
@@ -3241,6 +3249,12 @@ function applyRuns(runs) {
     else if (groups.some(g => g.items.length && (!s.wantRun || g.title === s.wantRun))) {
       $('empty-title').textContent = 'Only old replays here';
       $('empty-text').textContent = 'These replays are in ' + OLD_FORMAT + '. Tick them in the list to delete them.';
+    } else {
+      // Now it has been looked for and is not there, which is a different thing from not having looked yet.
+      $('empty-title').textContent = 'Waiting for replays';
+      $('empty-text').innerHTML = s.wantRun
+        ? `Nothing in <code>runs/${escapeHtml(s.wantRun)}/replays/</code> yet. Replays show up here as the game writes them.`
+        : 'Nothing under <code>runs/*/replays/</code> yet. Replays show up here as the game writes them.';
     }
   } else if (fresh.length) {
     autoOpenIfIdle();
