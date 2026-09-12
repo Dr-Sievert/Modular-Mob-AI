@@ -13,6 +13,7 @@ Read these before changing anything:
 | [docs/architecture.md](docs/architecture.md) | How the mod and the trainer fit, the tick loop, the observation and action layouts, the reward, the file formats |
 | [docs/training.md](docs/training.md) | How to train: teacher, imitation, PPO, evaluation, best weights, every script and flag |
 | [docs/testing.md](docs/testing.md) | Game tests, the mechanics suite, evaluation, the parity check, writing tests |
+| [docs/species.md](docs/species.md) | Giving another body a brain: a schema per species, and the four files a new one takes |
 | [docs/models.md](docs/models.md) | Trained networks in git (`models/`), publishing, loading one |
 | [docs/playing.md](docs/playing.md) | Starting the game with a model, spawning agents, loadouts, allies and enemies |
 | [docs/viewer.md](docs/viewer.md) | The replay viewer |
@@ -20,9 +21,10 @@ Read these before changing anything:
 
 ## Hard rules
 
-- **The observation (634 floats) and action (11 controls, 19 network outputs) layouts are fixed.** Every trained network
-  depends on them, and a schema id stamped into every weight file refuses a mismatch. Don't change them without the
-  owner's agreement.
+- **A layout belongs to a body, not to the game.** The humanoid's observation (634 floats) and action (11 controls, 19
+  network outputs) are fixed: every trained network depends on them, and a schema id stamped into every weight file refuses a
+  mismatch. Don't change them without the owner's agreement. Another body brings its own layout instead of bending that one;
+  see [docs/species.md](docs/species.md).
 - **Everything runs from `scripts\*.ps1`**, set up once by `scripts\setup.ps1`. Nothing is hardcoded to a machine; paths
   are found relative to the repository.
 - **Never commit Mojang assets.** Textures come from the local Gradle cache at runtime, or the game jar.

@@ -247,7 +247,7 @@ afterEvaluate {
     // brain/schema/Species.java and docs/architecture.md, "Adding a species".
     def trainedSpecies = providers.gradleProperty('species').getOrElse('humanoid')
 
-    def brainTool = { List<String> toolArguments ->
+    def brainTool = { List<String> toolArguments, boolean quiet = false ->
 
         def javaExe = runTask.javaLauncher.get().executablePath.asFile.absolutePath
         def classes = (sourceSets.gametest.output.files + sourceSets.main.output.files).collect { it.absolutePath }
@@ -261,15 +261,36 @@ afterEvaluate {
         builder.redirectErrorStream(true)
 
         def tool = builder.start()
+        def lines = []
 
-        tool.inputStream.withReader('UTF-8') { reader -> reader.eachLine { line -> logger.lifecycle("[brain] " + line) } }
+        tool.inputStream.withReader('UTF-8') { reader ->
+
+            reader.eachLine { line ->
+
+                lines += line
+
+                if (!quiet) {
+
+                    logger.lifecycle("[brain] " + line)
+                }
+            }
+        }
 
         def code = tool.waitFor()
 
         if (code != 0) {
 
-            throw new GradleException("The brain tool failed: ${toolArguments.join(' ')}")
+            throw new GradleException("The brain tool failed: ${toolArguments.join(' ')}\n  " + lines.join("\n  "))
         }
+
+        return lines
+    }
+
+    // Every body this build has, asked of the build rather than listed here, so that adding a species cannot leave the
+    // parity check quietly going round the old set. The incubating module warning is not a body.
+    def allSpecies = {
+
+        return brainTool(['species'], true).findAll { it ==~ /^[a-z0-9_]+$/ }
     }
 
     // Generating the terrain is most of what starting a worker on natural terrain costs, and a world generated once can be
@@ -1691,15 +1712,25 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
 
         doLast {
 
-            // One folder per run, so two training runs starting side by side do not write the same fixture at once.
-            def directory = layout.buildDirectory.dir("brain-parity/${providers.gradleProperty('run').getOrElse('check')}").get().asFile
-            def schema = new File(directory, 'schema.json')
+            // Every body, unless one is named. A body nobody has trained yet is checked on a freshly made random network,
+            // which proves just as much: what is being checked is that the two sides mean the same thing by a layout, and
+            // the weights only have to be the same weights on both sides.
+            def bodies = providers.gradleProperty('species').isPresent() ? [trainedSpecies] : allSpecies()
 
-            directory.mkdirs()
+            bodies.each { body ->
 
-            brainTool(['schema', trainedSpecies, schema.absolutePath])
-            runPython(['train.py', 'parity', '--schema', schema.absolutePath, '--out', directory.absolutePath])
-            brainTool(['parity', directory.absolutePath])
+                // One folder per run and body, so two training runs starting side by side do not write the same fixture at
+                // once, and so one body's fixture never overwrites another's.
+                def directory = layout.buildDirectory
+                        .dir("brain-parity/${providers.gradleProperty('run').getOrElse('check')}/${body}").get().asFile
+                def schema = new File(directory, 'schema.json')
+
+                directory.mkdirs()
+
+                brainTool(['schema', body, schema.absolutePath])
+                runPython(['train.py', 'parity', '--schema', schema.absolutePath, '--out', directory.absolutePath])
+                brainTool(['parity', directory.absolutePath])
+            }
         }
     }
 

@@ -234,7 +234,7 @@ public class AgentMob extends PathfinderMob {
      * refused any other, so this is what decides whether a set of weights may drive this mob at all.
      *
      * <p>A second body overrides this and nothing else about the plumbing: the driver batches by brain, the observation is
-     * filled in by the species, and the action comes back through it. See {@code docs/architecture.md}, "Adding a species".
+     * filled in by the species, and the action comes back through it. See {@code docs/species.md}.
      */
     public Species species() {
 

@@ -22,7 +22,9 @@ public final class ObservationSchema {
     private ObservationSchema() {}
 
     // -----------------------------------------------------------------------------------------------------------
-    // Terrain
+    // Terrain, which every body shares: ground is ground whoever is standing on it, and two bodies disagreeing about what
+    // a hazard is would be a bug nobody could see. A species chooses whether it has a grid and where the grid sits, not
+    // what a cell of it means. Written by AgentObservation.writeTerrain.
     // -----------------------------------------------------------------------------------------------------------
 
     /** Nine wide covers the four and a half blocks of build reach in every horizontal direction. */
@@ -37,7 +39,8 @@ public final class ObservationSchema {
     public static final int TERRAIN_SIZE = TERRAIN_X * TERRAIN_Y * TERRAIN_Z;
 
     // -----------------------------------------------------------------------------------------------------------
-    // Enemies
+    // Enemies, which every body shares as well: an opponent looks the same whoever is looking at it. Written by
+    // AgentObservation.writeEnemies, and kept in leases by EnemySlots.
     // -----------------------------------------------------------------------------------------------------------
 
     public static final int ENEMY_SLOTS = 10;
@@ -131,10 +134,20 @@ public final class ObservationSchema {
         return ENEMY_OFFSET + slot * ENEMY_STRIDE;
     }
 
-    /** Terrain cells run x fastest, then y, then z, with the agent's feet block at the centre. */
+    /**
+     * Where a terrain cell sits within the grid itself, counting from the grid's own start: x fastest, then y, then z, with
+     * the agent's feet block at the centre. Any body's grid is laid out this way, so the shared writer adds this to
+     * wherever that body's grid begins.
+     */
+    public static int gridOffset(int x, int y, int z) {
+
+        return (z * TERRAIN_Y + y) * TERRAIN_X + x;
+    }
+
+    /** The same, counting from the start of a humanoid's row. */
     public static int terrainOffset(int x, int y, int z) {
 
-        return TERRAIN_OFFSET + (z * TERRAIN_Y + y) * TERRAIN_X + x;
+        return TERRAIN_OFFSET + gridOffset(x, y, z);
     }
 
 }
