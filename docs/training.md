@@ -373,14 +373,23 @@ towards.
 scripts\imitate.ps1 -Run vindicator                 record the teacher, copy it, then three rounds of correction
 scripts\imitate.ps1 -Run vindicator -Rounds 0       only record and copy
 scripts\imitate.ps1 -Run vindicator -Rounds 2       two more rounds on top
+scripts\imitate.ps1 -Run league -Suite league       every opponent and every loadout, for a copy that will fight the league
 ```
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
 | `-Fights` | 4000 | fights recorded per round |
+| `-Suite` | `terrain` | what the record is of: one vindicator with one sword, or the whole league |
+| `-Loadouts` | every one | record only these, for weighting a round towards what the copy is worst at |
 | `-TeacherNoise` | 0.1 | noise on the teacher's recorded fights (0.2 lost too much) |
 | `-StudentNoise` | 0.05 | noise on the copy while it drives in correction rounds |
 | `-Workers`, `-Slots`, `-Heap` | 8, 25, 1280M | as for training |
+
+**A copy that will fight the league wants `-Suite league`**, and this defaulting to the vindicator is what cost league768
+a third of its fights. Its record was 16,000 terrain-suite fights, hotbar `[iron_sword]` and nothing else, so neither the
+copy nor the 2,000 iterations of teacher pull that followed ever saw a bow: over 46,044 bow fights it fired **0.00
+arrows**, holding the bow and punching with it, while the same teacher recorded on the league fires 11 arrows a fight and
+wins 60.3% with one. Nothing downstream can learn what the record does not hold; see [findings.md](findings.md).
 
 Demos go to `runs\<run>\demos\round-N\` on the terrain suite, and `demos\<suite>-round-N\` on any other. They're
 gigabytes, and not in git.

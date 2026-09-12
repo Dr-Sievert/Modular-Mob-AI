@@ -100,16 +100,16 @@ class Config:
     # critic caught up. Zero for a run from scratch, where there is nothing to protect.
     critic_warmup: int = 0
 
-    # How hard every update pulls the policy back towards the teacher it was copied from, zero for a run with no teacher.
-    # Started from a 90% copy, reinforcement learning twice made the fighter it would ship worse: advantages from a critic
-    # that has not yet learned the fight are mostly noise, and a policy near its best has little to gain and everything to
-    # lose from following noise. Pulled back towards the teacher's own answers, recorded in the run's demos, the policy
-    # only moves where the fights clearly say so. Scored the way the copy was, on up to teacher_rows of its steps.
     # Width of the shared encoder over the enemy slots, or zero for a first layer that takes every slot's numbers on their
     # own. See weights.Topology: ten slots of the same shape, learned once instead of ten times, which is the difference
     # between beating one skeleton 84% of the time and two of them 9%.
     slot_enc: int = 0
 
+    # How hard every update pulls the policy back towards the teacher it was copied from, zero for a run with no teacher.
+    # Started from a 90% copy, reinforcement learning twice made the fighter it would ship worse: advantages from a critic
+    # that has not yet learned the fight are mostly noise, and a policy near its best has little to gain and everything to
+    # lose from following noise. Pulled back towards the teacher's own answers, recorded in the run's demos, the policy
+    # only moves where the fights clearly say so. Scored the way the copy was, on up to teacher_rows of its steps.
     teacher_weight: float = 0.0
     teacher_rows: int = 262144
 

@@ -45,7 +45,7 @@ Read these before changing anything:
 ```
 scripts\setup.ps1                      once per machine: Java 21, Python + PyTorch, compile, parity check
 scripts\test.ps1                       20 arena fights with the scripted fighter: expect 20/20, 54 ticks each
-scripts\test.ps1 -Mechanics            the item and block rules against a player's numbers: expect 31 passed
+scripts\test.ps1 -Mechanics            the item and block rules against a player's numbers: expect 34 passed
 scripts\test.ps1 -Play                 the agent in a real game (jar networks, /mmai, sides, Infinity loadouts): expect 17 passed
 scripts\play.ps1                       the dev client, agents on the best network in models\; -Model, -Weights, -Loader
 scripts\terrain.ps1                    once per machine before any training: the terrain library a run fights on

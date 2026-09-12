@@ -4,15 +4,33 @@
 #   scripts\imitate.ps1 -Run vindicator                 record the teacher, copy it, then three rounds of correction
 #   scripts\imitate.ps1 -Run vindicator -Rounds 0       only record the teacher and copy it
 #   scripts\imitate.ps1 -Run vindicator -Rounds 2       two more rounds on top of what the run already has
+#   scripts\imitate.ps1 -Run league -Suite league       every opponent and every loadout, for a run that will fight the league
 #
 # A copy made from the teacher's own fights drifts into situations the teacher never got into, and has no idea what to do
 # there. Each round lets the copy fight while the scripted fighter says what it would have done on every tick, then copies
 # again from everything recorded so far, so the copy learns exactly the situations it gets wrong.
+#
+# **A copy for the league wants -Suite league**, and this defaulting to the vindicator is what cost league768 a third of
+# its fights. Its record was 16,000 fights on the terrain suite, hotbar `[iron_sword]` and nothing else, so the copy and
+# the 2,000 iterations of teacher pull that followed had never once seen a bow: over 46,044 bow fights it fired 0.00
+# arrows, holding the bow and punching with it. The same teacher with a league record fires 11 arrows a fight and wins
+# 60.3% with a bow. What the record does not hold, nothing downstream can learn; see docs\findings.md.
 
 param(
     [string] $Run = 'imitate',
     [int] $Rounds = 3,
     [int] $Fights = 4000,
+
+    # What the record is of. The terrain suite is one vindicator with one sword, which is all a run that will fight one
+    # vindicator needs; the league is every opponent, every squad and all ten loadouts, which is what a run that will fight
+    # the league needs. A league round wants more fights for the same coverage per pairing: 4,000 is about fifteen fights a
+    # pairing there against 4,000 against the one vindicator.
+    [ValidateSet('terrain', 'arena', 'league')] [string] $Suite = 'terrain',
+
+    # Which loadouts to record, empty for all of them. A record weighted towards what the copy will be worst at is worth
+    # more than an even one; see scripts\dagger.ps1, which takes the same flag for a run already training.
+    [string[]] $Loadouts = @(),
+
     [int] $Workers = 8,
 
     # Small workers: a worker is bound by its one server thread, and twenty five fights in a gigabyte keep it as busy as
@@ -49,8 +67,9 @@ $copy = Join-Path $directory 'weights\000000.mbw'
 
 function Invoke-Record([double] $Noise, [string[]] $Extra) {
 
-    Invoke-Gradle (@(':fabric:recordDemonstrations', "-Prun=$Run", "-Parenas=$Fights", "-Pworkers=$Workers", "-PbatchSize=$Slots",
-            "-PmaxWorkers=$Workers", "-PworkerHeap=$Heap", "-PdemonstrationNoise=$Noise") + $Extra)
+    Invoke-Gradle (@(':fabric:recordDemonstrations', "-Prun=$Run", "-Psuite=$Suite", "-Parenas=$Fights", "-Pworkers=$Workers",
+            "-PbatchSize=$Slots", "-PmaxWorkers=$Workers", "-PworkerHeap=$Heap", "-PdemonstrationNoise=$Noise") +
+            @(if ($Loadouts.Count -gt 0) { "-PleagueLoadouts=$($Loadouts -join ',')" }) + $Extra)
 }
 
 function Invoke-Imitate {
@@ -71,7 +90,8 @@ $recorded = @(Get-ChildItem (Join-Path $directory 'demos') -Filter '*.mbr' -Recu
 
 if ($recorded.Count -eq 0) {
 
-    Write-Host "Recording the scripted fighter over $Fights fights"
+    Write-Host ("Recording the scripted fighter over $Fights fights on the $Suite suite" +
+            $(if ($Loadouts.Count -gt 0) { ", with the $($Loadouts -join ', ') loadouts alone" }))
     Invoke-Record $TeacherNoise @()
 }
 
