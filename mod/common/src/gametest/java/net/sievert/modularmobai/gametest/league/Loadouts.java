@@ -8,6 +8,7 @@ import java.util.Locale;
 import net.minecraft.world.item.AxeItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.ProjectileWeaponItem;
 import net.minecraft.world.item.SwordItem;
 import net.sievert.modularmobai.Constants;
 import net.sievert.modularmobai.arena.Loadout;
@@ -91,10 +92,23 @@ public final class Loadouts {
         return enabled;
     }
 
-    /** Whether the first thing in the hotbar is something to swing, which is all the scripted fighter is armed with here. */
+    /**
+     * Whether this arms a fighter with nothing but something to swing, which is all the scripted fighter is armed with here.
+     *
+     * <p>The first thing in the hotbar is not enough to ask, which is how this went wrong: {@link #SWORD_AND_BOW} leads with
+     * an iron sword and keeps a bow behind it, so a test on slot zero alone let the one fighter whose strength has to stay
+     * put draw a bow in one league fight in eight. It is worth about twenty points to it — over league768's own 4,602
+     * fights against it, counting only the ones where the agent carried no bow, it won 92.2% with the sword and bow against
+     * 71.6% with the plain sword. So anything that shoots disqualifies a loadout however the hotbar is ordered.
+     */
     public static boolean melee(Loadout loadout) {
 
-        return !loadout.hotbar().isEmpty()
-                && (loadout.hotbar().get(0).getItem() instanceof SwordItem || loadout.hotbar().get(0).getItem() instanceof AxeItem);
+        if (loadout.hotbar().isEmpty() || !(loadout.hotbar().get(0).getItem() instanceof SwordItem
+                || loadout.hotbar().get(0).getItem() instanceof AxeItem)) {
+
+            return false;
+        }
+
+        return loadout.hotbar().stream().noneMatch(stack -> stack.getItem() instanceof ProjectileWeaponItem);
     }
 }

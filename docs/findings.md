@@ -232,6 +232,16 @@ are deliberate.
 
 ## The league's opponents
 
+- **The 1500-rated anchor was drawing a bow.** Every rating in the league is measured against the scripted fighter, so its
+  strength has to stay put, and it is held to something to swing for exactly that reason. But `Loadouts.melee` asked only
+  whether hotbar slot zero was a sword or an axe, and `sword_and_bow` leads with an iron sword and keeps the bow behind it:
+  the anchor drew a bow in one league fight in eight. It is worth about twenty points to it — over league768's 4,602 fights
+  against it, counting only the ones where the agent carried no bow so the field is the same, it won **92.2% of 408 with the
+  sword and bow against 71.6% of 402 with the plain sword**. Anything that shoots now disqualifies a loadout however the
+  hotbar is ordered.
+  - Its strength was never flat across the seven that are left, though: 96.1% in iron armour, 88.8% and 88.5% with a shield
+    or a diamond sword, 76.3% with stone, 71.6% with iron, and **59.5% with an axe**, whose twenty tick cooldown it handles
+    worst. A rating measured against "the scripted fighter" is measured against that spread.
 - **Some mobs kill themselves, and the agent was paid for it.** Each of these hands over a win nobody fought for, and a
   rating built on those says nothing:
   - a **bee** dies of its own sting: after stinging once its aiStep rolls for death every five ticks, which over a minute
