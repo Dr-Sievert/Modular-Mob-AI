@@ -41,6 +41,7 @@ import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.projectile.ProjectileUtil;
 import net.minecraft.world.item.BowItem;
 import net.minecraft.world.item.CrossbowItem;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemCooldowns;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -122,6 +123,12 @@ public class AgentMob extends PathfinderMob {
 
     /** How long a player's hand rests after a block has given way before the next one starts to crack. */
     private static final int DESTROY_DELAY = 5;
+
+    /**
+     * The charge a draw is committed up to, as {@link #useProgress} reads it: a bow's full power, a crossbow's finished
+     * wind. Just under one, because both are the item's own numbers and neither is asked to land on one exactly.
+     */
+    private static final float FULL_DRAW = 0.999F;
 
     /** A drawn bow's arrow speed at full power, a crossbow's bolt and firework, and the spread, all a player's. */
     private static final float BOW_SPEED = 3.0F;
@@ -580,7 +587,7 @@ public class AgentMob extends PathfinderMob {
 
         boolean busy = this.isUsingItem();
 
-        if (busy && !this.wantsToUse(this.getUsedItemHand())) {
+        if (busy && !this.wantsToUse(this.getUsedItemHand()) && !this.drawingToFull()) {
 
             // Released rather than cancelled, so that a drawn bow actually fires.
             this.releaseUsingItem();
@@ -650,6 +657,36 @@ public class AgentMob extends PathfinderMob {
     private boolean wantsToUse(InteractionHand hand) {
 
         return hand == InteractionHand.MAIN_HAND ? this.controls.use : this.controls.useOffhand;
+    }
+
+    /**
+     * Whether a draw already under way keeps going even though its button came up. True for a bow or a crossbow that has
+     * not finished charging, and for nothing else: a shield drops the tick it is let go, food stops being eaten, and a
+     * weapon at full charge is the agent's own to hold or to loose.
+     *
+     * <p>This is the one place the agent's hands are not a player's, and it is here because a draw is a single skill that
+     * arrives twenty ticks late. A player holds the button down through those ticks without thinking about it. A network
+     * chooses the button afresh every tick from a probability, so a full draw asks it to choose the same thing twenty
+     * times over, and the odds of that happening by chance are the odds of pressing it once raised to the twentieth power.
+     * A network at even odds gets there once in a million draws, which is never, so a weapon that takes a draw can never
+     * be discovered by trying: the league's first bow network started forty-two draws a fight and loosed five weak
+     * arrows, and its crossbow, which fires nothing at all short of a full wind, started forty-one loads a fight and fired
+     * three bolts in a hundred fights. Committing the draw makes one press one arrow, which is a thing a policy can find.
+     *
+     * <p>Nothing is taken away by it. Changing slot still drops the draw, because the hand no longer holds what it started,
+     * which is how the teacher gives up a shot to swing instead. The movement it costs is still a fifth of the keys for
+     * every tick of it, so drawing at the wrong moment is still paid for.
+     */
+    private boolean drawingToFull() {
+
+        Item item = this.getUseItem().getItem();
+
+        if (!(item instanceof BowItem) && !(item instanceof CrossbowItem)) {
+
+            return false;
+        }
+
+        return this.useProgress() < FULL_DRAW;
     }
 
     /**

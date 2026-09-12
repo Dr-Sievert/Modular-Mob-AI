@@ -6,6 +6,8 @@
 #   scripts\eval.ps1 -Weights models\vs-copy\best.mbw   a network from anywhere, such as one scripts\publish.ps1 put in git
 #   scripts\eval.ps1 -Run league -Suite league   round every league opponent in turn, a frozen copy of itself included,
 #                                               and a table of how it went against each at the end
+#   scripts\eval.ps1 -Suite league -Loadouts bow,crossbow   those loadouts alone, to measure one weapon rather than wait
+#                                                           for it to come round in the rotation
 #
 # Starting the workers costs the same however many fights follow, and 2,000 fights put the win rate within about a
 # point either way, where 400 leave it within two and a half.
@@ -20,7 +22,11 @@ param(
     [int] $Slots = 25,
     [string] $Heap = '1280M',
     [ValidateSet('terrain', 'arena', 'league')] [string] $Suite = 'terrain',
-    [int] $ReplayEvery = 0
+    [int] $ReplayEvery = 0,
+
+    # Which loadouts to fight with, empty for all of them. The way to measure one weapon on its own: a run whose bow rows
+    # look weak can be put on bow and crossbow alone rather than waiting for them to come round in the rotation.
+    [string[]] $Loadouts = @()
 )
 
 . "$PSScriptRoot\_common.ps1"
@@ -53,9 +59,11 @@ if (-not $file -or -not (Test-Path $file)) {
     throw "No weights found at $(if ($Weights) { $Weights } else { $folder })"
 }
 
-Write-Host "Evaluating $file over $Arenas arenas"
+Write-Host ("Evaluating $file over $Arenas arenas" +
+        $(if ($Loadouts.Count -gt 0) { ", with the $($Loadouts -join ', ') loadouts alone" }))
 
 $replayRun = 'eval-{0}-{1}' -f $Run, [IO.Path]::GetFileNameWithoutExtension($file)
 
-Invoke-Gradle @(':fabric:runGametestParallel', '-Pbrain=neural', "-PbrainWeights=$file", "-Parenas=$Arenas", "-Pworkers=$Workers",
-        "-PbatchSize=$Slots", "-PworkerHeap=$Heap", "-Psuite=$Suite", "-PreplayEvery=$ReplayEvery", "-PreplayRun=$replayRun")
+Invoke-Gradle (@(':fabric:runGametestParallel', '-Pbrain=neural', "-PbrainWeights=$file", "-Parenas=$Arenas", "-Pworkers=$Workers",
+        "-PbatchSize=$Slots", "-PworkerHeap=$Heap", "-Psuite=$Suite", "-PreplayEvery=$ReplayEvery", "-PreplayRun=$replayRun") +
+        @(if ($Loadouts.Count -gt 0) { "-PleagueLoadouts=$($Loadouts -join ',')" }))
