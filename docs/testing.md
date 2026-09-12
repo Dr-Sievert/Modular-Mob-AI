@@ -90,6 +90,8 @@ Each test sets up one situation and checks the numbers a player would get:
 | `onlyShotsComingAtTheAgentTakeASlot` | an arrow on its way takes a slot with a kind of its own; one crossing, one lying still and the agent's own take none, and the mob keeps slot zero |
 | `theClockRunsUpAndTheQuiverRunsDown` | the self block's clock is this fight's own ticks over this fight's own limit, never going backwards and reading 1 once the time is up; arrows left follow the hotbar and fall as a bow is fired; a body with nothing that shoots and no fight reads nought for both |
 | `theTeacherGetsOutOfPowderSnow`, `theTeacherBreaksOutOfPowderSnow` | the scripted fighter, with a zombie to fight, walks out of one block of powder snow and breaks its way out of a patch three wide |
+| `theTeacherStartsNoDrawItCannotFinish` | with a sword and a bow against a vindicator six blocks off, every draw begun sends an arrow — none is begun and given up — and it still lands blows |
+| `theTeacherDrawsAtWhatShootsBack` | the same loadout against a skeleton six blocks off looses an arrow inside 60 ticks, which is what stops the rule above being satisfied by never drawing |
 
 Ammo: the agent's bow and crossbow loadouts carry 64 finite arrows, one used per shot, and arrows aren't picked back up.
 That covers a 60-second fight, since a full-draw shot takes 20 ticks. Vanilla skeletons and pillagers never run out.

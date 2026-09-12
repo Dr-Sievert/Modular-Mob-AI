@@ -74,7 +74,8 @@ import net.sievert.modularmobai.entity.agent.MobControls;
  * <ul>
  *   <li><b>Bow or crossbow.</b> Both read as one item category, because the layout has one for a drawn weapon, and how far
  *       either has charged is in the echo, so neither has to be named to be used: hold until it reads charged, then let
- *       go. What is left over is told apart by what a deliberate release does. A wound crossbow loads and fires nothing,
+ *       go. A draw is only begun at something that cannot be here before it is full, which the slot's own speed says; see
+ *       {@link #finishesInTime}. What is left over is told apart by what a deliberate release does. A wound crossbow loads and fires nothing,
  *       so the press after that sends the bolt and leaves the hands free, where a bow has already fired and starts drawing
  *       again. One cycle settles it, and neither weapon loses a shot to the question.</li>
  *   <li><b>Ammunition.</b> A bow with nothing to fire does not so much as come up, so a press that resolves and leaves
@@ -247,6 +248,9 @@ public final class ScriptedBrain implements Brain {
     /**
      * Farther than this and a fighter with something to shoot shoots instead of closing in. Inside it a sword does more
      * per tick than a bow needing twenty of them, so the bow goes away, unless there is nothing to swing.
+     *
+     * <p>Far enough is necessary and not sufficient: see {@link #finishesInTime}. A draw at something that arrives
+     * before it is full is a draw given up, and this distance alone said nothing about what was coming.
      */
     private static final float SHOOT_RANGE = 5.0F;
 
@@ -256,6 +260,27 @@ public final class ScriptedBrain implements Brain {
      * firing, so the arrow is kept rather than thrown away.
      */
     private static final float ABANDON_DRAW_RANGE = 2.6F;
+
+    /**
+     * How long a draw takes to reach the charge worth letting go of: twenty ticks for a bow, which is a full power arrow,
+     * and twenty five for a crossbow's wind. Until a release has said which of the two is in hand the longer is assumed,
+     * since a draw begun on the wrong figure is a draw that does not finish.
+     */
+    private static final int BOW_DRAW_TICKS = 20;
+    private static final int CROSSBOW_WIND_TICKS = 25;
+
+    /**
+     * How far a mob travels in a tick for each point of the movement speed attribute a slot carries. Measured off the
+     * recorded league fights rather than worked out from vanilla's friction, over two thousand replays: a zombie, whose
+     * attribute is 0.23, covers 0.154 blocks a tick, and a vindicator and a piglin brute, both 0.35, cover 0.239 and
+     * 0.240. That is one constant to within two percent.
+     *
+     * <p>Some things close faster than they walk — an enderman teleports, a ravager charges, a wolf sprints — by up to
+     * half again. That is what the velocity in the slot is for: whichever of the two is faster is what the target is
+     * credited with, so a mob already coming is believed over its own attribute, and a mob knocked backwards or standing
+     * still is still credited with what it could do next tick.
+     */
+    private static final double BLOCKS_A_TICK_PER_SPEED = 0.67D;
 
     // ---------------------------------------------------------------------------------------------------------------
     // The shield
@@ -571,7 +596,7 @@ public final class ScriptedBrain implements Brain {
         int melee = meleeSlot(o, obs);
         int ranged = me.spent ? -1 : slotHolding(o, obs, AgentObservation.ITEM_RANGED);
 
-        boolean shooting = shoots(me, ranged, melee, distance, clear);
+        boolean shooting = shoots(me, o, target, ranged, melee, distance, clear);
         boolean fleeing = !shooting && this.flees(me, slot, o, target, distance);
 
         // Anything with empty hands that has not swung yet might be a creeper, so while the swing is still cooling it is
@@ -1076,11 +1101,12 @@ public final class ScriptedBrain implements Brain {
     }
 
     /**
-     * Whether to shoot rather than close in. Something to shoot with and a line to shoot along are the whole of it,
-     * beyond a sword doing more inside its own reach than a bow needing twenty ticks: a fighter with nothing to swing
-     * shoots at any distance, since punching with a bow is worth one damage against an arrow's six.
+     * Whether to shoot rather than close in. Something to shoot with, a line to shoot along, and a draw that will be full
+     * before the target gets here are the whole of it, beyond a sword doing more inside its own reach than a bow needing
+     * twenty ticks: a fighter with nothing to swing shoots at any distance, since punching with a bow is worth one damage
+     * against an arrow's six.
      */
-    private static boolean shoots(Fighter me, int ranged, int melee, float distance, boolean clear) {
+    private static boolean shoots(Fighter me, float[] o, int target, int ranged, int melee, float distance, boolean clear) {
 
         if (ranged < 0) {
 
@@ -1101,7 +1127,39 @@ public final class ScriptedBrain implements Brain {
             return distance > ABANDON_DRAW_RANGE;
         }
 
-        return clear && distance > SHOOT_RANGE;
+        return clear && distance > SHOOT_RANGE && finishesInTime(me, o, target, distance);
+    }
+
+    /**
+     * Whether a draw begun now would be full before the target could interrupt it. A draw is twenty ticks of standing at a
+     * fifth of walking pace, and changing slot is the only way out of one, so a draw begun at something that arrives inside
+     * those twenty ticks is a draw thrown away: no arrow, and a fifth of the movement for as long as it lasted. The
+     * distance alone never said that. Over 400 of the teacher's own recorded sword and bow fights, of the draws it gave up
+     * before twenty ticks, 79% were begun between five and seven and a half blocks — the band that every walker in the
+     * league crosses in less than a draw.
+     *
+     * <p>It costs the opening draw very little. Fights start a median nine blocks apart; a zombie has to be past five and a
+     * half and the fastest thing that walks, a vindicator, past seven and a third, so the arrow the teacher opens with is
+     * still there. What goes is the second draw it used to start the moment a blow knocked something back past five blocks.
+     * The exception is the first draw of a fight, judged on a crossbow's twenty five ticks because nothing has said yet
+     * which weapon this is, which asks eight and a half blocks of a vindicator: that one is given up where the fight starts
+     * close.
+     *
+     * <p>Something that shoots back or flies is worth a draw at any distance past a sword's own reach. Closing is no answer
+     * to either: an archer twelve blocks off will not come, and nothing swung reaches a flyer.
+     */
+    private static boolean finishesInTime(Fighter me, float[] o, int target, float distance) {
+
+        if (o[target + ObservationSchema.ENEMY_SHOOTS] > 0.5F || o[target + ObservationSchema.ENEMY_FLIES] > 0.5F) {
+
+            return true;
+        }
+
+        double walks = o[target + ObservationSchema.ENEMY_SPEED] * ObservationSchema.SPEED_SCALE * BLOCKS_A_TICK_PER_SPEED;
+        double coming = -o[target + ObservationSchema.ENEMY_VELOCITY_FORWARD] * VELOCITY_SCALE;
+        double ticks = me.weapon == WEAPON_BOW ? BOW_DRAW_TICKS : CROSSBOW_WIND_TICKS;
+
+        return distance - Math.max(walks, coming) * ticks > ABANDON_DRAW_RANGE;
     }
 
     /**
