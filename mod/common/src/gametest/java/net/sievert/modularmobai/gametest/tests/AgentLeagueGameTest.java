@@ -387,9 +387,18 @@ public class AgentLeagueGameTest {
                 this.episode.reward().won();
             }
 
-            else if (standing) {
+            // The clock ran out with something still alive: a loss, as it has always been, or an agent that could not win
+            // would learn that running away is the best it can do.
+            else if (timedOut) {
 
                 this.episode.reward().lost();
+            }
+
+            // Standing, and the other side gone without ever being killed: a creeper that blew itself up. Worth nothing
+            // rather than the whole of a loss, which is what it used to pay by falling through to the branch above.
+            else if (standing) {
+
+                this.episode.reward().drew();
             }
 
             else {

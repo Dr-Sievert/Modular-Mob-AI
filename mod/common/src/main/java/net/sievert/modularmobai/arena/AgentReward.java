@@ -91,6 +91,23 @@ public final class AgentReward {
         this.finish(LOSS + SURVIVAL_BONUS * this.elapsedFraction());
     }
 
+    /**
+     * The fight ended with the agent standing and the other side gone without its health ever reaching zero: a creeper
+     * that blew itself up. Worth nothing, plus whatever damage was dealt and taken along the way.
+     *
+     * <p>It used to pay the whole of a loss, because anything that was not a win and left the agent standing went through
+     * {@link #lost}. So surviving a creeper was priced exactly like being killed by one, and against two creepers that was
+     * almost every fight: 1,477 draws against 473 wins and 15 losses. Nothing about that outcome is a defeat, and paying
+     * for it as one taught the agent that the correct answer to a creeper is worth avoiding.
+     *
+     * <p>Zero and not a win, because the agent did not finish the other side; and this opens no way to stall, since running
+     * the clock out with an opponent still alive is a timeout, which is still a loss.
+     */
+    public void drew() {
+
+        this.finish(0.0F);
+    }
+
 
     /** Zero at the start of the fight, one once the arena's time is up. */
     private float elapsedFraction() {
