@@ -147,6 +147,12 @@ if ($Seed) {
 
     $warmup = ''
 
+    # A run that has already started carries on from its own state, and the shape has to be read from that one: the shape is
+    # not a setting but a property of the weights, so a seeded run resuming without it builds the default network around a
+    # state of another shape and dies on the load. Read below, from whichever state is about to be loaded.
+    $shapeFrom = Join-Path $directory 'state.pt'
+    $seeded = $false
+
     if (-not (Test-Path (Join-Path $directory 'state.pt'))) {
 
         $source = if (Test-Path (Get-RunDirectory $Seed)) { Get-RunDirectory $Seed }
@@ -175,39 +181,58 @@ if ($Seed) {
         New-Item -ItemType Directory -Force $directory | Out-Null
         Copy-Item $state (Join-Path $directory 'state.pt')
 
-        # Iterations carry on from the seed's, so the critic's time alone is counted from there. Whatever torch says on
-        # its way in goes to stderr, which Windows PowerShell would take for an error.
-        #
-        # The widths come from the same file, because weights of one shape cannot be loaded into a network of another: a run
-        # seeded from a wider copy without them got as far as loading the state and then threw a wall of shape mismatches.
-        # Given here, they can still be overridden by naming them in -Extra, which is checked for below.
-        $ErrorActionPreference = 'Continue'
-        $read = & $Python -c "import sys, torch; s = torch.load(sys.argv[1], map_location='cpu', weights_only=False); c = s.get('config') or {}; print(s['iteration'], c.get('h1', 0), c.get('hidden', 0), c.get('h3', 0))" $state 2>$null
-        $ErrorActionPreference = 'Stop'
+        $shapeFrom = $state
+        $seeded = $true
+    }
 
-        $fields = "$read".Trim() -split '\s+'
+    # Iterations carry on from the seed's, so the critic's time alone is counted from there. Whatever torch says on its way
+    # in goes to stderr, which Windows PowerShell would take for an error.
+    #
+    # The shape comes from the same file, because weights of one shape cannot be loaded into a network of another: a run
+    # seeded from a wider copy without it got as far as loading the state and then threw a wall of shape mismatches. Given
+    # here, it can still be overridden by naming a width in -Extra, which is checked for below.
+    #
+    # The slot encoder is part of the shape and not a setting, which is the same lesson a second time: a pooled state read
+    # into an unpooled network is the same wall of mismatches, since pooling is what decides the first layer's width.
+    #
+    # And it is read on every start, not only the first, from whichever state is about to be loaded -- the run's own once it
+    # has one. A seeded run resuming without this builds the default network around a state of another shape, which is the
+    # third time the same lesson would have cost a run.
+    $ErrorActionPreference = 'Continue'
+    $read = & $Python -c "import sys, torch; s = torch.load(sys.argv[1], map_location='cpu', weights_only=False); c = s.get('config') or {}; print(s['iteration'], c.get('h1', 0), c.get('hidden', 0), c.get('h3', 0), c.get('slot_enc', 0))" $shapeFrom 2>$null
+    $ErrorActionPreference = 'Stop'
 
-        if ($LASTEXITCODE -ne 0 -or $fields.Count -lt 4 -or $fields[0] -notmatch '^\d+$') {
+    $fields = "$read".Trim() -split '\s+'
 
-            throw "Could not read the iteration and widths of $state"
+    if ($LASTEXITCODE -ne 0 -or $fields.Count -lt 5 -or $fields[0] -notmatch '^\d+$') {
+
+        throw "Could not read the iteration and shape of $shapeFrom"
+    }
+
+    $iteration = [int] $fields[0]
+    $widths = ''
+
+    foreach ($width in @(@('--h1', $fields[1]), @('--hidden', $fields[2]), @('--h3', $fields[3]), @('--slot-enc', $fields[4]))) {
+
+        if ([int] $width[1] -gt 0 -and $Extra -notmatch [Regex]::Escape($width[0])) {
+
+            $widths = "$widths $($width[0]) $($width[1])".Trim()
         }
+    }
 
-        $iteration = [int] $fields[0]
+    $Extra = "$widths $Extra".Trim()
+
+    # Only a fresh seeding gives the critic time alone: a run carrying on has a critic that has seen its own fights.
+    if ($seeded) {
+
         $warmup = "--critic-warmup $($iteration + 30)"
 
-        $widths = ''
+        Write-Host ("Seeded '$Run' from $shapeFrom, iteration $iteration" + $(if ($widths) { ", $widths" }))
+    }
 
-        foreach ($width in @(@('--h1', $fields[1]), @('--hidden', $fields[2]), @('--h3', $fields[3]))) {
+    else {
 
-            if ([int] $width[1] -gt 0 -and $Extra -notmatch [Regex]::Escape($width[0])) {
-
-                $widths = "$widths $($width[0]) $($width[1])".Trim()
-            }
-        }
-
-        $Extra = "$widths $Extra".Trim()
-
-        Write-Host ("Seeded '$Run' from $state, iteration $iteration" + $(if ($widths) { ", $widths" }))
+        Write-Host ("Carrying '$Run' on from iteration $iteration" + $(if ($widths) { ", $widths" }))
     }
 
     $Extra = "--learning-rate 5e-5 --clip 0.1 --target-kl 0.01 --entropy-coef 0.001 $warmup $Extra"
