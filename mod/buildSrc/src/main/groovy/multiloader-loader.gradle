@@ -1415,41 +1415,105 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
         }
     }
 
-    // Builds the terrain library: workers that fight nothing, each generating its share of -PlibrarySites sites in blocks
-    // of its own, checking each site for somewhere to start a fight, and keeping their chunks; then their worlds and
-    // indexes are put together into one library. Vanilla generates most of a chunk one task at a time, so a builder gets
-    // through about half a site a second whatever else the machine has free, and -Pworkers builders share the work. The
-    // new library replaces the old one only once it is whole; workers already running on the old one keep their links to
-    // its files, which stay on disk for as long as they do.
+    // Builds the terrain library, or adds to one: workers that fight nothing, each generating its share of the sites asked
+    // for in blocks of its own, checking each site for somewhere to start a fight, and keeping their chunks; then their
+    // worlds and indexes are put together. Vanilla generates most of a chunk one task at a time, so a builder gets through
+    // about half a site a second whatever else the machine has free, and -Pworkers builders share the work.
     //
-    //   gradlew :fabric:buildTerrainLibrary -PlibrarySites=4096 -Pworkers=4 -PworkerHeap=2G
+    //   gradlew :fabric:buildTerrainLibrary -PlibrarySites=4096 -Pworkers=4 -PworkerHeap=2G     a new library
+    //   gradlew :fabric:buildTerrainLibrary -PaddSites=1024 -Pworkers=4                         a thousand more sites
+    //
+    // -PaddSites keeps everything the library already has and appends: only the new sites are generated, and the points
+    // that existed keep the numbers they had, since points are numbered block by block and the new blocks go on the end.
+    // A new library, by contrast, replaces the old one only once it is whole.
+    //
+    // Nothing half finished is ever readable, either way. The builders write into a staging folder; only when every one of
+    // them has finished, and every pair of blocks has been checked to be far enough apart to have region files of its own,
+    // are the new files moved into the library — whole, one atomic rename each — and only then is a new index moved over
+    // the old one. Until that last move no point refers to any of the new files, so a worker reading the library sees
+    // exactly what it saw before; and a worker already running holds its own hard links to the files it was given and never
+    // looks at the index again. An addition that fails leaves a staging folder that the next one deletes.
     tasks.register('buildTerrainLibrary') {
 
         group = 'modular mob ai'
-        description = 'Generates the terrain library, the fight sites terrain workers read instead of generating ground.'
+        description = 'Generates the terrain library, the fight sites terrain workers read instead of generating ground, or adds to it.'
         dependsOn runTask.taskDependencies
 
         doLast {
 
             def label = 'terrain-library'
-            def building = new File(terrainPool, 'library-building')
-            def region = new File(building, 'region')
+            def added = Integer.parseInt(providers.gradleProperty('addSites').getOrElse('0'))
 
-            building.deleteDir()
+            // Adding needs something to add to. Asked to add where there is no library, the honest thing is to make one of
+            // that size rather than to fail: it is what was wanted, and it is what a fresh machine needs.
+            def existing = added > 0 && libraryIndex.isFile() ? readProperties(libraryIndex) : null
+
+            if (added > 0 && existing == null) {
+
+                logger.lifecycle("Terrain library: there is none in ${terrainLibrary} yet, so building one of ${added} sites rather than adding to it")
+            }
+
+            def staging = new File(terrainPool, existing == null ? 'library-building' : 'library-adding')
+            def region = new File(staging, 'region')
+
+            staging.deleteDir()
             region.mkdirs()
 
-            // Each builder writes its index into its own folder, where a relative path lands.
-            def result = runArenas('scripted', 16, [
+            // Each builder writes its index into its own folder, where a relative path lands. A builder adding to a library
+            // is told where its index is, so that its new blocks land well clear of the ground already in it.
+            def properties = [
                     'modular_mob_ai.gametest.suite'       : 'library',
                     'modular_mob_ai.gametest.library'     : 'library.properties',
-                    'modular_mob_ai.gametest.librarySites': providers.gradleProperty('librarySites').getOrElse('4096')
-            ], null, null, '1', label)
+                    'modular_mob_ai.gametest.librarySites': added > 0 ? String.valueOf(added)
+                            : providers.gradleProperty('librarySites').getOrElse('4096')
+            ]
 
-            // One index for all of them: their blocks one after another, and each one's unusable points moved along by
-            // the points of the blocks before its own.
+            if (existing != null) {
+
+                properties['modular_mob_ai.gametest.libraryAdding'] = libraryIndex.absolutePath
+            }
+
+            def result = runArenas('scripted', 16, properties, null, null, '1', label)
+
+            // One index for all of it: the blocks the library already had, then each builder's, and every set of point
+            // numbers moved along by the points of the blocks before its own.
             def blocks = []
             def unusable = []
+            def kinds = [:] as LinkedHashMap
             def layoutLines = null
+            def columns = 0
+            def rows = 0
+
+            // Point numbers in a set, as both unusable and the kinds are written: "3,17,42", moved along by an offset.
+            def pointsOf = { Properties from, String key, int offset ->
+
+                from.getProperty(key, '').split(',').findAll { !it.trim().isEmpty() }.collect { (it.trim() as int) + offset }
+            }
+
+            def takeKinds = { Properties from, int offset ->
+
+                from.getProperty('kinds', '').split(',').findAll { !it.trim().isEmpty() }.each { kind ->
+
+                    kinds.computeIfAbsent(kind.trim(), { [] }).addAll(pointsOf(from, "kind.${kind.trim()}".toString(), offset))
+                }
+            }
+
+            if (existing != null) {
+
+                columns = existing.getProperty('columns') as int
+                rows = existing.getProperty('rows') as int
+                layoutLines = "spacing=${existing.getProperty('spacing')}\ncolumns=${columns}\nrows=${rows}\n"
+
+                for (int block = 0; existing.containsKey("block.${block}".toString()); block++) {
+
+                    blocks += existing.getProperty("block.${block}".toString())
+                }
+
+                unusable += pointsOf(existing, 'unusable', 0)
+                takeKinds(existing, 0)
+
+                logger.lifecycle("Terrain library: ${blocks.size() * columns * rows} sites already in it, in ${blocks.size()} blocks")
+            }
 
             for (int builder = 0; builder < result.workers; builder++) {
 
@@ -1462,28 +1526,80 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
                     throw new GradleException("Builder ${builder} did not finish its part of the terrain library; see ${new File(worker, 'log.txt')}")
                 }
 
-                def columns = built.getProperty('columns') as int
-                def rows = built.getProperty('rows') as int
-                def offset = blocks.size() * columns * rows
+                // A library can only grow by blocks of the shape it already has: a point's number is worked out from the
+                // columns and rows, so mixing two layouts in one index would move every point that already existed.
+                if (columns != 0 && (built.getProperty('columns') as int) != columns || rows != 0 && (built.getProperty('rows') as int) != rows) {
 
+                    throw new GradleException("The library in ${terrainLibrary} is laid out ${columns} by ${rows} and this "
+                            + "build lays its blocks out ${built.getProperty('columns')} by ${built.getProperty('rows')}; "
+                            + "build a new library rather than adding to this one")
+                }
+
+                columns = built.getProperty('columns') as int
+                rows = built.getProperty('rows') as int
                 layoutLines = "spacing=${built.getProperty('spacing')}\ncolumns=${columns}\nrows=${rows}\n"
+
+                def offset = blocks.size() * columns * rows
 
                 for (int block = 0; built.containsKey("block.${block}".toString()); block++) {
 
                     blocks += built.getProperty("block.${block}".toString())
                 }
 
-                built.getProperty('unusable', '').split(',').findAll { !it.trim().isEmpty() }.each { unusable += (it.trim() as int) + offset }
+                unusable += pointsOf(built, 'unusable', offset)
+                takeKinds(built, offset)
 
                 // Blocks lie far apart, so their region files never coincide; the spawn area's do, and are the same in
-                // every world, so the first builder's are kept. Moved where the drive allows, copied otherwise.
+                // every world, so the first builder's are kept. Anything else that coincides is two blocks of ground on
+                // top of each other, which would lose one of them, and is refused rather than quietly skipped. Moved where
+                // the drive allows, copied otherwise.
                 world.eachFile { file ->
 
                     def target = new File(region, file.name)
+                    def live = new File(new File(terrainLibrary, 'region'), file.name)
 
-                    if (!target.exists() && !file.renameTo(target)) {
+                    if (spawnRegions(file.name)) {
+
+                        if (!target.exists() && !live.exists() && !file.renameTo(target)) {
+
+                            java.nio.file.Files.copy(file.toPath(), target.toPath())
+                        }
+
+                        return
+                    }
+
+                    if (target.exists() || existing != null && live.exists()) {
+
+                        throw new GradleException("Builder ${builder} generated ground in ${file.name}, which the library "
+                                + "already has: two blocks of sites landed on top of each other, and nothing has been "
+                                + "changed. Running it again picks somewhere else. If it keeps happening on the same file, "
+                                + "an addition that was interrupted between moving its ground in and writing its index left "
+                                + "that file behind with nothing referring to it; delete it from "
+                                + "${new File(terrainLibrary, 'region')} and run again.")
+                    }
+
+                    if (!file.renameTo(target)) {
 
                         java.nio.file.Files.copy(file.toPath(), target.toPath())
+                    }
+                }
+            }
+
+            // Every pair of blocks, old and new, far enough apart to have region files of its own. A builder keeps clear of
+            // the library and of its own blocks, but two builders cannot see each other's choices, so this is the guard
+            // that makes an addition safe. Checked before anything is moved into the library.
+            def apart = 4096
+            def origins = blocks.collect { it.split(',').collect { part -> part.trim() as int } }
+
+            for (int a = 0; a < origins.size(); a++) {
+
+                for (int b = a + 1; b < origins.size(); b++) {
+
+                    if (Math.abs(origins[a][0] - origins[b][0]) < apart && Math.abs(origins[a][1] - origins[b][1]) < apart) {
+
+                        throw new GradleException("Two blocks of fight sites landed within ${apart} blocks of each other, at "
+                                + "${blocks[a]} and ${blocks[b]}, so they would share region files. Nothing has been "
+                                + "changed; run it again.")
                     }
                 }
             }
@@ -1491,19 +1607,61 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
             def text = new StringBuilder(layoutLines)
             blocks.eachWithIndex { block, index -> text.append("block.${index}=${block}\n") }
             text.append("unusable=${unusable.join(',')}\n")
-            new File(building, 'library.properties').text = text.toString()
+            text.append("kinds=${kinds.keySet().join(',')}\n")
+            kinds.each { kind, points -> text.append("kind.${kind}=${points.join(',')}\n") }
 
-            terrainLibrary.deleteDir()
+            if (existing == null) {
 
-            if (!building.renameTo(terrainLibrary)) {
+                new File(staging, 'library.properties').text = text.toString()
 
-                throw new GradleException("Could not move the new terrain library into ${terrainLibrary}; it is in ${building}")
+                terrainLibrary.deleteDir()
+
+                if (!staging.renameTo(terrainLibrary)) {
+
+                    throw new GradleException("Could not move the new terrain library into ${terrainLibrary}; it is in ${staging}")
+                }
+            }
+
+            else {
+
+                // The new ground goes in first, one whole file at a time, while no point in the index refers to any of it;
+                // then the index. A rename inside one file system is atomic, so a worker linking the library at this moment
+                // sees each file either not at all or all of it. Where a rename cannot be done, the copy goes to a
+                // temporary name and is renamed, which comes to the same thing.
+                def live = new File(terrainLibrary, 'region')
+                live.mkdirs()
+
+                (region.listFiles() ?: []).each { file ->
+
+                    def target = new File(live, file.name)
+
+                    if (target.exists()) {
+
+                        return
+                    }
+
+                    if (!file.renameTo(target)) {
+
+                        def partial = new File(live, file.name + '.partial')
+                        java.nio.file.Files.copy(file.toPath(), partial.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                        java.nio.file.Files.move(partial.toPath(), target.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+                    }
+                }
+
+                def temporary = new File(terrainLibrary, 'library.properties.tmp')
+                temporary.text = text.toString()
+                java.nio.file.Files.move(temporary.toPath(), libraryIndex.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+
+                staging.deleteDir()
             }
 
             def size = (new File(terrainLibrary, 'region').listFiles() ?: []).sum { it.length() } ?: 0L
+            def points = blocks.size() * columns * rows
 
-            logger.lifecycle(String.format(Locale.ROOT, "Terrain library: %.0f MB in %s; terrain workers read their sites from it now",
-                    size / 1048576.0d, terrainLibrary))
+            logger.lifecycle(String.format(Locale.ROOT, "Terrain library: %,d sites in %,d blocks, %,d of them no fight can "
+                    + "start on, %.0f MB in %s; terrain workers read their sites from it now", points, blocks.size(),
+                    unusable.size(), size / 1048576.0d, terrainLibrary))
         }
     }
 

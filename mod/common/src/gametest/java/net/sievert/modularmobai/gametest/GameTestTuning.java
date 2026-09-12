@@ -256,6 +256,19 @@ public final class GameTestTuning {
     }
 
     /**
+     * The index of the terrain library this build is adding to, when it is growing one rather than making a new one: the
+     * builders read where its blocks already are and put their new ones well clear of them, since two blocks close together
+     * would share region files and one would be written over the other. Null when a new library is being made.
+     *
+     * <p>A path rather than a list of coordinates, so that adding to a library of any size costs one argument.
+     */
+    public static String libraryAdding() {
+
+        final String property = System.getProperty("modular_mob_ai.gametest.libraryAdding");
+        return property == null || property.isBlank() ? null : property.trim();
+    }
+
+    /**
      * Where the terrain suite puts its fight sites, as a seed; zero, the default, lets every run pick somewhere new. The
      * world's own seed never changes, so a fixed one here puts every run on the same ground, which is what comparing
      * two builds needs: one run in a forest and the next in the mountains differ by more than most changes do.

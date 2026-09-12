@@ -1091,10 +1091,22 @@ public final class TerrainSites {
      */
     static BlockPos chooseOrigin(ServerLevel level, RandomSource random, int points) {
 
+        return chooseOrigin(level, random, points, List.of());
+    }
+
+    /**
+     * @param keepAway origins no new one may land near, for a library being added to: a block and everything the generator
+     *                 reaches around it is under two thousand blocks across, and two blocks closer than
+     *                 {@link TerrainLibrary#BLOCKS_APART} would share region files. A candidate too close to any of these
+     *                 is passed over however good its ground, and if hundreds of tries find nowhere at all, that is said
+     *                 rather than quietly returning somewhere that overlaps.
+     */
+    static BlockPos chooseOrigin(ServerLevel level, RandomSource random, int points, List<BlockPos> keepAway) {
+
         BiomeSource biomes = level.getChunkSource().getGenerator().getBiomeSource();
         Climate.Sampler climate = level.getChunkSource().randomState().sampler();
 
-        BlockPos best = BlockPos.ZERO;
+        BlockPos best = null;
         int bestLand = -1;
         int samples = 16;
 
@@ -1103,6 +1115,11 @@ public final class TerrainSites {
             // Chunk aligned plus eight, so every site centre sits in the middle of its chunk.
             int x = (Mth.nextInt(random, -ORIGIN_RANGE, ORIGIN_RANGE) & ~15) + 8;
             int z = (Mth.nextInt(random, -ORIGIN_RANGE, ORIGIN_RANGE) & ~15) + 8;
+
+            if (tooClose(x, z, keepAway)) {
+
+                continue;
+            }
 
             int land = 0;
 
@@ -1134,6 +1151,27 @@ public final class TerrainSites {
             }
         }
 
+        if (best == null) {
+
+            throw new IllegalStateException("Nowhere left to put a block of fight sites: " + ORIGIN_ATTEMPTS
+                    + " tries all landed within " + TerrainLibrary.BLOCKS_APART + " blocks of one of the " + keepAway.size()
+                    + " already in use. The library has outgrown the range sites are placed in.");
+        }
+
         return best;
+    }
+
+    /** Whether a candidate origin is near enough to one already in use that their region files could touch. */
+    private static boolean tooClose(int x, int z, List<BlockPos> keepAway) {
+
+        for (BlockPos taken : keepAway) {
+
+            if (Math.abs(x - taken.getX()) < TerrainLibrary.BLOCKS_APART && Math.abs(z - taken.getZ()) < TerrainLibrary.BLOCKS_APART) {
+
+                return true;
+            }
+        }
+
+        return false;
     }
 }
