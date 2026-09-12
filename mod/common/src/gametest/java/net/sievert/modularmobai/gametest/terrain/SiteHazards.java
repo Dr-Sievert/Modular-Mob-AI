@@ -3,11 +3,9 @@ package net.sievert.modularmobai.gametest.terrain;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.FluidTags;
-import net.minecraft.world.level.block.BaseFireBlock;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.CampfireBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
+import net.sievert.modularmobai.brain.schema.AgentObservation;
 
 /**
  * What a fight site offers a fighter who can push: lava to knock something into, an edge to knock it off, water, or
@@ -178,20 +176,11 @@ public final class SiteHazards {
     }
 
     /**
-     * Whether standing in this would hurt. The same list as the agent's own observation reads as a hazard, which is the
-     * point: see the class comment.
+     * Whether standing in this would hurt: the agent's own rule, asked rather than copied, so the two can never drift
+     * apart. See the class comment for why that matters.
      */
     private static boolean hazard(BlockState state) {
 
-        return state.getFluidState().is(FluidTags.LAVA)
-                || state.getBlock() instanceof BaseFireBlock
-                || state.is(Blocks.MAGMA_BLOCK)
-                || state.is(Blocks.CACTUS)
-                || state.is(Blocks.POWDER_SNOW)
-                || state.is(Blocks.SWEET_BERRY_BUSH)
-                || state.is(Blocks.COBWEB)
-                || state.is(Blocks.WITHER_ROSE)
-                || state.is(Blocks.POINTED_DRIPSTONE)
-                || state.getBlock() instanceof CampfireBlock && state.getValue(CampfireBlock.LIT);
+        return AgentObservation.hazard(state);
     }
 }
