@@ -203,6 +203,14 @@ class RunDirectory:
 
         (self.path / FINISHED_FILE).write_text(reason + "\n", encoding="utf-8")
 
+    def unfinish(self) -> None:
+        """Takes that back, because a checkpoint has beaten the best the verdict was about.
+
+        The build looks at this file at the top of every round rather than once, so a run that had stopped starting them
+        starts again. Nothing else is undone: the round that was under way was being learned from anyway."""
+
+        (self.path / FINISHED_FILE).unlink(missing_ok=True)
+
     def status(self, state: str, iteration: int, rounds_done: int) -> None:
         """Says what this side is doing. The build waits on this before starting another round of arenas."""
 

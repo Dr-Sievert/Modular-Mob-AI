@@ -139,6 +139,43 @@ class ResumeTest(unittest.TestCase):
             self.assertEqual(evaluator.since_best, 0)
 
 
+class VerdictTest(unittest.TestCase):
+    """The evaluator's side of taking a verdict back: once a checkpoint beats the best, update stops saying the run is
+    done, which is what lets train.py withdraw it."""
+
+    def test_a_new_best_takes_the_verdict_back(self):
+        with tempfile.TemporaryDirectory() as folder:
+            run = RunDirectory(Path(folder) / "run")
+            run.weights.mkdir(parents=True, exist_ok=True)
+            evaluator = Evaluator(run, every=25, fights=2, patience=2, target=0.995, rating=lambda i: 1500.0)
+
+            def fights(iteration: int, outcomes: tuple[str, str]) -> None:
+                run.weights_file(iteration).write_bytes(b"weights")
+                lines = "".join(f"{iteration},{outcome},100,zombie\n" for outcome in outcomes)
+                with open(evaluator.folder / "w00.csv", "a", encoding="utf-8") as stream:
+                    stream.write(lines)
+
+            # One checkpoint at a time, as a run does it. Each call judges the one the call before named, so the last one
+            # takes an extra call to be judged at all.
+            # The first one wins half, so that the last one has something to beat.
+            for iteration, outcomes in ((25, ("win", "loss")), (50, ("loss", "loss")), (75, ("loss", "loss"))):
+                fights(iteration, outcomes)
+                evaluator.update(iteration)
+
+            reason = evaluator.update(75)
+
+            self.assertEqual(evaluator.best, 25)
+            self.assertGreaterEqual(evaluator.since_best, evaluator.patience)
+            self.assertIsNotNone(reason, "the run should be done by patience here")
+
+            # A checkpoint that beats it, and the verdict is gone.
+            fights(100, ("win", "win"))
+            evaluator.update(100)
+
+            self.assertIsNone(evaluator.update(100), "a new best left the run still saying it was done")
+            self.assertEqual(evaluator.best, 100)
+
+
 class ReadingTest(unittest.TestCase):
     def test_the_opponent_column_is_read_and_an_older_line_still_counts(self):
         with tempfile.TemporaryDirectory() as folder:
