@@ -44,6 +44,7 @@ scripts\test.ps1 -Play                 the agent in a real game (jar networks, /
 scripts\play.ps1                       the dev client, agents on the best network in models\; -Model, -Weights, -Loader
 scripts\terrain.ps1                    once per machine before any training: the terrain library a run fights on
 scripts\train.ps1 -Run <name>          train (resumes); see docs/training.md for -FromCopy, -Workers and the rest
+scripts\dagger.ps1 -Run <name>         record a round of the teacher's answers to that run's own best network
 scripts\watch.ps1                      live dashboard of every run, one line each
 scripts\stop.ps1 -Run <name>           stop one run (bare stop.ps1 stops every run on the machine)
 scripts\eval.ps1 -Weights models\vs-copy\best.mbw     win rate of a network, 2,000 fights
@@ -57,6 +58,7 @@ scripts\viewer.ps1                     watch recorded fights in the browser, 2D 
   Variable names are case-insensitive, so `$weights` and a `-Weights` parameter are the same variable.
 - Minecraft 1.21.1, Java 21, MultiLoader: `mod/common` is shared, `mod/fabric` and `mod/neoforge` are thin. Training
   and tests run on Fabric.
-- Each training worker is a headless game-test server with a 1.5 GB heap, about 1.85 GB of memory in all. The build
-  refuses to start more workers than free memory holds, and stops a run whose free memory falls under 1.5 GB.
+- Each training worker is a headless game-test server. Its heap comes from what it fights on: 1 GB on the terrain library,
+  about 1.4 GB of memory in all; 2 GB where it generates its own ground. The build refuses to start more workers than free
+  memory holds, and stops a run whose free memory falls under 1.5 GB.
 - Starting a run that is already training is refused, rather than killing the live one.

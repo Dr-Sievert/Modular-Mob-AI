@@ -155,11 +155,11 @@ public final class GameTestTuning {
     /**
      * How much ground a fight site holds: chunks either side of its centre chunk, so two gives the eighty blocks across
      * that every run so far has fought on. Ranged and flying fights want more room than that, and this is where it comes
-     * from, but it is one number for a whole run rather than something a matchup can ask for, for two reasons: a site's
-     * chunks are nearly all of a worker's memory, so growing them costs heap whether a fight needs the room or not, and
-     * the terrain library holds its sites at one size, so a run can only read back what a library was built for. Raising
-     * it means building the library again, {@code scripts\terrain.ps1 -Radius}, and giving each worker a larger heap or
-     * fewer slots; see {@link net.sievert.modularmobai.gametest.terrain.TerrainSites}.
+     * from, but it is one number for a whole run rather than something a matchup can ask for: the terrain library holds its
+     * sites at the size it was built for, so a run can only read back ground a library has, and raising it means building
+     * the library again, {@code scripts\terrain.ps1 -Radius}, where what it costs is measured. Twice the chunks tick in the
+     * same heap, so the price is disk and about a quarter of the throughput, not memory. See
+     * {@link net.sievert.modularmobai.gametest.terrain.TerrainSites}.
      */
     public static int siteRadius() {
 
@@ -210,6 +210,33 @@ public final class GameTestTuning {
     public static boolean buildingLibrary() {
 
         return "library".equals(suite());
+    }
+
+    /**
+     * Whether the light engine has to work out how bright anywhere is. Working light out is most of what a worker
+     * allocates, and the two suites that train run without a light engine at all; see
+     * {@link net.sievert.modularmobai.gametest.mixin.LevelLightEngineMixin} for what that saves.
+     *
+     * <p>Those two are named rather than every suite but a few, because being wrong here is quiet. Nothing about the
+     * agent reads light: the observation has none in it, and neither the network nor the scripted fighter nor the reward
+     * ever asks. What reads light is vanilla, and it reads it through more doors than it looks: brightness directly, for
+     * the undead burning by day, a spider giving up by day and anything spawning naturally; and {@code canSeeSky}, which
+     * is not a heightmap question but "is the sky light here fifteen", which rain then asks in turn. A vindicator, which
+     * is the whole of the {@code terrain} and {@code arena} suites, asks none of them, and neither does the agent facing
+     * it: nothing there burns, nothing spawns, and nothing catches fire for rain to put out.
+     *
+     * <p>Everything else keeps its light, and each for its own reason. The {@code league} suite fights 26 mobs, among
+     * them the undead, spiders and endermen, and an enderman takes damage in rain; its ratings are a record of vanilla
+     * behaviour and should stay one. The {@code library} suite saves the chunks it generates, light and all, and that
+     * saved light is exactly what later workers read instead of working it out again. A run that keeps its world
+     * ({@link #terrainFile()}, the pool behind {@code -PterrainLibrary=false}) saves it for the same reason. And
+     * {@code play} and {@code mechanics} are checks, not throughput.
+     */
+    public static boolean lighting() {
+
+        final String suite = suite();
+
+        return !(("terrain".equals(suite) || "arena".equals(suite)) && terrainFile() == null);
     }
 
     /**

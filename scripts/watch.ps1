@@ -77,7 +77,7 @@ function Get-RunView([string] $Name, $Workers) {
     $finished = "$(Get-Content (Join-Path $directory 'finished') -ErrorAction SilentlyContinue)".Trim()
 
     $view = [ordered]@{
-        Name = $Name; State = 'stopped'; Workers = @($Workers | Where-Object { $_.CommandLine -match [regex]::Escape($directory) }).Count
+        Name = $Name; State = 'stopped'; Workers = @($Workers | Where-Object { $_.CommandLine -match ([regex]::Escape($directory) + '(?![\w-])') }).Count
         Iteration = ''; FightsPerSecond = $null; TicksPerSecond = $null; Win = $null; Trend = $null; Spark = ''
         Evaluated = $null; Best = $null; Note = ''; Warning = ''
     }

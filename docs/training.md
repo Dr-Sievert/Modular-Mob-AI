@@ -10,6 +10,41 @@ to copy a hand-written fighter first, then improve the copy with reinforcement l
 1. **The scripted teacher.** `brain/ScriptedBrain.java` wins about 98.6% against a vindicator on terrain. It plans a
    path over the agent's own terrain grid, keeps the vindicator between 2.4 and 3.1 blocks, swings only at full strength
    and never into a block, and drops down to a target stuck in a pit. It sees only what the network sees.
+
+   Being in something that hurts comes before the fight: a blow knocks a body onto ground the planner would never have
+   walked onto, and powder snow is the one it cannot leave by itself. It heads out by the shortest way, and breaks the
+   block when walking gets nowhere, which covers cobwebs and berry bushes too.
+
+   It also uses everything it carries, which matters because PPO only improves what it samples. Seeded from a teacher
+   that never pressed use, the first league run held use on 0 of 79,724 ticks over its last 400 fights, fired no arrows
+   and raised no shield: a bow needs twenty ticks of held use before the first arrow flies, and nothing in the reward
+   finds that by accident. So the teacher now also:
+   - **draws a bow** when the target is out of reach with a clear line, holds it to full power, aims with gravity and
+     drag worked out by bisection and leads the target, looses when the shot is on, and goes back to the sword when the
+     target closes or the quiver runs out;
+   - **winds a crossbow**, holds the bolt, and fires when aimed. A bow and a crossbow read as one item category, and it
+     tells them apart from what a release does rather than from the layout;
+   - **raises a shield** against something inside reach while its own swing cools, against anything with a bow in its
+     hands that has got close, against a reach longer than a man's, and against a shot already in the air;
+   - **blocks a ravager to stun it**, which the reach rule covers: only a ravager swings from four blocks away, and a
+     blocked ravager is stunned for two seconds and carries no axe to knock the shield aside;
+   - **backs away from a lit creeper**: empty hands, never seen to swing, and stopped coming within three blocks is a
+     creeper with its fuse lit, and it walks clear to seven and a half blocks before coming back.
+
+   All of it is decided from the observation and a little state per agent, which the network has 128 numbers of memory
+   for; see the class comment for what that state is and why every bit of it is checked against the body.
+
+   It also chooses how to throw each blow, since vanilla gives one swing three shapes and allows at most one of them:
+   - **into a hazard** wherever it can line one up. The knockback goes exactly along the agent's own look, so a hazard
+     directly behind the target is somewhere the target can be pushed, and the ground kills it. It searches the reachable
+     spots for one that puts agent, target and hazard on a line, and sprints into the blow from there. Lava, fire, magma
+     and the edge of a drop nothing survives all count, which is what the terrain grid's hazard mark is for;
+   - **for the knockback** otherwise, whenever what is in front of it is worth having further off: a reach longer than a
+     man's, empty hands that have not swung, or health already spent. A sprint is forward only, so it is never asked for
+     while backing away;
+   - **for the critical**, half again the damage, when neither applies, by leaving the ground exactly as many ticks ahead
+     of a full cooldown as a jump spends coming down. An earlier attempt guessed that gap; this one reads the cooldown's
+     own rate off two ticks of the observation, so it holds for a sword and an axe alike.
 2. **Imitation**, with `scripts\imitate.ps1 -Run <copy>`:
    - It records the teacher's fights with its movement and aim pushed off by noise (DART, 0.1 of full deflection), so
      the record includes getting back on target.
@@ -95,7 +130,7 @@ scripts\train.ps1 -Run league -Suite league -Seed vs-copy     the league, from v
 | `-RoundSize` | 250000 | fights per round; each round starts fresh worker processes |
 | `-Workers` | 0 = auto | worker processes (game servers) |
 | `-Slots` | 25 | fights at once per worker |
-| `-Heap` | 1536M | heap per worker; it needs about 0.95 GB live, so 1 GB thrashes |
+| `-Heap` | from the suite | heap per worker: the build gives 1G on the terrain library, where a worker holds about half a gigabyte live, and 2G where a worker generates its own ground and settles at about 0.95 GB |
 | `-SiteRadius` | 2 | chunks either side of a fight site's centre: 2 is 80 blocks across, 3 is 112. No more than the terrain library was built for; 3 costs about a quarter of the throughput and no extra heap |
 | `-RolloutSteps` | 16384 (65536 with `-FromCopy`) | steps of experience per update (an iteration) |
 | `-Device` | cuda | `cpu` keeps the GPU out of it |
@@ -103,6 +138,7 @@ scripts\train.ps1 -Run league -Suite league -Seed vs-copy     the league, from v
 | `-ReplayEvery` | 200 | record one fight in this many per worker, for the viewer; 0 for none |
 | `-FromCopy` | off | the safeguarded settings for a run that starts from a copy |
 | `-Seed` | | start a new run from another's best checkpoint state: `runs\<seed>`, else `models\<seed>\state.pt`, else a folder by path; gentle settings as `-FromCopy` but no teacher pull, the critic alone for 30 iterations, 65536 steps and no battle limit by default |
+| `-TeacherWeight` | 0 | pull every update back towards the teacher's recorded answers in `runs\<run>\demos`; see `scripts\dagger.ps1` below |
 | `-Full` | off | the whole build output |
 | `-Extra` | | options passed to the trainer |
 
@@ -173,6 +209,46 @@ This sets up `runs\<prefix>-copy` from the copy the first time (state, weights, 
 runs in the background, with output going to each run's `console.log`. The copy's run stops when evaluation says done;
 the run from nothing only stops at `-ScratchBattles` (3,000,000).
 
+### `scripts\dagger.ps1`: correct a run that is already training
+
+```
+scripts\dagger.ps1 -Run league                    one round for runs\league on the league, from its best weights
+scripts\dagger.ps1 -Run league -Fights 8000       more of it
+scripts\dagger.ps1 -Run league -Weights models\vs-copy\best.mbw     another network's mistakes to correct
+scripts\dagger.ps1 -Run vindicator -Suite terrain one vindicator instead, as imitate.ps1's rounds are
+```
+
+This is `imitate.ps1`'s correction round on its own, for a run past imitation: the run's own best network drives, the
+scripted fighter says what it would have done on every tick, and the answers go into the run's `demos`. What is new is
+the suite. On the league the student meets every mob and every loadout in turn, so the record covers a bow, a crossbow, a
+shield and all 26 opponents, which is what a league run can usefully be pulled back towards; a record of one fight
+against one vindicator is not.
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `-Run` | required | the run whose demos to add to |
+| `-Fights` | 4000 | fights recorded, about fifteen per opponent and loadout pairing |
+| `-Suite` | league | `terrain` or `arena` for the one on one fight instead |
+| `-Weights` | `runs\<run>\best.mbw` | which network drives |
+| `-Workers`, `-Slots`, `-Heap`, `-StudentNoise` | 8, 25, 1280M, 0.05 | as for `imitate.ps1` |
+
+Records are named after the suite they were made on: `demos\league-round-1` beside `demos\round-1`, so a league record
+never lands on top of a vindicator one and a run can keep both. `runs\vindicator4`'s melee record stays exactly as
+usable as it was, and `train.py imitate` and `--teacher-weight` both read every folder under `demos`.
+
+The script refuses to write into a `demos` folder that is a junction to another run's, which `compare.ps1` makes: a round
+recorded there would put this run's corrections into the other run's record.
+
+Then train pulled back towards it:
+
+```
+scripts\train.ps1 -Run league -Suite league -TeacherWeight 0.5
+```
+
+`-TeacherWeight` is an imitation loss on a sample of the record, applied on every update alongside PPO's own; it is what
+`-FromCopy` sets to 0.5, and an explicit one beats that. It stops the run before it starts if there is no record to pull
+towards.
+
 ### `scripts\imitate.ps1`: make a copy of the teacher
 
 ```
@@ -188,7 +264,8 @@ scripts\imitate.ps1 -Run vindicator -Rounds 2       two more rounds on top
 | `-StudentNoise` | 0.05 | noise on the copy while it drives in correction rounds |
 | `-Workers`, `-Slots`, `-Heap` | 8, 25, 1280M | as for training |
 
-Demos go to `runs\<run>\demos\round-N\`. They're gigabytes, and not in git.
+Demos go to `runs\<run>\demos\round-N\` on the terrain suite, and `demos\<suite>-round-N\` on any other. They're
+gigabytes, and not in git.
 
 ### Watching and stopping
 
@@ -219,14 +296,23 @@ eval\ eval.csv best.mbw finished       evaluation, see architecture.md
 logs\train-*.log     the trainer's log; one line per iteration
 console.log          the whole build output of a background run
 replays\*.json       recorded fights for the viewer
-demos\               the teacher's recorded answers (imitation runs, or a junction to them)
+demos\               the teacher's recorded answers, a folder per round and suite, or a junction to another run's
 ```
 
 ## The machine
 
-Each worker is a whole headless Minecraft server, about 1.85 GB of memory with its 1.5 GB heap, and uses 2.5 to 4
-cores: its server thread, plus terrain generation and garbage collection. On a 32 GB machine, memory decides how many
-fit. The build protects the machine:
+Each worker is a whole headless Minecraft server and uses 2.5 to 4 cores: its server thread, plus terrain generation and
+garbage collection. On a 32 GB machine, memory decides how many fit. Nearly all of a worker's heap is the ground under
+and around the sites it is fighting on, so the build picks the heap from what the run actually fights on: **1 GB on the
+terrain library**, where the sites are read from disk and about half a gigabyte is live, measured at 1.42 GB of private
+memory in all; **2 GB** where a worker generates its own ground and settles at about 0.95 GB live. `-Heap` overrides it.
+Every worker also gets `-XX:G1HeapRegionSize=4m`, without which a gigabyte heap collects worse than a larger one; see
+[findings.md](findings.md).
+
+A worker on the `terrain` or `arena` suite runs with **no light engine at all**, since a vindicator fight never asks how
+bright anywhere is: about a fifth more fights per worker-second and nearly half the collections, measured over 24,000
+fights. The `league` suite keeps its light, because the undead burn by day and an enderman takes damage in rain, and so do
+the library build, `play` and `mechanics`; see `GameTestTuning.lighting`. The build protects the machine:
 
 | Gradle property | Default | What it does |
 | --- | --- | --- |
@@ -236,6 +322,7 @@ fit. The build protects the machine:
 | `workerCpus` | auto | cores each server sees |
 | `workerStagger` | 1 | seconds between starting workers |
 | `terrainPool`, `terrainUses` | 8, 8 | kept terrain worlds, and how often each is reused |
+| `terrainSeed` | 0 = anywhere | pins where every worker's fight sites come from, so two rounds fight the same ground; what comparing two builds needs |
 
 The trainer caps itself at half the GPU's memory and falls back to the CPU if an update runs out. An update takes 0.5 to
 1.6 s on an RTX 4070 Ti SUPER.
