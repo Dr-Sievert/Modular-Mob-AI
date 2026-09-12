@@ -65,7 +65,7 @@ param(
     # that can be read side by side. They never learn, so they share the mobs' matchmaking rather than the self-play share;
     # the scripted fighter stays the only anchor. A name of another body, or one an opponent already answers to, is refused
     # by name. See docs\training.md and mod\...\gametest\league\Published.java.
-    [string] $LeagueModels = '',
+    [string[]] $LeagueModels = @(),
     # Which body to train. The humanoid is the player-shaped agent every trained network drives; see docs\species.md for
     # what another one takes. A run cannot change body part way through: its shards would be of something else.
     [string] $Species = 'humanoid',
@@ -294,7 +294,7 @@ $arguments = (@(
 # An empty -Heap is left off the command line altogether rather than passed as nothing, so that the build sees no
 # property at all and falls back to the heap that suits what this run fights on. The same for the published networks: a
 # run that names none fields none.
-) + $workerArguments + @(if ($Heap) { "-PworkerHeap=$Heap" }) + @(if ($LeagueModels) { "-PleagueModels=$LeagueModels" }))
+) + $workerArguments + @(if ($Heap) { "-PworkerHeap=$Heap" }) + @(if ($LeagueModels.Count -gt 0) { "-PleagueModels=$($LeagueModels -join ',')" }))
 
 if ($Full) {
 

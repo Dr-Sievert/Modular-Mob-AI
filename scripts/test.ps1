@@ -23,7 +23,7 @@ param(
     [string] $Weights = '',
 
     # League only: published networks in models\ to field as players of their own, by name. See docs\training.md.
-    [string] $LeagueModels = '',
+    [string[]] $LeagueModels = @(),
     [switch] $Replays,
     [ValidateSet('fabric', 'neoforge')] [string] $Loader = 'fabric'
 )
@@ -46,7 +46,9 @@ if ($League -and -not $PSBoundParameters.ContainsKey('Arenas')) {
 $brain = if ($Weights) { @('-Pbrain=neural', "-PbrainWeights=$((Resolve-Path $Weights).Path)") } else { @() }
 
 # A run that names no published networks fields none, so the property is left off the command line altogether.
-$models = if ($LeagueModels) { @("-PleagueModels=$LeagueModels") } else { @() }
+# A comma is PowerShell's array operator, so -LeagueModels vs-copy,vs-scratch arrives as two words: joined back here,
+# since a string parameter would have handed Gradle "vs-copy vs-scratch" and the build would have failed on the second.
+$models = if ($LeagueModels.Count -gt 0) { @("-PleagueModels=$($LeagueModels -join ',')") } else { @() }
 
 # The two loaders name their headless test run differently.
 $task = if ($Loader -eq 'neoforge') { ':neoforge:runGameTestServer' } else { ':fabric:runGametest' }
