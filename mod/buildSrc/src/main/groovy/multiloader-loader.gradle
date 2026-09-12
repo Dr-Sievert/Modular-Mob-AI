@@ -752,7 +752,50 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
         // performanceCores: on a chip with two kinds of core this is worth more than everything else the build does to a
         // worker put together.
         def coreMask = performanceCores(calibration, calibrationFile)
-        def schedulable = coreMask == 0L ? cores : Long.bitCount(coreMask)
+
+        // Whether the mask goes on the server thread alone instead of on the whole worker process, which is the thing the
+        // process mask is really for: a worker is bound by its one server thread, and everything else it runs — the
+        // collector, the chunk workers, netty, the compiler threads — is shut out of the efficiency cores for no reason.
+        // Pinning the thread needs the thread's own cooperation, since Windows sets affinity per thread and a Java thread
+        // has no handle to hand out, so the mask is passed in and the server thread applies it to itself on its first
+        // tick; see ServerThreadAffinity.
+        //
+        //   -PserverThreadCores=performance   the server thread on the performance cores, the process on every core
+        //   -PserverThreadCores=one           a performance core of its own for each worker's server thread
+        //
+        // Off by default: measured on this i7-14700KF it is no better than confining the process, and see findings.md
+        // for what it does measure at.
+        def threadSetting = providers.gradleProperty('serverThreadCores').getOrElse('off')
+
+        if (!['off', 'performance', 'one'].contains(threadSetting)) {
+
+            throw new GradleException("serverThreadCores must be off, performance or one, not '${threadSetting}'")
+        }
+
+        // Nothing to pin a thread to on a machine with no measured performance cores, so there the setting is moot and the
+        // process mask it would have replaced is empty anyway.
+        def pinThread = coreMask != 0L && threadSetting != 'off'
+
+        // A pinned thread and a confined process are alternatives, not a pair: leaving the process confined as well would
+        // keep the efficiency cores away from the collector, which is the whole point of pinning the thread.
+        def processMask = pinThread ? 0L : coreMask
+
+        // One logical processor of its own for each worker's server thread, taking every second processor of the mask so
+        // that no two workers share a physical core's two hardware threads. Intel numbers a performance core's pair
+        // adjacently, so the even members of the mask are one per core; workers past the eighth start round again.
+        def threadMask = { int worker ->
+
+            if (threadSetting != 'one') {
+
+                return coreMask
+            }
+
+            def perCore = (0..63).findAll { (coreMask & (1L << it)) != 0L }.findAll { it % 2 == 0 }
+
+            return perCore.isEmpty() ? coreMask : 1L << perCore[worker % perCore.size()]
+        }
+
+        def schedulable = processMask == 0L ? cores : Long.bitCount(processMask)
 
         // How the workers start and share the machine. A Minecraft server spends its first seconds compiling and loading
         // on every core it can see, and generates terrain on all of them after that, so each is shown its share of the
@@ -1026,6 +1069,11 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
                 command += "-Dmodular_mob_ai.gametest.arenas=${requestedArenas}".toString()
             }
 
+            if (pinThread) {
+
+                command += "-Dmodular_mob_ai.gametest.serverThreadCores=${threadMask(worker)}".toString()
+            }
+
             command += "-Dmodular_mob_ai.gametest.shardIndex=${worker}".toString()
             command += "-Dmodular_mob_ai.gametest.shardCount=${workers}".toString()
             command += "-Dmodular_mob_ai.gametest.statsFile=${stats.absolutePath}".toString()
@@ -1119,16 +1167,16 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
             // performance cores, because below normal is exactly what makes Windows park the server thread on an
             // efficiency core; see performanceCores. Both best effort: a worker that could not be placed still runs, just
             // where Windows wants it. Set the moment it starts, so only the first fraction of a second of loading is spent
-            // anywhere else.
+            // anywhere else. A run pinning the server thread instead sets no process mask, and the worker pins itself.
             if (System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('win')) {
 
                 try {
 
                     def placing = "\$worker = Get-Process -Id ${process.pid()}; \$worker.PriorityClass = 'BelowNormal'"
 
-                    if (coreMask != 0L) {
+                    if (processMask != 0L) {
 
-                        placing += "; \$worker.ProcessorAffinity = [IntPtr]${coreMask}L"
+                        placing += "; \$worker.ProcessorAffinity = [IntPtr]${processMask}L"
                     }
 
                     new ProcessBuilder('powershell', '-NoProfile', '-Command', placing.toString()).start().waitFor()
@@ -1145,10 +1193,40 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
             pidFile.append(process.pid() + System.lineSeparator())
         }
 
+        def placement
+
+        if (coreMask == 0L) {
+
+            placement = ''
+        }
+
+        else if (!pinThread) {
+
+            placement = String.format(Locale.ROOT, ", on the %d performance cores (mask 0x%X)",
+                    Long.bitCount(coreMask), coreMask)
+        }
+
+        else if (threadSetting == 'one') {
+
+            def own = []
+
+            for (int pinned = 0; pinned < workers; pinned++) {
+
+                own += Long.numberOfTrailingZeros(threadMask(pinned))
+            }
+
+            placement = ", every core, each server thread pinned to a performance core of its own (processor " +
+                    own.join(', ') + ")"
+        }
+
+        else {
+
+            placement = String.format(Locale.ROOT, ", every core, each server thread pinned to the %d performance " +
+                    "cores (mask 0x%X)", Long.bitCount(coreMask), coreMask)
+        }
+
         logger.lifecycle("Started ${workers} game test workers (${sizing}) under ${root}, ${staggerSeconds} s apart, "
-                + "${workerCpus > 0 ? workerCpus + ' cores' : 'every core'} and ${heap} each"
-                + (coreMask == 0L ? '' : String.format(Locale.ROOT, ", on the %d performance cores (mask 0x%X)",
-                Long.bitCount(coreMask), coreMask)))
+                + "${workerCpus > 0 ? workerCpus + ' cores' : 'every core'} and ${heap} each" + placement)
 
         // Each worker publishes how far it has got beside its durations file. Summing those gives the progress of the
         // run as a whole, reported every tenth so a long run says something while it works.

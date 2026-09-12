@@ -322,6 +322,39 @@ public final class GameTestTuning {
         return property == null || property.isBlank() ? null : property.trim();
     }
 
+    /**
+     * Which logical processors this worker's server thread may run on, as a Windows affinity mask; zero, the default,
+     * leaves it wherever Windows puts it.
+     *
+     * <p>The build sets this when it starts a worker without confining the whole process, so that the thread a worker
+     * waits on keeps a performance core while the collector and the chunk workers spread over the efficiency ones. See
+     * {@link net.sievert.modularmobai.gametest.util.ServerThreadAffinity}, which does the pinning, and the
+     * {@code serverThreadCores} property of the parallel run.
+     */
+    public static long serverThreadCores() {
+
+        final String property = System.getProperty("modular_mob_ai.gametest.serverThreadCores");
+
+        if (property == null || property.isBlank()) {
+
+            return 0L;
+        }
+
+        final String mask = property.trim();
+
+        try {
+
+            return mask.startsWith("0x") || mask.startsWith("0X")
+                    ? Long.parseLong(mask.substring(2), 16)
+                    : Long.parseLong(mask);
+        }
+
+        catch (NumberFormatException exception) {
+
+            return 0L;
+        }
+    }
+
     private static int intProperty(String name, int fallback) {
 
         final String property = System.getProperty("modular_mob_ai.gametest." + name);
