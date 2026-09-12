@@ -361,6 +361,13 @@ are deliberate.
     shield adding a point or two rather than nothing. Sprint holds the same way, and the sprint blow only needs the tick
     of the hit. **Sneak the teacher never presses at all**, in either record, which means sneaking is a control the network
     has never seen used; in 1.21 it stops a body walking off an edge, which is worth trying against the fall deaths.
+- **The evaluation repeats itself, and that is worth knowing before trusting a comparison.** An evaluation fights the same
+  sites in the same order every time it is run, so two builds measured this way were on the same ground without being asked
+  to be, which is what made the committed draw's before and after comparable. What is left over is the mobs and the dice:
+  four evaluations of one network over 300 fights measured 44.7%, 44.7%, 45.7% and 46.3%, the last two on a different
+  sample of the library (`eval.ps1 -Ground`). So about a point at 300 fights, and a difference of five points means
+  something while a difference of one does not. `-Ground` is for asking the same question of different ground, not for
+  steadying the answer — it was added believing the opposite, and the measurement said otherwise.
 - **An experiment on one worker, judged on the league rating, cannot be judged.** league-pull05 forked league2 at
   iteration 6,000 to try a teacher pull of 0.05 against 0.2, and over 500 iterations on its single worker it produced three
   evaluations: 1610 against league2's 1600 to 1604 at the same iterations. But league2's own rating wanders between 1567
