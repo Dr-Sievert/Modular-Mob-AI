@@ -84,9 +84,27 @@ def fight(one: Trainer, steps: int, *, done: bool, agent: int = 7, mark: float =
 
 
 def batch(one: Trainer, segments: list[Segment]) -> dict:
-    """The batch an update learns from, built by the path update() itself takes."""
+    """The batch an update learns from, caught on its way into the learning step.
 
-    return one._chunks(segments, one._replay(segments, one._scale(segments)))
+    Taken from a real update rather than assembled here, so that what these tests know about is what the heads are asked
+    and not how a batch is put together: the scaling, the replay and the chunking are free to change shape without a
+    target test having to be rewritten. The targets are built before any gradient and from the normaliser as it stood, so
+    catching them here and letting the update carry on is the same thing as reading them.
+    """
+
+    caught = {}
+    learn = one._learn
+
+    def catch(built: dict) -> dict:
+        caught["batch"] = built
+        return learn(built)
+
+    one._learn = catch
+
+    with quiet():
+        one.update(segments)
+
+    return caught["batch"]
 
 
 def actor_parameters(one: Trainer) -> torch.Tensor:
@@ -329,6 +347,10 @@ class AuxiliaryUpdateTest(unittest.TestCase):
 
         one = trainer(aux_coef=0.05)
         made = batch(one, self.fights(one))
+
+        # Clear of the update that built the batch, so that what is left on each parameter came from the predictions alone.
+        one.actor.zero_grad(set_to_none=True)
+
         _, memory = one.actor(made["obs"], made["hidden"])
 
         losses = one.aux.losses(memory, made["aux_state"], made["aux_reward"], made["aux_ending"], made["mask"],
