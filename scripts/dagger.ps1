@@ -37,7 +37,12 @@ param(
 
     # How far the student's movement and aim are pushed off while it drives, as a fraction of full deflection. Little, so
     # the positions it is corrected in are the ones it really gets itself into; see scripts\imitate.ps1.
-    [double] $StudentNoise = 0.05
+    [double] $StudentNoise = 0.05,
+
+    # Which loadouts the round is fought with, empty for all of them. A record of the loadouts a run is worst with is
+    # what teaches it those: the fighter's bow and crossbow win about a third of their fights where its sword wins two
+    # thirds, and a round drawn from every loadout spends nine tenths of itself on what it can already do.
+    [string[]] $Loadouts = @()
 )
 
 . "$PSScriptRoot\_common.ps1"
@@ -71,11 +76,12 @@ if ($item -and $item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
             "junction to that record inside it if the run should still learn from it, before recording into this one.")
 }
 
-Write-Host "Recording $Fights fights on the $Suite suite: $(Split-Path $driver -Leaf) drives, the scripted fighter labels every tick"
+Write-Host ("Recording $Fights fights on the $Suite suite: $(Split-Path $driver -Leaf) drives, the scripted fighter labels " +
+        "every tick$(if ($Loadouts.Count -gt 0) { ", with the $($Loadouts -join ', ') loadouts alone" })")
 
-Invoke-Gradle @(':fabric:recordDemonstrations', "-Prun=$Run", "-Psuite=$Suite", "-Parenas=$Fights", "-Pworkers=$Workers",
+Invoke-Gradle (@(':fabric:recordDemonstrations', "-Prun=$Run", "-Psuite=$Suite", "-Parenas=$Fights", "-Pworkers=$Workers",
         "-PbatchSize=$Slots", "-PmaxWorkers=$Workers", "-PworkerHeap=$Heap", "-PdemonstrationNoise=$StudentNoise",
-        "-Pstudent=$driver")
+        "-Pstudent=$driver") + @(if ($Loadouts.Count -gt 0) { "-PleagueLoadouts=$($Loadouts -join ',')" }))
 
 $recorded = @(Get-ChildItem $demos -Filter '*.mbr' -Recurse -ErrorAction SilentlyContinue)
 
