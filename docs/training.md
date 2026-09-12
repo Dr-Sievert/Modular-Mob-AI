@@ -374,6 +374,8 @@ scripts\imitate.ps1 -Run vindicator                 record the teacher, copy it,
 scripts\imitate.ps1 -Run vindicator -Rounds 0       only record and copy
 scripts\imitate.ps1 -Run vindicator -Rounds 2       two more rounds on top
 scripts\imitate.ps1 -Run league -Suite league       every opponent and every loadout, for a copy that will fight the league
+scripts\imitate.ps1 -Run wide -Demos runs\league -Extra '--h1 512 --hidden 256 --h3 256'
+                                                    another shape of copy from a record already collected
 ```
 
 | Parameter | Default | Meaning |
@@ -381,6 +383,7 @@ scripts\imitate.ps1 -Run league -Suite league       every opponent and every loa
 | `-Fights` | 4000 | fights recorded per round |
 | `-Suite` | `terrain` | what the record is of: one vindicator with one sword, or the whole league |
 | `-Loadouts` | every one | record only these, for weighting a round towards what the copy is worst at |
+| `-Demos` | its own | another run's record to copy from instead of collecting one, by name or path |
 | `-TeacherNoise` | 0.1 | noise on the teacher's recorded fights (0.2 lost too much) |
 | `-StudentNoise` | 0.05 | noise on the copy while it drives in correction rounds |
 | `-Workers`, `-Slots`, `-Heap` | 8, 25, 1280M | as for training |
@@ -393,6 +396,12 @@ wins 60.3% with one. Nothing downstream can learn what the record does not hold;
 
 Demos go to `runs\<run>\demos\round-N\` on the terrain suite, and `demos\<suite>-round-N\` on any other. They're
 gigabytes, and not in git.
+
+**`-Demos` is how two architectures are compared fairly.** A record is a record of the teacher and has no shape of its own,
+so two copies made from the same one differ by their network and nothing else; a second record would differ by its fights
+as well, and a run is not started twice from the same seed by accident. It is read and never written, and handed to the
+trainer as a path rather than linked in. Correction rounds are skipped with it, since a round is of *this* copy's own
+mistakes and would be recorded where the copy it came from never looks.
 
 ### Watching and stopping
 

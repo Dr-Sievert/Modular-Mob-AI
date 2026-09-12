@@ -5,6 +5,9 @@
 #   scripts\imitate.ps1 -Run vindicator -Rounds 0       only record the teacher and copy it
 #   scripts\imitate.ps1 -Run vindicator -Rounds 2       two more rounds on top of what the run already has
 #   scripts\imitate.ps1 -Run league -Suite league       every opponent and every loadout, for a run that will fight the league
+#   scripts\imitate.ps1 -Run wide -Demos runs\league -Extra '--h1 512 --hidden 256 --h3 256'
+#                                                       another shape of copy from a record already collected, which is what
+#                                                       comparing two architectures fairly takes: one record, two networks
 #
 # A copy made from the teacher's own fights drifts into situations the teacher never got into, and has no idea what to do
 # there. Each round lets the copy fight while the scripted fighter says what it would have done on every tick, then copies
@@ -30,6 +33,15 @@ param(
     # Which loadouts to record, empty for all of them. A record weighted towards what the copy will be worst at is worth
     # more than an even one; see scripts\dagger.ps1, which takes the same flag for a run already training.
     [string[]] $Loadouts = @(),
+
+    # Another run's record to copy from instead of collecting one, by run name or by path. What it is for is a fair
+    # comparison of two shapes of network: a record is a record of the teacher and has no shape of its own, so two copies
+    # made from the same one differ by their architecture and nothing else. Recording is skipped and so are the correction
+    # rounds, which would need this run's own fights.
+    #
+    # Read, never written, and given to the trainer as a path rather than linked in: a junction under runs\ is one more
+    # thing for a recursive delete to follow, which has cost this repository an environment once already.
+    [string] $Demos = '',
 
     [int] $Workers = 8,
 
@@ -65,6 +77,37 @@ if (-not (Test-Path $Python)) {
 $directory = Get-RunDirectory $Run
 $copy = Join-Path $directory 'weights\000000.mbw'
 
+# A record borrowed from elsewhere, by run name or by path. Resolved here so a name that is neither fails now rather than
+# after the fights have been collected.
+$record = ''
+
+if ($Demos) {
+
+    $record = @(Get-RunDirectory $Demos, (Join-Path (Get-RunDirectory $Demos) 'demos'), $Demos, (Join-Path $Demos 'demos') |
+            Where-Object { Test-Path (Join-Path $_ '*.mbr') -PathType Leaf -ErrorAction SilentlyContinue } |
+            Select-Object -First 1)
+
+    if (-not $record) {
+
+        # Nothing directly inside any of them; look for the rounds a record is kept in.
+        $record = @(Get-RunDirectory $Demos, (Join-Path (Get-RunDirectory $Demos) 'demos'), $Demos, (Join-Path $Demos 'demos') |
+                Where-Object { Test-Path $_ } |
+                Where-Object { @(Get-ChildItem $_ -Filter '*.mbr' -Recurse -ErrorAction SilentlyContinue).Count -gt 0 } |
+                Select-Object -First 1)
+    }
+
+    if (-not $record) {
+
+        throw "No record of the teacher in '$Demos'; make one with scripts\imitate.ps1 -Run $Demos"
+    }
+
+    $record = (Resolve-Path $record).Path
+    $shards = @(Get-ChildItem $record -Filter '*.mbr' -Recurse)
+
+    Write-Host ("Copying from the record in ${record}: {0} shards, {1:N2} GB, no fighting of its own" -f
+            $shards.Count, (($shards | Measure-Object Length -Sum).Sum / 1GB))
+}
+
 function Invoke-Record([double] $Noise, [string[]] $Extra) {
 
     Invoke-Gradle (@(':fabric:recordDemonstrations', "-Prun=$Run", "-Psuite=$Suite", "-Parenas=$Fights", "-Pworkers=$Workers",
@@ -76,6 +119,7 @@ function Invoke-Imitate {
 
     # Split on spaces so that a single -Extra string arrives as the flags and values the trainer expects.
     $arguments = @((Join-Path $Root 'trainer\train.py'), 'imitate', '--run', $directory) +
+            @(if ($record) { '--demos', $record }) +
             @($Extra.Split(' ', [StringSplitOptions]::RemoveEmptyEntries))
 
     & $Python $arguments
@@ -88,7 +132,7 @@ function Invoke-Imitate {
 
 $recorded = @(Get-ChildItem (Join-Path $directory 'demos') -Filter '*.mbr' -Recurse -ErrorAction SilentlyContinue)
 
-if ($recorded.Count -eq 0) {
+if (-not $record -and $recorded.Count -eq 0) {
 
     Write-Host ("Recording the scripted fighter over $Fights fights on the $Suite suite" +
             $(if ($Loadouts.Count -gt 0) { ", with the $($Loadouts -join ', ') loadouts alone" }))
@@ -101,7 +145,14 @@ if (-not (Test-Path $copy)) {
     Invoke-Imitate
 }
 
-for ($round = 1; $round -le $Rounds; $round++) {
+# A correction round is of this copy's own fights, so a run copying somebody else's record has none to do: -Demos is for
+# making another shape of the same copy, and a round would be recorded into a folder the copy it came from does not read.
+if ($record -and $Rounds -gt 0) {
+
+    Write-Host "Skipping the $Rounds correction rounds: this copy came from the record in $record, not from its own fights"
+}
+
+for ($round = 1; $round -le $(if ($record) { 0 } else { $Rounds }); $round++) {
 
     Write-Host "Round $round of ${Rounds}: the copy fights, the scripted fighter says what it would have done"
     Invoke-Record $StudentNoise @("-Pstudent=$copy")
