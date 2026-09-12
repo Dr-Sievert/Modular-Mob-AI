@@ -1,12 +1,12 @@
 {
     "run":  "vs-scratch",
-    "published":  "2026-09-12T04:08:17+02:00",
-    "code":  "fb8273b",
-    "weights":  "best evaluated, iteration 2750",
-    "iteration":  2750,
-    "fights":  503,
-    "won":  96,
-    "lost":  3.8,
+    "published":  "2026-09-12T04:28:56+02:00",
+    "code":  "9e80ed4",
+    "weights":  "best evaluated, iteration 3600",
+    "iteration":  3600,
+    "fights":  500,
+    "won":  97.4,
+    "lost":  2.4,
     "timed_out":  0.2,
     "state":  true
 }
