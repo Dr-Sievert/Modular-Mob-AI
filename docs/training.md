@@ -64,7 +64,8 @@ to copy a hand-written fighter first, then improve the copy with reinforcement l
    - 30 iterations where only the critic learns;
    - little exploration: entropy 0.001, and a narrow spread on aim;
    - a pull back towards the teacher's answers (`--teacher-weight 0.5`: imitation loss on a sample of the recorded demos),
-     **falling to nothing over `--teacher-decay` iterations** (6,000) from the first one that pulled.
+     **falling to nothing over `--teacher-decay` iterations** (1,500) from the first one that pulled, and sooner if
+     evaluation says the teacher has stopped helping.
 
      The fall is the point. Held at full strength for a whole run, the pull is a ceiling and not a floor: a league run at
      0.2 for its entire life beat every ordinary mob 75 to 98% and still lost to the scripted fighter it had been copied
@@ -72,6 +73,18 @@ to copy a hand-written fighter first, then improve the copy with reinforcement l
      cannot arrive anywhere the teacher is not. The teacher starts the copy and then gets out of the way. `--teacher-decay 0`
      holds it where it is for ever, which is what the old behaviour was. Where the fall counts from is kept in the run's
      state, so resuming does not start it over and a run cannot hold itself at full pull by being restarted.
+
+     **The fall also has to finish inside the run's own life**, which a horizon of 6,000 did not. Measured on `league768`:
+     the pull started at 0.5, the run stopped improving at iteration 925, had still not beaten that checkpoint 1,200
+     iterations later — 54.5% against the best candidate's 54.3% over the 84 opponents they both met — and at iteration
+     2,212 was being pulled at 0.316, 63% of what it began with. Patience ends a run about 1,000 iterations after its
+     best, so that horizon was never reached and the pull never left.
+
+     So a horizon is only the outer bound, and evaluation decides the rest: once `--teacher-release` judged checkpoints in
+     a row (6) have failed to beat the best while the pull is still on, the rest of it goes over `--teacher-release-over`
+     iterations (200). A run that is still being pulled and has stopped improving is the shape of a ceiling, and the pull
+     is the first thing to suspect. It is said once and kept in the run's state; a run that improves again afterwards
+     keeps its teacher released, because it improved without it. `--teacher-release 0` waits for the horizon instead.
 4. **Evaluation inside the run.** Every 25th iteration's checkpoint is played by the workers on its most likely action,
    in one fight in ten, until it has had `--eval-fights` fights (500 by default).
    - Verdicts go to `eval.csv`, and the best checkpoint's weights to `best.mbw`.

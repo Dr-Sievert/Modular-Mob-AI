@@ -110,7 +110,21 @@ class Config:
     # every ordinary mob 75 to 98% and still lost to the scripted fighter it was copied from, 32.5% over 200 fights: an
     # update that is always partly an instruction to answer as the teacher would cannot end anywhere the teacher is not. So
     # the teacher gets the copy started and then gets out of the way, which is what it is for.
-    teacher_decay: int = 6000
+    #
+    # It also has to fall inside the run's own life, which 6,000 did not. Measured on league768 tonight: the pull started
+    # at 0.5, the run stopped improving at iteration 925 and had not beaten that checkpoint 1,200 iterations later, and at
+    # iteration 2,212 the pull was still 0.316 — 63% of what it began with, against a patience that ends the run around
+    # 1,000 iterations after its best. A horizon a run never reaches the end of is a horizon that does nothing.
+    teacher_decay: int = 1500
+
+    # The other half of the same problem: a horizon is a guess, and evaluation already knows the answer. Once this many
+    # judged checkpoints in a row have failed to beat the best while the pull is still on, the teacher is what to suspect,
+    # and the remaining pull is let go over teacher_release_over iterations rather than waiting for the horizon.
+    #
+    # Six checkpoints is a fifth of the patience that ends a run, so a release is tried well before the run gives up, and
+    # the fall is gradual because an imitation term removed between two updates moves the policy on its own.
+    teacher_release: int = 6
+    teacher_release_over: int = 200
 
     # Evaluation: every checkpoint is played by the workers on its most likely action, eval_fights times, see
     # evaluate.py. The run is done once one wins eval_target of its fights, or once eval_patience checkpoints in a row
@@ -245,6 +259,10 @@ class Trainer:
         # The iteration the pull started at, which the decay counts from, and None until a run has a teacher at all.
         self.teacher_from: int | None = None
         self.teacher_press_weight: Tensor | None = None
+
+        # The iteration evaluation gave up on the teacher at, and None while the pull is still earning its place; see
+        # Config.teacher_release and note_evaluation.
+        self.teacher_released: int | None = None
 
         logger.info(
             "%s, critic %d wide, learning on %s",
@@ -719,7 +737,8 @@ class Trainer:
     def teacher_pull(self) -> float:
         """
         How hard this iteration pulls back towards the teacher: the configured weight, falling to nothing over
-        Config.teacher_decay iterations from the first one that pulled.
+        Config.teacher_decay iterations from the first one that pulled, and sooner than that if evaluation says the
+        teacher has stopped helping.
 
         A teacher is a floor and not a ceiling. Held at full strength for a whole run, it beat every ordinary mob and
         still lost to the teacher itself, because an update that always carries an instruction to answer as the teacher
@@ -728,12 +747,47 @@ class Trainer:
 
         weight = self.config.teacher_weight
 
-        if weight <= 0.0 or self.config.teacher_decay <= 0 or self.teacher_from is None:
+        if weight <= 0.0 or self.teacher_from is None:
             return weight
 
-        gone = max(0, self.iteration - self.teacher_from)
+        if self.config.teacher_decay > 0:
+            gone = max(0, self.iteration - self.teacher_from)
+            weight *= max(0.0, 1.0 - gone / float(self.config.teacher_decay))
 
-        return weight * max(0.0, 1.0 - gone / float(self.config.teacher_decay))
+        if self.teacher_released is not None and self.config.teacher_release_over > 0:
+            since = max(0, self.iteration - self.teacher_released)
+            weight *= max(0.0, 1.0 - since / float(self.config.teacher_release_over))
+
+        return weight
+
+    def note_evaluation(self, since_best: int) -> None:
+        """
+        What evaluation has just said, as the count of judged checkpoints in a row that have not beaten the best.
+
+        The pull is the first thing to suspect when a run that is still being pulled stops improving, because that is
+        exactly what a ceiling looks like from here: the fights say go one way, half of every update says answer as the
+        teacher would, and the two settle somewhere neither of them chose. So once the count reaches
+        Config.teacher_release the run stops waiting for the horizon and lets the rest of the pull go.
+
+        Said once per run. A run that improves again afterwards keeps its released teacher: it improved without it.
+        """
+
+        if (self.teacher_released is not None
+                or self.teacher_from is None
+                or self.config.teacher_release <= 0
+                or self.teacher_pull() <= 0.0
+                or since_best < self.config.teacher_release):
+            return
+
+        self.teacher_released = self.iteration
+
+        logger.info(
+            "%d checkpoints in a row without a new best while still pulled at %.3f: letting the teacher go over the "
+            "next %d iterations",
+            since_best,
+            self.teacher_pull(),
+            self.config.teacher_release_over,
+        )
 
     def set_teacher(self, segments: list[Segment]) -> None:
         """Keeps a record of the teacher, taken at random up to so many rows, for the pull back towards it in every
@@ -915,6 +969,7 @@ class Trainer:
                 "iteration": self.iteration,
                 "total_steps": self.total_steps,
                 "teacher_from": self.teacher_from,
+                "teacher_released": self.teacher_released,
             },
             temporary,
         )
@@ -940,5 +995,8 @@ class Trainer:
 
         # Absent from a state written before the pull could decay, which then starts falling from wherever that run is now.
         self.teacher_from = state.get("teacher_from")
+
+        # A teacher already let go stays let go, so a restart cannot win the pull back by forgetting it was released.
+        self.teacher_released = state.get("teacher_released")
 
         logger.info("carrying on from %s at iteration %d", path, self.iteration)

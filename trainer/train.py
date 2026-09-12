@@ -275,6 +275,10 @@ def loop(run: RunDirectory, trainer: Trainer, config: Config, schema: Schema, ke
         # new ones, and the workers already fighting wait on this side for their next weights.
         reason = evaluator.update(trainer.iteration)
 
+        # What evaluation has found is also what decides whether the teacher has anything left to give; see
+        # Trainer.note_evaluation.
+        trainer.note_evaluation(evaluator.since_best)
+
         if league is not None:
             league.update(trainer.iteration)
 
