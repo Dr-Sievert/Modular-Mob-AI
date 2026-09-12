@@ -1045,7 +1045,8 @@ class Trainer:
                 "total_steps": self.total_steps,
                 "teacher_from": self.teacher_from,
                 "teacher_released": self.teacher_released,
-                "rate": self.rate,
+                # As a ratio to the configured rate, not an absolute: see load.
+                "rate_ratio": self.rate / self.config.learning_rate,
             },
             temporary,
         )
@@ -1075,10 +1076,26 @@ class Trainer:
         # A teacher already let go stays let go, so a restart cannot win the pull back by forgetting it was released.
         self.teacher_released = state.get("teacher_released")
 
-        # A steered rate is carried on rather than found again, and a state from before it was steered starts from the
-        # configured one. The optimizer's own groups are set from it, since Adam's state was saved with the old rate in it.
-        self.rate = float(state.get("rate") or self.config.learning_rate)
+        # A steered rate is carried on rather than found again -- but as a ratio to the rate that was configured, never as
+        # the number itself. A seeded run loads a state written under somebody else's settings: the copy's state.pt is
+        # written by imitation, whose config carries the default 3e-4, and taking that number over the seeded run's 5e-5
+        # put the very first update off the copy at a KL of 0.18, eighteen times the target, which is exactly the "RL made
+        # a good copy worse" the gentle settings exist to prevent. The ratio is 1 for anything never steered, so a seed
+        # starts from its own configured rate, and a plain resume restores the number it had to the bit.
+        #
+        # A state from before the ratio was kept carries the absolute rate and the config it was saved under, which is
+        # enough to work the ratio out; one with neither starts from the configured rate.
+        ratio = state.get("rate_ratio")
 
+        if ratio is None:
+            saved = state.get("rate")
+            saved_config = state.get("config") or {}
+            saved_rate = saved_config.get("learning_rate")
+            ratio = float(saved) / float(saved_rate) if saved and saved_rate else 1.0
+
+        self.rate = self.config.learning_rate * float(ratio)
+
+        # The optimizer's own groups are set from it, since Adam's state was saved with the old rate in it.
         for group in self.optimizer.param_groups:
             group["lr"] = self.rate
 

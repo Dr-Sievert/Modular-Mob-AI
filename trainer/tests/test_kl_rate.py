@@ -93,13 +93,53 @@ class SteerRateTest(unittest.TestCase):
             import torch
 
             state = torch.load(path, map_location="cpu", weights_only=False)
-            del state["rate"]
+            del state["rate_ratio"]
             torch.save(state, path)
 
             two = trainer(learning_rate=5e-5, target_kl=0.01, kl_adapt=1.5)
             two.load(path)
 
         self.assertAlmostEqual(two.rate, 5e-5, places=12)
+
+    def test_a_seed_starts_from_its_own_configured_rate_not_the_copys(self):
+        """The copy's state is written by imitation under the default 3e-4; a run seeded from it and configured for 5e-5
+        took the 3e-4 and put its first update at a KL of 0.18. The ratio is what carries, and an unsteered ratio is 1."""
+
+        import tempfile
+
+        copy = trainer(learning_rate=3e-4, target_kl=0.01, kl_adapt=1.5)
+
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "state.pt"
+            copy.save(path)
+
+            seeded = trainer(learning_rate=5e-5, target_kl=0.01, kl_adapt=1.5)
+            seeded.load(path)
+
+        self.assertAlmostEqual(seeded.rate, 5e-5, places=12)
+        self.assertAlmostEqual(seeded.optimizer.param_groups[0]["lr"], 5e-5, places=12)
+
+    def test_a_state_with_only_the_old_absolute_rate_is_read_as_a_ratio(self):
+        import tempfile
+
+        one = trainer(learning_rate=3e-4, target_kl=0.01, kl_adapt=1.5)
+        one.steer_rate(1.0)  # 3e-4 / 1.5
+
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "state.pt"
+            one.save(path)
+
+            import torch
+
+            state = torch.load(path, map_location="cpu", weights_only=False)
+            del state["rate_ratio"]
+            state["rate"] = 3e-4 / 1.5
+            torch.save(state, path)
+
+            two = trainer(learning_rate=5e-5, target_kl=0.01, kl_adapt=1.5)
+            two.load(path)
+
+        self.assertAlmostEqual(two.rate, 5e-5 / 1.5, places=12)
 
 
 if __name__ == "__main__":
