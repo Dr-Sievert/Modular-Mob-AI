@@ -240,6 +240,22 @@ public final class GameTestTuning {
     }
 
     /**
+     * Whether a fight that asks for ground with something worth knocking an opponent into, and is handed ground with
+     * nothing, may have a pool of lava poured beside it for the length of that fight. On by default;
+     * {@code -PpourHazards=false} turns it off.
+     *
+     * <p>It is on because the overworld surface is the wrong place to look for lava: two per cent of the library's fights
+     * have any, which is far too rare for the best blow in the game to be learned from. See
+     * {@link net.sievert.modularmobai.gametest.terrain.PouredHazards}.
+     */
+    public static boolean pourHazards() {
+
+        final String property = System.getProperty("modular_mob_ai.gametest.pourHazards");
+
+        return property == null || property.isBlank() || Boolean.parseBoolean(property.trim());
+    }
+
+    /**
      * The terrain library's index, when the build linked a library into this worker's world: the terrain suite then
      * takes every site from it, already generated, and never generates any ground itself. Null otherwise.
      */

@@ -193,6 +193,13 @@ public final class League {
         level.getGameRules().getRule(GameRules.RULE_DAYLIGHT).set(false, level.getServer());
         level.getGameRules().getRule(GameRules.RULE_WEATHER_CYCLE).set(false, level.getServer());
         level.getGameRules().getRule(GameRules.RULE_MOBGRIEFING).set(false, level.getServer());
+
+        // Fire stays where it is put. Lava is poured next to a quarter of the fights on ground that has none
+        // (PouredHazards), and the sites are a hard-linked library shared between workers that hosts a hundred fights
+        // apiece: one pool beside a birch forest, left to spread for a minute, and the site is gone for good and for
+        // everyone. Nothing about a fight depends on fire spreading, and everything that makes lava lethal — the damage, the
+        // burning — is untouched by this rule.
+        level.getGameRules().getRule(GameRules.RULE_DOFIRETICK).set(false, level.getServer());
         level.setDayTime(MIDNIGHT);
         level.setWeatherParameters(0, 0, false, false);
 

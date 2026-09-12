@@ -383,6 +383,7 @@ and for why the mask must not include a single efficiency core. The build protec
 | `memoryReserve` | 3 | GB left for everything else when deciding how many workers fit (heap + 0.5 GB each) |
 | `memoryFloor` | 1.5 | GB of free memory below which the workers are stopped rather than left to swap |
 | `memoryGrace` | 10 | seconds the shortage has to last first, so that a moment's dip from something else on the machine does not cost a round |
+| `pourHazards` | true | whether a fight that asks for ground with something worth knocking an opponent into, and is handed flat ground, gets a pool of lava poured beside it for that fight and the ground put back after; `false` leaves it to what the library happens to hold, which is lava on 2% of fights |
 | `workerCores` | measured | `all` lets the workers run on every core, as they did before the performance cores were measured |
 | `workerCpus` | auto | cores each server sees, out of the performance cores it is allowed |
 | `workerStagger` | 1 | seconds between starting workers |

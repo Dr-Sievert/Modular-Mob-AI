@@ -257,6 +257,19 @@ different opponent every time, with a different loadout:
   win either way, so terrain finishes rising on lava and cliff sites is the only sign the agent has learned the trick.
   Labelling happens when a site is handed out, not in the library's index: it costs about 400 block lookups once per site
   (a site hosts 100 fights), works on a library already built, and leaves the index format alone.
+- **Lava poured where there is none** (`gametest/terrain/PouredHazards`, `-PpourHazards=false` to turn it off). The
+  overworld surface is the wrong place to look for lava: 2% of the library's fights had any, which is far too rare for the
+  best blow in the game to be learned from. So a fight that asked for hazardous ground and was handed flat ground gets a
+  three by three pool poured three to seven blocks from the middle of it, clear of both sides, and is then recorded as a
+  `lava` fight, which is what it is. That takes lava from 2% of fights to the whole hazard share.
+  - The pool is **flush** with the ground it replaces, not a pit: a body knocked onto it is in it, and lava level with
+    solid ground on every side cannot flow. What is under it is made solid first, or a pool over a cave empties into the
+    cave.
+  - Every block it changes is remembered and **put back when the fight ends**, and the box is swept for fire and lava that
+    were not there before. This matters more than it sounds: a site hosts a hundred fights and the ground is a hard-linked
+    library shared between workers, so one pool left behind would be there for the other ninety-nine.
+  - League fights also run with **`doFireTick` off**, so fire never spreads. One pool beside a birch forest, left for a
+    minute, would burn a library site down for good. Nothing that makes lava lethal depends on that rule.
 - League fights happen at midnight, clear and with mob griefing off: no undead burn, spiders stay hostile, rain neither
   hurts a blaze or a snow golem nor teleports an enderman, and no crater stays in a kept world. A creeper that blows
   itself up without killing the agent is a draw, which pays as a loss.
