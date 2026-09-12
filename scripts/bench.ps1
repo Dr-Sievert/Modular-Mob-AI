@@ -9,11 +9,16 @@
 # opponents the matchmaking keeps changing, so the same network scores differently as the run goes on, and a rating wanders
 # by thirty between checkpoints. This fights a fixed suite on ground that repeats, so two numbers can be subtracted.
 #
-# Two rules, both learned the hard way:
+# Three rules, all learned the hard way:
+#   - **Bench everything being compared in one call.** Back to back, one network over 600 fights measures within half a
+#     point of itself; across an evening the same file measured 66.7% and then 60.5%, with every network in the sitting
+#     moving together. The worker sizing is measured from the machine's own throughput at startup, so a machine with four
+#     training workers on it sizes differently from one with two, and different sizing means different fights. A number from
+#     one sitting cannot be subtracted from a number in another, and a whole night's conclusions nearly were.
 #   - **Keep -Workers the same** in every comparison. Each worker takes its own slice of the arenas, so 600 fights over one
 #     worker are not the 600 over three. One worker is the default because it also fits beside a training run.
-#   - 600 fights is about a point of repeatability, so five points mean something and one does not. Use -Arenas 2000 to
-#     halve that, at four times the wall clock.
+#   - 600 fights is about half a point of repeatability within a sitting, so three points mean something and one does not.
+#     Use -Arenas 2000 to halve it, at four times the wall clock.
 #
 # Each network is copied aside before it is fought, because a run keeps only its last few weight files and prunes the rest
 # while this is running.

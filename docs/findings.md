@@ -366,21 +366,28 @@ are deliberate.
   iteration 6,075 into the regime a seeded run already uses — entropy coefficient 0.001 rather than 0.01, learning rate
   5e-5, clip 0.1, target KL 0.01 — and given the same two workers and the same wall time as the run it left behind:
 
-  | | benchmark, 600 fights |
-  | --- | --- |
-  | where both arms forked (iteration 6,075) | 61.2% |
-  | the sharp arm, about 1,000 iterations on | **66.7%** |
-  | the arm it left behind, the same wall time | 61.8% |
+  The same three networks, benched three times over the evening. Read the rows, never the columns: **the benchmark's
+  absolute level drifts about four points between one sitting and the next, and only what is measured inside one invocation
+  can be subtracted.**
 
-  Five and a half points in a thousand iterations against three points in eleven thousand five hundred. The regime that
-  produced vs-copy at 99.8% and was only ever used for seeding a run from a good policy turns out to be what a league run
+  | | first sitting | second | third |
+  | --- | --- | --- | --- |
+  | where both arms forked (iteration 6,075) | 61.2% | 60.2% | 56.7% |
+  | the arm it left behind, entropy 0.01 | 61.8% | | 58.8% |
+  | the sharp arm, about 1,000 iterations on | 66.7% | 63.2% | 60.5% |
+  | the sharp arm's lead over the fork | +5.5 | +3.0 | +3.8 |
+
+  So three to five points in a thousand iterations, against three points in eleven thousand five hundred, and ahead of the
+  control by 1.7 to 4.9. The direction held in every sitting; the size of it is worth no more than "three to five". The
+  regime that produced vs-copy at 99.8%, and was only ever used for seeding a run from a good policy, is what a league run
   wants as well.
-  - **Benchmark with the same worker count every time.** Each worker takes its own slice of the arenas, so 600 fights over
-    one worker and over three are not the same 600 fights. Two runs at the same count agree exactly; across counts they do
-    not, and half a night's numbers were nearly compared across them.
-  - What is not separated here: the seeded regime also quadruples the rollout steps, so an iteration of the sharp arm holds
-    four times the experience. The arms had equal workers and equal wall time, which is the comparison that decides what
-    the machine should be doing, but "entropy" alone is not proven to be the whole of it.
+  - What is not separated: the seeded regime also quadruples the rollout steps, so an iteration of the sharp arm holds four
+    times the experience. The arms had equal workers and equal wall time, which is the comparison that decides what the
+    machine should do, but entropy alone is not proven to be the whole of it.
+  - **It did not replicate on a second lineage.** league-scratch was converted to the same regime from a measured baseline,
+    and the two were first read in different sittings — 53.5% then 57.5%, which looked like four points of gain and was
+    nothing but the drift. Benched together afterwards: 57.5% before, 54.8% after. So on that lineage the same change is
+    2.7 points behind its own baseline over 630 iterations. One result on one lineage, then.
 - **Self play was a handicap, not a mirror, and a quarter of it was a stalemate.** A fifth of a league run's fights are
   against frozen checkpoints of itself, and those played their most likely action while the learner sampled, so the
   exploration the learner pays for was charged to one side of the mirror only. league2's own records, before the fix:
@@ -392,13 +399,21 @@ are deliberate.
     an entropy coefficient of 0.001 rather than 0.01, the same fights time out **1.8%** of the time. Two policies full of
     per-tick noise flail at each other and neither finishes it; the same two policies played crisply settle it. That is the
     clearest measurement yet that the entropy bonus was not buying exploration so much as paying for stalemates.
-- **The evaluation repeats itself, and that is worth knowing before trusting a comparison.** An evaluation fights the same
-  sites in the same order every time it is run, so two builds measured this way were on the same ground without being asked
-  to be, which is what made the committed draw's before and after comparable. What is left over is the mobs and the dice:
-  four evaluations of one network over 300 fights measured 44.7%, 44.7%, 45.7% and 46.3%, the last two on a different
-  sample of the library (`eval.ps1 -Ground`). So about a point at 300 fights, and a difference of five points means
-  something while a difference of one does not. `-Ground` is for asking the same question of different ground, not for
-  steadying the answer — it was added believing the opposite, and the measurement said otherwise.
+- **An evaluation repeats within the minute and drifts across the evening, so bench every candidate in one invocation.** Run
+  twice back to back, one network over 600 fights measured 64.2% and 64.7%, and four times over 300 fights, 44.7%, 44.7%,
+  45.7% and 46.3%. That is half a point, and it is what "the evaluation repeats itself" means. But the *same file* measured
+  66.7% earlier in the evening and 60.5% later, and every network in that sitting moved with it, so what repeats is a
+  sitting and not a number.
+  - The suspect is the worker sizing, which is measured from the machine's own throughput at startup ("measured 20.0 arenas
+    a second per worker, sizing for 600 arenas") and therefore comes out differently on a machine with four training
+    workers on it than on one with two. Different sizing, different fights.
+  - What follows for anything being compared: **put every candidate in one `bench.ps1` call**, which is why that script
+    takes a list, and never subtract a number from one sitting from a number in another. It also means a published model's
+    recorded win rate is a statement about the sitting it was measured in, to a few points.
+  - Keep `-Workers` the same too. Each worker takes its own slice of the arenas, so 600 fights over one worker are not the
+    600 over three.
+  - `-Ground` is for asking the same question of a different sample of the library, not for steadying the answer — it went
+    in believing the opposite and the measurement said otherwise.
 - **An experiment on one worker, judged on the league rating, cannot be judged.** league-pull05 forked league2 at
   iteration 6,000 to try a teacher pull of 0.05 against 0.2, and over 500 iterations on its single worker it produced three
   evaluations: 1610 against league2's 1600 to 1604 at the same iterations. But league2's own rating wanders between 1567

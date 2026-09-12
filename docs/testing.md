@@ -40,14 +40,19 @@ a point either way; with 400, within about two and a half. It takes `-Workers` (
 `-Loadouts`, `-Ground` and `-ReplayEvery`.
 
 `bench.ps1` is `eval.ps1` over several networks with the answers side by side, and it is what to reach for whenever the
-question is which of two networks is better. Three things it does that doing it by hand does not:
+question is which of two networks is better. Four things it does that doing it by hand does not:
 
+- **every network in one sitting**, which is the whole point. Back to back a network measures within half a point of
+  itself, but the same file measured 66.7% early one evening and 60.5% later, with every network in the sitting moving
+  together: the worker sizing is taken from the machine's own throughput at startup, so it comes out differently beside four
+  training workers than beside two, and different sizing means different fights. **Never subtract a number from one sitting
+  from a number in another** — it reversed a result once already;
 - **the same worker count for every network**, because each worker takes its own slice of the arenas and 600 fights over
   one worker are not the 600 over three. One worker by default, which also leaves room for a training run beside it;
 - **a copy of each network taken first**, because a run keeps only its last few weight files and prunes the rest while the
   bench is running;
-- **it says when the spread is inside what the fights can tell apart** — about a point at 600 fights, so five points mean
-  something and one does not.
+- **it says when the spread is inside what the fights can tell apart** — about half a point at 600 fights within a sitting,
+  so three points mean something and one does not.
 
 Don't compare a league run's own `eval.csv` numbers between two runs: those are measured against opponents the matchmaking
 keeps changing, and the rating wanders by thirty between checkpoints. The bench is fixed ground and a fixed roster, so two
