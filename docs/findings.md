@@ -5,6 +5,24 @@ are deliberate.
 
 ## Throughput and stability
 
+- **A fifth of the forward pass was one call to `Math.tanh`, and `Math.exp` gives the same answer.** `tanh(x)` is
+  `2 * sigmoid(2x) - 1`, so the GRU's candidate can be worked out from `Math.exp`, which is an intrinsic, instead of from
+  `Math.tanh`, which is `StrictMath`'s software `expm1`. Pinned to one core the call went from 30.2 ns to 14.8 ns, and the
+  cell makes 128 of them an agent tick. In a worker, four rounds of 6,000 fights:
+
+  | | `Math.tanh` | from `Math.exp` |
+  | --- | --- | --- |
+  | the pass, per agent tick | 14.7, 14.3 us | 11.6, 11.1 us |
+  | arena ticks a second of server-thread CPU | 22,372, 23,815 | 26,297, 27,774 |
+
+  - It is **not** the same bits, and the honest version of that is: over eight million floats from -40 to 40, exactly one
+    came out with a different bit; the worst absolute difference was 1.1e-16 and the worst relative one 7.4e-08, against a
+    parity check that allows 1e-5. Two edges do differ — a denormal comes back as zero, and negative zero as positive zero
+    — and both are differences of about 1e-30 in a number that is then multiplied by a weight and added to a sum.
+  - The arena suite's twenty fights still take **exactly 54 ticks** each, which is the test that would have caught it.
+  - Write it as `2 / (1 + e) - 1`, never as the prettier `(1 - e) / (1 + e)`: the second is infinity over infinity, and so
+    NaN, for any argument below about -355, where the first correctly gives -1. And work it out in double, so that
+    subtracting one does not eat the precision of a small tangent.
 - **Windows was running every worker's server thread on an efficiency core, and that was costing half the machine.** A
   worker is bound by its one server thread. Workers run at below normal priority so that the desktop stays usable, and
   Windows reads a below-normal thread as background work and parks it on an efficiency core. Confining each worker's
@@ -134,7 +152,8 @@ are deliberate.
   fc2 4%, the head 3%. The cell does two sigmoids and one hyperbolic tangent per unit per agent, 3,200 of each a tick,
   and `Math.tanh` measured 30 ns a call against 3.8 ns for a sigmoid: it is not an intrinsic like `Math.exp`, it is
   `StrictMath`'s software `expm1`. So about a fifth of the whole pass is one library call that no change to the matrix
-  loops can reach, and no faster tangent gives the same bits.
+  loops can reach, and no faster tangent gives the same bits. (It is now worked out from `Math.exp` instead, for that
+  fifth; see the entry above for what the bits cost.)
 - **A benchmark on a busy machine invented a result that was not there.** The first run of the above, unpinned while the
   terrain library was building, showed the pass getting 2.4 times slower between 8 and 25 agents, which read exactly like
   a batch that had outgrown a cache. Pinned to one core at high priority it is flat from 1 to 50 agents. The tell was
