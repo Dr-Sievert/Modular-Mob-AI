@@ -25,7 +25,14 @@ param(
     # recorded in, and a record of a fighter losing is mostly of positions nobody should be in. The copy gets little, so
     # the situations it is corrected in are the ones it really gets itself into.
     [double] $TeacherNoise = 0.1,
-    [double] $StudentNoise = 0.05
+    [double] $StudentNoise = 0.05,
+
+    # Anything else for the trainer, which is how a copy is made at a size other than the usual one: the widths travel in
+    # the weight file and the game reads them from there, so a wider copy needs no Java change and can be trained beside an
+    # ordinary one and benched against it.
+    #
+    #   scripts\imitate.ps1 -Run wide -Extra '--h1 512 --hidden 256 --h3 256'
+    [string] $Extra = ''
 )
 
 . "$PSScriptRoot\_common.ps1"
@@ -48,7 +55,11 @@ function Invoke-Record([double] $Noise, [string[]] $Extra) {
 
 function Invoke-Imitate {
 
-    & $Python (Join-Path $Root 'trainer\train.py') imitate --run $directory
+    # Split on spaces so that a single -Extra string arrives as the flags and values the trainer expects.
+    $arguments = @((Join-Path $Root 'trainer\train.py'), 'imitate', '--run', $directory) +
+            @($Extra.Split(' ', [StringSplitOptions]::RemoveEmptyEntries))
+
+    & $Python $arguments
 
     if ($LASTEXITCODE -ne 0) {
 
