@@ -1,0 +1,1099 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>League · Modular Mob AI</title>
+<!--
+  The league standings of every run that has one, beside the replays: the tier list, the record against each opponent,
+  with each loadout and on each kind of ground, and what each model does with its hands. It reads only what a run already
+  writes, through viewer\serve.py, which has to be serving it: scripts\viewer.ps1 -League. See viewer\README.md.
+-->
+<style>
+:root {
+  --bg: #0c0f14; --bg2: #11151b; --panel: #151a21; --panel2: #1b212a; --line: #232a34; --line2: #313a47;
+  --text: #e7ecf3; --muted: #8d97a8; --faint: #5d6778;
+  --agent: #37e07a; --opp: #ff4d61; --amber: #ffb547; --cyan: #4cc9f0; --violet: #a78bfa; --blue: #4c8df6;
+  --win: #37e07a; --loss: #ff4d61; --timeout: #ffb547;
+  --mono: "Cascadia Mono", "JetBrains Mono", Consolas, ui-monospace, monospace;
+  --sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.45 var(--sans);
+  -webkit-font-smoothing: antialiased; }
+button, select, input { font: inherit; color: inherit; }
+[hidden] { display: none !important; }
+svg { display: block; }
+a { color: var(--cyan); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.app { min-height: 100vh; display: flex; flex-direction: column; }
+
+/* ---- header ------------------------------------------------------------------------------------------------- */
+.top { display: flex; align-items: center; gap: 10px; padding: 8px 14px; flex-wrap: wrap;
+  background: linear-gradient(180deg, #161b23, #11151b); border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; z-index: 5; }
+.brand { display: flex; align-items: center; gap: 9px; font-weight: 650; white-space: nowrap; letter-spacing: .1px; }
+.logo { width: 22px; height: 22px; border-radius: 7px; position: relative; flex: none;
+  background: conic-gradient(from 200deg, var(--agent), var(--cyan), var(--violet), var(--opp), var(--amber), var(--agent));
+  box-shadow: 0 2px 10px rgba(0,0,0,.45); }
+.logo::after { content: ""; position: absolute; inset: 5px; border-radius: 3px; background: #11151b; }
+.spacer { flex: 1; min-width: 0; }
+.chip { display: inline-flex; align-items: baseline; gap: 5px; padding: 3px 9px; border-radius: 999px; white-space: nowrap;
+  background: var(--panel2); border: 1px solid var(--line); font-size: 12px; }
+.chip i { font-style: normal; color: var(--muted); font-size: 11px; }
+.chip.dim { color: var(--muted); }
+select { height: 30px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel2); }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; padding: 0 11px;
+  border-radius: 8px; border: 1px solid var(--line); background: var(--panel2); cursor: pointer; white-space: nowrap; }
+.btn:hover { background: #222a35; border-color: var(--line2); }
+.btn.small { height: 26px; padding: 0 9px; font-size: 12px; }
+.btn.on { background: rgba(76,201,240,.14); border-color: rgba(76,201,240,.4); }
+.live { font-size: 11px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+.live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+.live.on::before { background: var(--agent); animation: pulse 2.2s infinite; }
+.live.off::before { background: var(--opp); }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(55,224,122,.55); } 70% { box-shadow: 0 0 0 7px rgba(55,224,122,0); }
+  100% { box-shadow: 0 0 0 0 rgba(55,224,122,0); } }
+
+/* ---- tabs --------------------------------------------------------------------------------------------------- */
+.tabs { display: flex; gap: 4px; padding: 0 14px; background: var(--bg2); border-bottom: 1px solid var(--line);
+  position: sticky; top: 47px; z-index: 4; overflow-x: auto; }
+.tabs button { padding: 9px 12px; background: transparent; border: 0; border-bottom: 2px solid transparent;
+  color: var(--muted); cursor: pointer; white-space: nowrap; }
+.tabs button:hover { color: var(--text); }
+.tabs button.on { color: var(--text); border-bottom-color: var(--cyan); }
+
+/* ---- sections ----------------------------------------------------------------------------------------------- */
+main { padding: 14px; display: grid; gap: 14px; align-content: start; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.card > h2 { margin: 0; padding: 11px 14px 9px; font-size: 13.5px; font-weight: 650; border-bottom: 1px solid var(--line);
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.card > h2 small { font-weight: 400; color: var(--muted); font-size: 11.5px; }
+.note { padding: 9px 14px; color: var(--muted); font-size: 11.5px; line-height: 1.55; border-bottom: 1px solid var(--line);
+  background: var(--bg2); }
+.note code { font: 11px var(--mono); color: #cfd6e2; }
+.scroll { overflow-x: auto; }
+.pad { padding: 12px 14px; }
+.side-by-side { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
+
+/* ---- tables ------------------------------------------------------------------------------------------------- */
+table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+th, td { text-align: right; padding: 5px 9px; white-space: nowrap; border-bottom: 1px solid var(--line); }
+th { position: sticky; top: 0; background: var(--panel2); color: var(--muted); font-weight: 600; font-size: 11.5px;
+  cursor: pointer; user-select: none; z-index: 1; }
+th.flat { cursor: default; }
+th:first-child, td:first-child, .left { text-align: left; }
+tbody tr:hover { background: #19202a; }
+tbody tr.here { background: #1b2431; box-shadow: inset 3px 0 0 var(--cyan); }
+td.num, th.num { font: 12px var(--mono); }
+tr.sep td { border-top: 1px solid var(--line2); }
+.dim { color: var(--muted); }
+.faint { color: var(--faint); }
+.bar { position: relative; }
+.bar span { position: absolute; left: 0; top: 2px; bottom: 2px; background: rgba(76,201,240,.16); border-radius: 3px; }
+.bar b { position: relative; font: 12px var(--mono); font-weight: 400; }
+
+.tier { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 5px; font-size: 11px;
+  font-weight: 750; color: #0b0e12; }
+.tier.S { background: #ff6ba8; } .tier.A { background: #ff9f5a; } .tier.B { background: #ffd75a; }
+.tier.C { background: #8ee06a; } .tier.D { background: #4cc9f0; } .tier.E { background: #8d97a8; }
+.tier.F { background: #5d6778; color: #dfe5ee; }
+.kind { font-size: 10.5px; padding: 1px 6px; border-radius: 5px; background: var(--panel2); color: var(--muted);
+  border: 1px solid var(--line); }
+.kind.model { color: #d8c6ff; border-color: rgba(167,139,250,.45); background: rgba(167,139,250,.13); }
+.kind.scripted { color: #ffd9a8; border-color: rgba(255,181,71,.45); background: rgba(255,181,71,.12); }
+.kind.checkpoint { color: #b9e6ff; border-color: rgba(76,201,240,.4); background: rgba(76,201,240,.12); }
+.win { color: var(--win); } .loss { color: var(--loss); } .timeout { color: var(--timeout); }
+.flag { font-size: 10.5px; color: var(--cyan); }
+.watch { display: inline-block; padding: 0 5px; border-radius: 5px; border: 1px solid var(--line2); color: var(--muted);
+  background: transparent; cursor: pointer; font: 11px var(--mono); }
+.watch:hover { color: var(--text); border-color: var(--cyan); }
+
+/* ---- the rating curve --------------------------------------------------------------------------------------- */
+.chart { width: 100%; height: 230px; }
+.chart .grid { stroke: var(--line); stroke-width: 1; }
+.chart .axis { fill: var(--faint); font: 10px var(--mono); }
+.chart .line { fill: none; stroke-width: 1.8; }
+.chart .anchor { stroke: var(--amber); stroke-dasharray: 4 4; stroke-width: 1; }
+.chart .dot { fill: var(--cyan); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; padding: 0 14px 12px; font-size: 11.5px; color: var(--muted); }
+.legend i { display: inline-block; width: 18px; height: 3px; border-radius: 2px; vertical-align: 3px; margin-right: 5px; }
+
+/* ---- the matrix --------------------------------------------------------------------------------------------- */
+.matrix td.cell { font: 11.5px var(--mono); text-align: center; padding: 3px 6px; }
+.matrix td.cell.none { color: var(--faint); }
+
+/* ---- the drawer of recorded fights -------------------------------------------------------------------------- */
+.drawer { position: fixed; right: 0; top: 0; bottom: 0; width: min(420px, 92vw); background: var(--bg2); z-index: 20;
+  border-left: 1px solid var(--line2); display: flex; flex-direction: column; box-shadow: -18px 0 40px rgba(0,0,0,.5); }
+.drawer h3 { margin: 0; padding: 12px 14px; border-bottom: 1px solid var(--line); font-size: 13px; display: flex;
+  align-items: center; gap: 8px; }
+.drawer .body { overflow-y: auto; padding: 6px; }
+.drawer .row { display: grid; grid-template-columns: 54px minmax(0, 1fr) auto; gap: 8px; align-items: center;
+  padding: 7px 8px; border-radius: 8px; }
+.drawer .row:hover { background: #19202a; }
+.drawer .row .what { overflow: hidden; text-overflow: ellipsis; }
+.drawer .row .len { color: var(--muted); font: 11.5px var(--mono); }
+.badge { display: inline-grid; place-items: center; padding: 2px 0; border-radius: 5px; font-size: 9.5px; font-weight: 750;
+  letter-spacing: .6px; text-transform: uppercase; }
+.badge.win { color: #052010; background: var(--win); }
+.badge.loss { color: #2a0409; background: var(--loss); }
+.badge.timeout { color: #2a1a02; background: var(--timeout); }
+.badge.draw { color: var(--muted); background: var(--panel2); box-shadow: inset 0 0 0 1px var(--line2); }
+.empty { padding: 34px 18px; text-align: center; color: var(--muted); line-height: 1.7; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header class="top">
+    <span class="brand"><span class="logo"></span> League</span>
+    <select id="run" title="Which run's league"></select>
+    <select id="vs" title="A second run to read beside it"></select>
+    <span class="chip dim" id="summary">–</span>
+    <span class="spacer"></span>
+    <span class="live" id="live">live</span>
+    <a class="btn" href="/" title="The fight replays">Replays</a>
+  </header>
+
+  <nav class="tabs" id="tabs"></nav>
+
+  <main id="main"></main>
+</div>
+
+<div class="drawer" id="drawer" hidden>
+  <h3><span id="drawer-title">Recorded fights</span><span class="spacer"></span>
+      <button class="btn small" id="drawer-close">Close</button></h3>
+  <div class="body" id="drawer-body"></div>
+</div>
+
+<script>
+'use strict';
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The league standings page. Everything here comes from viewer\serve.py, which reads only the files a league run already
+// writes: the trainer's tables in runs\<run>\league, the run's eval.csv, and the workers' per-fight records. Nothing is
+// written anywhere, and no replay is read: a row links into the replay viewer instead.
+//
+// What a "model" is here is what the league rates: an evaluated checkpoint, iteration-006750, playing its most likely
+// action. A training fight belongs to a policy that samples and is gone an iteration later, so those are counted for the
+// run as a whole and never per model. A published network the run fields, vs-copy, is a player of the league like a mob
+// is; see docs\training.md.
+// ---------------------------------------------------------------------------------------------------------------------
+
+const POLL_MS = 6000;
+
+// The tiers scripts\league.ps1 prints, and for the same reason: 150 points is what a 70% expected score over the tier
+// below comes to, and the scripted fighter, held at 1500, sits at the bottom of B.
+const TIERS = [[1800, 'S'], [1650, 'A'], [1500, 'B'], [1350, 'C'], [1200, 'D'], [1050, 'E']];
+
+const TABS = [
+  ['tiers', 'Tier list'],
+  ['opponents', 'Opponents'],
+  ['loadouts', 'Loadouts and ground'],
+  ['models', 'Models'],
+  ['matrix', 'Opponent by loadout'],
+  ['compare', 'Two runs'],
+];
+
+const state = {
+  runs: [],
+  run: '',
+  vs: '',
+  tab: 'tiers',
+  model: null,
+  data: null,
+  other: null,
+  sort: {},
+  failed: false,
+};
+
+const $ = (id) => document.getElementById(id);
+
+function el(tag, attrs, ...children) {
+  const node = document.createElement(tag);
+  for (const [name, value] of Object.entries(attrs || {})) {
+    if (value === null || value === undefined || value === false) continue;
+    if (name === 'class') node.className = value;
+    else if (name === 'text') node.textContent = value;
+    else if (name === 'html') node.innerHTML = value;
+    else if (name.startsWith('on')) node.addEventListener(name.slice(2), value);
+    else node.setAttribute(name, value === true ? '' : value);
+  }
+  for (const child of children.flat()) {
+    if (child === null || child === undefined || child === false) continue;
+    node.append(child.nodeType ? child : document.createTextNode(String(child)));
+  }
+  return node;
+}
+
+/** The same for the chart, which has to be in the SVG namespace or the browser draws nothing at all. */
+function svg(tag, attrs, text) {
+  const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [name, value] of Object.entries(attrs || {})) {
+    if (value === null || value === undefined) continue;
+    node.setAttribute(name, String(value));
+  }
+  if (text !== undefined && text !== null) node.textContent = String(text);
+  return node;
+}
+
+const number = (value) => (value === null || value === undefined || value === '' ? null : Number(value));
+const integer = (value) => Math.round(number(value) || 0);
+
+function percent(part, whole, places) {
+  if (!whole) return '–';
+  return (100 * part / whole).toFixed(places === undefined ? 1 : places) + '%';
+}
+
+function tierOf(rating) {
+  for (const [floor, name] of TIERS) if (rating >= floor) return name;
+  return 'F';
+}
+
+function fixed(value, places) {
+  return value === null || value === undefined || Number.isNaN(value) ? '–' : Number(value).toFixed(places || 0);
+}
+
+/** A count with a bar behind it, so a column of them reads as a shape as well as as numbers. */
+function bar(value, of, text) {
+  const width = of > 0 ? Math.max(0, Math.min(1, value / of)) : 0;
+  return el('td', { class: 'num bar' }, el('span', { style: 'width:' + (100 * width).toFixed(1) + '%' }),
+            el('b', { text: text === undefined ? String(value) : text }));
+}
+
+/** The outcome columns every table of fights has, as a share of its fights. */
+function outcomes(row) {
+  const fights = integer(row.fights);
+  return [
+    el('td', { class: 'num win', text: percent(integer(row.wins), fights) }),
+    el('td', { class: 'num loss', text: percent(integer(row.losses), fights) }),
+    el('td', { class: 'num timeout', text: percent(integer(row.timeouts), fights) }),
+    el('td', { class: 'num dim', text: percent(integer(row.draws), fights) }),
+  ];
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Loading
+// ---------------------------------------------------------------------------------------------------------------------
+
+async function json(url) {
+  const response = await fetch(url, { headers: { 'X-Replay-Viewer': '1' } });
+  if (!response.ok) throw new Error(url + ': ' + response.status);
+  return response.json();
+}
+
+async function loadRuns() {
+  const listed = await json('/api/league');
+  state.runs = listed.runs || [];
+  if (!state.run || !state.runs.some((run) => run.name === state.run)) {
+    state.run = state.runs.length ? state.runs[0].name : '';
+  }
+}
+
+async function loadRun() {
+  if (!state.run) { state.data = null; return; }
+  const query = state.model === null ? '' : '?model=' + encodeURIComponent(state.model);
+  state.data = await json('/api/league/' + encodeURIComponent(state.run) + query);
+}
+
+async function loadOther() {
+  state.other = state.vs && state.vs !== state.run ? await json('/api/league/' + encodeURIComponent(state.vs)) : null;
+}
+
+/**
+ * What is on screen, as one string. A poll that found nothing new draws nothing, so sorting a table or hovering a cell is
+ * not undone every few seconds while a run trains.
+ */
+function stamp() {
+  const of = (data) => !data ? '-' : [data.run, data.best, data.fights.overall.train.fights, data.fights.overall.eval.fights,
+    (data.tables.ratings || []).length, data.fights.models.length, data.fights.recorded.length].join(':');
+  return [state.tab, state.model, state.failed, of(state.data), of(state.other), state.runs.length,
+          Object.keys(state.sort).length].join('|');
+}
+
+async function refresh(full) {
+  try {
+    if (full) await loadRuns();
+    await loadRun();
+    await loadOther();
+    state.failed = false;
+  } catch (error) {
+    state.failed = true;
+    state.message = String(error.message || error);
+  }
+  const now = stamp();
+  if (now === state.stamp) {
+    header();
+    return;
+  }
+  state.stamp = now;
+  draw();
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The address bar holds what is on screen, so a view can be linked to
+// ---------------------------------------------------------------------------------------------------------------------
+
+function readAddress() {
+  const query = new URLSearchParams(location.search);
+  state.run = query.get('run') || '';
+  state.vs = query.get('vs') || '';
+  state.tab = TABS.some(([name]) => name === query.get('tab')) ? query.get('tab') : 'tiers';
+  const model = query.get('model');
+  state.model = model && /^\d+$/.test(model) ? Number(model) : null;
+}
+
+function writeAddress() {
+  const query = new URLSearchParams();
+  if (state.run) query.set('run', state.run);
+  if (state.vs) query.set('vs', state.vs);
+  if (state.tab !== 'tiers') query.set('tab', state.tab);
+  if (state.model !== null) query.set('model', String(state.model));
+  const url = location.pathname + (query.toString() ? '?' + query : '');
+  history.replaceState(null, '', url);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Sorting
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * A table that sorts by any of its columns. The columns say how to read themselves, so nothing here has to know what a
+ * rating or an opponent's name is.
+ */
+function table(key, columns, rows, options) {
+  const settings = options || {};
+  const sort = state.sort[key] || settings.sort || { column: 0, down: true };
+  const column = columns[sort.column] || columns[0];
+
+  const ordered = rows.slice().sort((one, two) => {
+    const a = column.value(one), b = column.value(two);
+    const order = typeof a === 'string' || typeof b === 'string'
+      ? String(a).localeCompare(String(b))
+      : (a || 0) - (b || 0);
+    return sort.down ? -order : order;
+  });
+
+  const head = el('tr', {}, columns.map((one, index) => el('th', {
+    class: (one.num ? 'num ' : '') + (one.left ? 'left' : ''),
+    title: one.title || null,
+    onclick: () => {
+      const down = sort.column === index ? !sort.down : true;
+      state.sort[key] = { column: index, down };
+      draw();
+    },
+  }, one.name + (sort.column === index ? (sort.down ? ' ▾' : ' ▴') : ''))));
+
+  const body = el('tbody', {}, ordered.map((row, index) => settings.row(row, index)));
+  return el('div', { class: 'scroll' }, el('table', { class: settings.class || null }, el('thead', {}, head), body));
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The drawer: the recorded fights of one matchup
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** Every recorded fight of this run that matches, newest first. A replay only exists for one fight in a few hundred. */
+function recorded(match) {
+  const all = (state.data && state.data.fights.recorded) || [];
+  return all.filter(match).slice().reverse();
+}
+
+function watch(title, match) {
+  const fights = recorded(match);
+  if (!fights.length) return el('span', { class: 'faint', text: '–' });
+  return el('button', {
+    class: 'watch', title: fights.length + ' recorded fight(s) of this to watch',
+    onclick: (event) => { event.stopPropagation(); openDrawer(title, fights); },
+  }, '▸ ' + fights.length);
+}
+
+function openDrawer(title, fights) {
+  $('drawer-title').textContent = title;
+  const body = $('drawer-body');
+  body.textContent = '';
+  for (const fight of fights) {
+    const url = '/?run=' + encodeURIComponent(state.run) + '&replay=' + encodeURIComponent(fight.file);
+    body.append(el('a', { class: 'row', href: url, target: '_blank', rel: 'noopener' },
+      el('span', { class: 'badge ' + fight.outcome, text: fight.outcome }),
+      el('span', { class: 'what' },
+        el('div', { text: fight.opponent }),
+        el('div', { class: 'dim', style: 'font-size:11.5px',
+                    text: fight.loadout + ' · ' + fight.kind + ' · iteration ' + fight.iteration
+                          + (fight.site && fight.site !== '-' ? ' · ' + fight.site : '') })),
+      el('span', { class: 'len', text: fight.ticks + 't' })));
+  }
+  $('drawer').hidden = false;
+}
+
+$('drawer-close').addEventListener('click', () => { $('drawer').hidden = true; });
+document.addEventListener('keydown', (event) => { if (event.key === 'Escape') $('drawer').hidden = true; });
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The tier list
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** Every player of a run, with the share of the training fights the matchmaking gives it now. */
+function players(data) {
+  const shares = {};
+  for (const row of data.tables.matchmaking || []) shares[row.opponent] = number(row.share) || 0;
+  return (data.tables.ratings || []).map((row) => ({
+    player: row.player,
+    kind: row.kind || 'mob',
+    rating: number(row.rating) || 0,
+    games: integer(row.games),
+    wins: integer(row.wins),
+    losses: integer(row.losses),
+    draws: integer(row.draws),
+    share: shares[row.player] || 0,
+    iteration: /^iteration-\d+$/.test(row.player) ? Number(row.player.slice('iteration-'.length)) : null,
+  }));
+}
+
+/**
+ * The tier list. Every player is a fixed policy: a mob, a squad of them, a rung of the difficulty ladder, the scripted
+ * fighter, a published network the run fields, or a checkpoint of the run on its most likely action. Nothing adds any of
+ * them up: two zombies are a player of their own, and so is a hard zombie.
+ */
+function tierList(data, options) {
+  const settings = options || {};
+  const all = players(data);
+  const checkpoints = all.filter((one) => one.iteration !== null && one.games > 0)
+                         .sort((one, two) => two.iteration - one.iteration);
+  const shown = settings.every ? all
+    : all.filter((one) => one.iteration === null || one.games > 0
+                 && (checkpoints.indexOf(one) < (settings.checkpoints || 8) || one.iteration === data.best));
+
+  const columns = [
+    { name: 'player', value: (one) => one.player, left: true },
+    { name: 'rating', value: (one) => one.rating, num: true },
+    { name: 'rated', value: (one) => one.games, num: true, title: 'Rated fights: evaluation fights only' },
+    { name: 'won', value: (one) => one.wins, num: true, title: "The player's own wins, not the agent's" },
+    { name: 'lost', value: (one) => one.losses, num: true },
+    { name: 'drawn', value: (one) => one.draws, num: true },
+    { name: 'share', value: (one) => one.share, num: true, title: 'Share of the training fights it is given now' },
+    { name: 'watch', value: (one) => recorded((fight) => fight.opponent === one.player).length, num: true },
+  ];
+
+  const most = Math.max(1, ...shown.map((one) => one.games));
+
+  return table('tiers' + (settings.key || ''), columns, shown, {
+    sort: { column: 1, down: true },
+    row: (one) => el('tr', { class: one.iteration === data.best ? 'here' : null },
+      el('td', {},
+        el('span', { class: 'tier ' + tierOf(one.rating), text: tierOf(one.rating) }), ' ',
+        el('span', { text: one.player }), ' ',
+        el('span', { class: 'kind ' + one.kind, text: one.kind }),
+        one.iteration === data.best ? el('span', { class: 'flag', text: '  best, in best.mbw' }) : null),
+      el('td', { class: 'num', text: fixed(one.rating, 0) }),
+      bar(one.games, most),
+      el('td', { class: 'num win', text: one.wins || '' }),
+      el('td', { class: 'num loss', text: one.losses || '' }),
+      el('td', { class: 'num dim', text: one.draws || '' }),
+      el('td', { class: 'num dim', text: one.share > 0 ? percent(one.share, 1) : '' }),
+      el('td', {}, watch('Fights against ' + one.player, (fight) => fight.opponent === one.player))),
+  });
+}
+
+/**
+ * The run's rating over its checkpoints, which is the one line that says whether it is getting better: the opponents get
+ * harder as the ladder opens rungs and the pool of checkpoints improves, so a win rate that holds still can mean either.
+ * Drawn beside every fixed player worth a mark, since what a rating means is the distance to those.
+ */
+function ratingCurve(runs) {
+  const width = 1000, height = 230, left = 46, right = 14, top = 12, bottom = 24;
+  const series = runs.filter((one) => one.points.length > 1);
+  if (!series.length) {
+    return el('div', { class: 'empty', text: 'No checkpoint has been rated yet.' });
+  }
+
+  const xs = series.flatMap((one) => one.points.map((point) => point.iteration));
+  const ys = series.flatMap((one) => one.points.map((point) => point.rating)).concat([1500]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs, x0 + 1);
+  const y0 = Math.floor(Math.min(...ys) / 50) * 50 - 25, y1 = Math.ceil(Math.max(...ys) / 50) * 50 + 25;
+  const px = (value) => left + (width - left - right) * (value - x0) / (x1 - x0);
+  const py = (value) => top + (height - top - bottom) * (1 - (value - y0) / (y1 - y0));
+
+  const chart = svg('svg', { viewBox: '0 0 ' + width + ' ' + height, class: 'chart' });
+
+  for (let rating = Math.ceil(y0 / 100) * 100; rating <= y1; rating += 100) {
+    chart.append(svg('line', { class: 'grid', x1: left, x2: width - right, y1: py(rating), y2: py(rating) }));
+    chart.append(svg('text', { class: 'axis', x: 4, y: py(rating) + 3.5 }, rating));
+  }
+
+  chart.append(svg('line', { class: 'anchor', x1: left, x2: width - right, y1: py(1500), y2: py(1500) }));
+  chart.append(svg('text', { class: 'axis', x: width - right, y: py(1500) - 5, 'text-anchor': 'end' }, 'scripted, 1500'));
+
+  for (const one of series) {
+    const path = one.points.map((point, index) => (index ? 'L' : 'M') + px(point.iteration).toFixed(1) + ' '
+                 + py(point.rating).toFixed(1)).join(' ');
+    chart.append(svg('path', { class: 'line', d: path, stroke: one.colour }));
+    const last = one.points[one.points.length - 1];
+    chart.append(svg('circle', { class: 'dot', cx: px(last.iteration), cy: py(last.rating), r: 3, fill: one.colour }));
+  }
+
+  for (const value of [x0, Math.round((x0 + x1) / 2), x1]) {
+    chart.append(svg('text', { class: 'axis', x: px(value), y: height - 6, 'text-anchor': 'middle' },
+                     'iteration ' + value));
+  }
+
+  return chart;
+}
+
+/**
+ * The checkpoints worth a point on the curve: the ones that were evaluated, which is what the per-fight records call a
+ * model. Every other checkpoint in the ratings was met a handful of times from the self-play pool and has hardly moved
+ * from where it started, so drawing those as well would bury the line the run is actually walking.
+ */
+function curveOf(data, colour) {
+  const evaluated = new Set(data.fights.models.filter((one) => one.fights > 0).map((one) => one.iteration));
+  const rated = players(data).filter((one) => one.iteration !== null && one.games > 0);
+  const shown = rated.filter((one) => evaluated.has(one.iteration));
+  const points = (shown.length > 1 ? shown : rated)
+    .map((one) => ({ iteration: one.iteration, rating: one.rating }))
+    .sort((one, two) => one.iteration - two.iteration);
+  return { name: data.run, colour, points };
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The tables the trainer writes, as scripts\league.ps1 prints them
+// ---------------------------------------------------------------------------------------------------------------------
+
+function opponentTable(data) {
+  const ratings = {}, kinds = {};
+  for (const row of data.tables.ratings || []) { ratings[row.player] = number(row.rating); kinds[row.player] = row.kind; }
+
+  const rows = (data.tables.opponents || []).map((row) => ({
+    opponent: row.opponent,
+    kind: row.kind || kinds[row.opponent] || 'mob',
+    rating: number(row.rating) || 0,
+    share: number(row.share) || 0,
+    fights: integer(row.eval_fights),
+    wins: integer(row.eval_wins),
+    losses: integer(row.eval_losses),
+    timeouts: integer(row.eval_timeouts),
+    draws: integer(row.eval_draws),
+    trained: integer(row.train_fights),
+    trainWins: integer(row.train_wins),
+    run: (data.fights.opponents[row.opponent] || [0, 0]),
+  }));
+
+  const columns = [
+    { name: 'opponent', value: (one) => one.opponent, left: true },
+    { name: 'rating', value: (one) => one.rating, num: true },
+    { name: 'share', value: (one) => one.share, num: true, title: 'Share of the training fights it is given now' },
+    { name: 'eval', value: (one) => one.fights, num: true, title: 'Evaluation fights in the last 200 against it' },
+    { name: 'won', value: (one) => one.fights && one.wins / one.fights, num: true },
+    { name: 'lost', value: (one) => one.fights && one.losses / one.fights, num: true },
+    { name: 'timeout', value: (one) => one.fights && one.timeouts / one.fights, num: true },
+    { name: 'draw', value: (one) => one.fights && one.draws / one.fights, num: true },
+    { name: 'train', value: (one) => one.trained, num: true },
+    { name: 'won', value: (one) => one.trained && one.trainWins / one.trained, num: true },
+    { name: 'all fights', value: (one) => one.run[0], num: true, title: 'Every fight of the run against it, both kinds' },
+    { name: 'won', value: (one) => one.run[0] && one.run[1] / one.run[0], num: true },
+    { name: 'watch', value: (one) => recorded((fight) => fight.opponent === one.opponent).length, num: true },
+  ];
+
+  return table('opponents', columns, rows, {
+    sort: { column: 1, down: true },
+    row: (one) => el('tr', {},
+      el('td', {}, one.opponent, ' ', el('span', { class: 'kind ' + one.kind, text: one.kind })),
+      el('td', { class: 'num', text: fixed(one.rating, 0) }),
+      el('td', { class: 'num dim', text: one.share > 0 ? percent(one.share, 1) : '' }),
+      el('td', { class: 'num', text: one.fights || '' }),
+      ...outcomes(one),
+      el('td', { class: 'num', text: one.trained || '' }),
+      el('td', { class: 'num win', text: percent(one.trainWins, one.trained) }),
+      el('td', { class: 'num', text: one.run[0] || '' }),
+      el('td', { class: 'num win', text: percent(one.run[1], one.run[0]) }),
+      el('td', {}, watch('Fights against ' + one.opponent, (fight) => fight.opponent === one.opponent))),
+  });
+}
+
+function loadoutTable(data) {
+  const rows = (data.tables.loadouts || []).map((row) => ({
+    loadout: row.loadout,
+    fights: integer(row.eval_fights),
+    wins: integer(row.eval_wins),
+    losses: integer(row.eval_losses),
+    timeouts: integer(row.eval_timeouts),
+    draws: integer(row.eval_draws),
+    trained: integer(row.train_fights),
+    trainWins: integer(row.train_wins),
+    run: (data.fights.loadouts[row.loadout] || [0, 0]),
+  }));
+
+  const columns = [
+    { name: 'loadout', value: (one) => one.loadout, left: true },
+    { name: 'eval', value: (one) => one.fights, num: true },
+    { name: 'won', value: (one) => one.fights && one.wins / one.fights, num: true },
+    { name: 'lost', value: (one) => one.fights && one.losses / one.fights, num: true },
+    { name: 'timeout', value: (one) => one.fights && one.timeouts / one.fights, num: true },
+    { name: 'draw', value: (one) => one.fights && one.draws / one.fights, num: true },
+    { name: 'train', value: (one) => one.trained, num: true },
+    { name: 'won', value: (one) => one.trained && one.trainWins / one.trained, num: true },
+    { name: 'all fights', value: (one) => one.run[0], num: true },
+    { name: 'won', value: (one) => one.run[0] && one.run[1] / one.run[0], num: true },
+    { name: 'watch', value: (one) => recorded((fight) => fight.loadout === one.loadout).length, num: true },
+  ];
+
+  return table('loadouts', columns, rows, {
+    sort: { column: 0, down: false },
+    row: (one) => el('tr', {},
+      el('td', { text: one.loadout }),
+      el('td', { class: 'num', text: one.fights || '' }),
+      ...outcomes(one),
+      el('td', { class: 'num', text: one.trained || '' }),
+      el('td', { class: 'num win', text: percent(one.trainWins, one.trained) }),
+      el('td', { class: 'num', text: one.run[0] || '' }),
+      el('td', { class: 'num win', text: percent(one.run[1], one.run[0]) }),
+      el('td', {}, watch('Fights with a ' + one.loadout, (fight) => fight.loadout === one.loadout))),
+  });
+}
+
+/**
+ * The ground, and what finished the other side. This is the table the hazardous sites exist for: a fight the terrain ends
+ * is the agent's win either way, so the share of its wins that the ground finished is the only sign that it has learned to
+ * knock things into lava rather than only to fight next to it.
+ */
+function groundTable(data) {
+  const rows = (data.tables.ground || []).map((row) => ({
+    site: row.site,
+    fights: integer(row.fights),
+    wins: integer(row.wins),
+    agent: integer(row.by_agent),
+    terrain: integer(row.by_terrain),
+    side: integer(row.by_side),
+  }));
+
+  const columns = [
+    { name: 'ground', value: (one) => one.site, left: true },
+    { name: 'fights', value: (one) => one.fights, num: true },
+    { name: 'wins', value: (one) => one.wins, num: true },
+    { name: 'won', value: (one) => one.fights && one.wins / one.fights, num: true },
+    { name: 'by agent', value: (one) => one.agent, num: true },
+    { name: 'by ground', value: (one) => one.terrain, num: true },
+    { name: 'ground', value: (one) => one.wins && one.terrain / one.wins, num: true,
+      title: 'Of its wins, the share the ground finished rather than the agent' },
+    { name: 'by side', value: (one) => one.side, num: true, title: 'A creeper that blew up its own mate' },
+    { name: 'watch', value: (one) => recorded((fight) => fight.site === one.site).length, num: true },
+  ];
+
+  const most = Math.max(1, ...rows.map((one) => one.wins && one.terrain / one.wins));
+
+  return table('ground', columns, rows, {
+    sort: { column: 1, down: true },
+    row: (one) => el('tr', {},
+      el('td', { text: one.site === '-' ? 'not recorded' : one.site }),
+      el('td', { class: 'num', text: one.fights }),
+      el('td', { class: 'num', text: one.wins }),
+      el('td', { class: 'num win', text: percent(one.wins, one.fights) }),
+      el('td', { class: 'num dim', text: one.agent }),
+      el('td', { class: 'num', text: one.terrain }),
+      bar(one.wins ? one.terrain / one.wins : 0, most, percent(one.terrain, one.wins)),
+      el('td', { class: 'num dim', text: one.side }),
+      el('td', {}, watch('Fights on ' + one.site, (fight) => fight.site === one.site))),
+  });
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Per model, from the per-fight records
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** The most of something, as "iron_sword 82%", from a map of name to count. */
+function mostOf(counts, of) {
+  const entries = Object.entries(counts || {}).sort((one, two) => two[1] - one[1]);
+  if (!entries.length) return el('span', { class: 'faint', text: '–' });
+  const [name, count] = entries[0];
+  return el('span', {}, name, ' ', el('span', { class: 'dim', text: percent(count, of || count, 0) }));
+}
+
+/** Every count as its own line, biggest first: what the agent died of, which weapons it held. */
+function breakdown(counts, of) {
+  const entries = Object.entries(counts || {}).sort((one, two) => two[1] - one[1]);
+  if (!entries.length) return el('div', { class: 'faint', text: 'nothing recorded' });
+  const most = Math.max(...entries.map(([, count]) => count));
+  return el('table', {}, el('tbody', {}, entries.map(([name, count]) => el('tr', {},
+    el('td', { text: name }),
+    el('td', { class: 'num', text: count }),
+    bar(count, most, percent(count, of || most, 1))))));
+}
+
+function modelTable(data) {
+  const rows = data.fights.models.map((one) => ({ ...one }));
+  const ratings = {};
+  for (const row of data.tables.ratings || []) {
+    if (/^iteration-\d+$/.test(row.player)) ratings[Number(row.player.slice('iteration-'.length))] = number(row.rating);
+  }
+  const evaluated = {};
+  for (const row of data.eval || []) evaluated[integer(row.iteration)] = row;
+
+  const columns = [
+    { name: 'model', value: (one) => one.iteration, num: true, left: true },
+    { name: 'rating', value: (one) => ratings[one.iteration] || 0, num: true },
+    { name: 'eval fights', value: (one) => one.fights, num: true },
+    { name: 'won', value: (one) => one.fights && one.wins / one.fights, num: true },
+    { name: 'lost', value: (one) => one.fights && one.losses / one.fights, num: true },
+    { name: 'timeout', value: (one) => one.fights && one.timeouts / one.fights, num: true },
+    { name: 'draw', value: (one) => one.fights && one.draws / one.fights, num: true },
+    { name: 'ticks', value: (one) => one.fights && one.ticks / one.fights, num: true, title: 'Average fight length' },
+    { name: 'most held', value: (one) => (one.weapon ? one.weapon[0] : ''), left: true,
+      title: 'The item it held longest in more of its fights than any other' },
+    { name: 'died of', value: (one) => (one.death ? one.death[0] : ''), left: true,
+      title: 'What killed it most often, of the fights it lost by dying' },
+    { name: 'swaps', value: (one) => one.fights && one.swaps / one.fights, num: true,
+      title: 'Weapon swaps per fight: a slot chosen that changed the kind of item held' },
+    { name: 'uses', value: (one) => one.fights && one.uses / one.fights, num: true,
+      title: 'Uses begun per fight: a bow drawn, a shield raised, a block placed' },
+    { name: 'shots', value: (one) => one.fights && one.shots / one.fights, num: true,
+      title: 'Arrows and bolts loosed per fight' },
+    { name: 'armed', value: (one) => one.fights && one.shot_fights / one.fights, num: true,
+      title: 'Fights in which it fired at all' },
+  ];
+
+  return table('models', columns, rows, {
+    sort: { column: 0, down: true },
+    row: (one) => el('tr', {
+      class: one.iteration === state.model ? 'here' : null,
+      style: 'cursor:pointer',
+      onclick: () => { state.model = state.model === one.iteration ? null : one.iteration; writeAddress(); refresh(false); },
+    },
+      el('td', {}, 'iteration-' + String(one.iteration).padStart(6, '0'),
+        one.iteration === data.best ? el('span', { class: 'flag', text: '  best' }) : null),
+      el('td', { class: 'num', text: fixed(ratings[one.iteration], 0) }),
+      el('td', { class: 'num', text: one.fights }),
+      ...outcomes(one),
+      el('td', { class: 'num dim', text: one.fights ? Math.round(one.ticks / one.fights) : '–' }),
+      el('td', {}, one.weapon ? el('span', {}, one.weapon[0], ' ',
+          el('span', { class: 'dim', text: percent(one.weapon[1], one.fights, 0) })) : el('span', { class: 'faint', text: '–' })),
+      el('td', {}, one.death ? el('span', {}, one.death[0], ' ',
+          el('span', { class: 'dim', text: percent(one.death[1], one.losses, 0) })) : el('span', { class: 'faint', text: '–' })),
+      el('td', { class: 'num', text: one.fights ? (one.swaps / one.fights).toFixed(1) : '–' }),
+      el('td', { class: 'num', text: one.fights ? (one.uses / one.fights).toFixed(1) : '–' }),
+      el('td', { class: 'num', text: one.fights ? (one.shots / one.fights).toFixed(1) : '–' }),
+      el('td', { class: 'num dim', text: percent(one.shot_fights, one.fights) })),
+  });
+}
+
+/** One model in full: how it did against each opponent and with each loadout, and what it did with its hands. */
+function modelDetail(data) {
+  const model = data.fights.model;
+  if (!model) {
+    return el('div', { class: 'empty' }, 'Pick a model above to see how it did against each opponent and with each '
+      + 'loadout, which weapon it held, and what it died of.');
+  }
+
+  const own = model.own;
+  const name = 'iteration-' + String(model.iteration).padStart(6, '0');
+
+  const pairs = (counts, title, key) => {
+    const rows = Object.entries(counts).map(([one, [fights, wins]]) => ({ name: one, fights, wins }));
+    return el('div', { class: 'card' }, el('h2', {}, title, el('small', { text: name })),
+      table(key, [
+        { name: title.split(' ')[0], value: (one) => one.name, left: true },
+        { name: 'fights', value: (one) => one.fights, num: true },
+        { name: 'won', value: (one) => one.wins, num: true },
+        { name: 'win rate', value: (one) => one.fights && one.wins / one.fights, num: true },
+        { name: 'watch', value: (one) => 0, num: true },
+      ], rows, {
+        sort: { column: 3, down: false },
+        row: (one) => el('tr', {},
+          el('td', { text: one.name }),
+          el('td', { class: 'num', text: one.fights }),
+          el('td', { class: 'num win', text: one.wins }),
+          bar(one.fights ? one.wins / one.fights : 0, 1, percent(one.wins, one.fights)),
+          el('td', {}, watch(name + ' vs ' + one.name, (fight) => fight.iteration === model.iteration
+            && (key === 'model-opponents' ? fight.opponent === one.name : fight.loadout === one.name)))),
+      }));
+  };
+
+  return el('div', { class: 'side-by-side' },
+    pairs(model.opponents, 'Opponent', 'model-opponents'),
+    pairs(model.loadouts, 'Loadout', 'model-loadouts'),
+    el('div', { class: 'card' }, el('h2', {}, 'Its hands', el('small', { text: own.fights + ' evaluation fights' })),
+      el('div', { class: 'pad' },
+        el('div', {}, el('b', { text: 'Most held: ' }), mostOf(own.weapons, own.fights)),
+        el('div', { class: 'dim', style: 'margin-top:6px',
+          text: (own.fights ? (own.swaps / own.fights).toFixed(1) : '–') + ' swaps, '
+                + (own.fights ? (own.uses / own.fights).toFixed(1) : '–') + ' uses and '
+                + (own.fights ? (own.shots / own.fights).toFixed(1) : '–') + ' shots a fight; it fired at all in '
+                + percent(own.shot_fights, own.fights) + ' of them' })),
+      el('div', { class: 'note', text: 'Every item it held, by the fights it held it longest in' }),
+      el('div', { class: 'scroll' }, breakdown(own.weapons, own.fights)),
+      el('div', { class: 'note', text: 'What it died of, when it died' }),
+      el('div', { class: 'scroll' }, breakdown(own.causes, own.losses))));
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Opponent by loadout
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * Win rate for every opponent against every loadout, over every fight of the run. Sparse by design: matchmaking sends the
+ * fights where the fight is even, and the loadout is drawn afresh every fight, so a cell with four fights in it says
+ * little and is greyed out for saying it.
+ */
+function matrix(data) {
+  const cells = data.fights.cells;
+  const loadouts = Object.keys(data.fights.loadouts).sort();
+  const opponents = Object.keys(data.fights.opponents).sort();
+  if (!opponents.length) return el('div', { class: 'empty', text: 'No fights recorded yet.' });
+
+  const head = el('tr', {}, el('th', { class: 'left flat', text: 'opponent' }),
+    loadouts.map((one) => el('th', { class: 'flat num', text: one })),
+    el('th', { class: 'flat num', text: 'all' }));
+
+  const body = el('tbody', {}, opponents.map((opponent) => el('tr', {},
+    el('td', { text: opponent }),
+    loadouts.map((loadout) => {
+      const cell = cells[opponent + '\t' + loadout];
+      if (!cell || !cell[0]) return el('td', { class: 'cell none', text: '·' });
+      const rate = cell[1] / cell[0];
+      return el('td', {
+        class: 'cell', title: cell[1] + ' of ' + cell[0] + ' fights won',
+        style: 'background: rgba(' + (rate > 0.5 ? '55,224,122,' : '255,77,97,')
+               + (0.06 + 0.34 * Math.abs(rate - 0.5) * 2).toFixed(3) + ')',
+      }, percent(cell[1], cell[0], 0));
+    }),
+    el('td', { class: 'cell dim', title: 'Every loadout',
+               text: percent((data.fights.opponents[opponent] || [0, 0])[1], (data.fights.opponents[opponent] || [0, 0])[0], 0) }))));
+
+  return el('div', { class: 'scroll' }, el('table', { class: 'matrix' }, el('thead', {}, head), body));
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Two runs
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * Two lineages side by side. What makes them comparable is the players both fought that never change: the scripted
+ * fighter, held at 1500, and any published network both runs field. Where those two ratings disagree the scales have
+ * drifted apart, and the tier lists should not be read against each other.
+ */
+function compare(data, other) {
+  if (!other) {
+    return el('div', { class: 'empty' }, 'Pick a second run in the header to read the two tier lists side by side, and to '
+      + 'see whether the players they share agree about where 1500 is.');
+  }
+
+  const shared = [];
+  const mine = {}, theirs = {};
+  for (const row of data.tables.ratings || []) mine[row.player] = row;
+  for (const row of other.tables.ratings || []) theirs[row.player] = row;
+  for (const name of Object.keys(mine)) {
+    const kind = mine[name].kind;
+    if (!theirs[name] || (kind !== 'model' && kind !== 'scripted')) continue;
+    shared.push({ player: name, kind, one: number(mine[name].rating), two: number(theirs[name].rating),
+                  games: integer(mine[name].games), otherGames: integer(theirs[name].games) });
+  }
+
+  const anchors = el('div', { class: 'card' },
+    el('h2', {}, 'What the two runs share', el('small', { text: data.run + ' against ' + other.run })),
+    el('div', { class: 'note' }, 'A fixed player both runs field is the bridge between their tier lists: the scripted '
+      + 'fighter is held at 1500 in both, and a published network is rated by each on its own fights. Two ratings within '
+      + 'a tier of each other mean the lists can be read together; a gap means one run has met it far too seldom, or the '
+      + 'two are measuring different things.'),
+    el('div', { class: 'scroll' }, el('table', {},
+      el('thead', {}, el('tr', {}, el('th', { class: 'left flat', text: 'player' }),
+        el('th', { class: 'flat num', text: data.run }), el('th', { class: 'flat num', text: 'rated' }),
+        el('th', { class: 'flat num', text: other.run }), el('th', { class: 'flat num', text: 'rated' }),
+        el('th', { class: 'flat num', text: 'apart' }))),
+      el('tbody', {}, shared.length ? shared.map((one) => el('tr', {},
+        el('td', {}, one.player, ' ', el('span', { class: 'kind ' + one.kind, text: one.kind })),
+        el('td', { class: 'num', text: fixed(one.one, 0) }),
+        el('td', { class: 'num dim', text: one.games }),
+        el('td', { class: 'num', text: fixed(one.two, 0) }),
+        el('td', { class: 'num dim', text: one.otherGames }),
+        el('td', { class: 'num ' + (Math.abs(one.one - one.two) > 150 ? 'loss' : 'dim'),
+                   text: fixed(Math.abs(one.one - one.two), 0) })))
+        : [el('tr', {}, el('td', { colspan: 6, class: 'faint',
+            text: 'Only the scripted fighter so far. Field the same published network in both runs '
+                  + '(scripts\\train.ps1 -LeagueModels vs-copy) and it becomes a second bridge.' }))]))));
+
+  const curves = el('div', { class: 'card' },
+    el('h2', {}, 'Rating over the checkpoints'),
+    ratingCurve([curveOf(data, 'var(--cyan)'), curveOf(other, 'var(--violet)')]),
+    el('div', { class: 'legend' },
+      el('span', {}, el('i', { style: 'background: var(--cyan)' }), data.run),
+      el('span', {}, el('i', { style: 'background: var(--violet)' }), other.run)));
+
+  return el('div', { style: 'display:grid; gap:14px' }, curves, anchors,
+    el('div', { class: 'side-by-side' },
+      el('div', { class: 'card' }, el('h2', {}, data.run, el('small', { text: 'tier list' })), tierList(data, { key: '-one' })),
+      el('div', { class: 'card' }, el('h2', {}, other.run, el('small', { text: 'tier list' })),
+        tierList(other, { key: '-two' }))));
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Drawing
+// ---------------------------------------------------------------------------------------------------------------------
+
+function header() {
+  const runs = $('run'), vs = $('vs');
+  runs.textContent = '';
+  vs.textContent = '';
+  for (const run of state.runs) {
+    runs.append(el('option', { value: run.name, selected: run.name === state.run, text: run.name }));
+  }
+  vs.append(el('option', { value: '', selected: !state.vs, text: 'beside: nothing' }));
+  for (const run of state.runs) {
+    if (run.name === state.run) continue;
+    vs.append(el('option', { value: run.name, selected: run.name === state.vs, text: 'beside: ' + run.name }));
+  }
+
+  const here = state.runs.find((run) => run.name === state.run);
+  const data = state.data;
+  $('summary').textContent = !here ? 'no league yet'
+    : here.rated.toLocaleString() + ' rated fights · ' + here.players + ' players · ' + here.checkpoints
+      + ' checkpoints rated' + (here.models.length ? ' · models ' + here.models.join(', ') : '')
+      + (data ? ' · ' + (data.fights.overall.train.fights + data.fights.overall.eval.fights).toLocaleString()
+                + ' fights recorded' : '');
+
+  const live = $('live');
+  live.className = 'live ' + (state.failed ? 'off' : 'on');
+  live.textContent = state.failed ? 'not served' : 'live';
+  live.title = state.failed ? (state.message || '') : 'Every ' + POLL_MS / 1000 + ' seconds';
+
+  const tabs = $('tabs');
+  tabs.textContent = '';
+  for (const [name, title] of TABS) {
+    tabs.append(el('button', {
+      class: state.tab === name ? 'on' : null, text: title,
+      onclick: () => { state.tab = name; writeAddress(); draw(); },
+    }));
+  }
+}
+
+function overall(data) {
+  const train = data.fights.overall.train, evaluated = data.fights.overall.eval;
+  const both = {};
+  for (const key of ['fights', 'wins', 'losses', 'timeouts', 'draws', 'ticks', 'swaps', 'uses', 'shots', 'shot_fights']) {
+    both[key] = train[key] + evaluated[key];
+  }
+  const weapons = { ...train.weapons };
+  for (const [name, count] of Object.entries(evaluated.weapons)) weapons[name] = (weapons[name] || 0) + count;
+  const causes = { ...train.causes };
+  for (const [name, count] of Object.entries(evaluated.causes)) causes[name] = (causes[name] || 0) + count;
+
+  return el('div', { class: 'side-by-side' },
+    el('div', { class: 'card' }, el('h2', {}, 'Every fight of the run',
+        el('small', { text: both.fights.toLocaleString() + ' recorded in league/results' })),
+      el('div', { class: 'pad' },
+        el('div', {}, el('b', { text: percent(both.wins, both.fights) }), ' won, ',
+          el('span', { class: 'loss', text: percent(both.losses, both.fights) }), ' lost, ',
+          el('span', { class: 'timeout', text: percent(both.timeouts, both.fights) }), ' timed out, ',
+          el('span', { class: 'dim', text: percent(both.draws, both.fights) }), ' drawn'),
+        el('div', { class: 'dim', style: 'margin-top:6px',
+          text: both.fights ? Math.round(both.ticks / both.fights) + ' ticks a fight; '
+            + (both.swaps / both.fights).toFixed(1) + ' swaps, ' + (both.uses / both.fights).toFixed(1) + ' uses and '
+            + (both.shots / both.fights).toFixed(1) + ' shots a fight, firing at all in '
+            + percent(both.shot_fights, both.fights) + ' of them' : '' }),
+        el('div', { style: 'margin-top:8px' }, el('b', { text: 'Most held: ' }), mostOf(weapons, both.fights)))),
+    el('div', { class: 'card' }, el('h2', {}, 'What the agent died of'),
+      el('div', { class: 'note', text: 'Of the fights it lost by dying. Anything but "opponent" is a death it could have '
+        + 'walked away from.' }),
+      el('div', { class: 'scroll' }, breakdown(causes, both.losses))));
+}
+
+function draw() {
+  header();
+  const main = $('main');
+  main.textContent = '';
+
+  if (state.failed && !state.data) {
+    main.append(el('div', { class: 'card' }, el('div', { class: 'empty' },
+      el('div', { html: '<b>The league page needs the viewer serving it.</b>' }),
+      el('div', { style: 'margin-top:8px', html: 'Start it with <code>scripts\\viewer.ps1 -League</code>. '
+        + 'It reads only what a run already writes.' }),
+      el('div', { class: 'faint', style: 'margin-top:8px', text: state.message || '' }))));
+    return;
+  }
+
+  if (!state.runs.length) {
+    main.append(el('div', { class: 'card' }, el('div', { class: 'empty' },
+      el('div', { html: '<b>No run has a league yet.</b>' }),
+      el('div', { style: 'margin-top:8px',
+        html: 'Start one with <code>scripts\\train.ps1 -Run league -Suite league -Seed vs-copy</code>, '
+          + 'and this lists it as soon as the trainer has rated a fight.' }))));
+    return;
+  }
+
+  const data = state.data;
+  if (!data) return;
+
+  if (state.tab === 'tiers') {
+    main.append(el('div', { class: 'card' },
+      el('h2', {}, 'Rating over the checkpoints', el('small', { text: data.run })),
+      ratingCurve([curveOf(data, 'var(--cyan)')])));
+    main.append(el('div', { class: 'card' },
+      el('h2', {}, 'Tier list', el('small', { text: 'the newest rated checkpoints, the best of them, and every other player' })),
+      el('div', { class: 'note' }, 'Elo from evaluation fights only: a checkpoint on its most likely action against an '
+        + 'opponent drawn evenly from everyone. The scripted fighter is held at 1500, so the scale means the same in every '
+        + 'run; a tier is 150 points. Won, lost and drawn are the player’s own, not the agent’s.'),
+      tierList(data, {})));
+    main.append(overall(data));
+  } else if (state.tab === 'opponents') {
+    main.append(el('div', { class: 'card' },
+      el('h2', {}, 'Against each opponent', el('small', { text: 'eval and train are the last 200 fights of each kind' })),
+      el('div', { class: 'note' }, 'A mob, a squad of several at once (2x_zombie), a rung of the difficulty ladder '
+        + '(zombie(hard)), the scripted fighter, or a published network the run fields. Every one is a player in its own '
+        + 'right: two zombies are not twice a zombie, and nothing here adds any of them up.'),
+      opponentTable(data)));
+  } else if (state.tab === 'loadouts') {
+    main.append(el('div', { class: 'card' },
+      el('h2', {}, 'With each loadout the agent carried'), loadoutTable(data)));
+    main.append(el('div', { class: 'card' },
+      el('h2', {}, 'On each kind of ground, and what finished the other side'),
+      el('div', { class: 'note' }, 'A quarter of the fights are drawn onto ground with something on it worth knocking an '
+        + 'opponent into. The ground column is the number to watch: a fight the terrain ends is the agent’s win either '
+        + 'way, so it is the only sign that the agent has learned the terrain is a weapon.'),
+      groundTable(data)));
+  } else if (state.tab === 'models') {
+    main.append(el('div', { class: 'card' },
+      el('h2', {}, 'Every evaluated model', el('small', { text: 'from the per-fight records; pick one for its own tables' })),
+      el('div', { class: 'note' }, 'A model is a checkpoint that was evaluated: its fights are the ones played on its most '
+        + 'likely action, and the ones the trainer rates. Swaps, uses and shots are what the body actually did, not what '
+        + 'the network asked for.'),
+      modelTable(data)));
+    main.append(modelDetail(data));
+  } else if (state.tab === 'matrix') {
+    main.append(el('div', { class: 'card' },
+      el('h2', {}, 'Win rate by opponent and loadout', el('small', { text: 'every fight of the run' })),
+      el('div', { class: 'note' }, 'Green is above half, red below; a dot is a pairing that has not come up. The loadout is '
+        + 'drawn afresh every fight and matchmaking picks the opponent, so the counts are uneven by design — hover a '
+        + 'cell for its fights.'),
+      matrix(data)));
+  } else if (state.tab === 'compare') {
+    main.append(compare(data, state.other));
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Going
+// ---------------------------------------------------------------------------------------------------------------------
+
+$('run').addEventListener('change', (event) => {
+  state.run = event.target.value;
+  state.model = null;
+  if (state.vs === state.run) state.vs = '';
+  writeAddress();
+  refresh(false);
+});
+
+$('vs').addEventListener('change', (event) => {
+  state.vs = event.target.value;
+  if (state.vs) state.tab = 'compare';
+  writeAddress();
+  refresh(false);
+});
+
+readAddress();
+refresh(true).then(() => writeAddress());
+
+setInterval(() => { if (!document.hidden) refresh(true); }, POLL_MS);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(true); });
+</script>
+</body>
+</html>

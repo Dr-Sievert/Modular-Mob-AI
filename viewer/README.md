@@ -1,7 +1,8 @@
 # Fight replay viewer
 
 Watch recorded fights to see where the agent goes, whether its aim tracks the vindicator, what it pressed on every
-tick, and why it won or lost. It has a top-down map, which is the default, and a 3D view.
+tick, and why it won or lost. It has a top-down map, which is the default, and a 3D view. Beside it, at `/league`, are
+the league standings of every run that has one: see [the league page](#the-league-page) below.
 
 ## Opening it
 
@@ -9,6 +10,7 @@ tick, and why it won or lost. It has a top-down map, which is the default, and a
   and opens the browser on it. The page lists every run's replays (`runs\<name>\replays\*.json`) and checks for new
   ones every 3 seconds, so fights show up while training records them. Starting it again while it runs only opens the
   browser.
+  - `-League` opens the league standings instead of a replay, and the *League* button in the header goes there too.
   - `-Run imitate` opens that run's newest replay. `-Port 8800` tries that port first; the default is 8765, then the
     next free one.
   - With *Auto-open newest* ticked, the newest replay of the run opens each time the one on screen finishes playing.
@@ -75,6 +77,26 @@ and says why.
 On the map, the mouse wheel zooms, and dragging pans (which turns the follow camera off). In 3D, dragging orbits,
 right-dragging or Shift-dragging pans, the wheel zooms, and *Iso* and *Top* are camera presets. Clicking a chart or an
 event marker jumps there. Press `?` in the page for how to read the views and what the numbers mean.
+
+## The league page
+
+`viewer\league.html`, served at `/league`, needs the server: it reads a run's files rather than files you drop on it.
+What it shows and where every number comes from is in [../docs/viewer.md](../docs/viewer.md). In short: a run picker and
+a second run to read beside it, the tier list with the rating over the checkpoints as a curve, the per-opponent,
+per-loadout and per-ground tables as `scripts\league.ps1` prints them, the per-model stats out of the workers' per-fight
+records, a win rate for every opponent by loadout, and rows that link into the recorded fights of that matchup.
+
+The server serves it through three endpoints, all of them read-only:
+
+| Endpoint | |
+|---|---|
+| `GET /league` | the page |
+| `GET /api/league` | every run with a `league\ratings.csv`, with its player and rated-fight counts, for the picker |
+| `GET /api/league/<run>[?model=N]` | one run: the trainer's tables, its `eval.csv`, and the sums of its per-fight records, with one model's own tables when asked |
+
+The per-fight records are read on from where they last got to rather than re-read, so the page can poll every few
+seconds against a run of hundreds of thousands of fights. A results file that has grown *shorter* is a different run
+under the same name, and everything is read again.
 
 ## three.js
 

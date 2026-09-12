@@ -1,8 +1,10 @@
 """
-Serves the fight replay viewer, viewer/replay.html, with a live list of every run's replays.
+Serves the fight replay viewer, viewer/replay.html, with a live list of every run's replays, and the league standings
+page beside it, viewer/league.html at /league.
 
     python viewer/serve.py                  start the viewer, or find the one already running, and open the browser
     python viewer/serve.py --run imitate    ... on the newest replay of that run
+    python viewer/serve.py --league         ... on the league standings instead of a replay
     python viewer/serve.py --port 8800      try that port first
     python viewer/serve.py --no-browser     only print the address
 
@@ -20,6 +22,11 @@ for the mobs and the blocks in their map colours.
 The page can also delete replays, through POST /api/delete. Like everything else here it answers only to the page on
 this machine, and it only ever deletes finished replays, *.json files straight inside runs/<name>/replays/.
 
+The league page reads what a league run already writes and nothing else: the trainer's tables in runs/<name>/league/,
+the run's eval.csv, and the workers' per-fight records in runs/<name>/league/results/. Nothing there is ever written.
+The per-fight records run to millions of lines, so they are added up once and then read on from where they got to, and
+only the sums are served; see Fights.
+
 Standard library only, so any Python 3.7 or newer runs it. Everything is found from this file's own location: the
 repository is the folder above viewer/, and replays are runs/<name>/replays/*.json. The server listens on 127.0.0.1
 only, and leaves runs/.replay-viewer.json behind while it runs so a second start opens the browser on it instead.
@@ -27,6 +34,7 @@ The 3D view's three.js is viewer/vendor/three.cjs, the official build of the ver
 """
 
 import argparse
+import collections
 import hashlib
 import json
 import os
@@ -46,12 +54,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 APP = 'mmai-replay-viewer'
-VERSION = 4     # what this server can serve; an older one still running is not reused (1: no 3D, 2: no textures,
-                # 3: no block textures and no deleting)
+VERSION = 5     # what this server can serve; an older one still running is not reused (1: no 3D, 2: no textures,
+                # 3: no block textures and no deleting, 4: no league page)
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 RUNS = ROOT / 'runs'
 PAGE = HERE / 'replay.html'
+LEAGUE_PAGE = HERE / 'league.html'
 VENDOR = HERE / 'vendor'
 AGENT_SKIN = ROOT / 'mod' / 'common' / 'src' / 'main' / 'resources' / 'assets' / 'modular_mob_ai' / 'textures' / 'entity' / 'agent.png'
 MINECRAFT = '1.21.1'    # the version the mod is built against, whose jar is preferred
@@ -207,6 +216,283 @@ def delete_replays(request):
     return {'deleted': deleted, 'failed': refused}
 
 
+# ---- the league ------------------------------------------------------------------------------------------------------
+#
+# Everything the league page shows comes from files a league run already writes. The trainer's own tables are small and
+# read whole every time; the workers' per-fight records are not, and are added up once and then only read on from where
+# they got to. Nothing here writes anything.
+
+# The trainer's tables, as trainer/mmai/league.py writes them, and what the run's own evaluation is in. Its
+# evaluations.csv is left out on purpose: the same thing, a checkpoint's record against each opponent, comes out of the
+# per-fight records with the loadouts and the deaths beside it, and it is one of the two tables that grows without end.
+LEAGUE_TABLES = ('ratings', 'opponents', 'loadouts', 'ground', 'matchmaking')
+EVAL_TABLE = 'eval.csv'
+
+# Where each field of a per-fight record is, as the game's gametest/league/League#write puts them. The columns grow to
+# the right and never move, so a line from before one was added simply stops early.
+FIGHT_FIELDS = ('iteration', 'kind', 'opponent', 'loadout', 'opponent_loadout', 'outcome', 'ticks', 'cause', 'site',
+                'finish', 'weapon', 'swaps', 'uses', 'shots', 'replay')
+WON = {'win': 'wins', 'loss': 'losses', 'timeout': 'timeouts', 'draw': 'draws'}
+
+# Recorded fights kept per run, newest last, for linking a row to a fight of that very matchup. A long run records
+# thousands; these are only names, and the page wants the recent ones.
+RECORDED_LIMIT = 4000
+
+# How many bytes of per-fight records are read in one go, so that a first read of a quarter of a million fights does not
+# hold the whole file in memory twice over.
+FIGHT_CHUNK = 4 << 20
+
+
+def league_folder(run):
+    """
+    runs/<run>/league for a plain run name, or None. The same rule as replay_folder: the folder has to be exactly there
+    once every link is followed, so nothing outside runs/ is ever read.
+    """
+    if not plain_name(run):
+        return None
+    folder = RUNS / run / 'league'
+    expected = os.path.join(os.path.realpath(str(RUNS)), run, 'league')
+    if not folder.is_dir() or os.path.normcase(os.path.realpath(str(folder))) != os.path.normcase(expected):
+        return None
+    return folder
+
+
+def read_table(path):
+    """A comma separated table with a header, as a list of dicts. Empty for one that is not there, or is being replaced."""
+    try:
+        lines = path.read_text(encoding='utf-8').splitlines()
+    except OSError:
+        return []
+    if not lines:
+        return []
+    header = [name.strip() for name in lines[0].split(',')]
+    rows = []
+    for line in lines[1:]:
+        if not line.strip():
+            continue
+        parts = [part.strip() for part in line.split(',')]
+        rows.append({name: parts[index] if index < len(parts) else '' for index, name in enumerate(header)})
+    return rows
+
+
+def bucket():
+    """How a set of fights went, and what the agent did with its hands over them."""
+    return {'fights': 0, 'wins': 0, 'losses': 0, 'timeouts': 0, 'draws': 0, 'ticks': 0,
+            'swaps': 0, 'uses': 0, 'shots': 0, 'shot_fights': 0, 'weapons': {}, 'causes': {}}
+
+
+def count(into, fight):
+    into['fights'] += 1
+    into[WON[fight['outcome']]] += 1
+    into['ticks'] += fight['ticks']
+    into['swaps'] += fight['swaps']
+    into['uses'] += fight['uses']
+    into['shots'] += fight['shots']
+    into['shot_fights'] += 1 if fight['shots'] > 0 else 0
+    if fight['weapon'] and fight['weapon'] != '-':
+        into['weapons'][fight['weapon']] = into['weapons'].get(fight['weapon'], 0) + 1
+    # Only a fight the agent died in says what of; anything else records nothing there.
+    if fight['cause'] and fight['cause'] != '-':
+        into['causes'][fight['cause']] = into['causes'].get(fight['cause'], 0) + 1
+
+
+def won(pair, outcome):
+    """A [fights, wins] pair, which is all a cell of the opponent by loadout table needs."""
+    pair[0] += 1
+    pair[1] += 1 if outcome == 'win' else 0
+    return pair
+
+
+def most(counts):
+    """The commonest of something and how many of the fights it was, as [name, count], or None for nothing counted."""
+    if not counts:
+        return None
+    name = max(counts, key=lambda key: (counts[key], key))
+    return [name, counts[name]]
+
+
+class Fights:
+    """
+    What one run's per-fight records add up to: runs/<run>/league/results/w*.csv, a line a fight, written by the workers.
+
+    One of these per run for as long as the server runs. The files are only ever appended to, so a refresh reads the new
+    bytes and nothing more: a run of a quarter of a million fights costs one pass and then nothing, which is what lets the
+    page poll while training goes on. A file that has grown shorter than it was is a different run under the same name, and
+    everything is read again from the start.
+
+    A **model** here is an evaluated checkpoint: the iteration named by the fights of kind ``eval``, which are the ones
+    played on a checkpoint's most likely action and the ones the trainer rates. Training fights carry whichever iteration
+    the workers happened to be on, a policy that samples and is gone the next iteration, so they are counted for the run as
+    a whole and not per model.
+    """
+
+    def __init__(self, folder):
+        self.folder = folder
+        self.forget()
+
+    def forget(self):
+        self.offsets = {}
+        self.overall = {'train': bucket(), 'eval': bucket()}
+        self.opponents = {}     # opponent -> [fights, wins], over every fight of the run
+        self.loadouts = {}      # loadout  -> [fights, wins]
+        self.cells = {}         # 'opponent\tloadout' -> [fights, wins]: the win rate by loadout and opponent
+        self.models = {}        # iteration -> one evaluated checkpoint's own numbers
+        self.recorded = collections.deque(maxlen=RECORDED_LIMIT)
+
+    def refresh(self):
+        """Reads whatever the workers have appended since the last look."""
+        results = self.folder / 'results'
+        try:
+            files = sorted(p for p in results.glob('w*.csv') if p.is_file())
+        except OSError:
+            return self
+        if any(self.offsets.get(path.name, 0) > path.stat().st_size for path in files):
+            self.forget()
+        for path in files:
+            start = self.offsets.get(path.name, 0)
+            try:
+                with open(path, 'rb') as stream:
+                    stream.seek(start)
+                    while True:
+                        data = stream.read(FIGHT_CHUNK)
+                        if not data:
+                            break
+                        # Only whole lines; a worker may be half way through writing the last one.
+                        end = data.rfind(b'\n') + 1
+                        if not end:
+                            break
+                        start += end
+                        for line in data[:end].decode('utf-8', 'replace').splitlines():
+                            self.take(line)
+            except OSError:
+                pass    # being written to or gone; the next refresh picks up where this got to
+            self.offsets[path.name] = start
+        return self
+
+    def take(self, line):
+        parts = line.strip().split(',')
+        if len(parts) < 7 or parts[1] not in ('train', 'eval') or parts[5] not in WON:
+            return
+        fight = {name: parts[index] if index < len(parts) else '' for index, name in enumerate(FIGHT_FIELDS)}
+        try:
+            fight['iteration'] = int(fight['iteration'])
+            fight['ticks'] = int(fight['ticks'])
+            for name in ('swaps', 'uses', 'shots'):
+                fight[name] = int(fight[name]) if fight[name] not in ('', '-') else 0
+        except ValueError:
+            return
+
+        count(self.overall[fight['kind']], fight)
+        won(self.opponents.setdefault(fight['opponent'], [0, 0]), fight['outcome'])
+        won(self.loadouts.setdefault(fight['loadout'], [0, 0]), fight['outcome'])
+        won(self.cells.setdefault(fight['opponent'] + '\t' + fight['loadout'], [0, 0]), fight['outcome'])
+
+        if fight['kind'] == 'eval':
+            model = self.models.get(fight['iteration'])
+            if model is None:
+                model = self.models[fight['iteration']] = {'iteration': fight['iteration'], 'own': bucket(),
+                                                           'opponents': {}, 'loadouts': {}}
+            count(model['own'], fight)
+            won(model['opponents'].setdefault(fight['opponent'], [0, 0]), fight['outcome'])
+            won(model['loadouts'].setdefault(fight['loadout'], [0, 0]), fight['outcome'])
+
+        if fight['replay'] and fight['replay'] != '-':
+            self.recorded.append({'file': fight['replay'], 'iteration': fight['iteration'], 'kind': fight['kind'],
+                                  'opponent': fight['opponent'], 'loadout': fight['loadout'],
+                                  'outcome': fight['outcome'], 'ticks': fight['ticks'], 'site': fight['site']})
+
+    def summary(self, model=None, replays=()):
+        """
+        What the page is served. Every model as one row, and the one it asked about in full; the recorded fights are
+        narrowed to the replays that are really on disk, since a name was written down before its file was.
+
+        A row carries the weapon and the death a model saw most rather than every one of them, because the whole of those
+        for every checkpoint of a long run is most of a megabyte and the page shows one model's at a time.
+        """
+        kept = set(replays)
+        models = []
+        for one in sorted(self.models.values(), key=lambda one: one['iteration']):
+            row = {name: value for name, value in one['own'].items() if name not in ('weapons', 'causes')}
+            row['iteration'] = one['iteration']
+            row['weapon'] = most(one['own']['weapons'])
+            row['death'] = most(one['own']['causes'])
+            models.append(row)
+        picked = self.models.get(model)
+        return {
+            'overall': self.overall,
+            'opponents': self.opponents,
+            'loadouts': self.loadouts,
+            'cells': self.cells,
+            'models': models,
+            'model': picked,
+            'recorded': [one for one in self.recorded if one['file'] in kept],
+        }
+
+
+_fights = {}
+
+
+def league_fights(run, folder):
+    """The sums for that run, brought up to date. Kept between requests, since a refresh only reads what is new."""
+    if run not in _fights:
+        _fights[run] = Fights(folder)
+    return _fights[run].refresh()
+
+
+def league_runs():
+    """Every run with a league in it, newest first: what the picker lists, and no more than it needs."""
+    runs = []
+    if not RUNS.is_dir():
+        return runs
+    for run_dir in RUNS.iterdir():
+        folder = league_folder(run_dir.name)
+        ratings = folder / 'ratings.csv' if folder else None
+        if not ratings or not ratings.is_file():
+            continue
+        players = read_table(ratings)
+        checkpoints = [row for row in players if row.get('kind') == 'checkpoint']
+        rated = sum(int(row.get('games') or 0) for row in checkpoints)
+        try:
+            when = ratings.stat().st_mtime
+        except OSError:
+            continue
+        runs.append({'name': run_dir.name, 'mtime': round(when, 3), 'players': len(players),
+                     'checkpoints': len(checkpoints), 'rated': rated,
+                     'models': sorted(row['player'] for row in players if row.get('kind') == 'model')})
+    runs.sort(key=lambda run: run['mtime'], reverse=True)
+    return runs
+
+
+def league(run, model=None):
+    """Everything the page draws for one run, or None when that run has no league."""
+    folder = league_folder(run)
+    if folder is None:
+        return None
+    tables = {name: read_table(folder / (name + '.csv')) for name in LEAGUE_TABLES}
+    evaluations = read_table(folder.parent / EVAL_TABLE)
+    best = [row for row in evaluations if row.get('best') == '1']
+    names = {entry['file'] for entry in list_replays(run)}
+    return {
+        'run': run,
+        'best': int(best[-1]['iteration']) if best and best[-1].get('iteration', '').isdigit() else None,
+        'tables': tables,
+        'eval': evaluations,
+        'fights': league_fights(run, folder).summary(model, names),
+        'replays': sorted(names),
+    }
+
+
+def list_replays(run):
+    """The replays of one run that are actually on disk, so a row never links to a file that was never written."""
+    folder = replay_folder(run)
+    if folder is None:
+        return []
+    try:
+        return [{'file': entry.name} for entry in os.scandir(folder) if entry.is_file() and is_replay_name(entry.name)]
+    except OSError:
+        return []
+
+
 def jar_version(path):
     """The Minecraft version of a jar that holds the vanilla mob textures, or None."""
     try:
@@ -323,9 +609,22 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if not self.local_request():
             return
-        path = urllib.parse.unquote(urllib.parse.urlsplit(self.path).path)
+        split = urllib.parse.urlsplit(self.path)
+        path = urllib.parse.unquote(split.path)
+        query = urllib.parse.parse_qs(split.query)
         if path in ('/', '/index.html', '/replay.html'):
             self.send_bytes(PAGE.read_bytes(), 'text/html; charset=utf-8')
+        elif path in ('/league', '/league.html'):
+            self.send_bytes(LEAGUE_PAGE.read_bytes(), 'text/html; charset=utf-8')
+        elif path == '/api/league':
+            self.send_json({'runs': league_runs()}, etag=True)
+        elif path.startswith('/api/league/') and path.count('/') == 3:
+            model = (query.get('model') or ['-'])[0]
+            standings = league(path.split('/')[3], int(model) if model.isdigit() else None)
+            if standings is None:
+                self.send_error(404, 'No league in that run')
+            else:
+                self.send_json(standings)
         elif path == '/api/ping':
             self.send_json({'app': APP, 'version': VERSION, 'root': str(ROOT), 'pid': os.getpid(), 'textures': TEXTURES.describe()})
         elif path == '/api/blocks':
@@ -488,15 +787,15 @@ def bind(preferred):
     raise SystemExit('Found no free port to listen on.')
 
 
-def address(port, run):
-    url = 'http://127.0.0.1:%d/' % port
+def address(port, run, league_page=False):
+    url = 'http://127.0.0.1:%d/%s' % (port, 'league' if league_page else '')
     return url + ('?run=' + urllib.parse.quote(run) if run else '')
 
 
 def serve(args):
     port = running_port()
     if port:
-        url = address(port, args.run)
+        url = address(port, args.run, args.league)
         print('The replay viewer is already running: ' + url)
         if not args.no_browser:
             webbrowser.open(url)
@@ -519,9 +818,10 @@ def serve(args):
     port = server.server_address[1]
     RUNS.mkdir(exist_ok=True)
     LOCK.write_text(json.dumps({'app': APP, 'port': port, 'pid': os.getpid()}), encoding='utf-8')
-    url = address(port, args.run)
+    url = address(port, args.run, args.league)
     print('Replay viewer: ' + url)
     print('Lists every %s. Ctrl+C or closing this window stops it.' % os.path.join(str(RUNS), '*', 'replays'))
+    print('League standings of every run with one: %s' % address(port, '', True))
     if TEXTURES.zip:
         print('Mob and block textures from Minecraft %s, %s: %s' % (TEXTURES.version, TEXTURES.how, TEXTURES.jar))
     elif not args.minecraft_jar:
@@ -600,6 +900,7 @@ def export(args):
 def main():
     parser = argparse.ArgumentParser(description='Fight replay viewer for Modular Mob AI.')
     parser.add_argument('--run', help='open the newest replay of this run')
+    parser.add_argument('--league', action='store_true', help='open the league standings rather than a replay')
     parser.add_argument('--port', type=int, default=0, help='port to try first (default %d)' % DEFAULT_PORT)
     parser.add_argument('--no-browser', action='store_true', help='do not open a browser')
     parser.add_argument('--minecraft-jar', metavar='PATH', help='a Minecraft client jar to read mob and block textures '

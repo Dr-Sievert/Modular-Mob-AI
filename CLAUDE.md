@@ -53,6 +53,7 @@ scripts\stop.ps1 -Run <name>           stop one run (bare stop.ps1 stops every r
 scripts\eval.ps1 -Weights models\vs-copy\best.mbw     win rate of a network, 2,000 fights
 scripts\publish.ps1 -Run <name> -State -Push          put a run's best network into models\ and push it
 scripts\viewer.ps1                     watch recorded fights in the browser, 2D or 3D
+scripts\viewer.ps1 -League             the league standings beside them: tier list, tables, per-model stats
 ```
 
 ## Environment notes

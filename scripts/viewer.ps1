@@ -1,14 +1,18 @@
 # Opens the fight replay viewer in the browser: viewer\serve.py, a small local server with a live list of every run's
-# replays. When it is already running this only opens the browser on it. Ctrl+C stops it.
+# replays, and the league standings beside them. When it is already running this only opens the browser on it. Ctrl+C
+# stops it.
 #
 #   scripts\viewer.ps1                  the newest replay of any run
 #   scripts\viewer.ps1 -Run imitate     the newest replay of that run
+#   scripts\viewer.ps1 -League          the league standings instead: the tier list, the tables and the per-model stats
+#   scripts\viewer.ps1 -League -Run league2      that run's league
 #   scripts\viewer.ps1 -Port 8800       try that port first
 #   scripts\viewer.ps1 -MinecraftJar C:\path\client.jar
 #                                       take mob and block textures from that jar instead of looking in the Gradle cache
 
 param(
     [string] $Run = '',
+    [switch] $League,
     [int] $Port = 0,
     [string] $MinecraftJar = ''
 )
@@ -17,6 +21,7 @@ param(
 
 $arguments = @((Join-Path $Root 'viewer\serve.py'))
 if ($Run) { $arguments += @('--run', $Run) }
+if ($League) { $arguments += @('--league') }
 if ($Port -gt 0) { $arguments += @('--port', $Port) }
 if ($MinecraftJar) { $arguments += @('--minecraft-jar', $MinecraftJar) }
 
