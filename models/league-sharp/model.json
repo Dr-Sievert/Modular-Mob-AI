@@ -1,12 +1,12 @@
 {
     "run":  "league-sharp",
-    "published":  "2026-09-12T12:58:44+02:00",
-    "code":  "1b6d796",
-    "weights":  "best evaluated, iteration 21075",
-    "iteration":  21075,
-    "fights":  1005,
-    "won":  60.7,
-    "lost":  35,
-    "timed_out":  4.3,
+    "published":  "2026-09-12T18:23:01+02:00",
+    "code":  "5abcd91",
+    "weights":  "best evaluated, iteration 27075",
+    "iteration":  27075,
+    "fights":  1003,
+    "won":  62.9,
+    "lost":  32.4,
+    "timed_out":  4.7,
     "state":  true
 }
