@@ -109,8 +109,14 @@ public final class AgentReward {
     }
 
 
-    /** Zero at the start of the fight, one once the arena's time is up. */
-    private float elapsedFraction() {
+    /**
+     * Zero at the start of the fight, one once the arena's time is up.
+     *
+     * <p>Public because the agent sees it: this is the number the self block's clock field carries, read from here rather
+     * than worked out again in the encoder, so that what the network is shown and what the reward is paid by cannot drift
+     * apart. See {@code AgentObservation#clock}.
+     */
+    public float elapsedFraction() {
 
         return Math.min(1.0F, this.elapsedTicks / (float) this.maxTicks);
     }

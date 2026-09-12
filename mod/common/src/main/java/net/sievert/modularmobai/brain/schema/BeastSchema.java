@@ -23,7 +23,7 @@ public final class BeastSchema {
     // Self: the humanoid's, less everything that needs a hand
     // -----------------------------------------------------------------------------------------------------------
 
-    public static final int SELF_SIZE = 16;
+    public static final int SELF_SIZE = 17;
 
     public static final int SELF_HEALTH = 0;
     public static final int SELF_VELOCITY_FORWARD = 1;
@@ -45,6 +45,14 @@ public final class BeastSchema {
     public static final int SELF_AIM_COS = 13;
     public static final int SELF_HURT_TIME = 14;
     public static final int SELF_ENEMIES_IN_RANGE = 15;
+
+    /**
+     * How much of this fight's clock has run. The beast gets the clock and not the humanoid's other new self field, arrows
+     * left: it fights the same timed fights on the same reward, where running the clock out is a loss and winning early
+     * pays a bonus, so a clock it cannot see costs it exactly what it cost the humanoid — but it has no hands, and a body
+     * that cannot hold a bow has no quiver to be out of. See {@link AgentObservation#clock}.
+     */
+    public static final int SELF_CLOCK = 16;
 
     // -----------------------------------------------------------------------------------------------------------
     // Echo: what the body actually did, which for this one is moving and biting

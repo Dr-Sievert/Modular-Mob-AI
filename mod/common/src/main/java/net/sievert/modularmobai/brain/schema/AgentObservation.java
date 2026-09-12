@@ -1,8 +1,11 @@
 package net.sievert.modularmobai.brain.schema;
 
+import java.util.function.Predicate;
+
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.FlyingMob;
@@ -30,8 +33,11 @@ import net.minecraft.world.item.BowItem;
 import net.minecraft.world.item.CrossbowItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.ProjectileWeaponItem;
 import net.minecraft.world.item.ShieldItem;
 import net.minecraft.world.item.SwordItem;
+import net.minecraft.world.item.enchantment.EnchantmentHelper;
+import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.BaseFireBlock;
@@ -43,6 +49,7 @@ import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
+import net.sievert.modularmobai.arena.Episode;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 import net.sievert.modularmobai.entity.agent.ExecutedControls;
 import net.sievert.modularmobai.entity.agent.MobControls;
@@ -153,6 +160,97 @@ public final class AgentObservation {
         out[at + ObservationSchema.SELF_AIM_COS] = cos;
         out[at + ObservationSchema.SELF_HURT_TIME] = agent.hurtTime / 10.0F;
         out[at + ObservationSchema.SELF_ENEMIES_IN_RANGE] = slots.inRangeCount() / (float) ObservationSchema.ENEMY_SLOTS;
+        out[at + ObservationSchema.SELF_CLOCK] = clock(agent);
+        out[at + ObservationSchema.SELF_ARROWS] = arrows(agent);
+    }
+
+    /**
+     * How much of this fight's own clock has run, nought at the first tick and one once the time is up. Every body's: they
+     * all fight the same timed fights and are all paid by the same reward.
+     *
+     * <p>The reward is a function of the clock, and until this field nothing the agent saw was. Running the clock out is a
+     * loss ({@code AgentReward#lost}) and a win pays a bonus that scales with how much clock is left, so one position is
+     * worth about +3 at tick 100 and -2 at tick 1,150; a critic that cannot see the clock cannot tell those apart, and a
+     * policy could only learn urgency by counting the ticks itself inside the GRU.
+     *
+     * <p>It is <b>this</b> fight's own limit, not elapsed ticks over a constant 1,200: a league matchup sets its own clock,
+     * and a longer one has to read as more time left rather than as a fight already nearly over. An agent with no episode —
+     * one met out in a world, where nobody is paying it and nothing runs out — reads nought for the whole of its life, which
+     * is the honest reading of a clock that will never expire.
+     */
+    static float clock(AgentMob agent) {
+
+        Episode episode = agent.episode();
+
+        return episode == null ? 0.0F : episode.reward().elapsedFraction();
+    }
+
+    /**
+     * How many shots the agent has left, over {@link ObservationSchema#ARROW_SCALE} and capped at one, and nought where it
+     * carries nothing that shoots at all.
+     *
+     * <p>A quiver that can empty was invisible: an agent 64 arrows into a bow loadout read exactly like one on its first
+     * arrow, and the only thing that knows better is the teacher, which infers an empty quiver from a use press that
+     * produced nothing. A network choosing each button afresh from a probability cannot make that inference, so it went on
+     * pressing use at a bow that would never come up again.
+     *
+     * <p>Counted from everywhere a bow would find ammunition, {@code AgentMob#getProjectile}: the off hand and the whole
+     * hotbar, since a shot takes from whichever stack comes first and the agent can reach all of them. An arrow already
+     * wound into a crossbow is not counted, which is the plain truth — it has left the quiver and is a shot paid for.
+     */
+    private static float arrows(AgentMob agent) {
+
+        ItemStack weapon = ItemStack.EMPTY;
+
+        for (int slot = 0; slot < MobControls.HOTBAR_SIZE; slot++) {
+
+            if (agent.getHotbarItem(slot).getItem() instanceof ProjectileWeaponItem) {
+
+                weapon = agent.getHotbarItem(slot);
+                break;
+            }
+        }
+
+        // Nothing that shoots, so there is no quiver to be out of. Also the empty stack's own answer.
+        if (!(weapon.getItem() instanceof ProjectileWeaponItem shooter)) {
+
+            return 0.0F;
+        }
+
+        // An Infinity weapon reads full however little is in the quiver, because vanilla never spends from it: the loadouts
+        // a real game hands out carry the weapon and a single arrow for exactly that reason (see arena/Loadouts), and
+        // counting that one arrow would tell a body that can never run out that it is nearly out.
+        if (neverRunsOut(agent, weapon)) {
+
+            return 1.0F;
+        }
+
+        Predicate<ItemStack> ammunition = shooter.getAllSupportedProjectiles();
+        ItemStack offHand = agent.getOffhandItem();
+        int left = ammunition.test(offHand) ? offHand.getCount() : 0;
+
+        for (int slot = 0; slot < MobControls.HOTBAR_SIZE; slot++) {
+
+            ItemStack stack = agent.getHotbarItem(slot);
+            left += ammunition.test(stack) ? stack.getCount() : 0;
+        }
+
+        return Math.min(1.0F, left / ObservationSchema.ARROW_SCALE);
+    }
+
+    /**
+     * Whether firing this weapon spends nothing, which is what Infinity means. The registry is only asked about an
+     * enchanted stack, so the plain weapons every training fight uses pay nothing for the question.
+     */
+    private static boolean neverRunsOut(AgentMob agent, ItemStack weapon) {
+
+        if (!weapon.isEnchanted()) {
+
+            return false;
+        }
+
+        return EnchantmentHelper.getItemEnchantmentLevel(agent.level().registryAccess()
+                .registryOrThrow(Registries.ENCHANTMENT).getHolderOrThrow(Enchantments.INFINITY), weapon) > 0;
     }
 
     private static void writeHotbar(AgentMob agent, float[] out, int base) {

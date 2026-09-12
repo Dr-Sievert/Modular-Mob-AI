@@ -21,7 +21,7 @@ Read these before changing anything:
 
 ## Hard rules
 
-- **A layout belongs to a body, not to the game.** The humanoid's observation (744 floats) and action (11 controls, 19
+- **A layout belongs to a body, not to the game.** The humanoid's observation (770 floats) and action (11 controls, 19
   network outputs) are fixed: every trained network depends on them, and a schema id stamped into every weight file refuses a
   mismatch. Don't change them without the owner's agreement. Another body brings its own layout instead of bending that one;
   see [docs/species.md](docs/species.md).
@@ -45,7 +45,7 @@ Read these before changing anything:
 ```
 scripts\setup.ps1                      once per machine: Java 21, Python + PyTorch, compile, parity check
 scripts\test.ps1                       20 arena fights with the scripted fighter: expect 20/20, 54 ticks each
-scripts\test.ps1 -Mechanics            the item and block rules against a player's numbers: expect 30 passed
+scripts\test.ps1 -Mechanics            the item and block rules against a player's numbers: expect 31 passed
 scripts\test.ps1 -Play                 the agent in a real game (jar networks, /mmai, sides, Infinity loadouts): expect 17 passed
 scripts\play.ps1                       the dev client, agents on the best network in models\; -Model, -Weights, -Loader
 scripts\terrain.ps1                    once per machine before any training: the terrain library a run fights on

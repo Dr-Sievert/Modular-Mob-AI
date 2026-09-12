@@ -1340,6 +1340,96 @@ public class AgentMechanicsGameTest {
     }
 
     // ---------------------------------------------------------------------------------------------------------------
+    // The clock and the quiver
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * A short clock, so that a test can watch one run all the way out. A real fight's is 1,200 ticks and a league
+     * matchup's is its own, which is the whole reason the field is a fraction of this fight's limit rather than of a
+     * constant.
+     */
+    private static final int SHORT_CLOCK = 40;
+
+    /**
+     * The self block says how much of this fight's clock has run and how much is left in the quiver, which are the two
+     * things the agent was being paid by and could not see.
+     *
+     * <p>The clock is the reward's own count: running it out is a loss and a win pays a bonus that scales with what is
+     * left, so the same position is worth about +3 early and -2 at the buzzer, and neither the critic nor the policy had
+     * anything to tell those apart by. The quiver is what the teacher has to infer from a use press that produced nothing,
+     * which is an inference a network sampling a button cannot make.
+     *
+     * <p>Two agents, because both fields have an answer for a body they do not apply to: the swordsman carries nothing
+     * that shoots and is in no fight, so it reads no arrows and a clock that never moves.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 200)
+    public static void theClockRunsUpAndTheQuiverRunsDown(GameTestHelper helper) {
+
+        AgentMob archer = agent(helper, new BlockPos(4, 2, 1), 0.0F, 0.0F);
+        AgentMob swordsman = agent(helper, new BlockPos(2, 2, 1), 0.0F, 0.0F);
+        Mob opponent = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new BlockPos(4, 2, 6));
+
+        archer.startEpisode(new Episode(SHORT_CLOCK, bounds(helper), opponent));
+        Loadout.BOW.equip(archer);
+        Loadout.SWORD.equip(swordsman);
+
+        float[] ran = {0.0F};
+
+        run(helper, tick -> {
+
+            // One press is one arrow: the draw runs to full on its own, see onePressDrawsToFullAndLooses.
+            archer.controls().use = tick == 1;
+
+            float clock = selfField(archer, ObservationSchema.SELF_CLOCK);
+            float arrows = selfField(archer, ObservationSchema.SELF_ARROWS);
+
+            // This fight's own ticks over this fight's own limit, which is what the reward is charging against.
+            helper.assertValueEqual(clock,
+                    Math.min(1.0F, archer.episode().reward().elapsedTicks() / (float) SHORT_CLOCK), "the clock");
+            helper.assertTrue(clock >= ran[0], "The clock went backwards, " + ran[0] + " to " + clock);
+            ran[0] = clock;
+
+            // What is in the hotbar, as a fraction of the 64 a bow loadout carries.
+            helper.assertValueEqual(arrows, archer.getHotbarItem(1).getCount() / ObservationSchema.ARROW_SCALE, "arrows left");
+
+            // A body with nothing that shoots, and no fight for its clock to run out of.
+            helper.assertValueEqual(selfField(swordsman, ObservationSchema.SELF_ARROWS), 0.0F, "a swordsman's arrows");
+            helper.assertValueEqual(selfField(swordsman, ObservationSchema.SELF_CLOCK), 0.0F, "the clock of no fight");
+
+            if (tick == 0) {
+
+                helper.assertValueEqual(clock, 0.0F, "the clock on the first tick");
+                helper.assertValueEqual(arrows, 1.0F, "a full quiver");
+            }
+
+            // Well past the twenty ticks a full draw takes, and past half of a forty tick clock.
+            if (tick == 30) {
+
+                helper.assertValueEqual(archer.getHotbarItem(1).getCount(), 63, "arrows left in the hotbar");
+                helper.assertTrue(arrows < 1.0F, "The quiver still reads full after a shot");
+                helper.assertTrue(clock > 0.5F, "Half the clock has gone and it reads " + clock);
+            }
+
+            if (tick == SHORT_CLOCK + 10) {
+
+                helper.assertValueEqual(clock, 1.0F, "the clock once the fight's time is up");
+                return true;
+            }
+
+            return false;
+        });
+    }
+
+    /** One field of an agent's self block, out of the observation a network would be handed. */
+    private static float selfField(AgentMob agent, int field) {
+
+        float[] observation = new float[ObservationSchema.OBS_DIM];
+        AgentObservation.write(agent, agent.brain().enemySlots(), observation, 0);
+
+        return observation[ObservationSchema.SELF_OFFSET + field];
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
     // Telling one opponent from another
     // ---------------------------------------------------------------------------------------------------------------
 

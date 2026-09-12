@@ -155,13 +155,13 @@ be the same weights on both sides. So you get a real check on a brand new body b
 
 ```
 scripts\parity.ps1
-  humanoid: schema 1dffdc67, observation 744 wide, 11 actions from 19 logits
-  parity over 67 rows of 744 -> 256 -> GRU 128 -> 128 -> 19, a humanoid
-    logits 2.325e-06   hidden state 4.917e-06   log probability 3.815e-06
+  humanoid: schema 7d7bf60e, observation 770 wide, 11 actions from 19 logits
+  parity over 67 rows of 770 -> 256 -> GRU 128 -> 128 -> 19, a humanoid
+    logits 1.729e-06   hidden state 4.768e-06   log probability 1.907e-06
   parity ok
-  beast: schema 686280b1, observation 612 wide, 7 actions from 7 logits
-  parity over 67 rows of 612 -> 256 -> GRU 128 -> 128 -> 7, a beast
-    logits 1.460e-06   hidden state 6.810e-06   log probability 1.431e-06
+  beast: schema 82040967, observation 747 wide, 7 actions from 7 logits
+  parity over 67 rows of 747 -> 256 -> GRU 128 -> 128 -> 7, a beast
+    logits 1.788e-06   hidden state 5.692e-06   log probability 3.338e-06
   parity ok
 ```
 
@@ -192,7 +192,7 @@ happen to be the same width. It is stamped into every weight file and every roll
 5. Register the entity in `ModEntities` and both loaders.
 6. `scripts\parity.ps1` — it checks your body without being told to. It must say `parity ok`.
 7. `scripts\test.ps1` and `scripts\test.ps1 -Mechanics` — the humanoid must be untouched: 20 of 20 arena fights at
-   **exactly 54 ticks**, 23 of 23 mechanics. The 54 is deterministic, so any change in it is a change in behaviour.
+   **exactly 54 ticks**, 31 of 31 mechanics. The 54 is deterministic, so any change in it is a change in behaviour.
 8. A game test that spawns your body and drives it. `PlayGameTest.aSecondBodyIsDrivenAndARefusedBrainIsNamed` is the
    pattern: spawn it, check the refusal is named both ways, then drive it with a brain of its own and watch it move. An
    agent out in the world stands still with nobody in view whatever its brain says, so give it something to see.

@@ -134,7 +134,7 @@ public final class ObservationSchema {
     // Self
     // -----------------------------------------------------------------------------------------------------------
 
-    public static final int SELF_SIZE = 20;
+    public static final int SELF_SIZE = 22;
 
     public static final int SELF_HEALTH = 0;
     public static final int SELF_VELOCITY_FORWARD = 1;
@@ -161,6 +161,27 @@ public final class ObservationSchema {
     public static final int SELF_AIM_COS = 17;
     public static final int SELF_HURT_TIME = 18;
     public static final int SELF_ENEMIES_IN_RANGE = 19;
+
+    /**
+     * How much of this fight's clock has run: nought at the first tick, one once the arena's time is up. Written from the
+     * reward's own count, {@code AgentReward#elapsedFraction}, so the network reads the clock it is being paid by.
+     *
+     * <p>The reward is a function of the clock and nothing in the observation said so. A fight is capped at 1,200 ticks,
+     * running the clock out is scored as a loss, and a win pays a speed bonus that scales with how much clock is left, so
+     * the same position on the ground is worth about +3 at tick 100 and -2 at tick 1,150. The critic could not price that
+     * difference at all, which put the noisiest advantages in exactly the fights that drag on, and the policy could only
+     * learn urgency by counting to 1,200 inside the GRU. See {@link AgentObservation#clock}.
+     */
+    public static final int SELF_CLOCK = 20;
+
+    /**
+     * How many shots are left, over {@link #ARROW_SCALE}, and nought for a body carrying nothing that shoots. See
+     * {@link AgentObservation#arrows}.
+     */
+    public static final int SELF_ARROWS = 21;
+
+    /** A full quiver: the 64 arrows a bow or crossbow loadout carries, see {@code arena/Loadout}. */
+    public static final float ARROW_SCALE = 64.0F;
 
     // -----------------------------------------------------------------------------------------------------------
     // Hotbar and the executed action echo

@@ -59,6 +59,10 @@ final class BeastObservation {
         out[at + BeastSchema.SELF_AIM_COS] = cos;
         out[at + BeastSchema.SELF_HURT_TIME] = agent.hurtTime / 10.0F;
         out[at + BeastSchema.SELF_ENEMIES_IN_RANGE] = slots.inRangeCount() / (float) ObservationSchema.ENEMY_SLOTS;
+
+        // The same clock the humanoid reads, from the same place: the beast's fights are timed the same way and paid the
+        // same way, so the reward is as much a function of the clock for it as for anybody. See BeastSchema#SELF_CLOCK.
+        out[at + BeastSchema.SELF_CLOCK] = AgentObservation.clock(agent);
     }
 
     private static void writeEcho(ExecutedControls echo, float[] out, int at) {
