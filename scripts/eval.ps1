@@ -46,7 +46,12 @@ param(
     # run, so this is not here to steady anything: measured, the same weights over 300 fights gave 134 wins and then 134
     # again with no seed, and 137 and 139 with one. It is here to ask the same question of a *different* sample of the
     # library, which is how to tell a real difference from one sample's worth of ground.
-    [int] $Ground = 0
+    [int] $Ground = 0,
+
+    # The scripted fighter instead of a network, which is the reference every other number here wants. A copy that wins 27%
+    # of the league says nothing on its own: the roster holds wardens and evokers, and the question is always how much of
+    # what is missing is the copy and how much is the fight. Measured the same way, on the same sites, in the same order.
+    [switch] $Teacher
 )
 
 . "$PSScriptRoot\_common.ps1"
@@ -56,7 +61,14 @@ Test-MachineStability
 # PowerShell names are not case sensitive, so the run's weight folder cannot be called $weights beside -Weights.
 $folder = Join-Path (Get-RunDirectory $Run) 'weights'
 
-if ($Weights) {
+if ($Teacher) {
+
+    # Nothing to find: the scripted fighter is in the build.
+    $file = ''
+    $Run = 'teacher'
+}
+
+elseif ($Weights) {
 
     $file = (Resolve-Path $Weights -ErrorAction SilentlyContinue).Path
 
@@ -81,20 +93,22 @@ else {
     $file = (Get-ChildItem $folder -Filter '*.mbw' -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -Last 1).FullName
 }
 
-if (-not $file -or -not (Test-Path $file)) {
+if (-not $Teacher -and (-not $file -or -not (Test-Path $file))) {
 
     throw "No weights found at $(if ($Weights) { $Weights } else { $folder })"
 }
 
-Write-Host ("Evaluating $file over $Arenas arenas" +
+Write-Host ("Evaluating $(if ($Teacher) { 'the scripted fighter' } else { $file }) over $Arenas arenas" +
         $(if ($Loadouts.Count -gt 0) { ", with the $($Loadouts -join ', ') loadouts alone" }) +
         $(if ($Opponents.Count -gt 0) { ", against $($Opponents -join ', ') alone" }) +
         $(if ($Ground -ne 0) { ", on the ground seed $Ground" }))
 
-$replayRun = 'eval-{0}-{1}' -f $Run, [IO.Path]::GetFileNameWithoutExtension($file)
+$replayRun = 'eval-{0}-{1}' -f $Run, $(if ($Teacher) { 'scripted' } else { [IO.Path]::GetFileNameWithoutExtension($file) })
 
-Invoke-Gradle (@(':fabric:runGametestParallel', '-Pbrain=neural', "-PbrainWeights=$file", "-Parenas=$Arenas", "-Pworkers=$Workers",
-        "-PbatchSize=$Slots", "-PworkerHeap=$Heap", "-Psuite=$Suite", "-PreplayEvery=$ReplayEvery", "-PreplayRun=$replayRun") +
+Invoke-Gradle (@(':fabric:runGametestParallel', "-Pbrain=$(if ($Teacher) { 'scripted' } else { 'neural' })", "-Parenas=$Arenas",
+        "-Pworkers=$Workers", "-PbatchSize=$Slots", "-PworkerHeap=$Heap", "-Psuite=$Suite", "-PreplayEvery=$ReplayEvery",
+        "-PreplayRun=$replayRun") +
+        @(if (-not $Teacher) { "-PbrainWeights=$file" }) +
         @(if ($Loadouts.Count -gt 0) { "-PleagueLoadouts=$($Loadouts -join ',')" }) +
         @(if ($Opponents.Count -gt 0) { "-PleagueOpponents=$($Opponents -join ',')" }) +
         @(if ($Ground -ne 0) { "-PterrainSeed=$Ground" }))

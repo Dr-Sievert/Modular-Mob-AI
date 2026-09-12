@@ -36,6 +36,7 @@ scripts\test.ps1 -League -LeagueModels vs-copy              published networks i
 scripts\league.ps1 -Test                  the league's unit tests: Elo, the pairings and their shares, the pool, reading and resuming results
 scripts\eval.ps1 -Weights models\vs-copy\best.mbw          a network's win rate, 2,000 fights, most likely action
 scripts\eval.ps1 -Run vs-copy -Iteration 650 -Arenas 400   a checkpoint of a local run
+scripts\eval.ps1 -Teacher -Suite league -Arenas 600        the scripted fighter on the same bench, which is the reference
 scripts\bench.ps1 -Run league-sharp -Last 4                several networks on one bench, best first
 scripts\bench.ps1 -Weights models\league-sharp\best.mbw,models\league2\best.mbw
 ```
@@ -43,6 +44,11 @@ scripts\bench.ps1 -Weights models\league-sharp\best.mbw,models\league2\best.mbw
 `eval.ps1` fights with no exploration and records nothing for training. With 2,000 fights the win rate is within about
 a point either way; with 400, within about two and a half. It takes `-Workers` (8), `-Slots`, `-Heap`, `-Suite`,
 `-Loadouts`, `-Opponents`, `-Ground` and `-ReplayEvery`.
+
+**`-Teacher` measures the scripted fighter instead of a network**, on the same sites in the same order, and it is the
+reference a league number is meaningless without. A fresh copy winning 27% of the league says nothing on its own: the
+roster holds wardens and evokers, and the question is always how much of what is missing is the copy and how much is the
+fight. Ask the teacher the same question and the answer has a scale.
 
 `-Opponents` narrows a league evaluation to those players by the names the league writes in its results, `ravager`,
 `2x_zombie`, `zombie(hard)`. With `-ReplayEvery 1` that is how to get a replay of a matchup training never wrote one of:
