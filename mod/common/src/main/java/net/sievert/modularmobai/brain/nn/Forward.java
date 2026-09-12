@@ -463,8 +463,33 @@ public final class Forward {
         return 1.0F / (1.0F + (float) Math.exp(-x));
     }
 
+    /**
+     * The hyperbolic tangent of the GRU's candidate, worked out from {@code Math.exp} as {@code 2 * sigmoid(2x) - 1}
+     * rather than from {@code Math.tanh}.
+     *
+     * <p>{@code Math.tanh} is the one thing in the pass that no layout buys anything back from. It is not an intrinsic:
+     * it is {@code StrictMath}'s software {@code expm1}, and it measured 30.2 ns a call against 14.8 ns for this, pinned
+     * to one core. The cell does one per unit per agent, 128 an agent tick, and in a worker that came to 3.2 us off an
+     * agent tick: the whole pass went from 14.7 and 14.3 us to 11.6 and 11.1 over four rounds of 6,000 fights, and the
+     * worker from 23.1k arena ticks a second of its server thread to 27.0k: a fifth of the pass, for one library call.
+     *
+     * <p>It is not the same bits, and that is said out loud rather than glossed over. Over eight million floats from -40
+     * to 40 exactly one came out with a different bit from {@code Math.tanh}'s, the worst absolute difference anywhere was
+     * 1.1e-16 and the worst relative one 7.4e-08, against a parity check that allows 1e-5. Two edges differ in a way worth
+     * knowing: a denormal argument comes back as zero instead of itself, and negative zero comes back as positive zero.
+     * Both are differences of about 1e-30 in a number the network then multiplies by a weight and adds to a sum, so
+     * nothing downstream can tell; what would tell is the arena suite's twenty fights no longer taking exactly 54 ticks,
+     * and they still do.
+     *
+     * <p>Written as {@code 2 / (1 + e) - 1} and not as {@code (1 - e) / (1 + e)}: the second is prettier and gives NaN for
+     * any argument below about -355, where {@code e} overflows to infinity and the division is infinity over infinity. The
+     * first gives -1 there, which is the answer. The whole of it is worked out in double and rounded once at the end, so
+     * the subtraction of one does not eat the precision of a small tangent the way it would in float.
+     */
     static float tanh(float x) {
 
-        return (float) Math.tanh(x);
+        final double e = Math.exp(-2.0D * (double) x);
+
+        return (float) (2.0D / (1.0D + e) - 1.0D);
     }
 }
