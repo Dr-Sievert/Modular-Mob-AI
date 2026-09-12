@@ -55,6 +55,22 @@ class Config:
     # objective stops meaning anything and an update can wreck a policy in one go.
     target_kl: float = 0.02
 
+    # Steer the learning rate by how far the policy actually moved, so that target_kl is a size of step rather than a
+    # trip switch.
+    #
+    # The check is made after a whole epoch, so a run whose first epoch already overshoots stops there and does one pass
+    # over experience it configured four. Measured on league768: 251 of 300 updates ran a single epoch, at a KL of 0.013
+    # against a target of 0.010. Both halves of that are waste — 65,536 steps of collected fighting used once, and the
+    # policy moved 30% further than the step size the target names anyway, with only the clip to catch it.
+    #
+    # So after each update the rate moves against the KL it produced, within a decade either side of the configured one:
+    # four smaller steps, each taken against a re-evaluated policy, beat one large step taken blind, and where the fights
+    # are calm enough to allow a bigger step it takes one. Bounds and factor are the usual ones; the rate lives in the run's
+    # state, so resuming does not throw away what it has found. Zero turns it off and the trip switch is all that is left.
+    kl_adapt: float = 1.5
+    kl_adapt_band: float = 2.0
+    kl_adapt_range: float = 10.0
+
     # Rewards are divided by the running spread of the return, so the value loss stays the same size whatever the reward
     # is measured in. Off for a task whose rewards are already near unit scale.
     scale_rewards: bool = True
@@ -247,6 +263,9 @@ class Trainer:
         self.optimizer = torch.optim.Adam(
             list(self.actor.parameters()) + list(self.critic.parameters()), lr=config.learning_rate, eps=1e-5
         )
+
+        # What the optimizer is actually running at, which steer_rate moves and the run's state keeps.
+        self.rate = config.learning_rate
 
         self.normalizer = RunningNormalizer(schema.obs_dim)
         self.normalizer.into(self.actor)
@@ -666,16 +685,49 @@ class Trainer:
         self.actor.eval()
         self.critic.eval()
 
+        kl = float(np.mean(approximate_kls))
+
         return {
             "policy": float(np.mean(policy_losses)),
             "value": float(np.mean(value_losses)),
             "entropy": float(np.mean(entropies)),
             "clip": float(np.mean(clip_fractions)),
-            "kl": float(np.mean(approximate_kls)),
+            "kl": kl,
             "teacher": float(np.mean(teacher_losses)) if teacher_losses else 0.0,
             "epochs": epochs_run,
             "chunks": chunks,
+            "rate": self.steer_rate(kl),
         }
+
+    def steer_rate(self, kl: float) -> float:
+        """
+        Moves the learning rate against the distance the policy just travelled, and returns what the next update will use.
+
+        See Config.kl_adapt for why: without this, target_kl is a trip switch that fires after the damage rather than a
+        step size, and an update that overshoots on its first epoch throws away the other three. The band is wide on
+        purpose — a rate that chases every iteration's noise is a worse rate — and the range keeps it within a decade of
+        what was configured either way, so a bad estimate cannot run off.
+        """
+
+        if self.config.kl_adapt <= 1.0 or self.config.target_kl <= 0.0:
+            return self.rate
+
+        target = self.config.target_kl
+        band = max(1.0, self.config.kl_adapt_band)
+
+        if kl > target * band:
+            self.rate /= self.config.kl_adapt
+
+        elif kl < target / band:
+            self.rate *= self.config.kl_adapt
+
+        range_ = max(1.0, self.config.kl_adapt_range)
+        self.rate = min(max(self.rate, self.config.learning_rate / range_), self.config.learning_rate * range_)
+
+        for group in self.optimizer.param_groups:
+            group["lr"] = self.rate
+
+        return self.rate
 
     # -----------------------------------------------------------------------------------------------------------
     # Copying a teacher
@@ -953,6 +1005,18 @@ class Trainer:
             (time.time() - self.started) / 60.0,
         )
 
+        # Said on its own line rather than added to the one above, which scripts\watch.ps1 reads field by field. Only once
+        # the rate has left where it was configured, since a line saying nothing changed every iteration says nothing.
+        if "rate" in stats and abs(stats["rate"] - self.config.learning_rate) > 1e-12:
+            logger.info(
+                "iteration %5d  learning rate %.2e, steered from %.2e by a KL of %.4f against a target of %.4f",
+                self.iteration,
+                stats["rate"],
+                self.config.learning_rate,
+                stats["kl"],
+                self.config.target_kl,
+            )
+
         # Said on its own line rather than added to the one above, which scripts\watch.ps1 reads field by field.
         if self.config.teacher_weight > 0.0 and stats.get("teacher"):
             logger.info("iteration %5d  teacher loss %+.4f  pull %.4f", self.iteration, stats["teacher"], self.teacher_pull())
@@ -981,6 +1045,7 @@ class Trainer:
                 "total_steps": self.total_steps,
                 "teacher_from": self.teacher_from,
                 "teacher_released": self.teacher_released,
+                "rate": self.rate,
             },
             temporary,
         )
@@ -1009,5 +1074,12 @@ class Trainer:
 
         # A teacher already let go stays let go, so a restart cannot win the pull back by forgetting it was released.
         self.teacher_released = state.get("teacher_released")
+
+        # A steered rate is carried on rather than found again, and a state from before it was steered starts from the
+        # configured one. The optimizer's own groups are set from it, since Adam's state was saved with the old rate in it.
+        self.rate = float(state.get("rate") or self.config.learning_rate)
+
+        for group in self.optimizer.param_groups:
+            group["lr"] = self.rate
 
         logger.info("carrying on from %s at iteration %d", path, self.iteration)
