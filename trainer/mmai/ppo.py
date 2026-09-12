@@ -712,6 +712,14 @@ class Trainer:
         if self.config.kl_adapt <= 1.0 or self.config.target_kl <= 0.0:
             return self.rate
 
+        # An update that did not move the policy says nothing about the step size. During the critic's warmup the policy
+        # loss is not applied at all, so the KL reads exactly zero, and steering on that raised the rate by half every
+        # iteration to the ten-times ceiling before the first real update -- which then landed at 5e-4 on a copy that the
+        # gentle settings had asked to be moved at 5e-5. Measured on l770n's second start: 7.5e-5, 1.13e-4, 1.69e-4 on
+        # three iterations of KL 0.0000.
+        if self.iteration < self.config.critic_warmup:
+            return self.rate
+
         target = self.config.target_kl
         band = max(1.0, self.config.kl_adapt_band)
 

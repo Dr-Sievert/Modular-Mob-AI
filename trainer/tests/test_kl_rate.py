@@ -50,6 +50,20 @@ class SteerRateTest(unittest.TestCase):
 
         self.assertAlmostEqual(one.rate, 5e-4, places=12)
 
+    def test_the_critics_warmup_does_not_steer(self):
+        """The policy is not updated while the critic warms up, so the KL reads exactly zero, and zero is not "room to
+        spare": steering on it walked the rate to the ceiling before the first real update."""
+
+        one = trainer(learning_rate=5e-5, target_kl=0.01, kl_adapt=1.5, critic_warmup=30)
+
+        for iteration in range(0, 30):
+            one.iteration = iteration
+            self.assertAlmostEqual(one.steer_rate(0.0), 5e-5, places=12)
+
+        # The first update that moves the policy is the first that may steer.
+        one.iteration = 30
+        self.assertAlmostEqual(one.steer_rate(0.0), 5e-5 * 1.5, places=12)
+
     def test_off_leaves_the_rate_alone(self):
         one = trainer(learning_rate=5e-5, target_kl=0.01, kl_adapt=0.0)
 
