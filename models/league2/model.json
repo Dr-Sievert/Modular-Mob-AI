@@ -1,12 +1,12 @@
 {
     "run":  "league2",
-    "published":  "2026-09-12T04:08:18+02:00",
-    "code":  "fb8273b",
-    "weights":  "best evaluated, iteration 4350",
-    "iteration":  4350,
+    "published":  "2026-09-12T05:29:37+02:00",
+    "code":  "069b8f0",
+    "weights":  "best evaluated, iteration 6075",
+    "iteration":  6075,
     "fights":  1000,
-    "won":  63.4,
-    "lost":  30,
-    "timed_out":  6.6,
+    "won":  62.2,
+    "lost":  29.7,
+    "timed_out":  8.1,
     "state":  true
 }
