@@ -24,6 +24,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.MobSpawnType;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.projectile.Arrow;
@@ -55,6 +56,7 @@ import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 import net.sievert.modularmobai.entity.agent.MobControls;
 import net.sievert.modularmobai.gametest.GameTestGroup;
+import net.sievert.modularmobai.gametest.league.Loadouts;
 import net.sievert.modularmobai.gametest.terrain.PouredHazards;
 
 /**
@@ -1396,6 +1398,99 @@ public class AgentMechanicsGameTest {
 
         return helper.getLevel().getBlockState(feet).is(Blocks.POWDER_SNOW)
                 || helper.getLevel().getBlockState(feet.above()).is(Blocks.POWDER_SNOW);
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // What the teacher does with a bow behind a sword
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * The teacher starts no draw it cannot finish. A draw is twenty ticks at a fifth of walking pace and changing slot is
+     * the only way out of one, so a draw begun at something that arrives first is a draw thrown away: no arrow, and the
+     * movement gone for as long as it lasted. A vindicator six blocks off covers that in twenty five ticks, which is why
+     * nothing is drawn at it here — and it is what the distance alone could not say, since six blocks is past the range
+     * a fighter with something to shoot used to shoot from.
+     *
+     * <p>It swings instead, which is the other half of the check: a rule that simply stopped the teacher doing anything
+     * would pass the first assertion and fail this one.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 160)
+    public static void theTeacherStartsNoDrawItCannotFinish(GameTestHelper helper) {
+
+        AgentMob agent = agent(helper, new BlockPos(4, 2, 1), 0.0F, 0.0F);
+        Mob opponent = helper.spawn(EntityType.VINDICATOR, new BlockPos(4, 2, 7));
+
+        // spawn() skips finalizeSpawn, and a vindicator without the axe it is supposed to carry is not the mob whose
+        // speed is being reasoned about: an empty handed one reads as something that might be a creeper.
+        opponent.finalizeSpawn(helper.getLevel(),
+                helper.getLevel().getCurrentDifficultyAt(helper.absolutePos(new BlockPos(4, 2, 7))),
+                MobSpawnType.EVENT, null);
+
+        opponent.setTarget(agent);
+
+        agent.startEpisode(new Episode(FIGHT_TICKS, bounds(helper), opponent));
+        Loadouts.SWORD_AND_BOW.equip(agent);
+        agent.brain().use(Brains.scripted());
+
+        int[] draws = {0};
+        int[] shots = {0};
+        int[] swings = {0};
+        boolean[] using = {false};
+
+        run(helper, tick -> {
+
+            draws[0] += agent.executed().using && !using[0] ? 1 : 0;
+            using[0] = agent.executed().using;
+            shots[0] += agent.executed().shotFired ? 1 : 0;
+            swings[0] += agent.executed().attackHit ? 1 : 0;
+
+            helper.assertValueEqual(shots[0], draws[0], "arrows loosed against draws begun, by tick " + tick);
+
+            // Long enough for the vindicator to cross six blocks and for a blow to land, and for a doomed draw to have
+            // been begun and given up several times over.
+            if (tick == 120) {
+
+                helper.assertTrue(swings[0] > 0, "The teacher landed no blow in 120 ticks");
+                return true;
+            }
+
+            return false;
+        });
+    }
+
+    /**
+     * The teacher still draws where a draw is the right answer. A skeleton standing six blocks off shoots back, and
+     * closing on something that shoots is no answer to it, so the draw goes up and the arrow leaves. This is the assertion
+     * that stops the rule above being satisfied by never drawing at all.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 160)
+    public static void theTeacherDrawsAtWhatShootsBack(GameTestHelper helper) {
+
+        AgentMob agent = agent(helper, new BlockPos(4, 2, 1), 0.0F, 0.0F);
+        Mob opponent = helper.spawnWithNoFreeWill(EntityType.SKELETON, new BlockPos(4, 2, 7));
+
+        opponent.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.BOW));
+
+        agent.startEpisode(new Episode(FIGHT_TICKS, bounds(helper), opponent));
+        Loadouts.SWORD_AND_BOW.equip(agent);
+        agent.brain().use(Brains.scripted());
+
+        int[] shots = {0};
+
+        run(helper, tick -> {
+
+            shots[0] += agent.executed().shotFired ? 1 : 0;
+
+            // A draw is twenty ticks, and the shot goes once the aim is on; sixty leaves room for the swap to the bow and
+            // for the aim to come round.
+            if (tick == 60) {
+
+                helper.assertTrue(shots[0] > 0, "The teacher loosed nothing at a skeleton six blocks off in 60 ticks");
+                return true;
+            }
+
+            return false;
+        });
     }
 
     /** An arrow in the air from wherever, with whatever velocity, as if somebody had loosed it. */

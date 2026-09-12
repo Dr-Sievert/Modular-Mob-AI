@@ -290,6 +290,51 @@ are deliberate.
 
 ## Learning
 
+- **A bow behind the sword is not what makes the agent worse; a teacher record with no bow in it is.** league768 wins
+  67.6% with a sword and 31 to 32% with a bow, a crossbow or a sword and a bow, which are three of its ten loadouts and
+  about a third of every league fight. The first guess was the teacher: it draws whenever the target is out of reach with
+  a clear line, a draw is twenty ticks at a fifth of walking pace, and fights start a median 9.1 blocks apart, so it
+  looked as though the teacher opened every fight by drawing, ate the first blow at full draw, and the copy inherited it.
+  Two measurements say otherwise.
+  - **The teacher is better with a bow, not worse.** It fights the league as the 1500-rated anchor, so its own results are
+    in every run's records. Over league768's 4,602 fights against it, counting only the ones where the agent carried no bow
+    so the field is the same, it won **92.2% of 408 fights with the sword and bow** against **71.6% of 402 with the plain
+    iron sword**, 88.5% with a diamond sword and 59.5% with an axe. The bow behind the sword is worth twenty points to it.
+  - **The opening draw finishes.** Over 399 of the teacher's own recorded answers with that loadout (a DAgger round, where
+    the actions in the shard are the teacher's labels), it starts asking for a draw **inside the first five ticks in 90% of
+    fights**, from a median 9.1 blocks, and **keeps asking past twenty ticks in 90% of them**. A zombie covers 3.1 blocks in
+    a draw and a vindicator 4.8, so from nine blocks the arrow is away before either arrives.
+  - **What is actually wrong is that the network never touches the bow.** Over 46,044 bow fights it began **0.00 uses and
+    fired 0.00 shots a fight**, and over 45,793 with a sword and a bow, 0.01 and 0.01 — while the same network raised its
+    shield 0.2 to 0.5 times a fight, so `use` is not dead, only the bow is. With a bow alone it holds the arrows and
+    punches; with a sword and a bow it holds the **bow** for the whole fight and punches with that, never swapping to the
+    sword in slot zero.
+  - **Because every demo the run is pulled towards is an iron sword.** All 16,000 fights in `runs\league768\demos` — the
+    teacher record and all three DAgger rounds — were recorded on the *terrain* suite, one vindicator, hotbar `[iron_sword]`
+    and nothing else. `scripts\compare.ps1` carries a copy's record into the run it seeds, and league768 has never had a
+    DAgger round of its own, so the teacher pull it spends 6,000 iterations under has never once shown it a bow, a shield
+    or an axe. This is "a network never learns what the teacher never did" again, one level up: the teacher can do it, and
+    the record still cannot say so.
+  - **The control is league-sharp**, which does have two league DAgger rounds. Same body, same rules: **12.04 draws and
+    11.01 arrows a fight** with a bow, won 60.3%, which is *above* its own sword's 56.8%. A bow is not a handicap once the
+    record holds one.
+  - **What is left, and it is small: a slot to slip to.** In league-sharp a bow alone finishes 91% of its draws; a bow with
+    a sword beside it starts 2.42 draws a fight and looses **0.09** arrows, 4%, and sword_and_bow sits 2.4 points under the
+    plain sword and 5.9 under the bow. Changing slot is the one thing that still drops a draw, and a network that chooses
+    its slot afresh every tick drops its own.
+  - The teacher's share of that is now fixed: of the draws it gave up before twenty ticks, **79% were begun between five
+    and seven and a half blocks**, the band every walker in the league crosses in less than a draw. It draws only at what
+    cannot be here before the draw is full — the slot's own `ENEMY_SPEED`, or the velocity it is already coming at,
+    whichever is faster, against `ABANDON_DRAW_RANGE` — and a thing that shoots back or flies is a draw at any range, since
+    closing is no answer to either. The opening arrow is untouched: the fastest walker needs over seven blocks and fights
+    start at nine.
+  - **A mob covers about 0.67 blocks a tick for each point of its movement speed attribute**, which is what that rule needs
+    and is nowhere in vanilla in those units. Measured over 2,040 recorded fights, as the ninetieth percentile of a five
+    tick mean so that a knockback does not count: a zombie (0.23) 0.154, a vindicator and a piglin brute (0.35) 0.239 and
+    0.240 — one constant to two percent. Working it out from vanilla's friction instead happens to land on the zombie and
+    is 50% out on the vindicator, which is exactly the trap. Some close faster than they walk — an enderman teleports
+    (0.296), a warden charges (0.275), a wolf sprints (0.236) — by up to half again, which is what taking the observed
+    velocity as well covers.
 - **A network never learns what the teacher never did.** Seeded from a copy of a teacher that only ever swung, the first
   league run held use on 0 of 79,724 ticks over its last 400 fights and fired no arrows at all. PPO only improves what it
   samples, and a bow pays nothing until twenty ticks of held use have gone by, so no amount of exploration finds one. The

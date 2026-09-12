@@ -19,9 +19,12 @@ to copy a hand-written fighter first, then improve the copy with reinforcement l
    that never pressed use, the first league run held use on 0 of 79,724 ticks over its last 400 fights, fired no arrows
    and raised no shield: a bow needs twenty ticks of held use before the first arrow flies, and nothing in the reward
    finds that by accident. So the teacher now also:
-   - **draws a bow** when the target is out of reach with a clear line, holds it to full power, aims with gravity and
-     drag worked out by bisection and leads the target, looses when the shot is on, and goes back to the sword when the
-     target closes or the quiver runs out;
+   - **draws a bow** when the target is out of reach with a clear line **and cannot be here before the draw is full**,
+     holds it to full power, aims with gravity and drag worked out by bisection and leads the target, looses when the shot
+     is on, and goes back to the sword when the target closes or the quiver runs out. The draw takes twenty ticks and only
+     a change of slot gets out of one, so a draw begun at something that arrives first is an arrow thrown away: it reads
+     the slot's own speed, or the velocity the thing is already coming at, whichever is faster. Anything that shoots back
+     or flies is worth a draw at any range, since closing is no answer to either;
    - **winds a crossbow**, holds the bolt, and fires when aimed. A bow and a crossbow read as one item category, and it
      tells them apart from what a release does rather than from the layout;
    - **raises a shield** against something inside reach while its own swing cools, against anything with a bow in its
