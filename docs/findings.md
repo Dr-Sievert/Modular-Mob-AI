@@ -5,6 +5,40 @@ are deliberate.
 
 ## Throughput and stability
 
+- **Windows was running every worker's server thread on an efficiency core, and that was costing half the machine.** A
+  worker is bound by its one server thread. Workers run at below normal priority so that the desktop stays usable, and
+  Windows reads a below-normal thread as background work and parks it on an efficiency core. Confining each worker's
+  process to the performance cores **doubles a worker's throughput**, and is worth more than everything else on this list
+  put together. One worker, 3,000 fights on the library driven by a network, the same build, the only difference being
+  `-PworkerCores=all`:
+
+  | | wherever Windows puts it | performance cores only |
+  | --- | --- | --- |
+  | the forward pass, per agent tick | 30.5 us | 12.1 us |
+  | arena ticks a second of server-thread CPU | 12,413 | 25,479 |
+  | the round | 44 s | 26 s |
+
+  At 40,000 fights on two workers it is the same story: 23,248 arena ticks a second against 48,415, and 161 s against 85 s.
+  The pass itself measures 9.4 us an agent tick pinned to a performance core and 24.8 on an efficiency one, which is where
+  the factor comes from.
+  - **Priority is not the lever; affinity is.** Raising a worker to normal priority and leaving it unconfined changed
+    nothing (28.4 us against 29.4). So the workers stay below normal and the desktop keeps its protection, which costs
+    nothing to confine: a foreground burst measured a median 10.8 us beside unconfined workers and 11.2 beside confined
+    ones, because a normal-priority thread preempts a below-normal one wherever it is.
+  - **The mask has to be performance cores only.** Leaving the efficiency cores in as well, for the collector and the chunk
+    threads, gives the whole gain back: Windows puts the server thread on an efficiency core whenever one is allowed. One
+    performance core plus all twelve efficiency ones measured 30.7 us, no better than no mask at all.
+  - **Every worker gets the whole mask, never a slice.** A worker wants a performance core for its server thread and bursts
+    of the others for collection. Two workers confined to one core between them measured *worse* than no mask at all (14.1k
+    arena ticks a second against 22.6k, and the round took 123 s); two sharing four cores ran the pass at 19-21 us; two
+    sharing all eight, 13 us. Squeezing one worker down to a single logical processor gave it six full collections and 2.85 s
+    of pause.
+  - Which processors are the fast ones is **measured**, once per machine, into the same calibration file as the worker
+    sizing. The count comes from the chip's own numbers, which cannot be wrong: a performance core carries two logical
+    processors and an efficiency core one, so L logical and C cores means L - C performance cores. Which of them is decided
+    by timing the same burst on every logical processor, best of three. A first attempt classified by "within 25% of the
+    fastest" and put three performance cores in the slow class because other runs happened to be using them; taking a known
+    count of the fastest is robust where a threshold is not.
 - **The Vector API is only real if the compiler can inline it, and one big method is enough to lose it.** The forward pass's
   loops are now written twice: the plain ones, and the same arithmetic in explicit vectors (`ForwardVectors`). Written as
   one large method with all four of its loop nests inside it, the explicit vectors were **9% slower in the game than the

@@ -61,4 +61,7 @@ scripts\viewer.ps1                     watch recorded fights in the browser, 2D 
 - Each training worker is a headless game-test server. Its heap comes from what it fights on: 1 GB on the terrain library,
   about 1.4 GB of memory in all; 2 GB where it generates its own ground. The build refuses to start more workers than free
   memory holds, and stops a run whose free memory falls under 1.5 GB.
+- Workers run at below normal priority **and on the performance cores only**, which doubles a worker's throughput on a chip
+  with two kinds of core: Windows otherwise parks a below-normal server thread on an efficiency core. The build measures
+  which cores those are, once per machine. `-PworkerCores=all` turns it off.
 - Starting a run that is already training is refused, rather than killing the live one.
