@@ -112,6 +112,55 @@ Results so far (evaluated on the most likely action):
 | vs-copy | vindicator4, PPO with the teacher pull | iteration 650 | 99.8 / 0.2 / 0.0 (553 fights) |
 | vs-scratch | nothing | iteration 650 | 78.6 / 18.4 / 3.0 (500 fights), still climbing |
 
+## The critic
+
+The critic never leaves this side: it is not exported, the game never runs it, and no weight file mentions it. So it is
+allowed to remember more and to know more than the agent it judges, and it does both.
+
+**A memory of its own** (`--critic-gru`, on for a new run). It used to read the *actor's* hidden state, recovered by the
+replay and held still — memory trained to choose a button rather than to price a position. It now runs a GRU of its own
+over the same chunks, as wide as the actor's unless `--critic-gru-width` says otherwise, and the replay recovers its state
+per step so that a chunk in the middle of a fight starts from where the chunk before it ended, exactly as the actor's
+chunks do. Advantage noise is the lever on everything downstream — on the league the scripted teacher still scores about
+78% where the best network scores about 55% — and a better value estimate is better credit assignment everywhere.
+
+It starts each segment from nothing, and that is an answer rather than a gap. The actor's state on a segment's first row
+comes from the game, which carried it tick by tick and wrote it into the shard; nothing carries the critic's, because the
+game never runs it, and a state held over from the previous iteration would have been produced by weights that have since
+moved. What makes a blank start cheap is the inputs below.
+
+**What it is told that the agent is not.** Four numbers, `PRIVILEGED` in `trainer/mmai/model.py`, worked out by
+`Trainer._scale`:
+
+| Column | What it is |
+| --- | --- |
+| `paid` | the fight's reward account before this row, in the same scaled units as the value target |
+| `last` | what the action on the row before this one earned |
+| `age` | how many ticks the fight has run before this row, over 1,200 |
+| `start` | one on a segment's first row: the one row whose previous reward is in a shard this side no longer has, and whose own memory starts from nothing |
+
+Every column is strictly *behind* the row it sits on. The return is the target, so an input carrying any part of the return
+would teach the critic to read the answer off its own inputs instead of learning what a position is worth: the fight's
+eventual outcome and the true number of ticks left to it are precisely the two things not to hand it. The past it may
+condition on as freely as its own memory does.
+
+There is less on that list than there might be, and the reason is the shard format. A rollout row holds an agent id, flags,
+the reward, the log probability, the action and the observation, and nothing else (`RolloutWriter`, and
+`trainer/mmai/rollout.py` is the other half of it), so **the opponent's identity is not available on this side at all**:
+the league keeps a record per fight that names it, but those lines are keyed by iteration and matchup rather than by agent,
+so there is nothing to join them to. Nor is there a hidden part of the world left to reveal — the observation already
+carries the clock the reward is charged by, and an enemy slot already carries the opponent's hearts, damage, speed, size
+and flags. What the *trainer* knows and the game wrote down nowhere is the reward, which appears in no observation, and the
+shape of the episode the segments were cut out of. That is what the four columns are, and anything past them wants a new
+field in the shard.
+
+**A resume keeps the critic it has.** `--critic-gru` decides what a *new* run builds. The shape of the critic is written
+into `state.pt`, and a run carries on with the one its state holds whatever the flags say, with a line in the log to say
+so. A critic is learned rather than configured: swapping its architecture under a run in progress throws away everything it
+knew about the fight and hands the policy nonsense advantages until it has learned again, which is the whole reason
+`--critic-warmup` exists. A state written before the critic had a memory of its own names no shape at all, and that reads
+as the plain feed-forward critic it holds, whose parameters are unchanged. Change it by starting a new run.
+
 ## The terrain library, before any training
 
 ```
@@ -206,6 +255,8 @@ Every field of `Config` in `trainer/mmai/ppo.py` is an option, as `--field-name 
 | `--epochs` | 4 | passes over each iteration's data |
 | `--entropy-coef` | 0.01 | exploration bonus |
 | `--critic-warmup` | 0 | iterations where only the critic learns |
+| `--critic-gru` | true | the critic runs its own GRU and reads privileged inputs; `false` is the plain feed-forward critic. Decides what a new run builds; a resume keeps the critic its state holds, see [the critic](#the-critic) |
+| `--critic-gru-width` | 0 = `--hidden` | how wide that memory is |
 | `--teacher-weight` | 0 | pull towards the run's demos; needs `runs\<run>\demos` |
 | `--seq-len` | 32 | ticks of GRU unrolled per training chunk |
 | `--h1 --hidden --h3` | 256, 128, 128 | network widths; only for a new run, and the game needs no change |
