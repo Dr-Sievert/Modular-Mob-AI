@@ -44,6 +44,7 @@ import net.sievert.modularmobai.brain.BrainStep;
 import net.sievert.modularmobai.brain.schema.ActionSchema;
 import net.sievert.modularmobai.brain.schema.AgentObservation;
 import net.sievert.modularmobai.brain.schema.ObservationSchema;
+import net.sievert.modularmobai.brain.schema.Species;
 import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 import net.sievert.modularmobai.entity.agent.MobControls;
@@ -1248,6 +1249,13 @@ public class AgentMechanicsGameTest {
 
             INSTANCE.agents.put(agent.getId(), agent);
             agent.brain().use(INSTANCE);
+        }
+
+        /** Everything it reads and writes is the humanoid's action vector, so that is the body it drives. */
+        @Override
+        public Species species() {
+
+            return Species.HUMANOID;
         }
 
         @Override

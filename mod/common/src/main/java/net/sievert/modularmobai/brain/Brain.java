@@ -1,5 +1,7 @@
 package net.sievert.modularmobai.brain;
 
+import net.sievert.modularmobai.brain.schema.Species;
+
 /**
  * Whatever is choosing the actions for a batch of agents.
  *
@@ -13,6 +15,13 @@ package net.sievert.modularmobai.brain;
  * either knowing about the other.
  */
 public interface Brain {
+
+    /**
+     * Which body this brain drives. A brain is made for one species: its weights were trained against that species'
+     * observation and action layout, and handing it any other body would feed it numbers that mean something else. The
+     * driver refuses the mismatch rather than batching the two together, so this is not advice, it is the check.
+     */
+    Species species();
 
     /**
      * Chooses an action for every agent in the step, in one call.

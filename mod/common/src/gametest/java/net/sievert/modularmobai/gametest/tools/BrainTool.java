@@ -8,20 +8,21 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
 
-import net.sievert.modularmobai.brain.schema.ActionSchema;
-import net.sievert.modularmobai.brain.schema.ObservationSchema;
 import net.sievert.modularmobai.brain.nn.ActionDecoder;
 import net.sievert.modularmobai.brain.nn.Forward;
 import net.sievert.modularmobai.brain.nn.WeightFile;
 import net.sievert.modularmobai.brain.nn.WeightSet;
+import net.sievert.modularmobai.brain.schema.Species;
 
 /**
  * The two things the training side needs from the game without the game running: what the observation looks like, and
  * proof that the network means the same thing on both sides.
  *
  * <pre>
- *   schema &lt;file&gt;    writes the observation and action layout, which is what the training side builds a network from
- *   parity &lt;dir&gt;     checks this build's forward pass against PyTorch's, on weights and inputs it generated
+ *   schema &lt;species&gt; &lt;file&gt;  writes one body's observation and action layout, which is what the training side
+ *                             builds a network from
+ *   parity &lt;dir&gt;              checks this build's forward pass against PyTorch's, on weights and inputs it generated,
+ *                             for whichever body the fixture's weights say they are for
  * </pre>
  *
  * <p>Nothing here touches the game, so it runs as a plain Java program in a second rather than booting a server.
@@ -47,14 +48,25 @@ public final class BrainTool {
 
         if (arguments.length < 2) {
 
-            System.err.println("usage: BrainTool schema <file> | parity <dir>");
+            System.err.println("usage: BrainTool schema <species> <file> | parity <dir>");
             System.exit(2);
             return;
         }
 
         switch (arguments[0]) {
 
-            case "schema" -> schema(Path.of(arguments[1]));
+            case "schema" -> {
+
+                if (arguments.length < 3) {
+
+                    System.err.println("usage: BrainTool schema <species> <file>");
+                    System.exit(2);
+                    return;
+                }
+
+                schema(arguments[1], Path.of(arguments[2]));
+            }
+
             case "parity" -> parity(Path.of(arguments[1]));
 
             default -> {
@@ -65,10 +77,16 @@ public final class BrainTool {
         }
     }
 
-    /** Writes the layout exactly as the game describes it; the schema id is a checksum of these very bytes. */
-    private static void schema(Path file) throws IOException {
+    /**
+     * Writes one body's layout exactly as the game describes it; the schema id is a checksum of these very bytes.
+     *
+     * <p>The species has to be named, because there is more than one body and a schema is one body's. Nothing is assumed:
+     * a name that is not a species stops here rather than writing a layout nobody asked for.
+     */
+    private static void schema(String species, Path file) throws IOException {
 
-        String json = ObservationSchema.describeJson();
+        Species body = Species.byName(species);
+        String json = body.describeJson();
 
         if (file.getParent() != null) {
 
@@ -77,14 +95,20 @@ public final class BrainTool {
 
         Files.write(file, json.getBytes(StandardCharsets.UTF_8));
 
-        System.out.printf(Locale.ROOT, "schema %08x, observation %d wide, %d actions from %d logits -> %s%n",
-                ObservationSchema.schemaId(), ObservationSchema.OBS_DIM, ActionSchema.ACT_DIM,
-                ActionSchema.HEADS.logitDim(), file.toAbsolutePath());
+        System.out.printf(Locale.ROOT, "%s: schema %08x, observation %d wide, %d actions from %d logits -> %s%n",
+                body.name(), body.schemaId(), body.obsDim(), body.actDim(), body.heads().logitDim(), file.toAbsolutePath());
     }
 
     private static void parity(Path directory) throws IOException {
 
-        WeightSet weights = WeightFile.read(directory.resolve("weights" + WeightFile.EXTENSION), ObservationSchema.schemaId());
+        WeightSet weights = WeightFile.read(directory.resolve("weights" + WeightFile.EXTENSION));
+        Species species = Species.bySchemaId(weights.schemaId());
+
+        if (species == null) {
+
+            throw new IOException(String.format(Locale.ROOT, "The fixture's weights carry schema %08x, which is no body "
+                    + "this build has; the fixture was made from another layout", weights.schemaId()));
+        }
 
         ByteBuffer fixture = ByteBuffer.wrap(Files.readAllBytes(directory.resolve("fixture.bin"))).order(ByteOrder.LITTLE_ENDIAN);
 
@@ -100,7 +124,7 @@ public final class BrainTool {
         int actDim = fixture.getInt();
 
         if (obsDim != weights.topology().obsDim() || hidden != weights.topology().hidden()
-                || logitDim != weights.topology().outDim() || actDim != ActionSchema.ACT_DIM) {
+                || logitDim != weights.topology().outDim() || actDim != species.actDim()) {
 
             throw new IOException("The fixture and the weights disagree about the shapes involved");
         }
@@ -126,7 +150,7 @@ public final class BrainTool {
 
         for (int row = 0; row < count; row++) {
 
-            logProbs[row] = ActionDecoder.logProb(ActionSchema.HEADS, weights, logits, row * logitDim,
+            logProbs[row] = ActionDecoder.logProb(species.heads(), weights, logits, row * logitDim,
                     obs, row * obsDim, actions, row * actDim);
         }
 
@@ -165,7 +189,7 @@ public final class BrainTool {
         // machine has no vector module and there is only one set of loops to check.
         int paths = bothPaths(weights, obs, state, count, hidden, obsDim, logitDim);
 
-        System.out.printf(Locale.ROOT, "parity over %d rows of %s%n", count, weights.topology());
+        System.out.printf(Locale.ROOT, "parity over %d rows of %s, a %s%n", count, weights.topology(), species.name());
         System.out.printf(Locale.ROOT, "  logits          %.3e%n", logitError);
         System.out.printf(Locale.ROOT, "  hidden state    %.3e%n", stateError);
         System.out.printf(Locale.ROOT, "  log probability %.3e%n", logProbError);

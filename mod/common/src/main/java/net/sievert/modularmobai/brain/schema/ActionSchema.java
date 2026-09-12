@@ -4,7 +4,10 @@ import net.sievert.modularmobai.brain.nn.Heads;
 import net.sievert.modularmobai.entity.agent.MobControls;
 
 /**
- * The layout of the action vector, which is one number per control and nothing else.
+ * The layout of the <b>humanoid</b>'s action vector, which is one number per control a player has and nothing else.
+ *
+ * <p>One body's, not every body's: see {@link Species}. A body with no hands presses no use buttons and chooses no hotbar
+ * slot, and the numbers below would mean nothing to it.
  *
  * <p>What a brain hands over is the action already chosen, not a distribution over actions: the binary controls arrive
  * as zero or one and the hotbar slot arrives as an index. How it was chosen is the brain's business. The network's side

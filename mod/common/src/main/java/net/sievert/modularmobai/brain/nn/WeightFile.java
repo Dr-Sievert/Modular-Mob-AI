@@ -5,7 +5,6 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Locale;
 
 /**
  * Reads the {@code .mbw} files the training side exports.
@@ -14,7 +13,7 @@ import java.util.Locale;
  *   offset  size  content                                   all little endian
  *   0       4     magic 'M','B','W','1'
  *   4       4     u32 format version
- *   8       4     u32 schema id        must match the running observation and action layout
+ *   8       4     u32 schema id        which body's observation and action layout these weights were trained against
  *   12      4     u32 topology hash    CRC32 of the six dimensions below
  *   16      24    u32 obsDim, h1, hidden, h3, outDim, stdDim
  *   40      4     f32 observation clip
@@ -27,6 +26,11 @@ import java.util.Locale;
  * slot was meant. A network loaded against a layout it was not trained on does not crash, it reads health out of the
  * slot that used to hold something else and plays badly for reasons nobody can find. Failing the start is the kind
  * outcome. Same discipline as a DBC revision mismatch on a bus.
+ *
+ * <p>The schema id is read and carried, not judged, because reading a file is a lower layer than knowing what bodies
+ * exist. Which body the id names, and whether this build has that body at all, is settled the moment a brain is made of
+ * these weights ({@code NeuralBrain.check}), and whether that body is the one the weights are about to drive is settled
+ * again by the driver, which names both sides when it refuses.
  */
 public final class WeightFile {
 
@@ -39,13 +43,9 @@ public final class WeightFile {
     private static final byte[] MAGIC = {'M', 'B', 'W', '1'};
     private static final int HEADER_BYTES = 52;
 
-    /**
-     * @param expectedSchemaId the id of the layout the caller is going to feed the network. Pass the running schema's
-     *                         id; there is no way to ask for "whatever is in the file".
-     */
-    public static WeightSet read(Path path, int expectedSchemaId) throws IOException {
+    public static WeightSet read(Path path) throws IOException {
 
-        return read(Files.readAllBytes(path), path.getFileName().toString(), path.toAbsolutePath().toString(), expectedSchemaId);
+        return read(Files.readAllBytes(path), path.getFileName().toString(), path.toAbsolutePath().toString());
     }
 
     /**
@@ -55,7 +55,7 @@ public final class WeightFile {
      * @param name   what the weights are called in logs, their {@link WeightSet#id()}
      * @param source where they came from, for the message when they are refused
      */
-    public static WeightSet read(byte[] bytes, String name, String source, int expectedSchemaId) throws IOException {
+    public static WeightSet read(byte[] bytes, String name, String source) throws IOException {
 
         if (bytes.length < HEADER_BYTES) {
 
@@ -81,14 +81,6 @@ public final class WeightFile {
         }
 
         int schemaId = buffer.getInt();
-
-        if (schemaId != expectedSchemaId) {
-
-            throw refuse(source, String.format(Locale.ROOT,
-                    "was trained against schema %08x but the game is running schema %08x. The observation or action "
-                            + "layout has changed since; these weights cannot drive it", schemaId, expectedSchemaId));
-        }
-
         int storedHash = buffer.getInt();
 
         Topology topology = new Topology(buffer.getInt(), buffer.getInt(), buffer.getInt(), buffer.getInt(), buffer.getInt(), buffer.getInt());

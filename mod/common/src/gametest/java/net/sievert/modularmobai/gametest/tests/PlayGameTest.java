@@ -39,6 +39,7 @@ import net.sievert.modularmobai.brain.NeuralBrain;
 import net.sievert.modularmobai.brain.ScriptedBrain;
 import net.sievert.modularmobai.brain.schema.ActionSchema;
 import net.sievert.modularmobai.brain.schema.EnemySlots;
+import net.sievert.modularmobai.brain.schema.Species;
 import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 import net.sievert.modularmobai.gametest.GameTestGroup;
@@ -574,17 +575,40 @@ public class PlayGameTest {
 
     // ---------------------------------------------------------------------------------------------------------------
 
-    /** A brain that asks for nothing at all. */
-    private static final Brain STILL = step -> java.util.Arrays.fill(step.actions, 0, step.count * ActionSchema.ACT_DIM, 0.0F);
+    /** A brain that asks for nothing at all. Humanoid, like everything in this suite: it writes a humanoid's controls. */
+    private static final Brain STILL = new Brain() {
+
+        @Override
+        public Species species() {
+
+            return Species.HUMANOID;
+        }
+
+        @Override
+        public void act(BrainStep step) {
+
+            java.util.Arrays.fill(step.actions, 0, step.count * ActionSchema.ACT_DIM, 0.0F);
+        }
+    };
 
     /** A brain that only ever walks straight ahead. */
-    private static final Brain WALKER = step -> {
+    private static final Brain WALKER = new Brain() {
 
-        java.util.Arrays.fill(step.actions, 0, step.count * ActionSchema.ACT_DIM, 0.0F);
+        @Override
+        public Species species() {
 
-        for (int index = 0; index < step.count; index++) {
+            return Species.HUMANOID;
+        }
 
-            step.actions[index * ActionSchema.ACT_DIM + ActionSchema.MOVE_FORWARD] = 1.0F;
+        @Override
+        public void act(BrainStep step) {
+
+            java.util.Arrays.fill(step.actions, 0, step.count * ActionSchema.ACT_DIM, 0.0F);
+
+            for (int index = 0; index < step.count; index++) {
+
+                step.actions[index * ActionSchema.ACT_DIM + ActionSchema.MOVE_FORWARD] = 1.0F;
+            }
         }
     };
 

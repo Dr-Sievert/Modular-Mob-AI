@@ -1,12 +1,16 @@
-"""The observation and action layout, as the game describes it.
+"""One body's observation and action layout, as the game describes it.
 
 Nothing here is written down by hand. The game writes its own layout out before a run starts and this parses it, which is
 the only arrangement where the two halves cannot drift apart. A schema copied into both would fail silently when one side
 changed: no crash, no error, just a network reading health out of the slot that used to hold it and playing badly for
 reasons nobody can find.
 
-The id is a checksum of those very bytes. It is stamped into every weight file and every rollout shard, and the game
-refuses weights that carry any other, so a rearranged block stops a run instead of quietly spoiling it.
+The id is a checksum of those very bytes, species name included. It is stamped into every weight file and every rollout
+shard, and the game refuses weights that carry any other, so a rearranged block, or a network handed to the wrong body,
+stops a run instead of quietly spoiling it.
+
+Which blocks a body has is the thing that varies: one with no hands has no hotbar to see and no slot to choose. So the
+blocks arrive as a list, in offset order, and anything that wants one asks for it by name and copes with it being absent.
 """
 
 from __future__ import annotations
@@ -25,33 +29,29 @@ CATEGORICAL = "categorical"
 
 @dataclass(frozen=True)
 class Block:
+    """One named run of the observation, plus whatever else the game said about it.
+
+    ``facts`` carries the extras a block of that kind has: an enemy block's ``slots`` and ``stride``, a terrain block's
+    ``x``, ``y`` and ``z``. They are read rather than assumed, because which blocks exist is a property of the body.
+    """
+
+    name: str
     offset: int
     size: int
+    facts: dict[str, int]
 
     def slice(self, observations: np.ndarray) -> np.ndarray:
         """The columns of this block, for a ``(..., obs_dim)`` batch."""
         return observations[..., self.offset : self.offset + self.size]
 
+    def shaped(self, observations: np.ndarray, *dimensions: str) -> np.ndarray:
+        """Reshaped by the named facts, outermost first: ``block.shaped(obs, "z", "y", "x")`` for a terrain grid.
 
-@dataclass(frozen=True)
-class EnemyBlock(Block):
-    slots: int
-    stride: int
-
-    def per_slot(self, observations: np.ndarray) -> np.ndarray:
-        """Reshaped to ``(..., slots, stride)``, which is the shape anything per opponent wants."""
-        return self.slice(observations).reshape(*observations.shape[:-1], self.slots, self.stride)
-
-
-@dataclass(frozen=True)
-class TerrainBlock(Block):
-    x: int
-    y: int
-    z: int
-
-    def grid(self, observations: np.ndarray) -> np.ndarray:
-        """Reshaped to ``(..., z, y, x)``, matching how the game writes it: x fastest, then y, then z."""
-        return self.slice(observations).reshape(*observations.shape[:-1], self.z, self.y, self.x)
+        The terrain grid is written x fastest, then y, then z, and an enemy block slot by slot, so the names go in the
+        order numpy wants them.
+        """
+        shape = tuple(self.facts[name] for name in dimensions)
+        return self.slice(observations).reshape(*observations.shape[:-1], *shape)
 
 
 @dataclass(frozen=True)
@@ -73,19 +73,39 @@ class Head:
 
 @dataclass(frozen=True)
 class Schema:
+    species: str
     obs_dim: int
     act_dim: int
     logit_dim: int
     action_names: tuple[str, ...]
     heads: tuple[Head, ...]
 
-    self_block: Block
-    hotbar: Block
-    echo: Block
-    enemies: EnemyBlock
-    terrain: TerrainBlock
+    blocks: tuple[Block, ...]
 
     schema_id: int
+
+    def block(self, name: str) -> Block | None:
+        """The block of that name, or None for a body that has no such thing."""
+        for block in self.blocks:
+            if block.name == name:
+                return block
+
+        return None
+
+    def require(self, name: str) -> Block:
+        """The block of that name, or a clear failure: for something that only makes sense for a body that has one."""
+        found = self.block(name)
+
+        if found is None:
+            have = ", ".join(block.name for block in self.blocks)
+            raise ValueError(f"a {self.species} has no {name} block; it has {have}")
+
+        return found
+
+    @property
+    def categorical_heads(self) -> tuple[Head, ...]:
+        """The heads that choose one of several, which are the ones a mask applies to."""
+        return tuple(head for head in self.heads if head.kind == CATEGORICAL)
 
     @staticmethod
     def load(path: str | Path) -> "Schema":
@@ -97,12 +117,11 @@ class Schema:
     def parse(data: bytes | str) -> "Schema":
         raw_bytes = data.encode("utf-8") if isinstance(data, str) else data
         raw = json.loads(raw_bytes.decode("utf-8"))
-        blocks = raw["blocks"]
 
-        enemies = blocks["enemies"]
-        terrain = blocks["terrain"]
+        named = {"name", "offset", "size"}
 
         schema = Schema(
+            species=raw["species"],
             obs_dim=raw["obsDim"],
             act_dim=raw["actDim"],
             logit_dim=raw["logits"],
@@ -111,11 +130,15 @@ class Schema:
                 Head(h["name"], h["kind"], h["size"], h["action"], h["logit"], h["std"], h["mask"])
                 for h in raw["heads"]
             ),
-            self_block=Block(blocks["self"]["offset"], blocks["self"]["size"]),
-            hotbar=Block(blocks["hotbar"]["offset"], blocks["hotbar"]["size"]),
-            echo=Block(blocks["echo"]["offset"], blocks["echo"]["size"]),
-            enemies=EnemyBlock(enemies["offset"], enemies["size"], enemies["slots"], enemies["stride"]),
-            terrain=TerrainBlock(terrain["offset"], terrain["size"], terrain["x"], terrain["y"], terrain["z"]),
+            blocks=tuple(
+                Block(
+                    b["name"],
+                    b["offset"],
+                    b["size"],
+                    {key: value for key, value in b.items() if key not in named},
+                )
+                for b in raw["blocks"]
+            ),
             schema_id=zlib.crc32(raw_bytes) & 0xFFFFFFFF,
         )
 
@@ -130,19 +153,30 @@ class Schema:
     def validate(self) -> None:
         """Catches a layout that does not add up, which is a bug in the game rather than in the file."""
 
-        covered = sum(block.size for block in (self.self_block, self.hotbar, self.echo, self.enemies, self.terrain))
+        covered = 0
+
+        for block in self.blocks:
+            if block.offset != covered:
+                raise ValueError(f"block {block.name} starts at {block.offset} but the blocks before it end at {covered}")
+
+            covered += block.size
+
+            # Whatever facts a block carries have to multiply out to its size, whichever facts those are. That is what
+            # catches a body whose grid and whose block disagree, without this side knowing what kinds of block exist.
+            if block.facts:
+                product = 1
+
+                for value in block.facts.values():
+                    product *= value
+
+                if product != block.size:
+                    raise ValueError(f"block {block.name} is {block.size} wide but its {block.facts} multiply to {product}")
 
         if covered != self.obs_dim:
             raise ValueError(f"blocks cover {covered} values but the observation is {self.obs_dim} wide")
 
         if len(self.action_names) != self.act_dim:
             raise ValueError(f"{len(self.action_names)} action names for {self.act_dim} actions")
-
-        if self.enemies.slots * self.enemies.stride != self.enemies.size:
-            raise ValueError("the enemy block is not its slot count times its stride")
-
-        if self.terrain.x * self.terrain.y * self.terrain.z != self.terrain.size:
-            raise ValueError("the terrain block is not its own dimensions")
 
         logits = sum(head.size for head in self.heads)
 
@@ -160,11 +194,12 @@ class Schema:
 
     def describe(self) -> str:
         heads = ", ".join(f"{head.name} {head.size} {head.kind}" for head in self.heads)
+        blocks = ", ".join(
+            block.name + " " + ("x".join(str(value) for value in block.facts.values()) if block.facts else str(block.size))
+            for block in self.blocks
+        )
 
         return (
-            f"schema {self.schema_id:08x}: observation {self.obs_dim} wide "
-            f"(self {self.self_block.size}, hotbar {self.hotbar.size}, echo {self.echo.size}, "
-            f"enemies {self.enemies.slots}x{self.enemies.stride}, "
-            f"terrain {self.terrain.x}x{self.terrain.y}x{self.terrain.z}); "
+            f"schema {self.schema_id:08x}, a {self.species}: observation {self.obs_dim} wide ({blocks}); "
             f"{self.logit_dim} outputs as {heads}; {self.act_dim} actions"
         )

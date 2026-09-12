@@ -17,9 +17,11 @@ import net.sievert.modularmobai.entity.agent.AgentMob;
  * tick.
  *
  * <p>Agents are grouped by the brain driving them, and each group goes through its brain in one call. Two agents on the
- * same weights share a forward pass whatever kind of mob they are; two agents on different weights never do, so every
- * batch is the same shape by construction. The entities themselves never see any of this: an agent holds its own
- * memory, and this is the only thing that hands it to a brain and back.
+ * same weights share a forward pass; two agents on different weights never do, so every batch is the same shape by
+ * construction. A brain is made for one body, so that also means a batch is one species' — and a brain offered a body it
+ * was not made for is refused here, by name, rather than being handed an observation that means something else. The
+ * entities themselves never see any of this: an agent holds its own memory, and this is the only thing that hands it to a
+ * brain and back.
  */
 public final class AgentDriver {
 
@@ -60,7 +62,18 @@ public final class AgentDriver {
                 state.use(Brains.forAgent(agent));
             }
 
-            this.batches.computeIfAbsent(state.brain(), AgentBatch::new).add(agent);
+            Brain brain = state.brain();
+
+            // Named both ways round, because "this is a spider's brain and the mob is a humanoid" is the mistake that will
+            // actually be made, and an observation of the wrong shape is the one failure that would not look like one.
+            if (brain.species() != agent.species()) {
+
+                throw new IllegalStateException("A brain for a " + brain.species().name() + " is driving a "
+                        + agent.species().name() + " agent" + (agent.brainName() == null ? "" : " (" + agent.brainName() + ")")
+                        + ": a network only fits the body its layout was written for");
+            }
+
+            this.batches.computeIfAbsent(brain, AgentBatch::new).add(agent);
         }
 
         // A brain that drove nobody this tick is done here for now: a checkpoint whose evaluation fight is over, a frozen

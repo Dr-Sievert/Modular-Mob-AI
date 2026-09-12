@@ -1,5 +1,6 @@
 package net.sievert.modularmobai.brain;
 
+import java.util.Locale;
 import java.util.random.RandomGenerator;
 
 import org.jetbrains.annotations.Nullable;
@@ -9,8 +10,7 @@ import net.sievert.modularmobai.brain.nn.Forward;
 import net.sievert.modularmobai.brain.nn.Heads;
 import net.sievert.modularmobai.brain.nn.Topology;
 import net.sievert.modularmobai.brain.nn.WeightSet;
-import net.sievert.modularmobai.brain.schema.ActionSchema;
-import net.sievert.modularmobai.brain.schema.ObservationSchema;
+import net.sievert.modularmobai.brain.schema.Species;
 
 /**
  * A trained network, run inside the game.
@@ -26,7 +26,8 @@ import net.sievert.modularmobai.brain.schema.ObservationSchema;
  */
 public final class NeuralBrain implements Brain {
 
-    private static final Heads HEADS = ActionSchema.HEADS;
+    /** Which body these weights were trained for, which their schema id is what says. Settled once, at construction. */
+    private final Species species;
 
     private WeightSet weights;
 
@@ -43,11 +44,16 @@ public final class NeuralBrain implements Brain {
 
     private NeuralBrain(WeightSet weights, @Nullable RandomGenerator random, @Nullable TrainingRun training) {
 
-        check(weights);
-
+        this.species = check(weights);
         this.weights = weights;
         this.random = random;
         this.training = training;
+    }
+
+    @Override
+    public Species species() {
+
+        return this.species;
     }
 
     /** Most likely action, nothing recorded. What a finished network runs as. */
@@ -62,19 +68,37 @@ public final class NeuralBrain implements Brain {
     }
 
     /**
-     * Refuses weights that cannot drive this game, however they got here. The schema id in the file already says the
-     * layout matches; this is the same promise checked against the dimensions actually in hand.
+     * Works out which body these weights are for and refuses them if they cannot drive it, however they got here.
+     *
+     * <p>The schema id is the whole identity of a layout, species name included, so a file that carries one this build
+     * knows is for exactly that body. One it does not know is a layout from before some change, and there is nothing to be
+     * done with it but say so. Then the same promise is checked again against the dimensions actually in hand, because a
+     * header can be right about the layout and wrong about the network.
      */
-    static void check(WeightSet weights) {
+    static Species check(WeightSet weights) {
+
+        Species species = Species.bySchemaId(weights.schemaId());
+
+        if (species == null) {
+
+            throw new IllegalStateException(String.format(Locale.ROOT, "%s carries schema %08x, which is no layout this "
+                    + "build has: it was trained against a layout that has since changed, and cannot drive anything here. "
+                    + "The bodies this build knows are %s", weights.id(), weights.schemaId(),
+                    String.join(", ", Species.ALL.stream().map(one -> one.name() + " " + String.format(Locale.ROOT, "%08x",
+                            one.schemaId())).toList())));
+        }
 
         Topology topology = weights.topology();
+        Heads heads = species.heads();
 
-        if (topology.obsDim() != ObservationSchema.OBS_DIM || topology.outDim() != HEADS.logitDim()
-                || topology.stdDim() != HEADS.stdDim()) {
+        if (topology.obsDim() != species.obsDim() || topology.outDim() != heads.logitDim()
+                || topology.stdDim() != heads.stdDim()) {
 
-            throw new IllegalStateException(weights.id() + " is shaped " + topology + ", which does not fit an observation of "
-                    + ObservationSchema.OBS_DIM + " and " + HEADS.logitDim() + " head outputs");
+            throw new IllegalStateException(weights.id() + " is shaped " + topology + ", which does not fit a "
+                    + species.name() + "'s observation of " + species.obsDim() + " and " + heads.logitDim() + " head outputs");
         }
+
+        return species;
     }
 
     public WeightSet weights() {
@@ -124,19 +148,22 @@ public final class NeuralBrain implements Brain {
 
         Forward.forward(this.weights, step.observations, step.hidden, this.logits, count, this.scratch);
 
+        final int actDim = this.species.actDim();
+        final int obsDim = this.species.obsDim();
+
         for (int row = 0; row < count; row++) {
 
-            int actions = row * ActionSchema.ACT_DIM;
+            int actions = row * actDim;
 
             if ((step.flags[row] & BrainStep.FLAG_DONE) != 0) {
 
-                java.util.Arrays.fill(step.actions, actions, actions + ActionSchema.ACT_DIM, 0.0F);
+                java.util.Arrays.fill(step.actions, actions, actions + actDim, 0.0F);
                 this.logProbs[row] = 0.0F;
                 continue;
             }
 
-            this.logProbs[row] = ActionDecoder.decode(HEADS, this.weights, this.logits, row * outputs,
-                    step.observations, row * ObservationSchema.OBS_DIM, step.actions, actions, this.random);
+            this.logProbs[row] = ActionDecoder.decode(this.species.heads(), this.weights, this.logits, row * outputs,
+                    step.observations, row * obsDim, step.actions, actions, this.random);
         }
 
         if (this.training != null) {

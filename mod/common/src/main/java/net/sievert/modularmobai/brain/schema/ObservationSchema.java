@@ -3,7 +3,12 @@ package net.sievert.modularmobai.brain.schema;
 import net.sievert.modularmobai.entity.agent.MobControls;
 
 /**
- * The layout of the flat observation vector, and the single place any of these numbers is written down.
+ * The layout of the <b>humanoid</b>'s flat observation vector, and the single place any of its numbers is written down.
+ *
+ * <p>This is one body's, not every body's. {@link Species} is what the rest of the game asks how wide an observation is;
+ * nothing outside this package reads the constants below, because a body with no hands has no hotbar block and no slot to
+ * choose, and an offset from here would mean nothing to it. The humanoid's descriptor is {@code Humanoid}, which is what
+ * turns these numbers into a schema the training side can read.
  *
  * <p>Nothing here is settled. The whole point of keeping the offsets in one class is that changing the size of a block
  * moves everything after it without anyone having to remember to follow, so the schema stays cheap to rearrange while the
@@ -132,58 +137,4 @@ public final class ObservationSchema {
         return TERRAIN_OFFSET + (z * TERRAIN_Y + y) * TERRAIN_X + x;
     }
 
-    /**
-     * The layout as JSON, written out for the training side before a run starts.
-     *
-     * <p>This exists so that the two halves cannot disagree about it. A schema written down in both places drifts the
-     * moment one of them is edited, and the failure is silent: nothing crashes, the network simply reads health out of
-     * whichever slot used to hold it and plays badly for reasons nobody can find. Handing over the layout means there is
-     * only ever one copy of it, and this class is it.
-     */
-    public static String describeJson() {
-
-        StringBuilder json = new StringBuilder(512);
-
-        json.append("{\"obsDim\":").append(OBS_DIM);
-        json.append(",\"actDim\":").append(ActionSchema.ACT_DIM);
-        json.append(",\"blocks\":{");
-        json.append("\"self\":{\"offset\":").append(SELF_OFFSET).append(",\"size\":").append(SELF_SIZE).append("}");
-        json.append(",\"hotbar\":{\"offset\":").append(HOTBAR_OFFSET).append(",\"size\":").append(HOTBAR_SIZE).append("}");
-        json.append(",\"echo\":{\"offset\":").append(ECHO_OFFSET).append(",\"size\":").append(ECHO_SIZE).append("}");
-        json.append(",\"enemies\":{\"offset\":").append(ENEMY_OFFSET)
-                .append(",\"size\":").append(ENEMY_SIZE)
-                .append(",\"slots\":").append(ENEMY_SLOTS)
-                .append(",\"stride\":").append(ENEMY_STRIDE).append("}");
-        json.append(",\"terrain\":{\"offset\":").append(TERRAIN_OFFSET)
-                .append(",\"size\":").append(TERRAIN_SIZE)
-                .append(",\"x\":").append(TERRAIN_X)
-                .append(",\"y\":").append(TERRAIN_Y)
-                .append(",\"z\":").append(TERRAIN_Z).append("}");
-        json.append("},\"actions\":[");
-
-        String[] actions = ActionSchema.NAMES;
-
-        for (int index = 0; index < actions.length; index++) {
-
-            json.append(index == 0 ? "\"" : ",\"").append(actions[index]).append('"');
-        }
-
-        json.append("],\"logits\":").append(ActionSchema.HEADS.logitDim());
-        json.append(",\"heads\":").append(ActionSchema.HEADS.describeJson());
-        json.append('}');
-
-        return json.toString();
-    }
-
-    /**
-     * A CRC32 of {@link #describeJson()}, stamped into every weight file and rollout shard. Weights trained against one
-     * layout are refused by a game running any other, so a rearranged block fails the start instead of quietly feeding a
-     * network the wrong numbers.
-     */
-    public static int schemaId() {
-
-        java.util.zip.CRC32 crc = new java.util.zip.CRC32();
-        crc.update(describeJson().getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        return (int) crc.getValue();
-    }
 }

@@ -22,7 +22,6 @@ import net.sievert.modularmobai.Config;
 import net.sievert.modularmobai.Constants;
 import net.sievert.modularmobai.brain.nn.WeightFile;
 import net.sievert.modularmobai.brain.nn.WeightSet;
-import net.sievert.modularmobai.brain.schema.ObservationSchema;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 
 /**
@@ -100,7 +99,7 @@ public final class Brains {
 
             try {
 
-                WeightSet loaded = WeightFile.read(path, ObservationSchema.schemaId());
+                WeightSet loaded = WeightFile.read(path);
                 Constants.LOG.info("Loaded {} from iteration {}: {}", path, loaded.iteration(), loaded.topology());
 
                 return created(NeuralBrain.deployed(loaded), path.getFileName() + " from " + path.getParent()
@@ -133,7 +132,7 @@ public final class Brains {
                 throw new IllegalArgumentException("The mod's jar carries no network called '" + name + "'");
             }
 
-            WeightSet loaded = WeightFile.read(bytes, name + WeightFile.EXTENSION, Models.bundledSource(name), ObservationSchema.schemaId());
+            WeightSet loaded = WeightFile.read(bytes, name + WeightFile.EXTENSION, Models.bundledSource(name));
             Constants.LOG.info("Loaded {} from iteration {}: {}", Models.bundledSource(name), loaded.iteration(), loaded.topology());
 
             NeuralBrain brain = created(NeuralBrain.deployed(loaded), name + " (in the mod's jar), iteration " + loaded.iteration());
