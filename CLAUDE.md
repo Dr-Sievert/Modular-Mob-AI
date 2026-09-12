@@ -35,6 +35,10 @@ Read these before changing anything:
 - **Don't build or run Gradle in a checkout that live training runs from.** Use a git worktree for development.
 - Mixins that change vanilla behaviour are deliberate and documented at the top of each mixin. Several fix real bugs;
   see findings.md before removing one.
+- **The agent's hands are a player's in all but two places, and both are deliberate.** A drawn weapon runs to full once
+  started, and a block keeps the crack it has while the aim stays on it. A network chooses each button afresh every tick,
+  so without these two a bow fires weak arrows, a crossbow fires none at all, and no block is ever broken. Don't "restore
+  parity" here; see [docs/architecture.md](docs/architecture.md) and findings.md.
 
 ## Everyday commands (Windows PowerShell, from the repository root)
 

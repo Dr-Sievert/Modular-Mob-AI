@@ -70,13 +70,25 @@ use duration has run. Both weapons read 1 at the moment letting go is worth it, 
 either. Nothing else in the observation says a bow is nearly drawn, and a bow needs twenty ticks of held use before an
 arrow ever flies.
 
-**A draw runs to full on its own.** The hands are a player's in every other way, and this is the one place they are not:
-once a bow or a crossbow has started drawing, the button coming up does not stop it, and the agent's choice comes back
-only when the weapon is charged — hold to keep aiming, let go to loose. Everything else drops the moment its button does:
-a shield, a bite of food. A press is therefore one arrow rather than twenty presses in a row, which is the difference
-between a skill a policy can find and one it cannot: see `AgentMob#drawingToFull` and
-[findings.md](findings.md#learning). The draw is still paid for — a fifth of the movement for every tick of it, the
-swing swallowed — and changing slot still gives it up, which is how the teacher trades a shot for a blow.
+### The two places the hands are not a player's
+
+Both are there for one reason, and it is not a shortcut: a network chooses every button afresh each tick from a
+probability, so a skill that needs the same button held for twenty ticks needs that probability to land twenty times over,
+and it never does. Measured, the network's longest hold was six ticks and not one draw in 2,984 reached twenty. See
+[findings.md](findings.md#learning) for the numbers and for what it cost.
+
+**A draw runs to full on its own.** Once a bow or a crossbow has started drawing, the button coming up does not stop it,
+and the agent's choice comes back only when the weapon is charged — hold to keep aiming, let go to loose. A press is
+therefore one arrow rather than twenty presses in a row. The draw is still paid for, a fifth of the movement for every tick
+of it and the swing swallowed, and changing slot still gives it up, which is how the teacher trades a shot for a blow.
+Everything else drops the moment its button does: a shield, a bite of food. `AgentMob#drawingToFull`.
+
+**A crack waits for the next press.** Breaking a block takes eight ticks of held attack for powder snow, eight for a
+cobweb, fifteen for dirt, and a player's client throws the progress away the instant the button lifts. The agent keeps it
+while the aim stays on the same block, the press still being the only thing that deepens it, so a block costs the presses
+it costs a player and only the gaps between them are forgiven. Looking somewhere else still loses it. Without this the
+agent could break nothing at all, and so could not dig out of powder snow or a cobweb whatever the teacher showed it.
+`AgentMob#continueDestroying`.
 
 **Shots in the enemy slots** (`EnemySlots`): a slot can hold an arrow, a bolt, a wind charge or any other projectile on
 its way to the agent, with a `kind` of its own below zero and its health, hands, swing and use left at zero, since an
