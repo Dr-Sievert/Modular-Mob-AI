@@ -374,3 +374,4 @@ cache, and on an efficiency core at 24.8 us. See [findings.md](findings.md).
 | iterations suddenly take many times longer | one worker is slow and every worker waits for it; check its garbage collection with `jstat -gcutil <pid>` |
 | `PermissionError` on a rename | fixed in `mmai/files.py`; a reader held the file open |
 | win rate jumps around | training explores; judge by the evaluation columns |
+| "was trained against schema X and the game is running Y" | the layout's checksum changed under a stopped run. If nothing an input *means* moved, `scripts\restamp.ps1 -Run runs\<name>` brings the run's files up to the new id and it carries on; if something did move, the run has to start again. `-WhatIf` first. **One-off:** delete the script and `trainer\restamp_schema.py` once every run has been through it |
