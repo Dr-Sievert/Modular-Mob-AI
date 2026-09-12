@@ -8,6 +8,8 @@
 #                                               and a table of how it went against each at the end
 #   scripts\eval.ps1 -Suite league -Loadouts bow,crossbow   those loadouts alone, to measure one weapon rather than wait
 #                                                           for it to come round in the rotation
+#   scripts\eval.ps1 -Suite league -Opponents ravager -ReplayEvery 1   one matchup, every fight of it written down: what
+#                                                           the league page offers when a row has no recorded fight to show
 #
 # Two evaluations of the same weights already fight the same sites in the same order, so two builds compared this way are
 # compared on the same ground without being asked to be. -Ground asks for a different sample of the library instead, which
@@ -34,6 +36,11 @@ param(
     # Which loadouts to fight with, empty for all of them. The way to measure one weapon on its own: a run whose bow rows
     # look weak can be put on bow and crossbow alone rather than waiting for them to come round in the rotation.
     [string[]] $Loadouts = @(),
+
+    # Which opponents to fight, empty for all of them, by the names the league writes in its results: ravager,
+    # 2x_zombie, zombie(hard). The way to look at one matchup: with -ReplayEvery 1 a short evaluation records every fight
+    # of it, which is how the league page answers a row whose fights were never written down.
+    [string[]] $Opponents = @(),
 
     # Which sites to fight on, as a seed. An evaluation already fights the same sites in the same order every time it is
     # run, so this is not here to steady anything: measured, the same weights over 300 fights gave 134 wins and then 134
@@ -81,6 +88,7 @@ if (-not $file -or -not (Test-Path $file)) {
 
 Write-Host ("Evaluating $file over $Arenas arenas" +
         $(if ($Loadouts.Count -gt 0) { ", with the $($Loadouts -join ', ') loadouts alone" }) +
+        $(if ($Opponents.Count -gt 0) { ", against $($Opponents -join ', ') alone" }) +
         $(if ($Ground -ne 0) { ", on the ground seed $Ground" }))
 
 $replayRun = 'eval-{0}-{1}' -f $Run, [IO.Path]::GetFileNameWithoutExtension($file)
@@ -88,4 +96,5 @@ $replayRun = 'eval-{0}-{1}' -f $Run, [IO.Path]::GetFileNameWithoutExtension($fil
 Invoke-Gradle (@(':fabric:runGametestParallel', '-Pbrain=neural', "-PbrainWeights=$file", "-Parenas=$Arenas", "-Pworkers=$Workers",
         "-PbatchSize=$Slots", "-PworkerHeap=$Heap", "-Psuite=$Suite", "-PreplayEvery=$ReplayEvery", "-PreplayRun=$replayRun") +
         @(if ($Loadouts.Count -gt 0) { "-PleagueLoadouts=$($Loadouts -join ',')" }) +
+        @(if ($Opponents.Count -gt 0) { "-PleagueOpponents=$($Opponents -join ',')" }) +
         @(if ($Ground -ne 0) { "-PterrainSeed=$Ground" }))
