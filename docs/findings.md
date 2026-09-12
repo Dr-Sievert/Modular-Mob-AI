@@ -361,6 +361,26 @@ are deliberate.
     shield adding a point or two rather than nothing. Sprint holds the same way, and the sprint blow only needs the tick
     of the hit. **Sneak the teacher never presses at all**, in either record, which means sneaking is a control the network
     has never seen used; in 1.21 it stops a body walking off an edge, which is worth trying against the fall deaths.
+- **The entropy bonus was the plateau.** league2 had been flat for 11,500 iterations: measured on a fixed benchmark, 600
+  fights of the league suite on the same ground every time, it went 58.0% at iteration 1,200 to 61.2% at 12,691. Forked at
+  iteration 6,075 into the regime a seeded run already uses — entropy coefficient 0.001 rather than 0.01, learning rate
+  5e-5, clip 0.1, target KL 0.01 — and given the same two workers and the same wall time as the run it left behind:
+
+  | | benchmark, 600 fights |
+  | --- | --- |
+  | where both arms forked (iteration 6,075) | 61.2% |
+  | the sharp arm, about 1,000 iterations on | **66.7%** |
+  | the arm it left behind, the same wall time | 61.8% |
+
+  Five and a half points in a thousand iterations against three points in eleven thousand five hundred. The regime that
+  produced vs-copy at 99.8% and was only ever used for seeding a run from a good policy turns out to be what a league run
+  wants as well.
+  - **Benchmark with the same worker count every time.** Each worker takes its own slice of the arenas, so 600 fights over
+    one worker and over three are not the same 600 fights. Two runs at the same count agree exactly; across counts they do
+    not, and half a night's numbers were nearly compared across them.
+  - What is not separated here: the seeded regime also quadruples the rollout steps, so an iteration of the sharp arm holds
+    four times the experience. The arms had equal workers and equal wall time, which is the comparison that decides what
+    the machine should be doing, but "entropy" alone is not proven to be the whole of it.
 - **Self play was a handicap, not a mirror, and a quarter of it was a stalemate.** A fifth of a league run's fights are
   against frozen checkpoints of itself, and those played their most likely action while the learner sampled, so the
   exploration the learner pays for was charged to one side of the mirror only. league2's own records, before the fix:
