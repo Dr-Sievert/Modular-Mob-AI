@@ -598,7 +598,11 @@ public class AgentMob extends PathfinderMob {
             // What is under the aim, found once for the tick the way the game finds what is under a player's crosshair,
             // and only looked for while attack is held. A use looks for itself, and only on the ticks it fires.
             Entity aimedEntity = this.controls.attack ? this.pickAimedEntity() : null;
-            BlockHitResult aimedBlock = this.controls.attack && aimedEntity == null ? this.pickAimedBlock() : null;
+
+            // A block already cracking is looked for whether or not the button is down this tick, so that letting go for a
+            // tick keeps the crack instead of throwing it away: see continueDestroying.
+            BlockHitResult aimedBlock = (this.controls.attack || this.destroyPos != null) && aimedEntity == null
+                    ? this.pickAimedBlock() : null;
 
             boolean brokeAtTouch = false;
 
@@ -1253,7 +1257,15 @@ public class AgentMob extends PathfinderMob {
     /**
      * What a held attack does to the block under the aim, as Minecraft#continueAttack and
      * MultiPlayerGameMode#continueDestroyBlock have it: the block cracks a tick's worth further, and once it has cracked
-     * all the way it breaks. Anything else, letting go or looking away, abandons it and all its progress.
+     * all the way it breaks. Looking away abandons it and all its progress.
+     *
+     * <p>**A hand does not forget.** Where a player's client throws the crack away the instant the button comes up, the
+     * agent keeps it for as long as the aim stays on the same block. The crack still only deepens on the ticks the button
+     * is actually down, so breaking anything costs exactly the presses it costs a player; what is forgiven is the tick in
+     * the middle where the press did not come. That is the same thing the committed draw is for and for the same reason:
+     * powder snow takes eight ticks of held attack to break out of, a cobweb eight, and the network holds attack for eight
+     * ticks or more on 4.3% of its holds, so without this it can break nothing at all and drowns, freezes or stays webbed
+     * where a player would dig out. See {@link #drawingToFull}.
      */
     private void continueDestroying(@Nullable BlockHitResult aimed) {
 
@@ -1268,6 +1280,16 @@ public class AgentMob extends PathfinderMob {
         if (this.destroyDelay > 0) {
 
             this.destroyDelay--;
+        }
+
+        // The press is what deepens a crack, so a tick without one leaves the block exactly as it was, cracked as far as
+        // it had got. Only a crack that has already started is kept this way: the first press is still what starts one.
+        else if (!this.controls.attack) {
+
+            if (this.destroyPos != null && !this.sameDestroyTarget(pos)) {
+
+                this.stopDestroyBlock();
+            }
         }
 
         else if (this.destroyPos == null || !this.sameDestroyTarget(pos)) {
@@ -1296,8 +1318,9 @@ public class AgentMob extends PathfinderMob {
             }
         }
 
-        // The press that started the tick has swung already.
-        if (!this.executed.attacked) {
+        // The press that started the tick has swung already, and a tick that is only keeping a crack has nothing to swing
+        // for: an arm that swung without a press would say the agent attacked when it did not.
+        if (this.controls.attack && !this.executed.attacked) {
 
             this.swing(InteractionHand.MAIN_HAND);
         }

@@ -709,32 +709,77 @@ public class AgentMechanicsGameTest {
         });
     }
 
-    /** Letting go of attack loses the work done: the block starts over from nothing. */
+    /**
+     * Letting go of attack keeps the work done, as long as the aim stays on the block: the crack waits where it got to and
+     * the presses that follow finish it. Ten of the fifteen ticks, two ticks off, and the block goes on the fifth press
+     * after that rather than the fifteenth.
+     *
+     * <p>A player's client throws the crack away the instant the button comes up. This is the deliberate difference, and
+     * the reason is the same as the committed draw's: a network holds attack for eight ticks or more on about one hold in
+     * twenty, so a crack it has to hold unbroken is a crack it can never finish, and every block it should dig itself out
+     * of — powder snow, a cobweb — stays where it is. See AgentMob#continueDestroying.
+     */
     @GameTest(template = ARENA, timeoutTicks = 100)
-    public static void lettingGoStartsTheBlockOver(GameTestHelper helper) {
+    public static void lettingGoKeepsTheBlocksProgress(GameTestHelper helper) {
 
         helper.setBlock(AT_EYE_LEVEL, Blocks.DIRT);
         AgentMob agent = agent(helper, MINER, 0.0F, 0.0F);
 
-        // Ten ticks of the fifteen, let go, and pressed again.
-        int again = SETTLE + 12;
+        int pressed = 10;
+        int again = SETTLE + pressed + 2;
 
         run(helper, tick -> {
 
-            agent.controls().attack = tick >= SETTLE && tick < SETTLE + 10 || tick >= again;
+            agent.controls().attack = tick >= SETTLE && tick < SETTLE + pressed || tick >= again;
 
-            if (tick <= again) {
+            if (tick < again) {
+
+                helper.assertFalse(helper.getBlockState(AT_EYE_LEVEL).isAir(), "The dirt went before it was cracked through");
+                return false;
+            }
+
+            if (!helper.getBlockState(AT_EYE_LEVEL).isAir()) {
+
+                helper.assertTrue(tick - again < HAND_ON_DIRT - pressed, "The dirt is still standing, so its crack was lost");
+                return false;
+            }
+
+            helper.assertValueEqual(tick - again, HAND_ON_DIRT - pressed, "presses to finish the dirt off");
+            return true;
+        });
+    }
+
+    /** Looking at something else does lose it: the crack is kept for the block under the aim, and for no other. */
+    @GameTest(template = ARENA, timeoutTicks = 100)
+    public static void lookingAwayStartsTheBlockOver(GameTestHelper helper) {
+
+        helper.setBlock(AT_EYE_LEVEL, Blocks.DIRT);
+        AgentMob agent = agent(helper, MINER, 0.0F, 0.0F);
+
+        // Ten ticks of the fifteen, then turned two whole ticks of yaw away and the same back, which lands on the block
+        // again because a tick of turn is the same size either way.
+        int away = SETTLE + 10;
+        int back = away + 2;
+        int again = back + 2;
+
+        run(helper, tick -> {
+
+            agent.controls().attack = tick >= SETTLE;
+            agent.controls().aimYaw = tick >= away && tick < back ? 1.0F : tick >= back && tick < again ? -1.0F : 0.0F;
+
+            if (tick < again) {
 
                 return false;
             }
 
             if (!helper.getBlockState(AT_EYE_LEVEL).isAir()) {
 
-                helper.assertTrue(tick - again < HAND_ON_DIRT, "The dirt is still standing");
+                helper.assertTrue(tick - again <= HAND_ON_DIRT + 2, "The dirt is still standing");
                 return false;
             }
 
-            helper.assertValueEqual(tick - again, HAND_ON_DIRT, "ticks to break the dirt after starting over");
+            helper.assertTrue(tick - again >= HAND_ON_DIRT - 1, "The dirt kept its crack through a look somewhere else: it "
+                    + "went after " + (tick - again) + " ticks, where breaking it from nothing takes " + HAND_ON_DIRT);
             return true;
         });
     }
