@@ -1,0 +1,12 @@
+{
+    "run":  "league-pull05",
+    "published":  "2026-09-12T06:09:06+02:00",
+    "code":  "2eaf6dd",
+    "weights":  "best evaluated, iteration 6200",
+    "iteration":  6200,
+    "fights":  1004,
+    "won":  56.9,
+    "lost":  34.6,
+    "timed_out":  8.6,
+    "state":  true
+}
