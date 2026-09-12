@@ -336,8 +336,9 @@ are deliberate.
     and seven and a half blocks**, the band every walker in the league crosses in less than a draw. It draws only at what
     cannot be here before the draw is full — the slot's own `ENEMY_SPEED`, or the velocity it is already coming at,
     whichever is faster, against `ABANDON_DRAW_RANGE` — and a thing that shoots back or flies is a draw at any range, since
-    closing is no answer to either. The opening arrow is untouched: the fastest walker needs over seven blocks and fights
-    start at nine.
+    closing is no answer to either. The opening arrow all but survives it: a zombie has to be past five and a half blocks
+    and a vindicator past seven and a third, against a median nine block start. The one it does cost is the first draw of a
+    fight, which is judged on a crossbow's twenty five ticks because nothing has said yet which of the two is in hand.
   - **A mob covers about 0.67 blocks a tick for each point of its movement speed attribute**, which is what that rule needs
     and is nowhere in vanilla in those units. Measured over 2,040 recorded fights, as the ninetieth percentile of a five
     tick mean so that a knockback does not count: a zombie (0.23) 0.154, a vindicator and a piglin brute (0.35) 0.239 and

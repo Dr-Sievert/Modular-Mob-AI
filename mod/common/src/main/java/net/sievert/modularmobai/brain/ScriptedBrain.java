@@ -1138,9 +1138,12 @@ public final class ScriptedBrain implements Brain {
      * before twenty ticks, 79% were begun between five and seven and a half blocks — the band that every walker in the
      * league crosses in less than a draw.
      *
-     * <p>It costs the opening draw nothing. Fights start a median nine blocks apart, and the fastest thing that walks needs
-     * over seven of them, so the arrow the teacher opens with is still there; what goes is the second draw it used to start
-     * the moment a blow knocked something back past five blocks.
+     * <p>It costs the opening draw very little. Fights start a median nine blocks apart; a zombie has to be past five and a
+     * half and the fastest thing that walks, a vindicator, past seven and a third, so the arrow the teacher opens with is
+     * still there. What goes is the second draw it used to start the moment a blow knocked something back past five blocks.
+     * The exception is the first draw of a fight, judged on a crossbow's twenty five ticks because nothing has said yet
+     * which weapon this is, which asks eight and a half blocks of a vindicator: that one is given up where the fight starts
+     * close.
      *
      * <p>Something that shoots back or flies is worth a draw at any distance past a sword's own reach. Closing is no answer
      * to either: an archer twelve blocks off will not come, and nothing swung reaches a flyer.
