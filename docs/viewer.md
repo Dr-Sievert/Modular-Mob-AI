@@ -15,6 +15,22 @@ scripts\viewer.ps1 -MinecraftJar <jar>     take textures from that jar instead o
 and `viewer\league.html`, and *League* in the replay page's header opens the second. Starting it again replaces an older
 running viewer rather than starting a second one. Ctrl+C stops it.
 
+## The list
+
+Every replay under `runs\*\replays`, whether or not one has been opened: twenty four thousand of them list in about a
+second and cost nothing after. Listing one reads its first four kilobytes, which is where the recorder puts the run, the
+iteration, the brain, the biome, the outcome and the length; the rest of the file, the site's blocks and every tick, is
+fetched only when it is clicked. The answer is kept between polls and built again only when a replay appears, goes or is
+written over, so the page can ask every three seconds while training writes.
+
+- A row reads *iteration · opponent · loadout · ground · biome · ticks*, with the whole of it, the outcome and what the
+  agent died of, on hover.
+- The opponent, the loadout and the ground are not in a replay's first kilobytes — the opponent sits behind the site's
+  blocks — so they come from the run's own per-fight records, a run at a time, when that run's replays are on show. A run
+  with no `league\results` simply says less.
+- **/** or the box at the top filters the list: `pillager`, `bow lava`, `it 1389`, `w00-f0416`. Several words all have to
+  match, and a run with anything that matches opens itself.
+
 ## Watching
 
 - Fights play at 20 ticks a second, with pause, step, speed and full screen.
@@ -27,6 +43,14 @@ running viewer rather than starting a second one. Ctrl+C stops it.
 - Mobs are drawn with their own textures.
 - Textures are read at runtime from the local Minecraft jar in the Gradle cache. Nothing from the game is written to
   disk or into exports; without the jar, blocks keep their shapes in map colours.
+- The page asks the server what the jar holds — `/api/blocks` and `/api/entities` — and then asks only for those, so it
+  never sends the server after a texture that cannot exist. That matters for mobs, which vanilla files by family as
+  often as by name: a cave spider under `spider/`, a zoglin under `hoglin/`, every illager under `illager/`. Guessing
+  `entity/<id>/<id>` and `entity/<id>` cost a 404 per mob of the older convention and found nothing at all for eight
+  more. A `No such texture in the Minecraft jar` line in the server's log is now a mapping this page has got wrong, and
+  it names the path.
+- A block the jar gives nothing for is drawn in its map colour, and the page says which in the browser's console: open a
+  handful of replays with it open and anything named there wants a rule in `blockTextures`.
 
 ## Recording
 
@@ -56,14 +80,27 @@ all of them sortable by any column, all of them live while a run trains:
 | Opponent by loadout | Win rate for every pairing over every fight of the run, green above half and red below. |
 | Two runs | Two lineages side by side: both rating curves on one chart, both tier lists, and the players they share. That last table is the point — the scripted fighter is held at 1500 in both, and a published network both runs field is rated by each on its own fights, so two ratings within a tier of each other mean the lists can be read together. See [training.md](training.md), `-LeagueModels`. |
 
-A `▸ 4` in the last column of a row is the recorded fights of that matchup: it opens a list of them, each a link into the
-replay viewer at that fight. A run records one fight in 200 per worker, so most rows have none.
+The last column of a row is its recorded fights against the fights it is about, `▸ 4 / 1 812` or `0 / 214`. Both open a
+drawer: with recordings, a list of them, each a link into the replay viewer at that fight; with none, what the run
+recorded and the command that would record some,
+
+```
+scripts\eval.ps1 -Weights runs\<run>\best.mbw -Suite league -Arenas 40 -ReplayEvery 1 -Opponents ravager
+```
+
+which leaves forty fights of that matchup in `runs\eval-<run>-best\replays`. **A 0 there is not a page that lost
+something.** A run records one fight in 200 per worker (`scripts\train.ps1 -ReplayEvery`), and those few land across a
+hundred opponents and fifteen loadouts, so most matchups were never written down at all: league768 has 1,400 replays of
+335,947 fights, and 25 of its 142 opponents have none. The one in 200 is measured from the gaps between the replay names
+a run left, not assumed, since nothing a run writes down says what it was started with.
 
 Everything comes from files a league run already writes, and nothing is written: the trainer's tables in
 `runs\<run>\league\`, the run's `eval.csv`, and the workers' per-fight records in `runs\<run>\league\results\`. Those
 last run to hundreds of thousands of lines, so they are added up once when the page first asks and then only read on
-from where they got to — a quarter of a million fights takes about a second the first time and nothing after. A row's
-link is checked against the replays actually on disk, so it never points at a fight that was never written.
+from where they got to — a quarter of a million fights takes about a second the first time and nothing after, and two
+million took under seven. A row's link is checked against the replays actually on disk, so it never points at a fight
+that was never written. The recorded fights kept per run are capped, high enough to cover every replay a run can have on
+disk: at 4,000 the longest run on this machine had 7,875 replays and the older half of them silently lost their labels.
 
 The behaviour columns — the weapon, the swaps, the uses and the shots — are recorded per fight by the game, not guessed
 from replays, and are newer than the runs training today: an older line simply says nothing about them, and the page

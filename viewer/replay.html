@@ -80,6 +80,16 @@ svg { display: block; }
 .live.on::before { background: var(--agent); animation: pulse 2.2s infinite; }
 .live.off::before { background: var(--opp); }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(55,224,122,.55); } 70% { box-shadow: 0 0 0 7px rgba(55,224,122,0); } 100% { box-shadow: 0 0 0 0 rgba(55,224,122,0); } }
+/* The search box. A run of thousands of replays is a list nobody scrolls, so the way in is to type: an opponent, a
+   loadout, a biome, an iteration, a file name. */
+.find { display: flex; align-items: center; gap: 6px; padding: 0 8px; height: 27px; border-radius: 7px;
+  border: 1px solid var(--line); background: var(--bg); }
+.find:focus-within { border-color: var(--line2); }
+.find svg { width: 12px; height: 12px; flex: none; color: var(--faint); }
+.find input { flex: 1; min-width: 0; border: 0; background: transparent; outline: none; font-size: 12px; }
+.find input::placeholder { color: var(--faint); }
+.find button { border: 0; background: transparent; color: var(--faint); cursor: pointer; padding: 0 2px; font-size: 13px; }
+.find button:hover { color: var(--text); }
 .filters { display: flex; gap: 4px; }
 .filters button { flex: 1; padding: 3px 0; font-size: 11.5px; border-radius: 6px; border: 1px solid var(--line);
   background: transparent; color: var(--muted); cursor: pointer; }
@@ -344,6 +354,11 @@ kbd { font: 11px var(--mono); padding: 1px 6px; border-radius: 5px; background: 
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
         </button>
       </div>
+      <label class="find" title="Filter the list: an opponent, a loadout, a biome, a ground, an iteration or a file name. Several words all have to match.">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2 13.5 13.5"/></svg>
+        <input id="side-find" type="search" placeholder="Filter: pillager bow lava…" autocomplete="off" spellcheck="false">
+        <button id="side-find-clear" type="button" title="Clear" hidden>×</button>
+      </label>
       <div class="filters" id="filters">
         <button data-f="all" class="on">All</button><button data-f="win">Win</button><button data-f="loss">Loss</button><button data-f="timeout">Timeout</button>
       </div>
@@ -479,6 +494,7 @@ kbd { font: 11px var(--mono); padding: 1px 6px; border-radius: 5px; background: 
       <kbd>B</kbd><span>Blocks in 3D in their own textures, when the viewer is served with a Minecraft jar, or in their map colours.</span>
       <kbd>H</kbd><span>Show or hide the charts under the timeline.</span>
       <kbd>L</kbd><span>Show or hide the replay list.</span>
+      <kbd>/</kbd><span>Search the list: an opponent, a loadout, a biome, a ground, an iteration or a file name. Several words all have to match.</span>
     </div>
     <h4>Reading the map</h4>
     <p>North is up and east is right, like a Minecraft map. The agent is green, its opponent red, each drawn at the real hitbox width with a health ring. The cone shows where each one faces; the agent's aim ray follows its look direction in 3D and ends where it meets the ground (&times;) or the opponent's hitbox (ring). The shadow shifts further south-east the higher a fighter is off the ground.</p>
@@ -820,6 +836,9 @@ const CROSS_BLOCKS = new RegExp('^(' + ['short_grass', 'tall_grass', 'fern', 'la
   'carrots', 'potatoes', 'beetroots', 'torchflower(_crop)?', 'pitcher_(plant|crop)', 'dandelion', 'poppy', 'blue_orchid',
   'allium', 'azure_bluet', '[a-z]+_tulip', 'oxeye_daisy', 'cornflower', 'lily_of_the_valley', 'wither_rose', 'sunflower',
   'lilac', 'rose_bush', 'peony', '[a-z_]+_sapling', '(brown|red)_mushroom', '([a-z]+_)?(wall_)?torch', '(soul_)?fire',
+  // Coral, which a fight on a warm beach stands in: a single coral and a coral fan are sprites like a plant, and a wall
+  // fan is the same sprite turned against a block. The coral *blocks* are cubes and are not in here.
+  '(dead_)?[a-z]+_coral', '(dead_)?[a-z]+_coral_(wall_)?fan',
 ].join('|') + ')$');
 
 // Small things drawn as a token on the floor of their block rather than as a whole cube.
@@ -2541,6 +2560,8 @@ function drawInputs(t) {
 const lib = {
   groups: [],            // [{ id, title, items, open, time, server }]
   filter: 'all',
+  find: '',              // the words typed in the search box, all of which have to match
+  matchups: new Map(),   // run -> { asked, at, league, by: Map(file -> what that fight was), recording }
   active: null,          // key of the open item
   expanded: new Set(),   // groups showing all their items rather than the first GROUP_LIMIT
   server: null,          // set when viewer/serve.py serves this page
@@ -2558,6 +2579,11 @@ const TRASH = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke
 function summaryOf(raw) {
   const s = {};
   ['outcome', 'ticks', 'iteration', 'biome', 'worker', 'fight', 'brain', 'run', 'tickRate'].forEach(k => { if (raw[k] != null) s[k] = raw[k]; });
+  // A replay opened from disk carries its opponent in "entities", which the served list cannot read cheaply and asks the
+  // run's per-fight records for instead. Where the whole file is already in hand, take it from there — without the
+  // namespace, so that it reads as the league's own names do: vindicator, not minecraft:vindicator.
+  const opponent = (raw.entities || []).find(e => e && e.role === 'opponent');
+  if (opponent && typeof opponent.type === 'string') s.opponent = String(opponent.type).replace(/^.*:/, '');
   return s;
 }
 
@@ -2567,14 +2593,169 @@ function itemTitle(it) {
   return it.name;
 }
 
+/** The line under a replay's name: what fight it was, as far as anything cheap to read knows. */
+function itemSub(it) {
+  const s = it.summary || {};
+  if (it.old) return 'old format, can’t be shown';
+  return [s.iteration != null ? 'it ' + s.iteration : null, s.opponent || null, s.loadout || null,
+    s.site && s.site !== '-' ? s.site : null, s.biome ? prettyId(s.biome) : null,
+    s.ticks ? s.ticks + ' ticks' : null].filter(Boolean).join(' · ') || it.name;
+}
+
+/**
+ * Everything about a replay the search box may match, as one lower-case string, kept on the item until its summary
+ * changes. Typing narrows thousands of replays to the handful worth opening, and it is the only way through a run that
+ * has recorded a thousand of them; building this once an item is what keeps a keystroke from costing a scan.
+ */
+function haystack(it) {
+  const s = it.summary || {};
+  if (it.hay && it.hayOf === s.opponent + '\t' + s.loadout + '\t' + s.outcome + '\t' + s.iteration) return it.hay;
+  it.hayOf = s.opponent + '\t' + s.loadout + '\t' + s.outcome + '\t' + s.iteration;
+  it.hay = [it.run, it.name, s.outcome, s.opponent, s.loadout, s.site, s.cause, s.kind, s.brain,
+    s.biome ? prettyId(s.biome) : null, s.biome, s.iteration != null ? 'it ' + s.iteration : null,
+    s.iteration, s.ticks != null ? s.ticks + 't' : null, it.old ? 'old' : null].filter(v => v != null).join(' ').toLowerCase();
+  return it.hay;
+}
+
+/** Everything the list shows for a replay, on hover, which is where the whole of a preview fits. */
+function itemTip(it) {
+  const s = it.summary || {};
+  return [it.run ? 'runs/' + it.run + '/replays/' + it.file : it.name,
+    s.outcome ? 'outcome: ' + s.outcome : null,
+    s.opponent ? 'opponent: ' + s.opponent : null,
+    s.loadout ? 'loadout: ' + s.loadout : null,
+    s.site && s.site !== '-' ? 'ground: ' + s.site : null,
+    s.cause && s.cause !== '-' ? 'the agent died of: ' + s.cause : null,
+    s.kind ? s.kind + ' fight' : null,
+    s.biome ? 'biome: ' + prettyId(s.biome) : null,
+    s.iteration != null ? 'iteration ' + s.iteration : null,
+    s.brain ? 'brain: ' + s.brain : null,
+    s.ticks ? s.ticks + ' ticks' : null,
+    it.size ? Math.round(it.size / 1024) + ' kB' : null].filter(Boolean).join('\n');
+}
+
 function visibleItems(g) {
-  return g.items.filter(it => lib.filter === 'all' || (it.summary && it.summary.outcome) === lib.filter);
+  const words = lib.find ? lib.find.toLowerCase().split(/\s+/).filter(Boolean) : [];
+  return g.items.filter(it => {
+    if (lib.filter !== 'all' && (it.summary && it.summary.outcome) !== lib.filter) return false;
+    if (!words.length) return true;
+    const hay = haystack(it);
+    return words.every(word => hay.includes(word));
+  });
+}
+
+/** A group shows its replays when it was opened, and while a search is on, whenever it has anything that matches. */
+function groupOpen(g, items) {
+  return !!g.open || (!!lib.find.trim() && (items || visibleItems(g)).length > 0);
+}
+
+// ---- what each replay was a fight of --------------------------------------------------------------------------------
+//
+// A replay's own first few hundred bytes say its run, iteration, brain, biome, outcome and length, which is what the
+// server's list reads. The opponent and the loadout are not there: they sit in "entities" behind fifty to a hundred
+// kilobytes of blocks, and reading them from every file would mean reading every file. The run's per-fight records have
+// them a line a fight, so the server serves those by replay name instead, one run at a time and only for a run whose
+// replays are actually being looked at. See /api/matchups in viewer\serve.py.
+
+const MATCHUP_AGAIN_MS = 20000;   // the soonest a run is asked again, when replays have appeared that it knows nothing of
+
+// One run at a time. A search asks every run at once, and the first ask of a run reads its whole per-fight records —
+// seven seconds for two million fights — so without this a single keystroke could put ten of those on a machine that is
+// training. Queued, it is the same work the league page does when a run is picked, one after another.
+let matchupQueue = Promise.resolve();
+
+/** The note under a run's replays: that its opponents are being read, or that there are none to read. */
+function matchupNote(g) {
+  if (!lib.server || !g.server) return '';
+  const known = lib.matchups.get(g.title);
+  if (!known) return '';
+  if (known.loading) return 'Reading what these fights were from <code>league/results</code>…';
+  if (!known.asked) return '';
+  if (known.league === false) return 'This run has no <code>league/results</code>, so a replay says only what its own header holds.';
+  return '';
+}
+
+/**
+ * Asks the server what a run's replays were fights of, once for each run whose replays are on show, and again only when
+ * replays have turned up that the answer said nothing about — a fight is written to the records and to disk by the same
+ * worker, but not in the same instant. The server keeps its sums between requests, so the second ask costs it a few
+ * milliseconds; the first ask of a run of two million fights reads its records once, which is why nothing asks for a run
+ * whose replays nobody is looking at.
+ */
+function wantMatchups(run, seen) {
+  if (!lib.server || !run) return;
+  let known = lib.matchups.get(run);
+  if (!known) {
+    known = { asked: false, loading: false, at: 0, seen: 0, league: null, by: new Map(), recording: null };
+    lib.matchups.set(run, known);
+  }
+  if (known.loading || (known.asked && Date.now() - known.at < MATCHUP_AGAIN_MS)) return;
+  known.loading = true;
+  renderList();     // the run says it is reading its records, since the first read of a long one takes a moment
+  matchupQueue = matchupQueue
+    .then(() => fetch('api/matchups/' + encodeURIComponent(run), { cache: 'no-store' }))
+    .then(r => (r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status))))
+    .then(answer => {
+      known.league = answer.league !== false;
+      known.recording = answer.recording || null;
+      known.by = new Map(Object.entries(answer.fights || {}));
+      applyMatchups(run);
+    })
+    .catch(() => { /* an older server, or one that stopped: the list keeps the headers it already has */ })
+    .then(() => {
+      known.asked = true;
+      known.loading = false;
+      known.at = Date.now();
+      known.seen = seen || 0;
+      renderList();
+    });
+}
+
+/** Puts what the records know onto the items of that run, which is what the preview line and the search then read. */
+function applyMatchups(run) {
+  const known = lib.matchups.get(run);
+  const g = lib.groups.find(x => x.server && x.title === run);
+  if (!known || !g) return;
+  g.items.forEach(it => {
+    const fight = known.by.get(it.file);
+    if (!fight) return;
+    it.matched = true;
+    ['opponent', 'loadout', 'site', 'cause', 'kind'].forEach(name => {
+      if (fight[name] != null && fight[name] !== '' && fight[name] !== '-') it.summary[name] = fight[name];
+    });
+  });
+}
+
+/**
+ * Which runs are worth asking about: the ones whose replays are on show, once each, and again only when more replays have
+ * turned up than the last answer was asked about. A run whose records name no replays at all — an older league, or a run
+ * with no league — is asked once and then left alone, rather than asked again every time it writes a file it cannot label.
+ *
+ * A search asks every run instead of only the open ones, because a search that only looked where it had already looked
+ * would find a pillager in one run and not in the next, and the difference would be invisible. They are read one at a
+ * time; see matchupQueue.
+ */
+function askMatchups() {
+  if (!lib.server) return;
+  const searching = !!lib.find.trim();
+  lib.groups.forEach(g => {
+    if (!g.server || !g.items.length) return;
+    // A closed group nobody has opened and is not searching is not worth reading a run's records for.
+    if (!searching && !groupOpen(g) && lib.server.wantRun !== g.title) return;
+    const known = lib.matchups.get(g.title);
+    if (known && known.asked && (known.league === false || g.items.length <= known.seen)) return;
+    wantMatchups(g.title, g.items.length);
+  });
 }
 
 function renderList() {
   const box = $('side-list'), scroll = box.scrollTop, picking = !!lib.server;
   const total = lib.groups.reduce((n, g) => n + g.items.length, 0);
-  $('side-count').textContent = total ? String(total) : '';
+  // The matching replays of every group, worked out once: with a search on, this is what the count, the group heads and
+  // the rows are all drawn from, and a run of twenty thousand replays is not worth scanning three times a keystroke.
+  const matching = new Map(lib.groups.map(g => [g.id, visibleItems(g)]));
+  const shown = [...matching.values()].reduce((n, items) => n + items.length, 0);
+  $('side-count').textContent = !total ? '' : shown === total ? String(total) : shown + ' of ' + total;
   box.classList.toggle('picking', picking);
   updateSelectBar();
   if (!lib.groups.length) {
@@ -2590,37 +2771,38 @@ function renderList() {
         `viewer no longer draws. <button class="linkish" data-select-old>Select ${old === 1 ? 'it' : 'them'}</button> to delete.</div>`);
   }
   lib.groups.forEach(g => {
-    const items = visibleItems(g);
+    const items = matching.get(g.id) || [];
+    const open = groupOpen(g, items);
     const when = g.time ? `<span class="gtime">${timeAgo(g.time)}</span>` : '';
     const ticked = picking && items.length > 0 && items.every(it => lib.selected.has(it.key));
-    html.push(`<div class="group${g.open ? ' open' : ''}" data-group="${escapeHtml(g.id)}">` +
+    html.push(`<div class="group${open ? ' open' : ''}" data-group="${escapeHtml(g.id)}">` +
         `<div class="group-head">${picking ? `<input type="checkbox" class="pick" data-pick-group title="Select every replay of this run"${ticked ? ' checked' : ''}>` : ''}` +
         `<svg class="caret" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5 8 6l-3.5 3.5"/></svg>` +
         `<span class="gname">${escapeHtml(g.title)}</span><span class="gcount">${items.length}${items.length !== g.items.length ? ' of ' + g.items.length : ''}</span>${when}` +
         `${picking && g.items.length ? `<button class="del" data-del-group title="Delete every replay of this run">${TRASH}</button>` : ''}</div><div class="group-items">`);
-    if (g.open) {
+    if (open) {
       const shown = lib.expanded.has(g.id) ? items : items.slice(0, GROUP_LIMIT);
       shown.forEach(it => {
         const s = it.summary || {}, o = it.old ? 'old' : outcomeClass(s.outcome);
         const secs = s.ticks ? (s.ticks / (s.tickRate || 20)).toFixed(1) + ' s' : '';
-        const sub = it.old ? 'old format, can’t be shown' : [s.iteration != null ? 'it ' + s.iteration : null, s.biome ? prettyId(s.biome) : null,
-          s.ticks ? s.ticks + ' ticks' : null].filter(Boolean).join(' · ') || it.name;
-        html.push(`<div class="item${it.key === lib.active ? ' active' : ''}${it.old ? ' old' : ''}" data-key="${escapeHtml(it.key)}" title="${escapeHtml(it.name)}">` +
+        html.push(`<div class="item${it.key === lib.active ? ' active' : ''}${it.old ? ' old' : ''}" data-key="${escapeHtml(it.key)}" title="${escapeHtml(itemTip(it))}">` +
             (picking ? `<input type="checkbox" class="pick"${lib.selected.has(it.key) ? ' checked' : ''}>` : '') +
             `<span class="badge ${o}">${it.old ? 'old' : short[o] || '?'}</span><div style="min-width:0"><div class="item-title">${escapeHtml(itemTitle(it))}` +
-            `${it.isNew ? '<span class="new-dot"></span>' : ''}</div><div class="item-sub">${escapeHtml(sub)}</div></div>` +
+            `${it.isNew ? '<span class="new-dot"></span>' : ''}</div><div class="item-sub">${escapeHtml(itemSub(it))}</div></div>` +
             `<div class="item-len">${secs}</div>` +
             (picking ? `<button class="del" data-del title="Delete this replay">${TRASH}</button>` : '') + '</div>');
       });
       if (shown.length < items.length) html.push(`<button class="more" data-more="${escapeHtml(g.id)}">Show all ${items.length}</button>`);
       if (!items.length) html.push(`<div class="side-empty" style="padding:8px">${g.items.length ? 'None match the filter.' : 'No replays yet.'}</div>`);
+      const note = matchupNote(g);
+      if (note) html.push(`<div class="side-note" style="padding:2px 8px 6px">${note}</div>`);
     }
     html.push('</div></div>');
   });
   box.innerHTML = html.join('');
   // A run with some of its replays ticked shows a half-ticked box, which only a script can set.
   box.querySelectorAll('[data-pick-group]').forEach(cb => {
-    const g = lib.groups.find(x => x.id === cb.closest('.group').dataset.group), items = g ? visibleItems(g) : [];
+    const items = matching.get(cb.closest('.group').dataset.group) || [];
     cb.indeterminate = !cb.checked && items.some(it => lib.selected.has(it.key));
   });
   box.scrollTop = scroll;
@@ -2634,7 +2816,10 @@ function findItem(key) {
 /** Items in the order the list shows them, for stepping with the arrow keys and for shift-click ranges. */
 function flatVisible() {
   const out = [];
-  lib.groups.forEach(g => { if (g.open) visibleItems(g).slice(0, lib.expanded.has(g.id) ? Infinity : GROUP_LIMIT).forEach(it => out.push(it)); });
+  lib.groups.forEach(g => {
+    const items = visibleItems(g);
+    if (groupOpen(g, items)) items.slice(0, lib.expanded.has(g.id) ? Infinity : GROUP_LIMIT).forEach(it => out.push(it));
+  });
   return out;
 }
 
@@ -2688,7 +2873,7 @@ function initList() {
     const head = e.target.closest('.group-head');
     if (head) {
       const g = lib.groups.find(x => x.id === head.parentElement.dataset.group);
-      if (g) { g.open = !g.open; renderList(); }
+      if (g) { g.open = !g.open; renderList(); askMatchups(); }
       return;
     }
     const row = e.target.closest('.item');
@@ -2708,6 +2893,19 @@ function initList() {
     [...$('filters').children].forEach(x => x.classList.toggle('on', x === b));
     renderList();
   });
+  // Typing filters the list and opens whichever runs have something that matches, so it asks for what those runs were.
+  $('side-find').addEventListener('input', e => {
+    lib.find = e.target.value || '';
+    $('side-find-clear').hidden = !lib.find;
+    renderList();
+    askMatchups();
+  });
+  $('side-find-clear').onclick = () => {
+    lib.find = '';
+    $('side-find').value = '';
+    $('side-find-clear').hidden = true;
+    renderList();
+  };
   $('btn-sel-clear').onclick = () => { lib.selected.clear(); renderList(); };
   $('btn-sel-del').onclick = () => askDeleteItems([...lib.selected].map(findItem).filter(Boolean));
   $('btn-del-all').onclick = askDeleteAll;
@@ -2815,7 +3013,11 @@ async function openItem(it, opts) {
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const raw = await res.json();
       rp = prepareReplay(raw, it.name);
-      it.summary = Object.assign(it.summary || {}, summaryOf(raw));
+      const fresh = summaryOf(raw);
+      // The records name a squad or a rung of the ladder — spider+cave_spider, zombie(hard) — where the file names only
+      // the first mob it spawned, so what the records said stands.
+      if (it.summary && it.summary.opponent) delete fresh.opponent;
+      it.summary = Object.assign(it.summary || {}, fresh);
       lib.cache.set(cacheKey, rp);
       while (lib.cache.size > 16) lib.cache.delete(lib.cache.keys().next().value);
     }
@@ -3018,7 +3220,10 @@ function applyRuns(runs) {
   // Ticks on replays that are gone, deleted from here or from outside, go with them.
   const present = new Set(groups.flatMap(g => g.items.map(it => it.key)));
   lib.selected.forEach(k => { if (!present.has(k)) lib.selected.delete(k); });
+  // What a run's records already said goes onto the items that were just built, before anything is drawn from them.
+  [...lib.matchups.keys()].forEach(applyMatchups);
   renderList();
+  askMatchups();
 
   if (s.first) {
     s.first = false;
@@ -3236,9 +3441,10 @@ function blockTextures(e, has) {
     else if (n === 'mangrove_propagule' && p.hanging === 'true') tex = 'mangrove_propagule_hanging';
     else if (n === 'pointed_dripstone') tex = 'pointed_dripstone_' + (p.vertical_direction || 'up') + '_' + (p.thickness || 'tip');
     else if (n === 'bamboo') tex = 'bamboo_stalk';
-    else if (/torch$/.test(n)) tex = n.replace('wall_', '');
     else if (/fire$/.test(n)) tex = n + '_0';
-    const plane = face(first(tex, n, n + '_top'));
+    // A block on a wall is the same thing turned sideways and takes the same texture: a wall torch is a torch, a coral
+    // wall fan a coral fan. Vanilla names the texture after the free-standing one and has none of its own for the wall.
+    const plane = face(first(tex, n, n.replace('wall_', ''), n + '_top'));
     return plane && six(plane, plane, plane);
   }
   if (n === 'grass_block' || n === 'podzol' || n === 'mycelium') {
@@ -3296,6 +3502,19 @@ function blockTextureNames() {
       .then(j => new Set(j.textures || [])).catch(() => new Set());
   }
   return v3.blockNames;
+}
+
+/**
+ * The paths of every entity texture in the jar, under textures/entity, asked for once; an empty set without one, and
+ * without a server new enough to answer, which leaves every mob its box. The same rule as the blocks: the page asks what
+ * is there rather than guessing, so it never sends the server after a texture that cannot exist.
+ */
+function entityTextureNames() {
+  if (!v3.entityNames) {
+    v3.entityNames = fetch('api/entities', { cache: 'no-store' }).then(r => (r.ok ? r.json() : { textures: [] }))
+      .then(j => new Set(j.textures || [])).catch(() => new Set());
+  }
+  return v3.entityNames;
 }
 
 const TILE = 16, CELL = 20;   // 16-pixel tiles in 20-pixel cells: two pixels of wrapped border keep mipmaps clean
@@ -3428,6 +3647,7 @@ function loadBlockLook(tr, biome) {
     const specs = [...keys.values()], images = new Map();
     await Promise.all([...new Set(specs.flatMap(f => [f.tex, f.overlay].filter(Boolean)))].map(async n => images.set(n, await loadBlockImage(n))));
     const usable = specs.filter(f => images.get(f.tex));
+    reportUntextured(tr, faces);
     const rgb = t => (t ? rgbOf(tints[t]) : null);
     // The page's own tiles first, for any block the jar has no texture for.
     const { tex, rects } = makeAtlas([...PLAIN_TILES.map(k => () => plainPixels(k)),
@@ -3444,6 +3664,29 @@ function loadBlockLook(tr, biome) {
     return tr.textures;
   }).catch(err => { console.error(err); return null; });
   return look;
+}
+
+// Every block state a session has said it cannot texture, so a site of ten thousand of one block says it once.
+const untextured = new Set();
+
+/**
+ * Says, once each, which of a site's blocks the jar gave nothing for. Such a block is drawn in its map colour, which
+ * looks deliberate and hides a mapping that has fallen behind the game — a new block, or a property that changes the
+ * texture's name. With a jar loaded, this is the check that a whole class of blocks has not quietly stopped resolving:
+ * open a handful of replays with the console open and anything named there is worth a rule in blockTextures.
+ *
+ * Only vanilla blocks that are drawn at all: air and the blocks the viewer hides on purpose have no texture by
+ * definition, and a modded block is not in the jar to begin with.
+ */
+function reportUntextured(tr, faces) {
+  const missed = [];
+  tr.pal.forEach((e, i) => {
+    const list = faces[i];
+    if (!e.vanilla || e.air || (list && list.some(Boolean)) || untextured.has(e.id)) return;
+    untextured.add(e.id);
+    missed.push(e.id);
+  });
+  if (missed.length) console.warn('No texture in the jar for: ' + missed.join(', ') + ' (drawn in map colours)');
 }
 
 /** Frees a replay's atlas once it leaves the scene; opening it again builds it again from the images already loaded. */
@@ -3860,6 +4103,14 @@ const HOLD = {
   crossbow: { rot: [-90, 0, -60], pos: [2, 0.1, -3], scale: 0.9 },
 };
 
+// Mobs whose texture file is not named after the entity at all: vanilla's file names are older than the ids, and nothing
+// in the jar joins the two. Everything else is found by name, wherever in textures/entity it is filed.
+const MOB_SKIN_NAMES = { polar_bear: 'bear/polarbear', magma_cube: 'slime/magmacube' };
+
+// Filed under textures/entity but not a mob's skin: a creeper banner and a creeper shield would otherwise answer a search
+// for a texture named creeper.
+const NOT_A_MOB = /^(banner|shield|conduit|bed)\//;
+
 function mobKindOf(e) {
   const id = String(e.type || '').replace(/^minecraft:/, '');
   if (e.role === 'agent' || /^modular_mob_ai:/.test(e.type)) {
@@ -3869,8 +4120,26 @@ function mobKindOf(e) {
   }
   const k = MOB_KINDS[id];
   if (k) return Object.assign({ scale: 1 }, k, { skins: ['mc/textures/' + k.tex + '.png'] });
-  return { model: 'humanoid', arms: 'humanoid', scale: 1,
-    skins: ['mc/textures/entity/' + id + '/' + id + '.png', 'mc/textures/entity/' + id + '.png'] };
+  return { model: 'humanoid', arms: 'humanoid', scale: 1, id };
+}
+
+/**
+ * Where a mob's texture is in the jar, asked of the jar's own list rather than guessed: entity/<id>/<id> and entity/<id>
+ * are the two conventions vanilla uses, and what follows neither is filed under its family — spider/cave_spider,
+ * illager/ravager, hoglin/zoglin, piglin/zombified_piglin, which guessing never finds. Nothing is asked for that the jar
+ * does not have, so a 404 from /mc/ is now a mapping this page got wrong rather than it trying its luck; a mob with no
+ * texture keeps the box the viewer draws without a jar at all.
+ */
+async function mobSkins(kind) {
+  if (kind.skins) return kind.skins;    // the agent's own skin, or a mob whose texture is named in MOB_KINDS
+  const id = kind.id;
+  if (!id) return [];
+  const have = await entityTextureNames();
+  // The shortest family path first, so that a name under two families picks the plainer one.
+  const family = [...have].filter(n => !NOT_A_MOB.test(n) && n.endsWith('/' + id))
+    .sort((a, b) => a.length - b.length || a.localeCompare(b));
+  const found = [id + '/' + id, id, MOB_SKIN_NAMES[id], ...family].find(n => n && have.has(n));
+  return found ? ['mc/textures/entity/' + found + '.png'] : [];
 }
 
 const mobTextures = new Map();   // url -> Promise of a texture, or null when the server has none
@@ -3978,7 +4247,7 @@ function holdItem(arm, tex, hold) {
 async function attachMob(f) {
   const kind = mobKindOf(f.e);
   let tex = null;
-  for (const url of kind.skins) if (!tex) tex = await loadMobTexture(url);
+  for (const url of await mobSkins(kind)) if (!tex) tex = await loadMobTexture(url);
   const item = tex && kind.item ? await loadMobTexture('mc/textures/item/' + kind.item + '.png') : null;
   if (!tex || !v3.fighters.includes(f)) return;
   const img = tex.image, rig = buildRig(MOB_MODELS[kind.model], tex, img.naturalWidth || img.width, img.naturalHeight || img.height,
@@ -4754,6 +5023,11 @@ function onKey(e) {
   }
   const tag = e.target.tagName;
   if ((e.key === ' ' || e.key === 'Enter') && (tag === 'BUTTON' || tag === 'INPUT')) return;   // keyboard users' own focus
+  // Typing in the search box is typing: without this, filtering for "bow" would jump to the 3D view and back.
+  if (tag === 'INPUT' && /^(search|text)$/.test(e.target.type)) {
+    if (e.key === 'Escape') e.target.blur();
+    return;
+  }
   if (e.key === 'Escape') {
     if (!$('help').hidden) $('help').hidden = true;
     else if (window.innerWidth <= 1180) setSide(false, true);
@@ -4783,6 +5057,7 @@ function onKey(e) {
     case 'g': case 'G': toggle('grid'); break;
     case 'h': case 'H': toggle('charts'); break;
     case 'l': case 'L': setSide($('app').classList.contains('side-hidden'), true); break;
+    case '/': setSide(true); $('side-find').focus(); $('side-find').select(); break;
     case '?': $('help').hidden = !$('help').hidden; break;
     default: return;
   }

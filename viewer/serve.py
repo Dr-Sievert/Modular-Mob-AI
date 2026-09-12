@@ -27,6 +27,11 @@ the run's eval.csv, and the workers' per-fight records in runs/<name>/league/res
 The per-fight records run to millions of lines, so they are added up once and then read on from where they got to, and
 only the sums are served; see Fights.
 
+Those same records are what /api/matchups/<run> serves the replay list: which opponent, loadout and ground each replay
+on disk was, which the replay files themselves cannot say cheaply. A replay names its run, iteration and outcome in its
+first few hundred bytes, but the opponent sits in "entities" behind fifty to a hundred kilobytes of blocks, so reading
+it from the file would mean reading the file. The records have it a line a fight, and the run has already written them.
+
 Standard library only, so any Python 3.7 or newer runs it. Everything is found from this file's own location: the
 repository is the folder above viewer/, and replays are runs/<name>/replays/*.json. The server listens on 127.0.0.1
 only, and leaves runs/.replay-viewer.json behind while it runs so a second start opens the browser on it instead.
@@ -34,7 +39,6 @@ The 3D view's three.js is viewer/vendor/three.cjs, the official build of the ver
 """
 
 import argparse
-import collections
 import hashlib
 import json
 import os
@@ -54,8 +58,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 APP = 'mmai-replay-viewer'
-VERSION = 5     # what this server can serve; an older one still running is not reused (1: no 3D, 2: no textures,
-                # 3: no block textures and no deleting, 4: no league page)
+VERSION = 6     # what this server can serve; an older one still running is not reused (1: no 3D, 2: no textures,
+                # 3: no block textures and no deleting, 4: no league page, 5: no matchups for the replay list)
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 RUNS = ROOT / 'runs'
@@ -77,6 +81,16 @@ FORMAT = 2      # the replay format version the page draws; older replays have n
 _FIELD = re.compile(r'"(version|outcome|ticks|iteration|biome|worker|fight|brain|run)"\s*:\s*("(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?|null)')
 _headers = {}
 
+# A replay's name, w<worker>-f<fight>.json, which is where the worker and the fight number come from when a file is too
+# old to carry them in its fields, and what the recording stride is measured from.
+_REPLAY_NAME = re.compile(r'^w(\d+)-f(\d+)\.json$', re.I)
+
+# The last answer /api/runs gave, against the names, sizes and times the scan it was built from saw. Listing the folders
+# is cheap and reading a header is cached, so what this saves is everything after: over twenty four thousand replays,
+# building the entries into 5 MB of JSON and hashing it measured 70 ms of the 220 an answer took, and five megabytes of
+# garbage, every three seconds for as long as a page is open.
+_listing = {'key': None, 'body': b''}
+
 
 def same_path(a, b):
     return os.path.normcase(os.path.realpath(str(a))) == os.path.normcase(os.path.realpath(str(b)))
@@ -86,6 +100,25 @@ def is_replay_name(name):
     """A finished replay file: the recorder writes under a temporary name first and renames at the end."""
     lower = name.lower()
     return lower.endswith('.json') and not name.startswith('.') and '.tmp' not in lower
+
+
+def replay_stride(names):
+    """
+    The step between the fight numbers of one worker's replays, which is the -ReplayEvery the run was given: the recorder
+    writes fight 0, N, 2N, … of each worker, so the gaps between the names it left are that N. Measured rather than
+    assumed, because nothing a run writes down says what it was started with; a run resumed with a different number
+    shows the smallest of them, and too few names to tell show nothing at all.
+    """
+    per = {}
+    for name in names:
+        match = _REPLAY_NAME.match(name)
+        if match:
+            per.setdefault(match.group(1), set()).add(int(match.group(2)))
+    gaps = []
+    for numbers in per.values():
+        ordered = sorted(numbers)
+        gaps += [b - a for a, b in zip(ordered, ordered[1:])]
+    return min(gaps) if gaps else None
 
 
 def read_header(path, stat):
@@ -106,11 +139,16 @@ def read_header(path, stat):
     return fields
 
 
-def list_runs():
-    """Every runs/<name>/replays folder with its replays, newest first."""
-    runs, seen = [], set()
+def scan_replays():
+    """
+    Every runs/<name>/replays folder with its replays, newest first, and a key for the whole scan beside it: what the
+    scan saw of every file, so an answer already built for the same files can be handed out again. The page polls every
+    three seconds and twenty four thousand replays are five megabytes of JSON, none of which changes between two polls
+    that found the same files.
+    """
+    runs, seen, key = [], set(), hashlib.sha1()
     if RUNS.is_dir():
-        for run_dir in RUNS.iterdir():
+        for run_dir in sorted(RUNS.iterdir(), key=lambda d: d.name):
             folder = run_dir / 'replays'
             if not folder.is_dir():
                 continue
@@ -127,6 +165,7 @@ def list_runs():
                 except OSError:
                     continue    # renamed or deleted while we looked
                 seen.add(entry.path)
+                key.update(('%s|%d|%d\n' % (entry.path, stat.st_mtime_ns, stat.st_size)).encode('utf-8', 'replace'))
                 replay = {'file': entry.name, 'size': stat.st_size, 'mtime': round(stat.st_mtime, 3)}
                 replay.update(read_header(entry.path, stat))
                 if not isinstance(replay.get('version'), int) or replay['version'] < FORMAT:
@@ -138,7 +177,25 @@ def list_runs():
     for path in [p for p in _headers if p not in seen]:
         del _headers[path]
     runs.sort(key=lambda r: r['mtime'], reverse=True)
-    return runs
+    return runs, key.hexdigest()
+
+
+def list_runs():
+    """Every runs/<name>/replays folder with its replays, newest first."""
+    return scan_replays()[0]
+
+
+def listing_body():
+    """
+    The bytes /api/runs answers with, built again only when a replay appeared, went, or was written over. The scan
+    itself happens every time, since that is how a file that changed is noticed at all; it is only the megabytes after
+    it that are kept.
+    """
+    runs, key = scan_replays()
+    if key != _listing['key']:
+        _listing['body'] = json.dumps({'runs': runs}, separators=(',', ':')).encode('utf-8')
+        _listing['key'] = key
+    return _listing['body']
 
 
 def plain_name(part):
@@ -234,9 +291,12 @@ FIGHT_FIELDS = ('iteration', 'kind', 'opponent', 'loadout', 'opponent_loadout', 
                 'finish', 'weapon', 'swaps', 'uses', 'shots', 'replay')
 WON = {'win': 'wins', 'loss': 'losses', 'timeout': 'timeouts', 'draw': 'draws'}
 
-# Recorded fights kept per run, newest last, for linking a row to a fight of that very matchup. A long run records
-# thousands; these are only names, and the page wants the recent ones.
-RECORDED_LIMIT = 4000
+# Recorded fights kept per run, newest last: what a row is linked to a fight of that very matchup by, and what the
+# replay list reads a replay's opponent and loadout from. High enough to hold every replay a run has on disk, because
+# one it drops is a replay the page can then say nothing about: a run recording one fight in 200 writes about 8,000 in
+# two million fights, and the longest run on this machine had 7,875 on disk against a limit of 4,000 — half of them
+# silently unlabelled. These are a name and six short strings each, a couple of megabytes at this size.
+RECORDED_LIMIT = 20000
 
 # How many bytes of per-fight records are read in one go, so that a first read of a quarter of a million fights does not
 # hold the whole file in memory twice over.
@@ -335,9 +395,14 @@ class Fights:
         self.overall = {'train': bucket(), 'eval': bucket()}
         self.opponents = {}     # opponent -> [fights, wins], over every fight of the run
         self.loadouts = {}      # loadout  -> [fights, wins]
+        self.sites = {}         # site     -> [fights, wins]: the kind of ground it was fought on
         self.cells = {}         # 'opponent\tloadout' -> [fights, wins]: the win rate by loadout and opponent
         self.models = {}        # iteration -> one evaluated checkpoint's own numbers
-        self.recorded = collections.deque(maxlen=RECORDED_LIMIT)
+        # Replay file name -> what that fight was, in the order the workers wrote them. A dict rather than a list
+        # because both readers want it by name: the league page to link a row to the fights of its own matchup, the
+        # replay list to say which opponent and loadout a file on disk holds.
+        self.recorded = {}
+        self.named = 0          # fights that named a replay, including any dropped at RECORDED_LIMIT
 
     def refresh(self):
         """Reads whatever the workers have appended since the last look."""
@@ -390,6 +455,7 @@ class Fights:
         count(self.overall[fight['kind']], fight)
         won(self.opponents.setdefault(fight['opponent'], [0, 0]), fight['outcome'])
         won(self.loadouts.setdefault(fight['loadout'], [0, 0]), fight['outcome'])
+        won(self.sites.setdefault(fight['site'] or '-', [0, 0]), fight['outcome'])
         won(self.cells.setdefault(fight['opponent'] + '\t' + fight['loadout'], [0, 0]), fight['outcome'])
 
         if fight['kind'] == 'eval':
@@ -401,10 +467,35 @@ class Fights:
             won(model['opponents'].setdefault(fight['opponent'], [0, 0]), fight['outcome'])
             won(model['loadouts'].setdefault(fight['loadout'], [0, 0]), fight['outcome'])
 
-        if fight['replay'] and fight['replay'] != '-':
-            self.recorded.append({'file': fight['replay'], 'iteration': fight['iteration'], 'kind': fight['kind'],
-                                  'opponent': fight['opponent'], 'loadout': fight['loadout'],
-                                  'outcome': fight['outcome'], 'ticks': fight['ticks'], 'site': fight['site']})
+        # Only a plain replay name, never a path: a record is a file the game wrote, but what it says ends up in a page.
+        if fight['replay'] not in ('', '-') and plain_name(fight['replay']) and is_replay_name(fight['replay']):
+            self.named += 1
+            self.recorded[fight['replay']] = {
+                'file': fight['replay'], 'iteration': fight['iteration'], 'kind': fight['kind'],
+                'opponent': fight['opponent'], 'loadout': fight['loadout'], 'outcome': fight['outcome'],
+                'ticks': fight['ticks'], 'site': fight['site'], 'cause': fight['cause']}
+            # A resumed run numbers its replays on from the last one in the folder, so a name never comes round twice
+            # and the oldest entry is the oldest recording. Dropping it loses only the label on a file still on disk.
+            while len(self.recorded) > RECORDED_LIMIT:
+                self.recorded.pop(next(iter(self.recorded)))
+
+    def on_disk(self, replays):
+        """
+        The recorded fights whose replay is really on disk, oldest first, since a name is written down in the records
+        before the file itself is finished, and replays are deleted from the list without the records changing.
+        """
+        kept = set(replays)
+        return [one for one in self.recorded.values() if one['file'] in kept]
+
+    def recording(self, present):
+        """
+        How much of this run was recorded at all, which is what makes an empty row readable: a matchup with no replay is
+        not a page that lost them but a run that recorded one fight in -ReplayEvery per worker and none of them this one.
+        Takes what on_disk already worked out, since both pages want the list as well as the count.
+        """
+        fought = self.overall['train']['fights'] + self.overall['eval']['fights']
+        return {'fights': fought, 'named': self.named, 'labelled': len(self.recorded), 'on_disk': len(present),
+                'every': replay_stride(self.recorded)}
 
     def summary(self, model=None, replays=()):
         """
@@ -414,7 +505,6 @@ class Fights:
         A row carries the weapon and the death a model saw most rather than every one of them, because the whole of those
         for every checkpoint of a long run is most of a megabyte and the page shows one model's at a time.
         """
-        kept = set(replays)
         models = []
         for one in sorted(self.models.values(), key=lambda one: one['iteration']):
             row = {name: value for name, value in one['own'].items() if name not in ('weapons', 'causes')}
@@ -423,14 +513,17 @@ class Fights:
             row['death'] = most(one['own']['causes'])
             models.append(row)
         picked = self.models.get(model)
+        present = self.on_disk(replays)
         return {
             'overall': self.overall,
             'opponents': self.opponents,
             'loadouts': self.loadouts,
+            'sites': self.sites,
             'cells': self.cells,
             'models': models,
             'model': picked,
-            'recorded': [one for one in self.recorded if one['file'] in kept],
+            'recorded': present,
+            'recording': self.recording(present),
         }
 
 
@@ -483,8 +576,27 @@ def league(run, model=None):
         'tables': tables,
         'eval': evaluations,
         'fights': league_fights(run, folder).summary(model, names),
-        'replays': sorted(names),
     }
+
+
+def matchups(run):
+    """
+    What each replay of a run was a fight of, for the replay list: the opponent, the loadout, the kind of ground and what
+    killed the agent, by file name. None of that is in a replay's first few hundred bytes — the opponent sits in
+    "entities" behind the site's blocks — but the run's per-fight records have it a line a fight, already added up here
+    for the league page and read on from where they got to on every look.
+
+    Only the files that are really on disk, so the list gets an entry for everything it shows and nothing more. A run
+    without a league says so instead: those replays keep to what their own headers hold.
+    """
+    folder = league_folder(run)
+    if folder is None:
+        return {'run': run, 'league': False, 'fights': {}, 'recording': None}
+    names = {entry['file'] for entry in list_replays(run)}
+    fights = league_fights(run, folder)
+    present = fights.on_disk(names)
+    return {'run': run, 'league': True, 'fights': {one['file']: one for one in present},
+            'recording': fights.recording(present)}
 
 
 def list_replays(run):
@@ -568,6 +680,19 @@ class Textures:
         return sorted(n[len(prefix):-4] for n in self.zip.namelist() if n.startswith(prefix) and n.endswith('.png')
                       and '/' not in n[len(prefix):])
 
+    def entities(self):
+        """
+        Every entity texture in the jar, as paths under textures/entity, for the same reason the block names are served:
+        so the page asks for what is there rather than trying its luck. Vanilla files a mob's texture by family as often
+        as by its own name — a cave spider under spider/, a zoglin under hoglin/, every illager under illager/ — so a page
+        that guesses entity/<id>/<id> and entity/<id> misses once for every mob of the older convention and finds nothing
+        at all for the rest. Those misses were the "No such texture" lines in this server's log.
+        """
+        if not self.zip:
+            return []
+        prefix = 'assets/minecraft/textures/entity/'
+        return sorted(n[len(prefix):-4] for n in self.zip.namelist() if n.startswith(prefix) and n.endswith('.png'))
+
     def describe(self):
         if not self.zip:
             return {'minecraft': False, 'agent': AGENT_SKIN.is_file()}
@@ -630,23 +755,31 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_error(404, 'No league in that run')
             else:
                 self.send_json(standings)
+        elif path.startswith('/api/matchups/') and path.count('/') == 3:
+            self.send_json(matchups(path.split('/')[3]), etag=True)
         elif path == '/api/ping':
             self.send_json({'app': APP, 'version': VERSION, 'root': str(ROOT), 'pid': os.getpid(), 'textures': TEXTURES.describe()})
         elif path == '/api/blocks':
             self.send_json({'textures': TEXTURES.blocks()})
+        elif path == '/api/entities':
+            self.send_json({'textures': TEXTURES.entities()})
         elif path.startswith('/mc/'):
-            body = TEXTURES.read(path[len('/mc/'):])
+            wanted = path[len('/mc/'):]
+            body = TEXTURES.read(wanted)
             if body is None:
-                self.send_error(404, 'No such texture')
+                # Named, because the page now asks only for textures /api/blocks and /api/entities said are there: a miss
+                # is a mapping the page got wrong, and a bare "No such texture" in the log said nothing about which.
+                self.send_error(404, 'No such texture in the Minecraft jar: %s' % wanted[:200])
             else:
                 self.send_bytes(body, 'image/png', {'Cache-Control': 'max-age=3600'})
         elif path == '/skin/agent.png':
             if AGENT_SKIN.is_file():
                 self.send_file(AGENT_SKIN, 'image/png')
             else:
-                self.send_error(404, 'No agent skin')
+                self.send_error(404, 'No agent skin at %s' % AGENT_SKIN)
         elif path == '/api/runs':
-            self.send_json({'runs': list_runs()}, etag=True)
+            # The one answer that is kept between requests: see listing_body.
+            self.send_json_bytes(listing_body(), etag=True)
         elif path.startswith('/api/replay/') and path.count('/') == 4:
             _, _, _, run, file = path.split('/')
             file_path = replay_path(run, file)
@@ -701,7 +834,9 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def send_json(self, value, etag=False):
-        body = json.dumps(value, separators=(',', ':')).encode('utf-8')
+        self.send_json_bytes(json.dumps(value, separators=(',', ':')).encode('utf-8'), etag)
+
+    def send_json_bytes(self, body, etag=False):
         if not etag:
             self.send_bytes(body, 'application/json')
             return
