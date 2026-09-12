@@ -3431,7 +3431,10 @@ function blockTextures(e, has) {
   const six = (down, up, side) => [down, up, side, side, side, side];
 
   if (kind === 'none') return null;
-  if (kind === 'fluid') { const lava = face(first('lava_still'), null); return lava && six(lava, lava, lava); }   // water is its own mesh
+  // Each fluid's own texture. Water is drawn as its own animated mesh and these faces are skipped when the site is built,
+  // so nothing on screen changes — but naming lava's texture for water was simply wrong, and every palette entry comes
+  // through here to build the atlas, so lava was being packed for every water block in the site.
+  if (kind === 'fluid') { const still = face(first(e.water ? 'water_still' : 'lava_still'), null); return still && six(still, still, still); }
   if (kind === 'cross' || kind === 'flat' || kind === 'faces') {
     let tex = n;
     if (p.half) tex = n + (p.half === 'upper' ? '_top' : '_bottom');
