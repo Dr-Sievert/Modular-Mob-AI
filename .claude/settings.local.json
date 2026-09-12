@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git merge *)",
+      "PowerShell($w='C:\\\\Users\\\\sbs\\\\GitHub\\\\Modular-Mob-AI\\\\.claude\\\\worktrees\\\\agent-a808e60a07c29bcfd'; git -C $w log --oneline -3; git -C $w status --short; Get-ChildItem $w\\\\trainer | Select-Object Name)"
+    ]
+  }
+}

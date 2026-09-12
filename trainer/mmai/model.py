@@ -13,6 +13,10 @@ never exported it has a memory of its own rather than a borrowed one, and inputs
 
 The observation normaliser lives on the actor, as buffers, because the game has to apply exactly the same transform. It
 is frozen during an update and refreshed afterwards from what the iteration actually saw.
+
+The auxiliary heads stay here too, and for the same reason as the critic: they are how the memory is given something
+dense to learn from, and the game has no use for a parameter that only ever predicted something. They are a module of
+their own rather than part of the actor, so what gets exported is unchanged by their existence.
 """
 
 from __future__ import annotations
@@ -370,6 +374,105 @@ class Critic(nn.Module):
         states, _ = self.gru(torch.relu(self.encoder(inputs)), hidden.unsqueeze(0).contiguous())
 
         return self.value(torch.relu(self.middle(states))).squeeze(-1), states
+
+
+def masked_mean(values: Tensor, mask: Tensor) -> Tensor:
+    """The mean of the values a mask allows, and zero where it allows none.
+
+    Written as a sum over a count rather than ``values[mask].mean()`` because the count can be zero -- a minibatch in
+    which nothing is known -- and the mean of nothing is a NaN that would take the whole update with it.
+    """
+
+    return (values * mask).sum() / mask.sum().clamp(min=1)
+
+
+class AuxiliaryHeads(nn.Module):
+    """What the actor's memory is asked to predict beside choosing an action. Never exported.
+
+    The GRU is trained by the policy gradient and by nothing else: one advantage per step, mostly noise, is the whole of
+    what its 128 numbers ever learn about what the fight is doing. The critic reads the memory as well, but the value loss
+    is deliberately kept from reaching the policy's features (see ``Trainer._learn``), so nothing it works out about the
+    fight arrives there either.
+
+    These heads let a dense signal in, as prediction rather than as value. Every target is already in the rows the game
+    wrote down, so none of them costs the game a thing:
+
+    - **what the body will be next tick**: the observation's own self block one step on, through the same normaliser the
+      input goes through. Velocity, the attack cooldown, hurt time, on the ground or not -- a memory that can say where its
+      own body is about to be has learned what the controls do, which is most of what a fighter needs. Copying the fields
+      that barely move is free and stops mattering as soon as the head learns it; what is left of the loss is carried by
+      the fields that actually move, which is why the value rather than the change is enough to ask for. The rest of the
+      observation is left out on purpose: the terrain grid is 405 of the humanoid's 770 numbers and hardly changes from
+      tick to tick, so predicting it is easy for the wrong reason.
+    - **what this step earns**: the same scaled reward the critic is fitted against. This is exactly the signal the wall
+      around the value loss keeps out, and a memory that knows a blow is about to land, or about to be taken, is the one
+      the policy wants to be built on.
+    - **whether the fight ends soon**, within a horizon the Trainer picks. A win pays a bonus for being quick and the clock
+      running out is scored as a loss, so telling a fight that is seconds from over from one that has just begun is worth
+      real reward, and the policy gradient teaches it only through the outcome.
+
+    One shared layer over the memory and a linear head each. Deliberately small: the work of being right should land on
+    the memory, which is the thing being shaped, and not on a predictor deep enough to do it alone.
+    """
+
+    def __init__(self, hidden: int, state_size: int, width: int) -> None:
+        """:param state_size: how wide the body's own block is, or zero for a body that has no such block at all"""
+        super().__init__()
+
+        self.shared = nn.Linear(hidden, width)
+        self.state = nn.Linear(width, state_size) if state_size > 0 else None
+        self.reward = nn.Linear(width, 1)
+        self.ending = nn.Linear(width, 1)
+
+        nn.init.orthogonal_(self.shared.weight, gain=2**0.5)
+        nn.init.zeros_(self.shared.bias)
+
+        for head in (self.state, self.reward, self.ending):
+            if head is not None:
+                nn.init.orthogonal_(head.weight, gain=1.0)
+                nn.init.zeros_(head.bias)
+
+    def forward(self, memory: Tensor) -> tuple[Tensor | None, Tensor, Tensor]:
+        """
+        :param memory: the actor's GRU output, ``(batch, time, hidden)``, after the recurrence and before the policy's
+            own layers, so that what this shapes is the memory itself
+        :returns: the next body block (or None for a body without one), what the step earns, and the logit of the fight
+            ending soon
+        """
+
+        features = torch.relu(self.shared(memory))
+
+        return (
+            self.state(features) if self.state is not None else None,
+            self.reward(features).squeeze(-1),
+            self.ending(features).squeeze(-1),
+        )
+
+    def losses(self, memory: Tensor, state: Tensor | None, reward: Tensor, ending: Tensor, mask: Tensor,
+               ending_mask: Tensor) -> dict[str, Tensor]:
+        """One loss per head, named, each averaged over the steps its own mask allows.
+
+        The ending has a mask of its own because the answer is not always known: a segment cut off mid fight says nothing
+        about what happened after its last row. See ``Trainer._aux_targets``.
+        """
+
+        predicted_state, predicted_reward, predicted_ending = self(memory)
+        losses: dict[str, Tensor] = {}
+
+        if predicted_state is not None and state is not None:
+            losses["state"] = masked_mean(((predicted_state - state) ** 2).mean(-1), mask)
+
+        losses["reward"] = masked_mean((predicted_reward - reward) ** 2, mask)
+        losses["ending"] = masked_mean(
+            nn.functional.binary_cross_entropy_with_logits(predicted_ending, ending, reduction="none"), ending_mask
+        )
+
+        return losses
+
+    def describe(self) -> str:
+        state = [f"the body's own {self.state.out_features} numbers a tick on"] if self.state is not None else []
+
+        return ", ".join(state + ["what the step earns", "whether the fight ends soon"])
 
 
 class RunningNormalizer:
