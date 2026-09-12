@@ -101,6 +101,12 @@ it costs a player and only the gaps between them are forgiven. Looking somewhere
 agent could break nothing at all, and so could not dig out of powder snow or a cobweb whatever the teacher showed it.
 `AgentMob#continueDestroying`.
 
+Letting a cracking block go comes with the same decision: a player's client restarts the attack cooldown there and the
+agent's does not (`AgentMob#stopDestroyBlock`), because a swing that meets a block costing nothing is what every trained
+network fights by. It is the reason a press pointed at a block is completely free, which is the whole of why the agent
+holds attack down on stretches of a hundred ticks and more; putting the rule back would take a fifth off the damage of
+every blow those networks land. See [findings.md](findings.md#learning) for the measurement.
+
 **Shots in the enemy slots** (`EnemySlots`): a slot can hold an arrow, a bolt, a wind charge or any other projectile on
 its way to the agent, with a `kind` of its own below zero and its health, hands, swing and use left at zero, since an
 arrow has none of those. Two rules keep that from spoiling what a slot means:

@@ -290,6 +290,74 @@ are deliberate.
 
 ## Learning
 
+- **The agent holds attack down for hundreds of ticks because a press at a block is the one press that costs nothing,
+  and because it is doing it in fights it cannot win.** Measured over 796 recorded league768 fights, 284,000 ticks,
+  sampled evenly over the run and joined to the league's own records so the sampled training fights and the deterministic
+  evaluation ones could be told apart. Attack was down on 13.0% of ticks in runs averaging 4.05 ticks, the longest 1,763,
+  which is most of a 2,400-tick fight. Where the presses were pointed, worked out by casting the ray the body's own swing
+  casts through the blocks the replay recorded:
+
+  | What the swing's own ray met first | Share of presses |
+  | --- | --- |
+  | a solid block | 33.9% |
+  | a solid block, looking down: digging | 16.9% |
+  | thin air | 20.6% |
+  | a plant | 13.3% |
+  | the opponent | 11.2% |
+  | a plant, looking down | 4.1% |
+
+  So **half the presses meet a block**, which costs no cooldown, misses nothing and starts a crack that only a held
+  button finishes, and only a fifth meet thin air, which is the one kind of press that costs anything at all when there is
+  nobody to hit. The cost of a wasted press does not arrive twenty ticks later; for half of them it never arrives.
+  - **The longer the run, the more certainly it is pointed at a block.** By run length, the share of a run's ticks whose
+    ray met a solid block: 23% for a run of one tick, 47% for two, 59% for three or four, 65% for five to seven, and
+    **75 to 78% from eight ticks up**. The share on the opponent goes the other way: 47%, 22%, 16%, 8%, 4%, 2%, 0.5%,
+    0.2%. A long run is not a fighter spamming its sword; it is a body mining.
+  - **Nearly half the ticks in the replay folder are fights that timed out**, because a win averages 204 ticks and a timeout
+    2,025, while every 200th fight of a worker is recorded whatever its length. Grouped by how the fight ended: a win
+    pressed attack on 12.0% of ticks with 24.4% of them on the opponent and runs averaging 2.35; a loss 12.6%, 15.8%,
+    2.76; **a timeout 14.0%, 0.7% on the opponent, runs averaging 11.5** with 87% of its press ticks inside a run of
+    eight or more. Anyone scrolling replays is mostly watching stalls, so the behaviour looks far more common than it is.
+  - **Against something it can never reach it gives up fighting and digs.** In the 26 deterministic fights of the sample
+    where the opponent was never once within reach — a ghast, a phantom, a breeze — attack was down on 20.4% of ticks in
+    runs averaging **39.5**, 46% of the presses into a solid block while looking down, and 97% of the press ticks inside
+    a run of eight or more. Elsewhere in the sample a fight against a phantom dug 28 blocks straight down while it
+    circled overhead, and 3.4% of all fights broke ground the agent then stood inside, up to 21 cells of it. The reward
+    pays for that: the fight is a timeout either way, and a hole takes the damage away. It also means a site's ground no
+    longer keeps its word that "fights leave the ground as they found it" (`TerrainSites`) — a site hosts a hundred
+    fights, and nothing puts back what a fight dug out.
+  - **It is not the sampler.** An evaluation fight plays the most likely action, and the stretches are still there: in
+    ordinary reachable fights the deterministic policy pressed attack on 10.6% of ticks against the learner's 12.9%,
+    with 24.4% on the opponent against 13.6%, and still put 43.6% of its press ticks inside a run of eight or more. What
+    the sampler adds is the noise at the short end and a fifth again as many presses, badly aimed; what it does not do is
+    create a run of forty. Every run-length bucket is far above what a memoryless presser at the same rate would give (a
+    run of 3 to 4 ticks: 10.9% of runs against 1.7%), and a press is followed by another 76% of the time against 4%
+    after a tick with none.
+  - **It is costing very little damage, which is why nothing has ever shown it.** Read straight off the opponent's
+    health column, the blows that landed carried a mean **0.957 of the weapon's damage**, 80% of them over 0.9 and only
+    7.3% under a half, and the median gap between one landed blow and the next was 15 ticks against a sword's 12.5-tick
+    cooldown. The same blows reconstructed from the swing history agree at 0.951, which is what says the block reading
+    above is right.
+  - **A policy that has learned the fight does not do it.** vs-copy, 223 recorded fights: attack on 6.1% of ticks,
+    80.4% of presses on the opponent, 98% of runs one tick long, the longest 14, and 1.2 swings per landed blow. The
+    league runs spend 10.3. Spamming is a symptom of not knowing what to do, not a strategy the reward pays for.
+  - **What would actually make it expensive is a rule the body leaves out on purpose.** A player's client restarts the
+    attack cooldown when it lets go of a block it was breaking (`MultiPlayerGameMode#stopDestroyBlock`);
+    `AgentMob#stopDestroyBlock` does not, and says why. Simulated over the same fights, that rule would have fired 2.8
+    times per 100 ticks, and the blows that landed would have carried **0.772 of the weapon instead of 0.951** — a fifth
+    of the damage of every network already trained, on the tick it needs it. So it is a change to the sword fight, not to
+    breaking blocks, exactly as the comment says.
+  - `aSwingAtAirCostsTheCooldownAndOneAtABlockDoesNot` and `holdingAttackTakesLessHealthThanWaitingForTheCooldown` pin
+    both halves of the arithmetic in the mechanics suite, so the reading above cannot go stale unnoticed.
+  - What is worth doing about it, in order: **the aim, not the button.** A press lands on the opponent 14% of the time
+    in training and 24% deployed; the button is not the thing that is wrong. And the fights that produce the stretches
+    are the ones with nothing to reach, so the league's real problem there is that a melee loadout against a flyer is an
+    unwinnable draw taking 2,400 ticks of every worker's time.
+  - The measurement is replays only, and two things about it are worth knowing before it is repeated. A replay records
+    the site's blocks once, as the fight starts, so a plant the agent has since cleared still reads as standing: the
+    "on the opponent" shares are a floor and the plant shares a ceiling (letting plants through raises on target from
+    11.2% to 13.8%). And every group figure here is weighted by ticks, which is why the timeouts dominate; the outcome
+    table above is the one to read if that is not wanted.
 - **A network never learns what the teacher never did.** Seeded from a copy of a teacher that only ever swung, the first
   league run held use on 0 of 79,724 ticks over its last 400 fights and fired no arrows at all. PPO only improves what it
   samples, and a bow pays nothing until twenty ticks of held use have gone by, so no amount of exploration finds one. The
