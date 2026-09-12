@@ -237,6 +237,11 @@ afterEvaluate {
     // edge: -PleagueHazards=0.25, and 0 for none at all. A quarter unless told otherwise; see League.
     runTask.systemProperty('modular_mob_ai.league.hazards', providers.gradleProperty('leagueHazards').getOrElse(''))
 
+    // Whether a fight that asked for such ground and was handed flat ground gets a pool of lava poured beside it for that
+    // fight, put back when it ends: -PpourHazards=false turns it off. On by default, because the overworld surface has
+    // almost no lava and two per cent of fights is too rare to learn the best blow in the game from; see PouredHazards.
+    runTask.systemProperty('modular_mob_ai.gametest.pourHazards', providers.gradleProperty('pourHazards').getOrElse(''))
+
     // Where the fight sites come from, as a seed: the same number puts every worker on the same ground, which is what
     // comparing two builds needs, because one round in a forest and the next in the mountains differ by more than most
     // changes do. Zero, the default, lets every worker pick somewhere new. Measured with it pinned, two rounds of 24,000

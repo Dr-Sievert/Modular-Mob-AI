@@ -232,6 +232,16 @@ public final class TerrainSites {
      */
     private static final SiteHazards.Kind[] kinds = new SiteHazards.Kind[COUNT];
 
+    /**
+     * The lava poured onto each site for the fight it is holding, and null for a site with none: see
+     * {@link PouredHazards}. Kept per site rather than in the {@link Site} handed out, because taking it away again is
+     * {@link #release}'s business and a site is what release has.
+     */
+    private static final PouredHazards.Pool[] poured = new PouredHazards.Pool[COUNT];
+
+    /** Whether a fight that wants hazardous ground and finds none may have some poured for it. */
+    private static boolean pouring = GameTestTuning.pourHazards();
+
     /** Points of the lattice asked for as spares, in order, and whether each is loaded yet. */
     private static final int[] spares = new int[SPARES];
     private static final boolean[] spareReady = new boolean[SPARES];
@@ -613,7 +623,11 @@ public final class TerrainSites {
                     if (site != null) {
 
                         inUse[index] = true;
-                        return site;
+
+                        // Ground that was asked for something to push an opponent into and has nothing gets a pool poured
+                        // beside it, taken away again in release. The site is then recorded as lava, which is what the
+                        // fight was actually fought on.
+                        return pass == 1 && hazards && pouring && !kind.hazardous() ? pour(level, site, random) : site;
                     }
                 }
 
@@ -626,6 +640,29 @@ public final class TerrainSites {
         }
 
         return null;
+    }
+
+    /**
+     * Pours a pool of lava between the fighters, and hands back the site as a lava site. Where there is nowhere to put one
+     * the site is handed back untouched: a fight on flat ground is still the fight, and waiting for better ground would
+     * only starve the hazard share.
+     */
+    private static Site pour(ServerLevel level, Site site, RandomSource random) {
+
+        List<BlockPos> standing = new ArrayList<>(site.opponents());
+        standing.add(site.agent());
+
+        BlockPos middle = BlockPos.containing(site.agent().getCenter().add(site.opponent().getCenter()).scale(0.5D));
+        PouredHazards.Pool pool = PouredHazards.pour(level, middle, standing, random);
+
+        if (pool == null) {
+
+            return site;
+        }
+
+        poured[site.index()] = pool;
+
+        return new Site(site.index(), site.agent(), site.opponents(), site.bounds(), SiteHazards.Kind.LAVA);
     }
 
     /** What is on a site, worked out once and kept until the site moves on. */
@@ -658,6 +695,14 @@ public final class TerrainSites {
         sweep(level, site.bounds().inflate(8.0D));
 
         int index = site.index();
+
+        // The ground goes back before the next fight is given this site, pool and everything the pool set alight.
+        if (poured[index] != null) {
+
+            PouredHazards.drain(level, poured[index]);
+            poured[index] = null;
+        }
+
         inUse[index] = false;
         fights[index]++;
 

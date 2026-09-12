@@ -1,6 +1,8 @@
 package net.sievert.modularmobai.gametest.tests;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.IntPredicate;
 
 import org.jetbrains.annotations.Nullable;
@@ -16,6 +18,7 @@ import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
@@ -33,6 +36,7 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.FurnaceBlock;
 import net.minecraft.world.level.block.WallTorchBlock;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.sievert.modularmobai.arena.AgentReward;
@@ -49,6 +53,7 @@ import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 import net.sievert.modularmobai.entity.agent.MobControls;
 import net.sievert.modularmobai.gametest.GameTestGroup;
+import net.sievert.modularmobai.gametest.terrain.PouredHazards;
 
 /**
  * The agent's body against a player's rules, a rule or two to a test: bows, crossbows, shields and axes, what an item in
@@ -191,7 +196,7 @@ public class AgentMechanicsGameTest {
      * after it, and the arrow that leaves twenty ticks later is the same critical a held button would have sent.
      *
      * <p>This is the body's one deliberate departure from a player's hands, and it is what makes a drawn weapon learnable
-     * at all: see AgentMob#drawingToFull. Letting go is still the agent's, once the draw is full — which is what the shot
+     * at all: see AgentMob#drawingToFull. Letting go is still the agent's, once the draw is full â€” which is what the shot
      * above does, and why it can hold the aim before it looses.
      */
     @GameTest(template = ARENA, timeoutTicks = 100)
@@ -717,7 +722,7 @@ public class AgentMechanicsGameTest {
      * <p>A player's client throws the crack away the instant the button comes up. This is the deliberate difference, and
      * the reason is the same as the committed draw's: a network holds attack for eight ticks or more on about one hold in
      * twenty, so a crack it has to hold unbroken is a crack it can never finish, and every block it should dig itself out
-     * of — powder snow, a cobweb — stays where it is. See AgentMob#continueDestroying.
+     * of â€” powder snow, a cobweb â€” stays where it is. See AgentMob#continueDestroying.
      */
     @GameTest(template = ARENA, timeoutTicks = 100)
     public static void lettingGoKeepsTheBlocksProgress(GameTestHelper helper) {
@@ -1165,6 +1170,58 @@ public class AgentMechanicsGameTest {
 
             return false;
         });
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // Lava poured for a fight, and taken away again
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * A poured pool is nine blocks of lava, and every block of ground it touched is exactly as it was once it is drained.
+     * That second part is the one that matters: a site hosts a hundred fights and the ground under it is a hard-linked
+     * library shared between workers, so a pool left behind by one fight would still be there for the other ninety-nine, and
+     * the library would rot a pool at a time.
+     *
+     * <p>Where a pool goes is not checked here. That needs open ground with a heightmap that means something, and this
+     * arena is a closed bedrock box; the live run is what exercises the search. See {@link PouredHazards}.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 100)
+    public static void pouredLavaIsLavaAndLeavesNothingBehind(GameTestHelper helper) {
+
+        ServerLevel level = helper.getLevel();
+
+        // The floor of the arena, which is what a body in here stands on.
+        BlockPos ground = helper.absolutePos(new BlockPos(4, 1, 4));
+
+        // Everything the pool can reach: two blocks of margin either way, one below for the ground it makes solid, two
+        // above for the plants it clears.
+        AABB box = new AABB(ground.offset(-4, -3, -4)).minmax(new AABB(ground.offset(4, 4, 4)));
+        Map<BlockPos, BlockState> before = new HashMap<>();
+
+        BlockPos.betweenClosedStream(box).forEach(at -> before.put(at.immutable(), level.getBlockState(at)));
+
+        PouredHazards.Pool pool = PouredHazards.pourAt(level, ground);
+
+        int lava = 0;
+
+        for (BlockPos at : before.keySet()) {
+
+            lava += level.getBlockState(at).is(Blocks.LAVA) ? 1 : 0;
+        }
+
+        helper.assertValueEqual(lava, 9, "blocks of poured lava");
+
+        PouredHazards.drain(level, pool);
+
+        for (Map.Entry<BlockPos, BlockState> entry : before.entrySet()) {
+
+            BlockState now = level.getBlockState(entry.getKey());
+
+            helper.assertTrue(now == entry.getValue(), "Draining left " + now + " at " + entry.getKey()
+                    + " where there had been " + entry.getValue());
+        }
+
+        helper.succeed();
     }
 
     // ---------------------------------------------------------------------------------------------------------------
