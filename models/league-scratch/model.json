@@ -1,12 +1,12 @@
 {
     "run":  "league-scratch",
-    "published":  "2026-09-12T05:29:41+02:00",
-    "code":  "cc8fcc8",
-    "weights":  "best evaluated, iteration 4025",
-    "iteration":  4025,
-    "fights":  1015,
-    "won":  44,
-    "lost":  45.3,
-    "timed_out":  10.6,
+    "published":  "2026-09-12T06:09:02+02:00",
+    "code":  "ee87daa",
+    "weights":  "best evaluated, iteration 4450",
+    "iteration":  4450,
+    "fights":  1003,
+    "won":  53.3,
+    "lost":  37.8,
+    "timed_out":  8.9,
     "state":  true
 }
