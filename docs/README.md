@@ -6,6 +6,7 @@ Start with [architecture.md](architecture.md); the rest are how-tos.
 | --- | --- |
 | [architecture.md](architecture.md) | understand the system: mod and trainer, the tick loop, what the agent sees and controls, the network, the reward, the fights, the code layout, every file format |
 | [training.md](training.md) | train: the pipeline that works (teacher, imitation, PPO from the copy, evaluation), every script, parameter and trainer option, the run folder, the machine, troubleshooting |
+| [species.md](species.md) | give another body a brain: what a species is, the four files a new one takes, what the trainer and the parity check want, and how the wrong brain is refused |
 | [testing.md](testing.md) | check a change: the arena and mechanics suites, evaluation, the parity check, running and writing game tests |
 | [models.md](models.md) | find, publish and use the trained networks kept in git |
 | [playing.md](playing.md) | start the game with a model, spawn agents, give them loadouts and brains, set allies and enemies, every `/mmai` command, the config and the networks the jar carries |

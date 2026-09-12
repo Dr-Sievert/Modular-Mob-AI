@@ -31,6 +31,7 @@ import net.minecraft.world.scores.PlayerTeam;
 import net.sievert.modularmobai.allegiance.Allegiance;
 import net.sievert.modularmobai.arena.Loadout;
 import net.sievert.modularmobai.arena.Loadouts;
+import net.sievert.modularmobai.brain.AgentDriver;
 import net.sievert.modularmobai.brain.Brain;
 import net.sievert.modularmobai.brain.BrainStep;
 import net.sievert.modularmobai.brain.Brains;
@@ -38,10 +39,12 @@ import net.sievert.modularmobai.brain.Models;
 import net.sievert.modularmobai.brain.NeuralBrain;
 import net.sievert.modularmobai.brain.ScriptedBrain;
 import net.sievert.modularmobai.brain.schema.ActionSchema;
+import net.sievert.modularmobai.brain.schema.BeastSchema;
 import net.sievert.modularmobai.brain.schema.EnemySlots;
 import net.sievert.modularmobai.brain.schema.Species;
 import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.entity.agent.AgentMob;
+import net.sievert.modularmobai.entity.agent.BeastMob;
 import net.sievert.modularmobai.gametest.GameTestGroup;
 
 /**
@@ -140,6 +143,70 @@ public class PlayGameTest {
 
                 helper.assertFalse(agent.brain().enemySlots().isEmpty(), "The zombie never took a slot");
                 helper.assertTrue(agent.position().distanceTo(start[0]) > 0.3D, "The agent stood still with a zombie in view");
+                return true;
+            }
+
+            return false;
+        });
+    }
+
+    /**
+     * A second body, driven through the same plumbing as the first, and refused a brain that was not made for it.
+     *
+     * <p>The beast has no hands: no hotbar to see, no slot to choose, no use buttons, and so a narrower observation and a
+     * shorter action vector than the humanoid's. This is the whole of what that costs at the game's end — it is spawned,
+     * driven and it moves — and it is also where the refusal is proved, because a brain for the wrong body is the mistake
+     * that will be made and the one failure that would not look like one.
+     */
+    @GameTest(template = ARENA)
+    public static void aSecondBodyIsDrivenAndARefusedBrainIsNamed(GameTestHelper helper) {
+
+        BeastMob beast = helper.spawn(ModEntities.beastAgent(), new BlockPos(4, 2, 1));
+        face(beast, 0.0F);
+
+        helper.assertTrue(beast.species() == Species.BEAST, "The beast is not of its own species");
+        helper.assertTrue(beast.species().obsDim() < Species.HUMANOID.obsDim(),
+                "The beast should see less than the humanoid, having no hands");
+        helper.assertTrue(beast.species().schemaId() != Species.HUMANOID.schemaId(),
+                "Two bodies must not share a schema id, or either one's weights would drive the other");
+
+        // A humanoid brain on a beast: refused, by name, rather than handed an observation that means something else.
+        beast.brain().use(WALKER);
+
+        try {
+
+            AgentDriver.tick(helper.getLevel());
+            helper.fail("A humanoid's brain was allowed to drive a beast");
+        }
+
+        catch (IllegalStateException expected) {
+
+            helper.assertTrue(expected.getMessage().contains("humanoid") && expected.getMessage().contains("beast"),
+                    "The refusal has to name both bodies, and said: " + expected.getMessage());
+        }
+
+        // And its own brain drives it. Forward is forward whatever the body, so it should walk — once there is something in
+        // view, since an agent out in the world stands still with nobody to fight whatever its brain says, beast or not.
+        beast.brain().use(BEAST_WALKER);
+        helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new BlockPos(4, 2, 7));
+
+        Vec3[] start = new Vec3[1];
+
+        run(helper, tick -> {
+
+            if (tick == 10) {
+
+                start[0] = beast.position();
+                helper.assertFalse(beast.brain().enemySlots().isEmpty(),
+                        "The beast sees nothing, so the enemy slots every body shares are not being written for it");
+            }
+
+            if (tick == 35) {
+
+                helper.assertTrue(beast.position().distanceTo(start[0]) > 0.3D,
+                        "The beast never moved, so nothing is driving it");
+                helper.assertTrue(beast.executed().moveForward > 0.5F,
+                        "The beast's body never saw the forward the brain asked for");
                 return true;
             }
 
@@ -588,6 +655,27 @@ public class PlayGameTest {
         public void act(BrainStep step) {
 
             java.util.Arrays.fill(step.actions, 0, step.count * ActionSchema.ACT_DIM, 0.0F);
+        }
+    };
+
+    /** The same for the beast, in its own seven wide action vector: the whole of what a body's brain has to say. */
+    private static final Brain BEAST_WALKER = new Brain() {
+
+        @Override
+        public Species species() {
+
+            return Species.BEAST;
+        }
+
+        @Override
+        public void act(BrainStep step) {
+
+            java.util.Arrays.fill(step.actions, 0, step.count * BeastSchema.ACT_DIM, 0.0F);
+
+            for (int index = 0; index < step.count; index++) {
+
+                step.actions[index * BeastSchema.ACT_DIM + BeastSchema.MOVE_FORWARD] = 1.0F;
+            }
         }
     };
 

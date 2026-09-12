@@ -56,6 +56,9 @@ param(
     [int] $RolloutSteps = 16384,
     [ValidateSet('cuda', 'cpu')] [string] $Device = 'cuda',
     [ValidateSet('terrain', 'arena', 'league')] [string] $Suite = 'terrain',
+    # Which body to train. The humanoid is the player-shaped agent every trained network drives; see docs\species.md for
+    # what another one takes. A run cannot change body part way through: its shards would be of something else.
+    [string] $Species = 'humanoid',
     [int] $ReplayEvery = 200,
 
     # For a run that starts from a copy of the scripted fighter. Twice reinforcement learning made such a copy worse: a
@@ -269,6 +272,7 @@ $arguments = (@(
     ':fabric:runTraining',
     "-Prun=$Run",
     "-Psuite=$Suite",
+    "-Pspecies=$Species",
     "-Pbattles=$Battles",
     "-Parenas=$RoundSize",
     '-Prounds=0',

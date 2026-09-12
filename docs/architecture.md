@@ -47,7 +47,8 @@ crosshair within reach, as for a player.
 This is the **humanoid**'s observation, the player-shaped body every trained network drives. A layout belongs to a body
 rather than to the game: a body with no hands has no hotbar to see, no slot to choose and no use buttons to press, and no
 amount of masking makes those inputs mean anything. `brain/schema/Species.java` is what the rest of the game asks how wide
-an observation is, and the humanoid's answer is the table below. See "Adding a species" for how to write another.
+an observation is, and the humanoid's answer is the table below. The second body, the **beast**, has no hands: 612 floats,
+seven controls and no categorical head at all. See [species.md](species.md) for how to write a third.
 
 | Block | Size | Contents |
 | --- | --- | --- |
@@ -255,8 +256,8 @@ mod/                    the Gradle build (MultiLoader: common + fabric + neoforg
   common/src/main/java/net/sievert/modularmobai/
     entity/agent/         the agent: body, controls, the record of what executed, item and block rules
     brain/                the driver, the batch, the brains (scripted, neural, demonstration) and the training link
-    brain/schema/         what an agent sees and does: Species (a body's layout), the humanoid's own tables and encoder,
-                          enemy slots
+    brain/schema/         what an agent sees and does: Species (a body's layout), the humanoid's and the beast's own
+                          tables and encoders, enemy slots
     brain/nn/             the network runtime in plain Java: topology, weight file, forward pass, heads, rollout writer
     arena/                a fight someone set up: loadouts, the reward, what the agent may see
     allegiance/           sides: vanilla teams, the agent's enemy rule, mobs going after other teams (see playing.md)

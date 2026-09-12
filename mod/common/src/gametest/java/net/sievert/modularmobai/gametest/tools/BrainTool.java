@@ -23,6 +23,8 @@ import net.sievert.modularmobai.brain.schema.Species;
  *                             builds a network from
  *   parity &lt;dir&gt;              checks this build's forward pass against PyTorch's, on weights and inputs it generated,
  *                             for whichever body the fixture's weights say they are for
+ *   species                   every body this build has, one a line, so the parity check can go round all of them
+ *                             without the build keeping its own list
  * </pre>
  *
  * <p>Nothing here touches the game, so it runs as a plain Java program in a second rather than booting a server.
@@ -46,9 +48,16 @@ public final class BrainTool {
 
     public static void main(String[] arguments) throws IOException {
 
+        // The one command that needs no argument: what bodies are there?
+        if (arguments.length == 1 && arguments[0].equals("species")) {
+
+            Species.ALL.forEach(species -> System.out.println(species.name()));
+            return;
+        }
+
         if (arguments.length < 2) {
 
-            System.err.println("usage: BrainTool schema <species> <file> | parity <dir>");
+            System.err.println("usage: BrainTool schema <species> <file> | parity <dir> | species");
             System.exit(2);
             return;
         }

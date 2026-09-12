@@ -23,7 +23,7 @@ import net.sievert.modularmobai.entity.agent.MobControls;
  *
  * <p>What is shared is shared by composition rather than by inheritance: the enemy slots, the terrain grid and the echo of
  * what the body actually did are written by helpers any species can use, and a species picks the ones its body has. See
- * {@code docs/architecture.md}, "Adding a species", for the steps.
+ * {@code docs/species.md} for the steps.
  *
  * <h2>The identity of a schema</h2>
  *
@@ -35,10 +35,13 @@ import net.sievert.modularmobai.entity.agent.MobControls;
  */
 public interface Species {
 
-    /** The only body there is so far: the player-shaped agent, which is what every trained network drives. */
+    /** The player-shaped agent, which is what every trained network drives. */
     Species HUMANOID = new Humanoid();
 
-    List<Species> ALL = List.of(HUMANOID);
+    /** A body with no hands: the second one, and the proof that a body is a thing this can have more than one of. */
+    Species BEAST = new Beast();
+
+    List<Species> ALL = List.of(HUMANOID, BEAST);
 
     /** As it appears in a schema, a weight file and a log. Lower case, no spaces, and never changed once published. */
     String name();

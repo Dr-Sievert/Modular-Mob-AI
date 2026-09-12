@@ -38,9 +38,17 @@ public class ModularMobAiMod implements ModInitializer {
                 ModEntities.TRAINING_AGENT_BUILDER.build(ModEntities.TRAINING_AGENT_ID.toString())
         ));
 
-        // The same attributes for both: a network trained against one has to find the same body in the other.
+        ModEntities.setBeastAgent(Registry.register(
+                BuiltInRegistries.ENTITY_TYPE,
+                ModEntities.BEAST_AGENT_ID,
+                ModEntities.BEAST_AGENT_BUILDER.build(ModEntities.BEAST_AGENT_ID.toString())
+        ));
+
+        // The same attributes for all of them: a network trained against one humanoid has to find the same body in the
+        // other, and the beast differs in what it may be asked to do rather than in what its body is.
         FabricDefaultAttributeRegistry.register(ModEntities.agentMob(), AgentMob.createAttributes());
         FabricDefaultAttributeRegistry.register(ModEntities.trainingAgent(), AgentMob.createAttributes());
+        FabricDefaultAttributeRegistry.register(ModEntities.beastAgent(), AgentMob.createAttributes());
 
         // Only the shipped one gets an egg. The training one is spawned by arenas and nothing else.
         ModItems.setAgentMobSpawnEgg(Registry.register(

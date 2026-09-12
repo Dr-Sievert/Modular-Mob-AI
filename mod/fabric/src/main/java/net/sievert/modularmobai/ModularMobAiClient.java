@@ -12,5 +12,8 @@ public class ModularMobAiClient implements ClientModInitializer {
 
         EntityRendererRegistry.register(ModEntities.agentMob(), AgentMobRenderer::new);
         EntityRendererRegistry.register(ModEntities.trainingAgent(), AgentMobRenderer::new);
+
+        // The beast borrows the humanoid's renderer, since it borrows its model: it is a proof, not a mob to meet.
+        EntityRendererRegistry.register(ModEntities.beastAgent(), AgentMobRenderer::new);
     }
 }

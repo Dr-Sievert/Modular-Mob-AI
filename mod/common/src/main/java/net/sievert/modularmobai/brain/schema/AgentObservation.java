@@ -31,7 +31,14 @@ import net.sievert.modularmobai.entity.agent.ExecutedControls;
 import net.sievert.modularmobai.entity.agent.MobControls;
 
 /**
- * Fills the flat observation vector for one agent.
+ * Fills the flat observation vector for one agent, and holds the parts of it that every body shares.
+ *
+ * <p>{@link #write} is the <b>humanoid</b>'s arrangement: its self block, its hotbar, its echo, and then the two blocks
+ * below. {@link #writeEnemies} and {@link #writeTerrain} are every body's, and take the offset their block sits at, so a
+ * second body writes them wherever its own layout puts them. What a slot or a hand holds, what an enemy is, and what a
+ * terrain cell means are shared for the same reason: an opponent and a block of ground look the same whoever is looking at
+ * them, and two bodies disagreeing about what a hazard is would be a bug nobody could see. Only the shape of a body — what
+ * it has, what it can do, and where each block sits — belongs to a species. See {@link Species}.
  *
  * <p>Everything about other entities is written in the agent's own frame, so an opponent two blocks ahead reads the same
  * whether the fight is happening facing north or facing south. The terrain grid is the exception and stays aligned to
@@ -44,12 +51,12 @@ public final class AgentObservation {
 
     private AgentObservation() {}
 
-    private static final float DEGREES_TO_RADIANS = (float) (Math.PI / 180.0D);
+    static final float DEGREES_TO_RADIANS = (float) (Math.PI / 180.0D);
 
-    /** A block a tick is far faster than anything moves, so this keeps velocities near the unit range. */
-    private static final double VELOCITY_SCALE = 0.5D;
+    /** A block a tick is far faster than anything moves, so this keeps velocities near the unit range. Every body's. */
+    static final double VELOCITY_SCALE = 0.5D;
 
-    private static final float MAX_FALL_DISTANCE = 20.0F;
+    static final float MAX_FALL_DISTANCE = 20.0F;
 
     /** What a terrain cell holds: see {@link #writeTerrain} and {@link #cell}. */
     public static final float EMPTY = 0.0F;
@@ -66,6 +73,8 @@ public final class AgentObservation {
     private static final BlockPos.MutableBlockPos SCRATCH = new BlockPos.MutableBlockPos();
 
     /**
+     * The humanoid's row, block by block in the order its layout puts them.
+     *
      * @param out  the destination buffer, which may hold a whole batch
      * @param base where this agent's row starts in that buffer
      */
@@ -80,8 +89,19 @@ public final class AgentObservation {
         writeSelf(agent, slots, out, base, sin, cos);
         writeHotbar(agent, out, base);
         writeEcho(agent.executed(), out, base);
-        writeEnemies(agent, slots, out, base, sin, cos);
-        writeTerrain(agent, out, base);
+        writeEnemies(agent, slots, out, base + ObservationSchema.ENEMY_OFFSET, sin, cos);
+        writeTerrain(agent, out, base + ObservationSchema.TERRAIN_OFFSET);
+    }
+
+    /** The way the agent is looking, as the sine and cosine every frame conversion below needs. */
+    static float yawSin(AgentMob agent) {
+
+        return Mth.sin(agent.getYRot() * DEGREES_TO_RADIANS);
+    }
+
+    static float yawCos(AgentMob agent) {
+
+        return Mth.cos(agent.getYRot() * DEGREES_TO_RADIANS);
     }
 
     // -----------------------------------------------------------------------------------------------------------
@@ -158,7 +178,14 @@ public final class AgentObservation {
         out[at + 19] = echo.useProgress;
     }
 
-    private static void writeEnemies(AgentMob agent, EnemySlots slots, float[] out, int base, float sin, float cos) {
+    /**
+     * Every body's enemy block: ten slots of eighteen, each an opponent or something shot at the agent, in the agent's own
+     * frame. The block's shape is shared because an opponent looks the same whoever is looking at it; what a species
+     * chooses is whether it has one and where it sits.
+     *
+     * @param block where this body's enemy block starts in the row, not where the row starts
+     */
+    static void writeEnemies(AgentMob agent, EnemySlots slots, float[] out, int block, float sin, float cos) {
 
         Vec3 eye = agent.getEyePosition();
 
@@ -172,7 +199,7 @@ public final class AgentObservation {
                 continue;
             }
 
-            int at = base + ObservationSchema.enemyOffset(slot);
+            int at = block + slot * ObservationSchema.ENEMY_STRIDE;
 
             Vec3 delta = enemy.getEyePosition().subtract(eye);
             double distance = Math.sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
@@ -215,7 +242,11 @@ public final class AgentObservation {
     }
 
     /**
-     * The single most expensive thing an agent does, so it is written to keep the work down rather than to read nicely.
+     * Every body's terrain grid: the blocks around the agent, aligned to the world rather than to the aim. Shared, because
+     * ground is ground whoever is standing on it, and two bodies disagreeing about what a hazard is would be a bug nobody
+     * could see. {@code block} is where this body's grid starts in the row, not where the row starts.
+     *
+     * <p>The single most expensive thing an agent does, so it is written to keep the work down rather than to read nicely.
      *
      * <p>Going through the level for each block would resolve the chunk four hundred times over. Instead the loop walks
      * one vertical column at a time and resolves the chunk once per column, which is eighty one lookups, and holds onto
@@ -226,7 +257,7 @@ public final class AgentObservation {
      * solid, as they once were, every meadow read as a wall at foot height all the way round, and a river as solid
      * ground, and neither a step that needs a jump nor water that needs swimming could be told from them.
      */
-    private static void writeTerrain(AgentMob agent, float[] out, int base) {
+    static void writeTerrain(AgentMob agent, float[] out, int block) {
 
         Level level = agent.level();
         BlockPos feet = agent.blockPosition();
@@ -273,7 +304,7 @@ public final class AgentObservation {
                         }
                     }
 
-                    out[base + ObservationSchema.terrainOffset(x, y, z)] = cell;
+                    out[block + ObservationSchema.gridOffset(x, y, z)] = cell;
                 }
             }
         }
@@ -415,14 +446,14 @@ public final class AgentObservation {
 
     // -----------------------------------------------------------------------------------------------------------
 
-    /** The component of a world space horizontal delta along the way the agent is looking. */
-    private static double forward(double dx, double dz, float sin, float cos) {
+    /** The component of a world space horizontal delta along the way the agent is looking. Any body's self block wants it. */
+    static double forward(double dx, double dz, float sin, float cos) {
 
         return dx * -sin + dz * cos;
     }
 
     /** The component to the agent's right. */
-    private static double right(double dx, double dz, float sin, float cos) {
+    static double right(double dx, double dz, float sin, float cos) {
 
         return dx * -cos + dz * -sin;
     }

@@ -25,6 +25,7 @@ import net.sievert.modularmobai.brain.AgentDriver;
 import net.sievert.modularmobai.brain.Brains;
 import net.sievert.modularmobai.command.AgentCommands;
 import net.sievert.modularmobai.entity.agent.AgentMobRenderer;
+import net.sievert.modularmobai.entity.agent.BeastMob;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.item.ModItems;
@@ -46,6 +47,12 @@ public class ModularMobAiMod {
     private static final Supplier<EntityType<AgentMob>> TRAINING_AGENT = ENTITY_TYPES.register(
             ModEntities.TRAINING_AGENT_ID.getPath(),
             () -> ModEntities.TRAINING_AGENT_BUILDER.build(ModEntities.TRAINING_AGENT_ID.toString())
+    );
+
+    // The second body, which borrows the humanoid's shape and renderer: see ModEntities.
+    private static final Supplier<EntityType<BeastMob>> BEAST_AGENT = ENTITY_TYPES.register(
+            ModEntities.BEAST_AGENT_ID.getPath(),
+            () -> ModEntities.BEAST_AGENT_BUILDER.build(ModEntities.BEAST_AGENT_ID.toString())
     );
 
     // Only the shipped one gets an egg. The training one is spawned by arenas and nothing else.
@@ -96,14 +103,17 @@ public class ModularMobAiMod {
 
         ModEntities.setAgentMob(AGENT_MOB.get());
         ModEntities.setTrainingAgent(TRAINING_AGENT.get());
+        ModEntities.setBeastAgent(BEAST_AGENT.get());
         ModItems.setAgentMobSpawnEgg(AGENT_MOB_SPAWN_EGG.get());
     }
 
     private static void registerAttributes(EntityAttributeCreationEvent event) {
 
-        // The same attributes for both: a network trained against one has to find the same body in the other.
+        // The same attributes for all of them: a network trained against one humanoid has to find the same body in the
+        // other, and the beast differs in what it may be asked to do rather than in what its body is.
         event.put(AGENT_MOB.get(), AgentMob.createAttributes().build());
         event.put(TRAINING_AGENT.get(), AgentMob.createAttributes().build());
+        event.put(BEAST_AGENT.get(), AgentMob.createAttributes().build());
     }
 
     private static void addToCreativeTab(BuildCreativeModeTabContentsEvent event) {
@@ -122,6 +132,7 @@ public class ModularMobAiMod {
 
             event.registerEntityRenderer(AGENT_MOB.get(), AgentMobRenderer::new);
             event.registerEntityRenderer(TRAINING_AGENT.get(), AgentMobRenderer::new);
+            event.registerEntityRenderer(BEAST_AGENT.get(), AgentMobRenderer::new);
         }
     }
 }
