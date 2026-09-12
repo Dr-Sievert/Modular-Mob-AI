@@ -88,6 +88,60 @@ class TeacherPullTest(unittest.TestCase):
 
         self.assertEqual(one.teacher_pull(), 0.0)
 
+    def test_evaluation_lets_the_teacher_go_early(self):
+        """The horizon is a guess; evaluation knows. league768 sat at its iteration 925 for 1,200 more while still
+        pulled at 0.32, which is what this releases."""
+
+        one = trainer(teacher_weight=0.4, teacher_decay=4000, teacher_release=6, teacher_release_over=200)
+        one.teacher_from = 0
+        one.iteration = 1000
+
+        # Five checkpoints without a best is not yet evidence of a ceiling.
+        one.note_evaluation(5)
+        self.assertIsNone(one.teacher_released)
+        self.assertAlmostEqual(one.teacher_pull(), 0.3, places=6)
+
+        one.note_evaluation(6)
+        self.assertEqual(one.teacher_released, 1000)
+
+        one.iteration = 1100
+        self.assertAlmostEqual(one.teacher_pull(), 0.4 * 0.725 * 0.5, places=6)
+
+        one.iteration = 1200
+        self.assertEqual(one.teacher_pull(), 0.0)
+
+        one.iteration = 5000
+        self.assertEqual(one.teacher_pull(), 0.0)
+
+    def test_a_release_is_said_once_and_improving_again_does_not_take_it_back(self):
+        one = trainer(teacher_weight=0.4, teacher_decay=4000, teacher_release=6, teacher_release_over=200)
+        one.teacher_from = 0
+        one.iteration = 1000
+        one.note_evaluation(6)
+
+        # A new best resets the count, and the teacher stays let go: the run improved without it.
+        one.iteration = 1050
+        one.note_evaluation(0)
+
+        self.assertEqual(one.teacher_released, 1000)
+        self.assertAlmostEqual(one.teacher_pull(), 0.4 * 0.7375 * 0.75, places=6)
+
+    def test_a_release_of_zero_waits_for_the_horizon(self):
+        one = trainer(teacher_weight=0.4, teacher_decay=4000, teacher_release=0)
+        one.teacher_from = 0
+        one.iteration = 1000
+        one.note_evaluation(50)
+
+        self.assertIsNone(one.teacher_released)
+        self.assertAlmostEqual(one.teacher_pull(), 0.3, places=6)
+
+    def test_a_run_with_no_teacher_is_never_released(self):
+        one = trainer(teacher_weight=0.0, teacher_release=1)
+        one.iteration = 10
+        one.note_evaluation(50)
+
+        self.assertIsNone(one.teacher_released)
+
 
 if __name__ == "__main__":
     unittest.main()
