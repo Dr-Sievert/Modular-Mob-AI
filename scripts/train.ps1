@@ -172,18 +172,37 @@ if ($Seed) {
 
         # Iterations carry on from the seed's, so the critic's time alone is counted from there. Whatever torch says on
         # its way in goes to stderr, which Windows PowerShell would take for an error.
+        #
+        # The widths come from the same file, because weights of one shape cannot be loaded into a network of another: a run
+        # seeded from a wider copy without them got as far as loading the state and then threw a wall of shape mismatches.
+        # Given here, they can still be overridden by naming them in -Extra, which is checked for below.
         $ErrorActionPreference = 'Continue'
-        $iteration = & $Python -c "import sys, torch; print(torch.load(sys.argv[1], map_location='cpu', weights_only=False)['iteration'])" $state 2>$null
+        $read = & $Python -c "import sys, torch; s = torch.load(sys.argv[1], map_location='cpu', weights_only=False); c = s.get('config') or {}; print(s['iteration'], c.get('h1', 0), c.get('hidden', 0), c.get('h3', 0))" $state 2>$null
         $ErrorActionPreference = 'Stop'
 
-        if ($LASTEXITCODE -ne 0 -or "$iteration" -notmatch '^\d+$') {
+        $fields = "$read".Trim() -split '\s+'
 
-            throw "Could not read the iteration of $state"
+        if ($LASTEXITCODE -ne 0 -or $fields.Count -lt 4 -or $fields[0] -notmatch '^\d+$') {
+
+            throw "Could not read the iteration and widths of $state"
         }
 
-        $warmup = "--critic-warmup $([int]$iteration + 30)"
+        $iteration = [int] $fields[0]
+        $warmup = "--critic-warmup $($iteration + 30)"
 
-        Write-Host "Seeded '$Run' from $state, iteration $iteration"
+        $widths = ''
+
+        foreach ($width in @(@('--h1', $fields[1]), @('--hidden', $fields[2]), @('--h3', $fields[3]))) {
+
+            if ([int] $width[1] -gt 0 -and $Extra -notmatch [Regex]::Escape($width[0])) {
+
+                $widths = "$widths $($width[0]) $($width[1])".Trim()
+            }
+        }
+
+        $Extra = "$widths $Extra".Trim()
+
+        Write-Host ("Seeded '$Run' from $state, iteration $iteration" + $(if ($widths) { ", $widths" }))
     }
 
     $Extra = "--learning-rate 5e-5 --clip 0.1 --target-kl 0.01 --entropy-coef 0.001 $warmup $Extra"
