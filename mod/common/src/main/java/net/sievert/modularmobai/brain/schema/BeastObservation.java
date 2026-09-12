@@ -29,6 +29,7 @@ final class BeastObservation {
 
         AgentObservation.writeEnemies(agent, slots, out, base + BeastSchema.ENEMY_OFFSET, sin, cos);
         AgentObservation.writeTerrain(agent, out, base + BeastSchema.TERRAIN_OFFSET);
+        AgentObservation.writeRays(agent, out, base + BeastSchema.RAY_OFFSET);
     }
 
     private static void writeSelf(AgentMob agent, EnemySlots slots, float[] out, int at, float sin, float cos) {

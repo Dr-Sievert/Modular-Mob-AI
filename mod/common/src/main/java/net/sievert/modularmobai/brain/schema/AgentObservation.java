@@ -41,6 +41,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 import net.sievert.modularmobai.entity.agent.ExecutedControls;
@@ -107,6 +108,7 @@ public final class AgentObservation {
         writeEcho(agent.executed(), out, base);
         writeEnemies(agent, slots, out, base + ObservationSchema.ENEMY_OFFSET, sin, cos);
         writeTerrain(agent, out, base + ObservationSchema.TERRAIN_OFFSET);
+        writeRays(agent, out, base + ObservationSchema.RAY_OFFSET);
     }
 
     /** The way the agent is looking, as the sine and cosine every frame conversion below needs. */
@@ -332,6 +334,74 @@ public final class AgentObservation {
      * solid, as they once were, every meadow read as a wall at foot height all the way round, and a river as solid
      * ground, and neither a step that needs a jump nor water that needs swimming could be told from them.
      */
+    /**
+     * Eight rays out from the feet, one every forty five degrees, each saying how far it is to a wall, to something that
+     * hurts, and to a drop. A fraction of {@link ObservationSchema#RAY_REACH} in each case, and 1 where the ray reached the
+     * end without finding one.
+     *
+     * <p>This is the agent's only sight of ground beyond the grid's four blocks, and the grid is why it is needed: nine
+     * cells of one block reach four, so a lava lake five blocks away, the lip of a ravine, and a wall at its back are all
+     * outside anything the body can see. Widening the grid to reach the same distance would be 1,445 cells against 405 and
+     * three and a half times the scan; this is twenty four numbers and about a sixth more.
+     *
+     * <p>Sampled every {@link ObservationSchema#RAY_STEP} blocks rather than every block, which is the resolution that
+     * matters at this range: a lake is not two blocks wide, and what a fighter needs is which way it lies, not its outline.
+     * Each sample is one heightmap lookup and at most one block read, and the ray stops at the first wall, because nothing
+     * beyond a wall can be walked to or pushed into.
+     */
+    static void writeRays(AgentMob agent, float[] out, int block) {
+
+        Level level = agent.level();
+        BlockPos feet = agent.blockPosition();
+        int reach = ObservationSchema.RAY_REACH;
+
+        for (int ray = 0; ray < ObservationSchema.RAYS; ray++) {
+
+            double angle = ray * (Math.PI * 2.0D / ObservationSchema.RAYS);
+            int stepX = (int) Math.round(Math.cos(angle));
+            int stepZ = (int) Math.round(Math.sin(angle));
+
+            int at = block + ray * ObservationSchema.RAY_STRIDE;
+            float wall = 1.0F;
+            float hazard = 1.0F;
+            float drop = 1.0F;
+
+            for (int away = ObservationSchema.RAY_STEP; away <= reach;
+                    away += away < ObservationSchema.RAY_FINE ? ObservationSchema.RAY_STEP : ObservationSchema.RAY_COARSE_STEP) {
+
+                int worldX = feet.getX() + stepX * away;
+                int worldZ = feet.getZ() + stepZ * away;
+                float fraction = away / (float) reach;
+
+                // The ground the ray is over, and the block a body would be standing in there.
+                int top = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, worldX, worldZ);
+                BlockPos standing = new BlockPos(worldX, top, worldZ);
+
+                if (hazard >= 1.0F && (hazard(level.getBlockState(standing)) || hazard(level.getBlockState(standing.below())))) {
+
+                    hazard = fraction;
+                }
+
+                if (drop >= 1.0F && feet.getY() - top >= ObservationSchema.RAY_DROP_DEPTH) {
+
+                    drop = fraction;
+                }
+
+                // A wall is ground standing well above the feet, which is also where the ray stops: what is behind a wall
+                // is neither somewhere to walk nor somewhere to push anything.
+                if (top - feet.getY() >= 2) {
+
+                    wall = fraction;
+                    break;
+                }
+            }
+
+            out[at + ObservationSchema.RAY_WALL] = wall;
+            out[at + ObservationSchema.RAY_HAZARD] = hazard;
+            out[at + ObservationSchema.RAY_DROP] = drop;
+        }
+    }
+
     static void writeTerrain(AgentMob agent, float[] out, int block) {
 
         Level level = agent.level();

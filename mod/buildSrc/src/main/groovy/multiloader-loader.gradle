@@ -1765,8 +1765,15 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
 
                 directory.mkdirs()
 
+                // Anything else for the fixture, which is how the pass is timed at a size other than the usual one: the
+                // widths travel in the weight file and the game reads them from there, so this needs no Java change.
+                //
+                //   gradlew :fabric:brainParity -PparityArgs="--h1 512 --hidden 256 --h3 256"
+                def parityArgs = providers.gradleProperty('parityArgs').getOrElse('').trim()
+
                 brainTool(['schema', body, schema.absolutePath])
-                runPython(['train.py', 'parity', '--schema', schema.absolutePath, '--out', directory.absolutePath])
+                runPython(['train.py', 'parity', '--schema', schema.absolutePath, '--out', directory.absolutePath]
+                        + (parityArgs.isEmpty() ? [] : parityArgs.split(' ').toList()))
                 brainTool(['parity', directory.absolutePath])
             }
         }

@@ -175,13 +175,62 @@ public final class ObservationSchema {
     // Where each block starts
     // -----------------------------------------------------------------------------------------------------------
 
+    // -----------------------------------------------------------------------------------------------------------
+    // How far it can see, past the four blocks of the grid
+    //
+    // The grid is a block a cell and nine cells across, so it reaches four blocks. Everything the agent does about ground
+    // beyond that it does blind: where the lava is, which way the cliff runs, whether there is a wall at its back. The
+    // limit has been hit before and patched around once already — an empty cell at the bottom of the grid looks seven
+    // blocks further down, because two was not enough to see a ravine.
+    //
+    // Widening the grid is the expensive answer. Doubling its reach is 1,445 cells against 405, three times the encoder's
+    // first layer and three and a half times the most expensive thing an agent does per tick, nearly all of it to say that
+    // air is air. So instead eight rays go out from the feet, one every forty five degrees, and each says how far it is to
+    // the three things worth knowing about. Four times the reach for twenty four numbers and about a sixth more scanning.
+    // -----------------------------------------------------------------------------------------------------------
+
+    /** How many ways it looks: the four compass directions and the four between them, world aligned as the grid is. */
+    public static final int RAYS = 8;
+
+    /** What each ray reports, all as a fraction of RAY_REACH, and 1 where the ray found no such thing. */
+    public static final int RAY_STRIDE = 3;
+    public static final int RAY_WALL = 0;
+    public static final int RAY_HAZARD = 1;
+    public static final int RAY_DROP = 2;
+
+    public static final int RAY_SIZE = RAYS * RAY_STRIDE;
+
+    /**
+     * How far a ray reaches: thirty two blocks, the same distance an enemy slot holds an opponent at, so that ground and
+     * bodies are seen to the same horizon rather than the ground stopping at four blocks.
+     *
+     * <p>Sampled finely near and coarsely far, which is where the reach is bought: every {@link #RAY_STEP} blocks out to
+     * {@link #RAY_FINE}, then every {@link #RAY_COARSE_STEP}. Twelve samples a ray reach thirty two blocks where an even
+     * two-block step would need sixteen, and the far half of a ray only has to say which way a thing lies, not its outline.
+     * A ray also stops at the first wall, so most of them cost far less than the worst case.
+     */
+    public static final int RAY_REACH = 32;
+    public static final int RAY_FINE = 16;
+    public static final int RAY_STEP = 2;
+    public static final int RAY_COARSE_STEP = 4;
+
+    /** How far below the feet counts as a drop worth reporting, which is what a body takes real damage falling. */
+    public static final int RAY_DROP_DEPTH = 4;
+
     public static final int SELF_OFFSET = 0;
     public static final int HOTBAR_OFFSET = SELF_OFFSET + SELF_SIZE;
     public static final int ECHO_OFFSET = HOTBAR_OFFSET + HOTBAR_SIZE;
     public static final int ENEMY_OFFSET = ECHO_OFFSET + ECHO_SIZE;
     public static final int TERRAIN_OFFSET = ENEMY_OFFSET + ENEMY_SIZE;
+    public static final int RAY_OFFSET = TERRAIN_OFFSET + TERRAIN_SIZE;
 
-    public static final int OBS_DIM = TERRAIN_OFFSET + TERRAIN_SIZE;
+    public static final int OBS_DIM = RAY_OFFSET + RAY_SIZE;
+
+    /** Where one ray's three numbers start, counting from the start of the rays. */
+    public static int rayOffset(int ray) {
+
+        return RAY_OFFSET + ray * RAY_STRIDE;
+    }
 
     public static int enemyOffset(int slot) {
 
