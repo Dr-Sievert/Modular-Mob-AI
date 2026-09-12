@@ -43,7 +43,7 @@ def main() -> None:
     parser.add_argument("--run", help="the run folder the game is writing into")
     parser.add_argument("--schema", help="the layout the game wrote, defaults to <run>/schema.json")
     parser.add_argument("--out", help="where to put the parity fixture")
-    parser.add_argument("--demos", help="the recorded teacher for imitate, defaults to <run>/demos")
+    parser.add_argument("--demos", help="the recorded teacher, for imitate and for the pull towards it; defaults to <run>/demos")
     parser.add_argument("--imitation-epochs", type=int, default=80, help="passes over the teacher's record")
     parser.add_argument("--log-dir", help="defaults to <run>/logs, or the parity folder")
     parser.add_argument("--keep-weights", type=int, default=5, help="how many recent weight files to keep")
@@ -123,8 +123,12 @@ def main() -> None:
     # Anything left in the folder was collected by a run that is no longer going, which makes it off-policy by now.
     run.clear_rollouts()
 
+    # A run seeded from another one's copy has no record of its own, and the record it should be pulled towards is the one
+    # that copy was made from. --demos names it, so a seeded run needs no link into the run it came from: a link under runs
+    # is one more thing for a recursive delete to follow, and that has cost this repository its trainer environment once.
     if config.teacher_weight > 0.0:
-        trainer.set_teacher(sample_teacher(run.path / "demos", schema, config.teacher_rows))
+        trainer.set_teacher(sample_teacher(Path(arguments.demos) if arguments.demos else run.path / "demos",
+                                           schema, config.teacher_rows))
 
     loop(run, trainer, config, schema, arguments.keep_weights)
 

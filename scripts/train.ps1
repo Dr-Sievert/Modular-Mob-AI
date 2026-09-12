@@ -91,6 +91,11 @@ param(
     # scripts\dagger.ps1 records one on the league suite instead, over every opponent and every loadout.
     [double] $TeacherWeight = 0,
 
+    # Which record to pull towards, by run name or path, for a run that has none of its own. A run seeded from another's
+    # copy is exactly that case, and the record it wants is the one that copy was made from. Naming it beats linking it in:
+    # a link under runs\ is one more thing for a recursive delete to follow, which has cost this repository an environment.
+    [string] $Demos = '',
+
     # Everything the build and both sides of it say, rather than the short feed: a line every few iterations with the
     # training win rate and pace, every evaluation, every round, and anything that went wrong.
     [switch] $Full,
@@ -208,13 +213,36 @@ if ($Seed) {
     $Extra = "--learning-rate 5e-5 --clip 0.1 --target-kl 0.01 --entropy-coef 0.001 $warmup $Extra"
 }
 
+# Where the record to be pulled towards is. A run seeded from another one's copy has none of its own, and the record it
+# should be pulled towards is the one that copy was made from; naming it is better than linking it in, since a link under
+# runs is one more thing for a recursive delete to follow.
+$record = ''
+
+if ($Demos) {
+
+    $fromName = Get-RunDirectory $Demos
+
+    $record = @((Join-Path $fromName 'demos'), $fromName, (Join-Path $Demos 'demos'), $Demos |
+            Where-Object { Test-Path $_ -PathType Container } |
+            Where-Object { @(Get-ChildItem $_ -Filter '*.mbr' -Recurse -ErrorAction SilentlyContinue).Count -gt 0 } |
+            Select-Object -First 1)
+
+    if (-not $record) {
+
+        throw "No record of the teacher in '$Demos'"
+    }
+
+    $record = (Resolve-Path $record).Path
+    $Extra = "--demos `"$record`" $Extra".Trim()
+}
+
 # A pull towards the teacher, whether asked for here or brought in by -FromCopy, needs a record to pull towards. Said here
 # rather than left to the trainer, which would start, read the state and then stop.
 if ($PSBoundParameters.ContainsKey('TeacherWeight')) {
 
-    if ($TeacherWeight -gt 0 -and -not @(Get-ChildItem (Join-Path $directory 'demos') -Filter '*.mbr' -Recurse -ErrorAction SilentlyContinue)) {
+    if ($TeacherWeight -gt 0 -and -not $record -and -not @(Get-ChildItem (Join-Path $directory 'demos') -Filter '*.mbr' -Recurse -ErrorAction SilentlyContinue)) {
 
-        throw "A pull towards the teacher needs its record, and there is none in $(Join-Path $directory 'demos'). Record one with scripts\dagger.ps1 -Run $Run"
+        throw "A pull towards the teacher needs its record, and there is none in $(Join-Path $directory 'demos'). Record one with scripts\dagger.ps1 -Run $Run, or name another run's with -Demos"
     }
 
     # Last, so an explicit weight beats the 0.5 that -FromCopy brings with it: the trainer takes the last of a repeated
