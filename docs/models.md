@@ -30,6 +30,12 @@ scripts\publish.ps1 -Run vs-copy -State -Push    and commit and push
 A run with no evaluation yet publishes its newest weights. While supervision runs, every improved best is republished
 automatically.
 
+**What the win rate in `model.json` is, and is not.** It is the run's own evaluation, on the ground that run fought: the
+fights its workers played, in the biomes their sites happened to be on. It is not a claim about any other ground. The
+same vs-copy weights that the table above credits with 99.8% over 553 fights of freshly generated terrain measure 98.4
+to 99.0% over thousands of fights on the 5,120-site terrain library, because the library's ground is harder, not because
+the fighter changed. Compare two models on the same ground with `scripts\eval.ps1 -Weights` before believing a gap.
+
 Networks and trainer states are binary. `.gitattributes` lists `*.mbw`, `*.mbr`, `*.pt` and `*.nbt` as binary; without
 that, the repository's `* text eol=lf` default rewrites their bytes and they no longer load.
 
