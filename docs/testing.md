@@ -31,11 +31,28 @@ scripts\test.ps1 -League -LeagueModels vs-copy              published networks i
 scripts\league.ps1 -Test                  the league's unit tests: Elo, matchmaking, the pool, reading and resuming results
 scripts\eval.ps1 -Weights models\vs-copy\best.mbw          a network's win rate, 2,000 fights, most likely action
 scripts\eval.ps1 -Run vs-copy -Iteration 650 -Arenas 400   a checkpoint of a local run
+scripts\bench.ps1 -Run league-sharp -Last 4                several networks on one bench, best first
+scripts\bench.ps1 -Weights models\league-sharp\best.mbw,models\league2\best.mbw
 ```
 
 `eval.ps1` fights with no exploration and records nothing for training. With 2,000 fights the win rate is within about
-a point either way; with 400, within about two and a half. It takes `-Workers` (8), `-Slots`, `-Heap`, `-Suite` and
-`-ReplayEvery`.
+a point either way; with 400, within about two and a half. It takes `-Workers` (8), `-Slots`, `-Heap`, `-Suite`,
+`-Loadouts`, `-Ground` and `-ReplayEvery`.
+
+`bench.ps1` is `eval.ps1` over several networks with the answers side by side, and it is what to reach for whenever the
+question is which of two networks is better. Three things it does that doing it by hand does not:
+
+- **the same worker count for every network**, because each worker takes its own slice of the arenas and 600 fights over
+  one worker are not the 600 over three. One worker by default, which also leaves room for a training run beside it;
+- **a copy of each network taken first**, because a run keeps only its last few weight files and prunes the rest while the
+  bench is running;
+- **it says when the spread is inside what the fights can tell apart** — about a point at 600 fights, so five points mean
+  something and one does not.
+
+Don't compare a league run's own `eval.csv` numbers between two runs: those are measured against opponents the matchmaking
+keeps changing, and the rating wanders by thirty between checkpoints. The bench is fixed ground and a fixed roster, so two
+of its numbers can be subtracted. It is what showed that a run flat for 11,500 iterations gained five points in a thousand
+once its entropy came down; see [findings.md](findings.md#learning).
 
 ## The mechanics suite (`gametest/tests/AgentMechanicsGameTest`)
 
