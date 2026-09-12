@@ -318,6 +318,58 @@ afterEvaluate {
     def terrainPoolSize = Integer.parseInt(providers.gradleProperty('terrainPool').getOrElse('8'))
     def terrainUses = Integer.parseInt(providers.gradleProperty('terrainUses').getOrElse('8'))
 
+    // A property holding a whole command line -- -PtrainArgs, -PparityArgs -- split on whitespace, except that a wholly
+    // quoted argument is taken as one and its quotes removed. A plain split on whitespace cannot carry a path at all: quote
+    // it and the quotes arrive as part of the argument, leave it bare and a path with a space in it becomes two arguments.
+    //
+    // Not a shell: `--flag="a b"`, quotes mid-argument, and escaping are none of them handled. `--flag "a b"` is, which is
+    // the form every caller here uses and the one that was broken.
+    def splitArguments = { String text ->
+
+        def tokens = []
+        def matcher = (text =~ /"([^"]*)"|(\S+)/)
+
+        while (matcher.find()) {
+
+            tokens << (matcher.group(1) != null ? matcher.group(1) : matcher.group(2))
+        }
+
+        return tokens
+    }
+
+    // The checkout this one is a worktree of, or null when this is the checkout itself. A worktree's .git is a file saying
+    // "gitdir: <main>/.git/worktrees/<name>", so the main checkout is two levels above that .git.
+    //
+    // What it is for is machine-wide things a worktree should never own a copy of, and never link to either: the trainer
+    // environment is gigabytes of PyTorch and the terrain library is half an hour of generated ground. Both were linked in
+    // by hand instead, and both were then destroyed by a recursive delete of the worktree that followed the link -- the
+    // environment provably, the library on every piece of evidence but a witness. A borrowed path cannot be followed.
+    def mainCheckout = {
+
+        def dotGit = new File(repositoryRoot, '.git')
+
+        if (!dotGit.isFile()) {
+
+            return null
+        }
+
+        def line = dotGit.text.readLines().find { it.startsWith('gitdir:') }
+
+        if (!line) {
+
+            return null
+        }
+
+        def directory = new File(line.substring('gitdir:'.length()).trim()).absoluteFile
+
+        while (directory != null && directory.name != '.git') {
+
+            directory = directory.parentFile
+        }
+
+        return directory?.parentFile
+    }
+
     def readProperties = { File file ->
 
         def properties = new Properties()
@@ -490,9 +542,37 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
     // generating any ground itself, see TerrainLibrary. Built by buildTerrainLibrary (scripts\terrain.ps1). A worker uses
     // it whenever there is one, unless -PterrainLibrary=false; without one, workers generate their own as they always
     // did, with the pool of kept worlds above.
-    def terrainLibrary = new File(terrainPool, 'library')
+    // A worktree has no library of its own and must not link one in: it is read-only here -- every region file is hard
+    // linked into each worker's world and never written -- so a worktree borrows the main checkout's where it has none.
+    def terrainLibrary = {
+
+        def own = new File(terrainPool, 'library')
+
+        if (new File(own, 'library.properties').isFile()) {
+
+            return own
+        }
+
+        def main = mainCheckout()
+
+        if (main == null) {
+
+            return own
+        }
+
+        def borrowed = new File(new File(new File(new File(main, 'runs'), 'terrain'),
+                project.property('minecraft_version') as String), 'library')
+
+        return new File(borrowed, 'library.properties').isFile() ? borrowed : own
+    }()
+
     def libraryIndex = new File(terrainLibrary, 'library.properties')
     def libraryWanted = providers.gradleProperty('terrainLibrary').getOrElse('true').toBoolean()
+
+    if (libraryIndex.isFile() && !terrainLibrary.absolutePath.startsWith(terrainPool.absolutePath)) {
+
+        logger.lifecycle("No terrain library in this worktree; reading ${terrainLibrary}")
+    }
 
     // Every region file of the library, linked into a worker's world rather than copied: a worker only ever reads them,
     // and a link costs nothing however big the library is, which a copy per worker per round would not. Copied where the
@@ -616,31 +696,8 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
 
         if (!venv.isFile()) {
 
-            def dotGit = new File(repositoryRoot, '.git')
-            def borrowed = null
-
-            // "gitdir: <path>" in a worktree, pointing at <main>/.git/worktrees/<name>.
-            if (dotGit.isFile()) {
-
-                def line = dotGit.text.readLines().find { it.startsWith('gitdir:') }
-
-                if (line) {
-
-                    def gitDir = new File(line.substring('gitdir:'.length()).trim())
-                    def main = gitDir.absoluteFile
-
-                    // .../<main>/.git/worktrees/<name> -> <main>
-                    while (main != null && main.name != '.git') {
-
-                        main = main.parentFile
-                    }
-
-                    if (main?.parentFile != null) {
-
-                        borrowed = new File(main.parentFile, relative)
-                    }
-                }
-            }
+            def main = mainCheckout()
+            def borrowed = main == null ? null : new File(main, relative)
 
             if (borrowed?.isFile()) {
 
@@ -1621,6 +1678,17 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
 
         doLast {
 
+            // A worktree reads the main checkout's library where it has none of its own, and building is the one thing it
+            // must not do to it: the rebuild path here starts by deleting the library it is replacing, so a build in a
+            // worktree would delete the machine's ground rather than its own. There is one library per machine and it is
+            // built where it lives.
+            if (!terrainLibrary.absolutePath.startsWith(terrainPool.absolutePath)) {
+
+                throw new GradleException("This checkout is reading the terrain library in ${terrainLibrary}, which belongs "
+                        + "to the checkout it is a worktree of. Build or grow a library there, not here: doing it here would "
+                        + "delete that one. There is one library per machine.")
+            }
+
             def label = 'terrain-library'
             def added = Integer.parseInt(providers.gradleProperty('addSites').getOrElse('0'))
 
@@ -1889,7 +1957,7 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
 
                 brainTool(['schema', body, schema.absolutePath])
                 runPython(['train.py', 'parity', '--schema', schema.absolutePath, '--out', directory.absolutePath]
-                        + (parityArgs.isEmpty() ? [] : parityArgs.split(' ').toList()))
+                        + (parityArgs.isEmpty() ? [] : splitArguments(parityArgs)))
                 brainTool(['parity', directory.absolutePath])
             }
         }
@@ -2086,7 +2154,7 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
 
             if (!extra.isEmpty()) {
 
-                command += (extra.split(/\s+/) as List)
+                command += splitArguments(extra)
             }
 
             def builder = new ProcessBuilder(command as String[])

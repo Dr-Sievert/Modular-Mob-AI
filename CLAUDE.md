@@ -33,6 +33,13 @@ Read these before changing anything:
 - `.mbw`, `.mbr`, `.pt` and `.nbt` are **binary** in `.gitattributes`. The repository's default is `* text eol=lf`, which
   silently corrupts binary files that aren't listed.
 - **Don't build or run Gradle in a checkout that live training runs from.** Use a git worktree for development.
+- **A worktree borrows the machine's trainer environment and terrain library; never link them in, and never mirror-delete a
+  worktree.** A fresh worktree has no `trainer\.venv` and no `runs\terrain\...\library`, and both are found in the main
+  checkout automatically (`scripts\_common.ps1`, and `mainCheckout` in the build). Linking them was done by hand in four
+  worktrees at once and cost both: `git worktree remove` refuses on Gradle's deep paths ("Filename too long"), and the usual
+  answers — `robocopy /MIR` from an empty folder, `Remove-Item -Recurse` — **follow a junction** and mirrored the deletion
+  through it. Torch, numpy and `pyvenv.cfg` went in seconds, and half an hour of generated ground with them. If a worktree
+  must be deleted by hand, `robocopy /XJ` or `rmdir /s` do not follow junctions.
 - Mixins that change vanilla behaviour are deliberate and documented at the top of each mixin. Several fix real bugs;
   see findings.md before removing one.
 - **The agent's hands are a player's in all but two places, and both are deliberate.** A drawn weapon runs to full once

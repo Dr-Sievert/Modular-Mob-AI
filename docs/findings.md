@@ -214,10 +214,18 @@ are deliberate.
   Windows answer to that, `robocopy /MIR` from an empty folder, **follows a junction**: it mirrored the emptiness through
   one and took torch, numpy and `pyvenv.cfg` with it. The 4,000-fight record that was being collected at the time survived,
   because that half is Java; the imitation that followed it died on the import.
-  - The fix is that there is nothing to follow. A worktree with no environment of its own now borrows the main checkout's,
-    found through git — `git rev-parse --git-common-dir` in `scripts\_common.ps1`, and the `gitdir:` line of the worktree's
-    `.git` file in the build's `pythonExecutable` — so no junction is ever wanted. `robocopy /XJ` also excludes them, and
-    `rmdir /s` does not follow them, but a hazard that has to be remembered is a hazard.
+  - **And it took the terrain library with it**, which is the same mistake's second victim: 5,120 generated fight sites, half
+    an hour of building, the ground every run fights on. A worktree resolves `runs\` against itself, so a worktree that wants
+    to fight on natural ground has no library and the cheap answer is to link the real one — and `Remove-Item -Recurse` in
+    Windows PowerShell 5.1 follows a directory junction just as `robocopy /MIR` does. Everything else under `runs\` survived,
+    which is exactly the shape a link to the library alone leaves behind: the 3.88 GB record and both copies were untouched.
+    That part is inference rather than proof — the worktrees were already gone, so the junction could not be examined — but
+    nothing else on the machine deletes that folder, and the build had read it successfully twenty minutes earlier.
+  - The fix is that there is nothing to follow. A worktree with no environment or library of its own now borrows the main
+    checkout's, found through git — `git rev-parse --git-common-dir` in `scripts\_common.ps1`, and the `gitdir:` line of the
+    worktree's `.git` file in the build's `mainCheckout` — so no junction is ever wanted. The library is safe to share
+    because it is only ever read: every region file is hard linked into a worker's world, never written. `robocopy /XJ` also
+    excludes junctions and `rmdir /s` does not follow them, but a hazard that has to be remembered is a hazard.
 
 ## Perception
 
