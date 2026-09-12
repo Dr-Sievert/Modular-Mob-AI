@@ -187,6 +187,15 @@ class Evaluator:
         mine, theirs, shared = candidate.paired(best)
 
         if shared == 0:
+
+            # A best from before the opponent column has nothing to pair on, so nothing can ever be shown to beat it, and
+            # its plain win rate was measured against whatever roster the run had then. It stands aside for the first
+            # checkpoint that can be compared, once, and from then on every comparison is a paired one. Without this a run
+            # carried across this change keeps a stale best for ever: the one standing when it was written had 65.5% of an
+            # easier roster and the checkpoints that followed, better fighters, were reading 57 to 61% of a harder one.
+            if candidate.against and not best.against:
+                return True
+
             return candidate.rate > best.rate
 
         return mine > theirs + 0.01
