@@ -361,6 +361,17 @@ are deliberate.
     shield adding a point or two rather than nothing. Sprint holds the same way, and the sprint blow only needs the tick
     of the hit. **Sneak the teacher never presses at all**, in either record, which means sneaking is a control the network
     has never seen used; in 1.21 it stops a body walking off an edge, which is worth trying against the fall deaths.
+- **Self play was a handicap, not a mirror, and a quarter of it was a stalemate.** A fifth of a league run's fights are
+  against frozen checkpoints of itself, and those played their most likely action while the learner sampled, so the
+  exploration the learner pays for was charged to one side of the mirror only. league2's own records, before the fix:
+  33.9% won against its own checkpoints in rated fights, where both sides are deployed, against **16.5% in training
+  fights**, where only it explores; against mobs the same gap is nine points rather than seventeen. Letting the frozen copy
+  sample too took the training figure to 28.3%, near the 33.9% that says what the matchup really is.
+  - **The timeouts are the louder half.** 27.4% of those mirror matches ran the clock out, and a timeout is scored as a
+    loss, so a fifth of a run's experience was mostly "you lost" with nothing in it to learn from. In the arm that trains at
+    an entropy coefficient of 0.001 rather than 0.01, the same fights time out **1.8%** of the time. Two policies full of
+    per-tick noise flail at each other and neither finishes it; the same two policies played crisply settle it. That is the
+    clearest measurement yet that the entropy bonus was not buying exploration so much as paying for stalemates.
 - **The evaluation repeats itself, and that is worth knowing before trusting a comparison.** An evaluation fights the same
   sites in the same order every time it is run, so two builds measured this way were on the same ground without being asked
   to be, which is what made the committed draw's before and after comparable. What is left over is the mobs and the dice:
