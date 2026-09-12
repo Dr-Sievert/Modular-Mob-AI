@@ -76,6 +76,23 @@ class BetterTest(unittest.TestCase):
             self.assertFalse(evaluator._better(Result(100, 40, 0, 1900.0), best),
                              "the rating no longer decides anything")
 
+    def test_a_best_that_cannot_be_compared_stands_aside_once(self):
+        """A run carried across this change has a best with no opponents written down. Nothing could ever be shown to beat
+        it, and its win rate was measured against the roster of the time, so the first checkpoint that can be compared takes
+        it — and then has to win on the shared opponents like anything else."""
+
+        with tempfile.TemporaryDirectory() as folder:
+            evaluator = self.evaluator(folder)
+            old = Result(1000, 655, 0, 1748.0)
+            fresh = result({"zombie": (100, 57), "warden": (100, 0)})
+
+            self.assertLess(fresh.rate, old.rate)
+            self.assertTrue(evaluator._better(fresh, old))
+
+            # And once there is something to pair on, the margin applies again.
+            self.assertFalse(evaluator._better(result({"zombie": (100, 57), "warden": (100, 0)}), fresh))
+            self.assertTrue(evaluator._better(result({"zombie": (100, 62), "warden": (100, 0)}), fresh))
+
     def test_a_higher_rating_does_not_win_on_its_own(self):
         with tempfile.TemporaryDirectory() as folder:
             evaluator = self.evaluator(folder)
