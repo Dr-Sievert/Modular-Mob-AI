@@ -56,7 +56,13 @@ try {
             throw "No weights at $path"
         }
 
-        $entries += [pscustomobject]@{ name = Split-Path (Split-Path $file -Parent) -Leaf; file = $file }
+        # Named after the folder it came from: models\vs-copy\best.mbw is "vs-copy". A run's own weights all sit in a folder
+        # called weights under files all called by their iteration, so three copies benched together all read "weights"
+        # until this named them by the run and the iteration instead: "copy770 000000".
+        $parent = Split-Path (Split-Path $file -Parent) -Leaf
+        $label = if ($parent -eq 'weights') { "$(Split-Path (Split-Path (Split-Path $file -Parent) -Parent) -Leaf) $([IO.Path]::GetFileNameWithoutExtension($file))" } else { $parent }
+
+        $entries += [pscustomobject]@{ name = $label; file = $file }
     }
 
     if ($Run) {
