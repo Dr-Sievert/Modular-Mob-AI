@@ -170,6 +170,16 @@ afterEvaluate {
     // This build lives in mod/; the trainer, the scripts and the training runs sit beside it at the repository root.
     def repositoryRoot = rootProject.projectDir.parentFile
 
+    // The forward pass's explicit vector loops, worth about 15% of the pass, need jdk.incubator.vector resolved: the
+    // classes run from the class path, and the unnamed module only reads a module that something put in the root set. So
+    // every game this build starts is started with it, client and server alike, and so is every worker runArenas starts,
+    // which copies this task's virtual machine arguments. Anywhere it is missing, Forward keeps its plain loops and the
+    // answers are the same to the bit; see brain/nn/ForwardVectors.java.
+    tasks.withType(JavaExec).configureEach {
+
+        jvmArgs '--add-modules', 'jdk.incubator.vector'
+    }
+
     // A path given on the command line, taken from the repository root unless it is already absolute.
     def fromRepositoryRoot = { String path ->
 
@@ -237,7 +247,8 @@ afterEvaluate {
         def javaExe = runTask.javaLauncher.get().executablePath.asFile.absolutePath
         def classes = (sourceSets.gametest.output.files + sourceSets.main.output.files).collect { it.absolutePath }
 
-        def command = [javaExe, '-cp', classes.join(File.pathSeparator), 'net.sievert.modularmobai.gametest.tools.BrainTool']
+        def command = [javaExe, '--add-modules', 'jdk.incubator.vector',
+                       '-cp', classes.join(File.pathSeparator), 'net.sievert.modularmobai.gametest.tools.BrainTool']
         command += toolArguments
 
         def builder = new ProcessBuilder(command as String[])
@@ -781,6 +792,12 @@ afterEvaluate {
 
             // Appended last so they win over anything the run configuration already set.
             command += "-Xmx${heap}".toString()
+
+            // The forward pass's explicit vector loops, worth a tenth of the pass in a real tick. Added here as well as on
+            // the run task above, because a loader whose run task is not a JavaExec would otherwise quietly hand its
+            // workers the plain loops; asking for the module twice costs nothing. See brain/nn/ForwardVectors.java.
+            command += '--add-modules'
+            command += 'jdk.incubator.vector'
 
             // Vanilla's light engine hands readers a snapshot of where every lit section's light is by copying the whole
             // table every time it runs (LayerLightSectionStorage.swapSectionMap, once per light update per layer). With

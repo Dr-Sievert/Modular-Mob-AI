@@ -55,6 +55,20 @@ public final class GameTestBenchmark {
             System.out.println(line("data rows", "%,d captured", ArenaRecorder.rows()));
         }
 
+        // What the network itself cost, which is most of the server thread in a run driven by one, and the only honest way
+        // to measure a change to the forward pass: timed on its own in a loop it keeps its weights in cache and comes out
+        // a fifth faster than it ever is in a tick. Nothing to print for the scripted fighter, which runs no network.
+        final long agentTicks = net.sievert.modularmobai.brain.nn.Forward.agentTicks();
+
+        if (agentTicks > 0L) {
+
+            final double pass = net.sievert.modularmobai.brain.nn.Forward.nanos() / 1.0E9D;
+
+            System.out.println(line("forward pass", "%.2f s over %,d agent ticks, %.1f us each, %.0f%% of the run; %s loops",
+                    pass, agentTicks, pass * 1.0E6D / agentTicks, 100.0D * pass / seconds,
+                    net.sievert.modularmobai.brain.nn.Forward.vectorised() ? "vector" : "plain"));
+        }
+
         System.out.println("======================================");
 
         ArenaRecorder.close();

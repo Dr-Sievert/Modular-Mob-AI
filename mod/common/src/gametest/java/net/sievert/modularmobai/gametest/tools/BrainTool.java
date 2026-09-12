@@ -154,17 +154,36 @@ public final class BrainTool {
 
         float alone = Math.max(maxDifference(singleLogits, logits), maxDifference(singleState, advanced));
 
+        // Timed before the two sets of loops are held against each other below, and never against each other in the one
+        // process. Every layer calls its loops through one interface, which a process that has only ever used one set
+        // reaches straight through; running both sets makes that call site polymorphic for the rest of the process and
+        // costs the measurement more than the change being measured is worth. A worker only ever uses one, so that is
+        // what gets timed. To compare, run this twice, once with --add-modules jdk.incubator.vector and once without.
         double perStep = benchmark(weights, obs, state, logits, count, scratch);
+
+        // The explicit vector loops against the plain ones, at every batch size the game ever runs. -1 where this virtual
+        // machine has no vector module and there is only one set of loops to check.
+        int paths = bothPaths(weights, obs, state, count, hidden, obsDim, logitDim);
 
         System.out.printf(Locale.ROOT, "parity over %d rows of %s%n", count, weights.topology());
         System.out.printf(Locale.ROOT, "  logits          %.3e%n", logitError);
         System.out.printf(Locale.ROOT, "  hidden state    %.3e%n", stateError);
         System.out.printf(Locale.ROOT, "  log probability %.3e%n", logProbError);
         System.out.printf(Locale.ROOT, "  batched against one at a time %.3e%n", alone);
+        System.out.printf(Locale.ROOT, "  loops           %s%n", Forward.vectorised()
+                ? "explicit vectors, and the plain ones agree to the bit at batches 1 to " + PATH_BATCHES
+                : "plain; no jdk.incubator.vector on this virtual machine");
+
+        if (paths > 0) {
+
+            System.out.printf(Locale.ROOT, "  the two sets of loops DIFFER at a batch of %d%n", paths);
+        }
+
         System.out.printf(Locale.ROOT, "  %.1f us per agent per tick, so %.1f ms for a thousand agents%n",
                 perStep * 1.0E6D, perStep * 1000.0D * 1000.0D);
 
-        if (logitError > TOLERANCE || stateError > TOLERANCE || logProbError > LOG_PROB_TOLERANCE || alone != 0.0F) {
+        if (logitError > TOLERANCE || stateError > TOLERANCE || logProbError > LOG_PROB_TOLERANCE || alone != 0.0F
+                || paths > 0) {
 
             System.err.println("PARITY FAILED: this build and the training side do not agree about the network");
             System.exit(1);
@@ -173,26 +192,97 @@ public final class BrainTool {
         System.out.println("parity ok");
     }
 
-    /** Seconds per agent per tick, which is what the server's tick budget is spent out of. */
+    /** Batch sizes the two sets of loops are held against each other at: past every layer's vector width and tail. */
+    private static final int PATH_BATCHES = 64;
+
+    /**
+     * Runs the pass both ways, with the loops this machine chose and with the plain ones, at every batch size from 1 to
+     * {@link #PATH_BATCHES}, and returns the first size at which they disagree by a single bit, or 0 for none.
+     *
+     * <p>Every batch size, because the batch loop pairs agents up and a lone one is left over at odd sizes, and because the
+     * width of a vector divides each layer differently: this is what says the explicit vector loops are the same
+     * arithmetic and not merely close to it. Nothing weaker is worth having, since a network's weights were trained
+     * against one answer and a difference here would show up as a fighter that is slightly worse for no reason anybody
+     * could find.
+     */
+    private static int bothPaths(WeightSet weights, float[] obs, float[] state, int rows, int hidden, int obsDim,
+                                 int logitDim) {
+
+        if (!Forward.vectorised()) {
+
+            return -1;
+        }
+
+        for (int agents = 1; agents <= Math.min(PATH_BATCHES, rows); agents++) {
+
+            float[] batchObs = new float[agents * obsDim];
+            float[] chosenState = new float[agents * hidden];
+            float[] plainState = new float[agents * hidden];
+            float[] chosenLogits = new float[agents * logitDim];
+            float[] plainLogits = new float[agents * logitDim];
+
+            System.arraycopy(obs, 0, batchObs, 0, agents * obsDim);
+            System.arraycopy(state, 0, chosenState, 0, agents * hidden);
+            System.arraycopy(state, 0, plainState, 0, agents * hidden);
+
+            Forward.forward(weights, batchObs, chosenState, chosenLogits, agents, new Forward.Scratch());
+            Forward.forwardScalar(weights, batchObs, plainState, plainLogits, agents, new Forward.Scratch());
+
+            // Bit for bit, not to a tolerance: the raw bits, so that a negative zero against a positive one counts.
+            if (!identical(chosenLogits, plainLogits) || !identical(chosenState, plainState)) {
+
+                return agents;
+            }
+        }
+
+        return 0;
+    }
+
+    private static boolean identical(float[] mine, float[] theirs) {
+
+        for (int index = 0; index < mine.length; index++) {
+
+            if (Float.floatToRawIntBits(mine[index]) != Float.floatToRawIntBits(theirs[index])) {
+
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Seconds per agent per tick with whichever loops this process chose, which is what the server's tick budget is spent
+     * out of. The best of a few bursts rather than one long one: on a machine with training on it, the mean measures the
+     * other work as much as this, and the fastest burst is the one that got the core to itself. Pin the process to a core
+     * at high priority and the spread closes to a couple of percent; see findings.md.
+     */
     private static double benchmark(WeightSet weights, float[] obs, float[] state, float[] logits, int count,
                                     Forward.Scratch scratch) {
 
         float[] working = state.clone();
 
-        for (int warmup = 0; warmup < 50; warmup++) {
+        for (int warmup = 0; warmup < 200; warmup++) {
 
             Forward.forward(weights, obs, working, logits, count, scratch);
         }
 
         int passes = 200;
-        long started = System.nanoTime();
+        double best = Double.MAX_VALUE;
 
-        for (int pass = 0; pass < passes; pass++) {
+        for (int burst = 0; burst < 10; burst++) {
 
-            Forward.forward(weights, obs, working, logits, count, scratch);
+            long started = System.nanoTime();
+
+            for (int pass = 0; pass < passes; pass++) {
+
+                Forward.forward(weights, obs, working, logits, count, scratch);
+            }
+
+            best = Math.min(best, (System.nanoTime() - started) / 1.0E9D / ((double) passes * count));
         }
 
-        return (System.nanoTime() - started) / 1.0E9D / ((double) passes * count);
+        return best;
     }
 
     private static float[] read(ByteBuffer buffer, int count) {

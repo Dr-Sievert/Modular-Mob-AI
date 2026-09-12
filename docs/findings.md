@@ -5,6 +5,34 @@ are deliberate.
 
 ## Throughput and stability
 
+- **The Vector API is only real if the compiler can inline it, and one big method is enough to lose it.** The forward pass's
+  loops are now written twice: the plain ones, and the same arithmetic in explicit vectors (`ForwardVectors`). Written as
+  one large method with all four of its loop nests inside it, the explicit vectors were **9% slower in the game than the
+  plain loops** and allocated 28 GB over a round of 6,000 fights against 11.7 GB: C2 had run out of room to inline the
+  vector calls, so every `FloatVector` became a real object on the heap, about 36 kB of garbage an agent tick. Split into
+  one small method per loop nest, nothing is allocated and the same loops are **10% faster**.
+
+  | the pass, per agent tick | plain | explicit vectors |
+  | --- | --- | --- |
+  | in the game, 6,000 fights, three pairs | 34.4, 34.6, 35.4 us | 32.4, 31.9, 30.7 us |
+  | allocated over the round | 12.1 GB | 11.8 GB |
+  | one big vector method instead | | 37.8, 35.3 us and 28 GB |
+  | pinned to one P-core, in a loop | 14.0 us | 10.7 us |
+  | pinned to one E-core, in a loop | 30.5 us | 28.4 us |
+
+  So a boxed Vector API loop does not merely fail to help, it costs more than it ever could have saved, and the only tell
+  in the numbers is the allocation. Check the garbage, not just the clock.
+  - **A pass timed in a loop is not the pass a tick pays for: 10.7 us against 31.7.** In a benchmark loop the 1.3 MB of
+    weights stay in the second level cache and the arithmetic is what is left; in a real tick the server thread has ticked
+    chunks and entities and written 634 floats an agent in between, and the weights are cold every time. That is also why
+    the vectors are worth 30% in the loop and 10% in the game. `Forward` counts its own nanoseconds now and every worker
+    prints what the pass cost it, which is the number to trust.
+  - **The server thread runs on an efficiency core.** On this i7-14700KF the pass takes 10.7 us pinned to a performance
+    core and 28.4 us pinned to an efficiency one, and 31.7 us in a worker: workers run at below-normal priority with every
+    core visible, and Windows puts them where it likes. Any absolute figure has to say which core it was measured on.
+  - Bit identity is checked, not assumed: `scripts\parity.ps1` runs both sets of loops at every batch size from 1 to 64 and
+    compares the raw bits, negative zero included. A jar started without `--add-modules jdk.incubator.vector` loads no
+    vector class at all and runs the plain loops, which is what a game that is not this build gets.
 - **The suites that train want no light engine, and that is a fifth more fights a worker.** A vindicator fight never asks
   how bright anywhere is, so the `terrain` and `arena` suites drop both light engines, which vanilla's `LevelLightEngine`
   null checks in every method it has. Measured on one worker over 24,000 fights on the terrain library, the seed pinned so
@@ -60,7 +88,9 @@ are deliberate.
   Fused multiply add halves the floating point operations the matrix loops issue and bought 3.5% over plain vectors, so
   those loops are not waiting on floating point at all: they are waiting on the weights and the running sums moving
   through the caches. **Bit identity is therefore nearly free**, which is worth knowing, because `Math.fma` drifts the
-  logits by about 7e-3 relative and nothing here is worth that.
+  logits by about 7e-3 relative and nothing here is worth that. (The vectors landed at 30% rather than 15% once the
+  normalising and the ReLU were written in vectors too, and the pass itself came down as the loops were rearranged; the
+  entry above has the numbers as they stand.)
   - Walking each weight matrix once for the whole batch instead of once per pair of agents is worth 2%. The weights were
     never the bottleneck.
   - Masked vector loads and stores are a trap: the same loops written with a mask per iteration instead of whole vectors

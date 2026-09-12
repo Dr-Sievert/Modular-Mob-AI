@@ -13,6 +13,19 @@ java {
     withJavadocJar()
 }
 
+// The forward pass has a second set of loops written in explicit vector instructions, which need the incubator module to
+// compile against: brain/nn/ForwardVectors.java, worth about 15% of the pass. Java 21 warns that the module is incubating,
+// which is the whole point of the guard on the other side: Forward looks the class up by name at load time and keeps its
+// plain loops when the module is not there, so a jar dropped into a game started without this flag still runs, only
+// slower. The flag is added wherever this build compiles and wherever it starts a game, and nowhere else.
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs += ['--add-modules', 'jdk.incubator.vector']
+}
+
+tasks.withType(Javadoc).configureEach {
+    options.addStringOption('-add-modules', 'jdk.incubator.vector')
+}
+
 repositories {
     mavenCentral()
     // https://docs.gradle.org/current/userguide/declaring_repositories.html#declaring_content_exclusively_found_in_one_repository

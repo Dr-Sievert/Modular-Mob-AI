@@ -22,7 +22,10 @@ the brain driving them, and puts each group through its brain in one call:
 2. Each agent's hidden vector (its memory) is gathered into the batch.
 3. The brain decides:
    - a `NeuralBrain` runs `Forward` over the whole batch (two agents share each pass over the weights), then
-     `ActionDecoder` samples (training) or takes the most likely action (deployed);
+     `ActionDecoder` samples (training) or takes the most likely action (deployed). `Forward` has two sets of loops and
+     picks one when it loads: explicit vector instructions (`ForwardVectors`) where `jdk.incubator.vector` is there, which
+     the build asks for, and plain loops in a jar dropped into any other game. The bits are the same either way, and
+     `scripts\parity.ps1` proves it at every batch size from 1 to 64;
    - `ScriptedBrain` is the hand-written teacher.
 4. Actions go back into each agent's `MobControls`, and hidden vectors back into each agent's `BrainState`.
 
