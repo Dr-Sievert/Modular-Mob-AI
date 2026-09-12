@@ -221,9 +221,16 @@ afterEvaluate {
     runTask.systemProperty('modular_mob_ai.gametest.opponent', providers.gradleProperty('opponent').getOrElse(''))
 
     // The league suite's opponents and loadouts, when a run wants fewer than all of them: -PleagueOpponents=zombie,creeper
-    // -PleagueLoadouts=sword,bow. Names as the league writes them in its results.
+    // or -PleagueOpponents=2x_zombie, -PleagueLoadouts=sword,bow. Names as the league writes them in its results. And which
+    // rungs of the difficulty ladder a run with no trainer goes round, -PleagueDifficulties=easy,normal,hard; a training
+    // run ignores it, since its trainer opens a rung when the agent has earned it.
     runTask.systemProperty('modular_mob_ai.league.opponents', providers.gradleProperty('leagueOpponents').getOrElse(''))
     runTask.systemProperty('modular_mob_ai.league.loadouts', providers.gradleProperty('leagueLoadouts').getOrElse(''))
+    runTask.systemProperty('modular_mob_ai.league.difficulties', providers.gradleProperty('leagueDifficulties').getOrElse(''))
+
+    // What share of league fights look for ground with something on it worth knocking an opponent into, lava or a cliff
+    // edge: -PleagueHazards=0.25, and 0 for none at all. A quarter unless told otherwise; see League.
+    runTask.systemProperty('modular_mob_ai.league.hazards', providers.gradleProperty('leagueHazards').getOrElse(''))
 
     // Where the fight sites come from, as a seed: the same number puts every worker on the same ground, which is what
     // comparing two builds needs, because one round in a forest and the next in the mountains differ by more than most
@@ -1292,8 +1299,10 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
         }
 
         // A league run's workers each say how their fights against every opponent went, beside their durations: fights,
-        // won, lost, timed out, drawn, and in how many the opponent hurt the agent and went for it; and the same for every
-        // loadout the agent carried, as loadout:NAME. Added up here.
+        // won, lost, timed out, drawn, in how many the opponent hurt the agent and went for it, and in how many the ground
+        // finished the opponent rather than the agent; and the same for every loadout the agent carried, as loadout:NAME,
+        // and every kind of ground it fought on, as site:NAME. Added up here.
+        def leagueColumns = 8
         def league = [:] as TreeMap
 
         processes.each { entry ->
@@ -1309,17 +1318,17 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
 
                 def parts = line.trim().split(/\s+/)
 
-                if (parts.length == 8) {
+                if (parts.length == leagueColumns + 1) {
 
                     def tally = league[parts[0]]
 
                     if (tally == null) {
 
-                        tally = [0L] * 7
+                        tally = [0L] * leagueColumns
                         league[parts[0]] = tally
                     }
 
-                    for (int index = 0; index < 7; index++) {
+                    for (int index = 0; index < leagueColumns; index++) {
 
                         tally[index] = (tally[index] as long) + Long.parseLong(parts[index + 1])
                     }
@@ -1329,24 +1338,27 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
 
         if (!league.isEmpty()) {
 
-            println "========= League results, the agent against each opponent and with each loadout ========="
+            println "========= League results, the agent against each opponent, with each loadout and on each ground ========="
 
-            [['opponent', league.findAll { !it.key.startsWith('loadout:') }],
-             ["agent's loadout", league.findAll { it.key.startsWith('loadout:') }]].each { title, rows ->
+            [['opponent', league.findAll { !it.key.startsWith('loadout:') && !it.key.startsWith('site:') }],
+             ["agent's loadout", league.findAll { it.key.startsWith('loadout:') }],
+             ['ground', league.findAll { it.key.startsWith('site:') }]].each { title, rows ->
 
-                println String.format(Locale.ROOT, "  %-18s %6s %7s %7s %9s %7s %7s %9s", title, 'fights', 'won %', 'lost %',
-                        'timeout %', 'draw %', 'hit it', 'went for')
+                println String.format(Locale.ROOT, "  %-28s %6s %7s %7s %9s %7s %7s %9s %7s", title, 'fights', 'won %', 'lost %',
+                        'timeout %', 'draw %', 'hit it', 'went for', 'ground')
 
                 rows.each { name, tally ->
 
                     def fights = Math.max(1L, tally[0])
-                    println String.format(Locale.ROOT, "  %-18s %6d %7.1f %7.1f %9.1f %7.1f %7d %9d", name - 'loadout:', tally[0],
+                    println String.format(Locale.ROOT, "  %-28s %6d %7.1f %7.1f %9.1f %7.1f %7d %9d %7d",
+                            (name - 'loadout:') - 'site:', tally[0],
                             100.0d * tally[1] / fights, 100.0d * tally[2] / fights, 100.0d * tally[3] / fights,
-                            100.0d * tally[4] / fights, tally[5], tally[6])
+                            100.0d * tally[4] / fights, tally[5], tally[6], tally[7])
                 }
             }
 
-            println "  hit it: fights in which the opponent hurt the agent; went for: in which it kept the agent as its target"
+            println "  hit it: fights in which the opponent hurt the agent; went for: in which it kept the agent as its target;"
+            println "  ground: wins in which the ground finished the opponent rather than the agent"
             println "=" * 60
         }
 
@@ -1471,6 +1483,7 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
             def layoutLines = null
             def columns = 0
             def rows = 0
+            def spacing = 0
 
             // Point numbers in a set, as both unusable and the kinds are written: "3,17,42", moved along by an offset.
             def pointsOf = { Properties from, String key, int offset ->
@@ -1490,7 +1503,8 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
 
                 columns = existing.getProperty('columns') as int
                 rows = existing.getProperty('rows') as int
-                layoutLines = "spacing=${existing.getProperty('spacing')}\ncolumns=${columns}\nrows=${rows}\n"
+                spacing = existing.getProperty('spacing') as int
+                layoutLines = "spacing=${spacing}\ncolumns=${columns}\nrows=${rows}\n"
 
                 for (int block = 0; existing.containsKey("block.${block}".toString()); block++) {
 
@@ -1515,17 +1529,22 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
                 }
 
                 // A library can only grow by blocks of the shape it already has: a point's number is worked out from the
-                // columns and rows, so mixing two layouts in one index would move every point that already existed.
-                if (columns != 0 && (built.getProperty('columns') as int) != columns || rows != 0 && (built.getProperty('rows') as int) != rows) {
+                // columns and rows, so mixing two layouts in one index would move every point that already existed, and the
+                // spacing says how much ground a site holds, so mixing two of those would leave half the sites short of the
+                // chunks they tick. -PsiteRadius is what decides the spacing.
+                if (columns != 0 && ((built.getProperty('columns') as int) != columns || (built.getProperty('rows') as int) != rows
+                        || (built.getProperty('spacing') as int) != spacing)) {
 
-                    throw new GradleException("The library in ${terrainLibrary} is laid out ${columns} by ${rows} and this "
-                            + "build lays its blocks out ${built.getProperty('columns')} by ${built.getProperty('rows')}; "
-                            + "build a new library rather than adding to this one")
+                    throw new GradleException("The library in ${terrainLibrary} holds blocks of ${columns} by ${rows} sites "
+                            + "${spacing} blocks apart, and this build lays out ${built.getProperty('columns')} by "
+                            + "${built.getProperty('rows')} at ${built.getProperty('spacing')}; build a new library rather "
+                            + "than adding to this one, or add at the -Radius it was built with")
                 }
 
                 columns = built.getProperty('columns') as int
                 rows = built.getProperty('rows') as int
-                layoutLines = "spacing=${built.getProperty('spacing')}\ncolumns=${columns}\nrows=${rows}\n"
+                spacing = built.getProperty('spacing') as int
+                layoutLines = "spacing=${spacing}\ncolumns=${columns}\nrows=${rows}\n"
 
                 def offset = blocks.size() * columns * rows
 
@@ -1576,7 +1595,9 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
             // Every pair of blocks, old and new, far enough apart to have region files of its own. A builder keeps clear of
             // the library and of its own blocks, but two builders cannot see each other's choices, so this is the guard
             // that makes an addition safe. Checked before anything is moved into the library.
-            def apart = 4096
+            // The same distance TerrainLibrary.BLOCKS_APART works out: a block's longer side plus four region files of
+            // slack, which is 4,096 at the usual site radius of two and grows with it.
+            def apart = rows * spacing + 2048
             def origins = blocks.collect { it.split(',').collect { part -> part.trim() as int } }
 
             for (int a = 0; a < origins.size(); a++) {

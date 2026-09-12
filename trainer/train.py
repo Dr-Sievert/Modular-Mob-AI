@@ -28,7 +28,7 @@ import numpy as np
 
 from mmai import log
 from mmai.evaluate import Evaluator
-from mmai.league import League
+from mmai.league import League, checkpoint_name
 from mmai.ppo import Config, Trainer
 from mmai.rollout import ShardHeader, read_header, read_shard
 from mmai.run import TRAINING, WAITING, RunDirectory, Workers
@@ -217,14 +217,19 @@ def loop(run: RunDirectory, trainer: Trainer, config: Config, schema: Schema, ke
     carried = []
     forgotten = 0
 
-    evaluator = Evaluator(run, config.checkpoint_every, config.eval_fights, config.eval_patience, config.eval_target)
-    done = False
-
     # A league run's matchmaking and ratings, brought up to date before the first round so its workers start from them.
     league = League(run, config) if config.league else None
 
     if league is not None:
         league.update(trainer.iteration)
+
+    # On the league, checkpoints are compared on their Elo rating rather than their win rate: the opponents get harder as
+    # the agent does, so a win rate cannot be compared across time. See Evaluator.
+    rating = None if league is None else (lambda iteration: league.ratings.rating(checkpoint_name(iteration)))
+
+    evaluator = Evaluator(run, config.checkpoint_every, config.eval_fights, config.eval_patience, config.eval_target,
+                          rating)
+    done = False
 
     while True:
         iteration = trainer.iteration

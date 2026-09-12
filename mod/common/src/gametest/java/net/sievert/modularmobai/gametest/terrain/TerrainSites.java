@@ -47,6 +47,14 @@ import net.sievert.modularmobai.gametest.GameTestTuning;
  * on it has finished and been cleaned up. The terrain stays as the generator left it: fights move nothing but
  * themselves, and what they drop is swept up after them.
  *
+ * <p>A site is handed out with somewhere to stand for the agent and for each of the other side: one place for a single
+ * opponent, and for a league squad one for each of them, standing together a few blocks apart, so a squad is a group the
+ * agent walks into rather than a ring drawn round it.
+ *
+ * <p>Each site also knows what is on it, {@link SiteHazards}: lava, an edge to knock something off, some other hazard,
+ * water, or nothing but ground. A fight may ask for ground with something on it worth using, and a share of the league's
+ * do; every fight is recorded under whatever kind of ground it actually got.
+ *
  * <p>Generating the lattice is most of what starting a worker costs, so fights do not wait for all of it. The sites are
  * generated a couple at a time, in order, and each one is handed out as soon as it is ready, while the rest are still
  * being generated behind it. Better still, the build keeps the worlds workers generated and hands them to later workers,
@@ -74,18 +82,28 @@ public final class TerrainSites {
     public static final String TAG = Constants.MOD_ID + ".arena";
 
     /**
-     * Chunks kept loaded and ticking either side of a site's centre chunk: two, so a fight has five chunks, eighty
-     * blocks, of open ground each way, and starts in the middle of it.
+     * Chunks kept loaded and ticking either side of a site's centre chunk: two by default, so a fight has five chunks,
+     * eighty blocks, of ground each way, and starts in the middle of it. A run can ask for more,
+     * {@link GameTestTuning#siteRadius()}, which is the only way a fight gets more ground than that; what a matchup can
+     * ask for on its own is how far apart it starts and how much air it wants overhead.
      */
-    static final int RADIUS_CHUNKS = 2;
+    static final int RADIUS_CHUNKS = GameTestTuning.siteRadius();
     private static final int SIZE = (2 * RADIUS_CHUNKS + 1) * 16;
 
     /**
-     * Blocks between site centres: eight chunks, so three chunks of dead ground separate one fight from the next. The
-     * worlds kept in runs/terrain and the terrain library were generated for this layout; delete them after changing it,
-     * or workers generate the new sites anyway, only slower, and a library says what it was built with.
+     * Chunks of dead ground between one site and the next, which is what keeps two fights from ever reaching each other:
+     * whatever walks off its site stops at the edge of the ticking ground, and nothing on the next site can path to it or
+     * see it, since a view reaches thirty two blocks and this is forty eight.
      */
-    static final int SPACING = 128;
+    private static final int DEAD_CHUNKS = 3;
+
+    /**
+     * Blocks between site centres, which follows the size of a site: eight chunks for the usual radius of two, ten for
+     * three. The worlds kept in runs/terrain and the terrain library were generated for one layout, so a run that changes
+     * the radius has to build the library again; a library says what spacing it was built with and a worker refuses one
+     * that disagrees rather than fighting on ground that is not there. See {@link #openLibrary()}.
+     */
+    static final int SPACING = (2 * RADIUS_CHUNKS + 1 + DEAD_CHUNKS) * 16;
     static final int COLUMNS = 8;
 
     /**
@@ -120,6 +138,30 @@ public final class TerrainSites {
     private static final int OPPONENT_MAX_DISTANCE = 11;
     private static final int OPPONENT_MAX_CLIMB = 3;
 
+    /** How far around a chosen spot to look for somewhere for the opponent to stand. */
+    private static final int SEARCH_AROUND_OPPONENT = 3;
+
+    /**
+     * How much higher than the agent an opponent may start for each four blocks it starts away. A fight that starts across
+     * twenty blocks of hillside cannot be held to the three blocks of climb a fight across eight is, or half the library
+     * would have nowhere to put it.
+     */
+    private static final int CLIMB_PER_DISTANCE = 4;
+
+    /**
+     * How far apart a fight may be asked to start, which is what a ranged or flying matchup asks for: enough that the
+     * site's own edges are nowhere near either fighter, so what bounds the start is the site and not a number. At a radius
+     * of two that leaves eleven blocks between the further fighter and the edge, with the jitter and the search for
+     * somewhere to stand counted in.
+     */
+    private static final int FURTHEST_START = SIZE / 2 - JITTER - SEARCH_AROUND_OPPONENT - 8;
+
+    /**
+     * How far the rest of a squad may stand from the first of them. A squad is a group the agent walks into rather than a
+     * ring around it, so they start together, each in the nearest place to the first that something can stand.
+     */
+    private static final int SQUAD_SPREAD = 3;
+
     /** How many places to try for the lattice before settling for the one with the most land. */
     private static final int ORIGIN_ATTEMPTS = 400;
     private static final int ORIGIN_RANGE = 2_000_000;
@@ -127,10 +169,20 @@ public final class TerrainSites {
     /**
      * A fight's patch of ground.
      *
-     * @param bounds what the fighters may perceive: the site's loaded area, from a little below the lower of the two up
-     *               to well above the higher
+     * @param opponents where the other side starts, one place for each of them: one for a single mob, several standing
+     *                  together for a squad
+     * @param bounds    what the fighters may perceive: the site's loaded area, from a little below the lowest fighter up
+     *                  to well above the highest
+     * @param kind      what is on this patch of ground worth knocking an opponent into, see {@link SiteHazards}
      */
-    public record Site(int index, BlockPos agent, BlockPos opponent, AABB bounds) {}
+    public record Site(int index, BlockPos agent, List<BlockPos> opponents, AABB bounds, SiteHazards.Kind kind) {
+
+        /** Where the one opponent starts, for the fights that only ever have one. */
+        public BlockPos opponent() {
+
+            return this.opponents.get(0);
+        }
+    }
 
     /**
      * Fights a site hosts before it is swapped for fresh ground, once a spare is ready to take its place. Every swap
@@ -172,6 +224,13 @@ public final class TerrainSites {
     /** Fights each site has hosted since it last moved, and how many of those ran out the clock. */
     private static final int[] fights = new int[COUNT];
     private static final int[] timeouts = new int[COUNT];
+
+    /**
+     * What is on each site, worked out the first time anything asks and kept until the site moves on to fresh ground. A
+     * scan of a site is four hundred odd block lookups and a site hosts a hundred fights, so this is nothing; asking on
+     * demand rather than as a site becomes ready keeps it off the path that gets the first fight going.
+     */
+    private static final SiteHazards.Kind[] kinds = new SiteHazards.Kind[COUNT];
 
     /** Points of the lattice asked for as spares, in order, and whether each is loaded yet. */
     private static final int[] spares = new int[SPARES];
@@ -254,8 +313,8 @@ public final class TerrainSites {
                 startLibrary();
                 startedAt = System.nanoTime();
 
-                Constants.LOG.info("Terrain arenas: {} sites from the terrain library, {} of its {} points usable, starting at "
-                        + "point {}", COUNT, library.usableCount(), library.points(), lattice[0]);
+                Constants.LOG.info("Terrain arenas: {} sites of {} blocks from the terrain library, {} of its {} points usable, "
+                        + "starting at point {}", COUNT, SIZE, library.usableCount(), library.points(), lattice[0]);
 
                 return plots(level);
             }
@@ -266,7 +325,7 @@ public final class TerrainSites {
             origin = kept != null ? kept : chooseOrigin(level, random, COUNT);
             startedAt = System.nanoTime();
 
-            Constants.LOG.info("Terrain arenas: {} sites from {} in {}{}", COUNT, origin.toShortString(),
+            Constants.LOG.info("Terrain arenas: {} sites of {} blocks from {} in {}{}", COUNT, SIZE, origin.toShortString(),
                     level.getBiome(origin).unwrapKey().map(key -> key.location().toString()).orElse("an unnamed biome"),
                     kept != null ? ", generated by an earlier worker" : "");
         }
@@ -292,11 +351,17 @@ public final class TerrainSites {
 
             TerrainLibrary.Index index = TerrainLibrary.Index.read(Path.of(path));
 
-            if (index.spacing() != SPACING || index.columns() != COLUMNS) {
+            // A library holds each site's chunks and the neighbours it takes to load them, laid out for the radius it was
+            // built with, which its spacing says. A run asking for no more ground than that can read it: the sites it wants
+            // are inside the ground the library has, and the chunks it does not force simply stay on disk. A run asking for
+            // more cannot, since the ground it would tick was never generated.
+            int built = (index.spacing() / 16 - DEAD_CHUNKS - 1) / 2;
 
-                Constants.LOG.warn("The terrain library at {} was built {} blocks apart in {} columns, and sites here are {} apart in "
-                        + "{}; generating instead. Build it again with scripts\\terrain.ps1", path, index.spacing(), index.columns(),
-                        SPACING, COLUMNS);
+            if (built < RADIUS_CHUNKS) {
+
+                Constants.LOG.warn("The terrain library at {} was built for sites {} blocks across, {} apart, and this run wants {} "
+                        + "blocks; generating instead. Build it again with scripts\\terrain.ps1 -Radius {}", path,
+                        (2 * built + 1) * 16, index.spacing(), SIZE, RADIUS_CHUNKS);
                 return null;
             }
 
@@ -328,7 +393,8 @@ public final class TerrainSites {
                 ? RandomSource.create(GameTestTuning.terrainSeed() * 31L + GameTestTuning.shardIndex())
                 : RandomSource.create();
 
-        libraryCursor = random.nextInt(Math.max(1, library.points() / COLUMNS)) * COLUMNS;
+        // The library's own columns rather than this run's, since it is the library's rows the cursor walks.
+        libraryCursor = random.nextInt(Math.max(1, library.points() / library.columns())) * library.columns();
 
         for (int site = 0; site < COUNT; site++) {
 
@@ -477,11 +543,35 @@ public final class TerrainSites {
     }
 
     /**
-     * The next free site, with somewhere to stand for the agent and for its opponent, or null when every usable site that
-     * is ready has a fight on it; the caller tries again a tick later. Never waits for the world generator.
+     * The next free site, with somewhere to stand for the agent and for its one opponent, or null when every usable site
+     * that is ready has a fight on it; the caller tries again a tick later. Never waits for the world generator.
      */
     @Nullable
     public static synchronized Site claim(ServerLevel level) {
+
+        return claim(level, 1, 0, false);
+    }
+
+    /**
+     * The same for a fight that wants more than one place to stand, or more room between the two sides than the seven to
+     * eleven blocks a melee fight starts across: a ranged or flying matchup asks for room to shoot across and to be kited
+     * over, see the league's Opposition.
+     *
+     * <p>A site is only ever written off as water or cliff on a fight that wanted the one place at the one distance the
+     * terrain library checked it for. A squad, or a fight that wants twenty blocks of room, needs ground the library never
+     * looked for, so failing to find it says nothing about the site: it is left for the next fight, which is almost always
+     * an ordinary one and will decide.
+     *
+     * @param opponents how many places the other side needs
+     * @param apart     how far away from the agent to put them, or zero for the ordinary distance; more than the site can
+     *                  hold is cut down to what it can, and ground with no room for it falls back to the ordinary distance
+     *                  rather than losing the fight
+     * @param hazards   whether to look first for ground with something on it worth knocking an opponent into, see
+     *                  {@link SiteHazards}. Only a fraction of the library has any, so a fight that asks and finds none
+     *                  takes ordinary ground rather than waiting; what the fight is recorded on is whatever it got
+     */
+    @Nullable
+    public static synchronized Site claim(ServerLevel level, int opponents, int apart, boolean hazards) {
 
         if (origin == null) {
 
@@ -496,33 +586,57 @@ public final class TerrainSites {
             nextWildlifeSweep = level.getGameTime() + WILDLIFE_SWEEP_TICKS;
         }
 
-        for (int attempt = 0; attempt < COUNT; attempt++) {
+        // The first pass is only for a fight that asked for hazardous ground, and only looks at sites that have some.
+        for (int pass = hazards ? 0 : 1; pass < 2; pass++) {
 
-            int index = next++ % COUNT;
+            for (int attempt = 0; attempt < COUNT; attempt++) {
 
-            if (!ready[index] || unusable[index] || inUse[index]) {
+                int index = next++ % COUNT;
 
-                continue;
-            }
+                if (!ready[index] || unusable[index] || inUse[index]) {
 
-            BlockPos centre = centre(index);
+                    continue;
+                }
 
-            for (int tries = 0; tries < PLACEMENT_TRIES; tries++) {
+                BlockPos centre = centre(index);
+                SiteHazards.Kind kind = kindOf(level, index, centre);
 
-                Site site = place(level, index, centre, random);
+                if (pass == 0 && !kind.hazardous()) {
 
-                if (site != null) {
+                    continue;
+                }
 
-                    inUse[index] = true;
-                    return site;
+                for (int tries = 0; tries < PLACEMENT_TRIES; tries++) {
+
+                    Site site = place(level, index, centre, random, opponents, apart, kind);
+
+                    if (site != null) {
+
+                        inUse[index] = true;
+                        return site;
+                    }
+                }
+
+                if (opponents == 1 && apart == 0) {
+
+                    // Water or cliff all the way across. Out of use until a spare takes its place.
+                    unusable[index] = true;
                 }
             }
-
-            // Water or cliff all the way across. Out of use until a spare takes its place.
-            unusable[index] = true;
         }
 
         return null;
+    }
+
+    /** What is on a site, worked out once and kept until the site moves on. */
+    private static SiteHazards.Kind kindOf(ServerLevel level, int index, BlockPos centre) {
+
+        if (kinds[index] == null) {
+
+            kinds[index] = SiteHazards.of(level, centre, SIZE);
+        }
+
+        return kinds[index];
     }
 
     /**
@@ -608,6 +722,9 @@ public final class TerrainSites {
             fights[site] = 0;
             timeouts[site] = 0;
             unusable[site] = false;
+
+            // Fresh ground, so what was on the old patch says nothing about this one.
+            kinds[site] = null;
 
             if (++swaps % 100 == 0) {
 
@@ -705,10 +822,17 @@ public final class TerrainSites {
         return true;
     }
 
+    /**
+     * Everything a finished fight left on its site: what it dropped and what is still in the air, and anything living the
+     * fight brought that was not one of the fighters handed back. An evoker's vexes are the case that needs the last one:
+     * they are part of the fight, so the sweep for wildlife spares them, and nothing else would ever take them away. The
+     * sweep for wildlife cannot do it either, since a vex still fighting has to survive that.
+     */
     private static void sweep(ServerLevel level, AABB box) {
 
         List<Entity> leftovers = level.getEntitiesOfClass(Entity.class, box, entity ->
-                entity instanceof ItemEntity || entity instanceof ExperienceOrb || entity instanceof Projectile);
+                entity instanceof ItemEntity || entity instanceof ExperienceOrb || entity instanceof Projectile
+                        || (entity instanceof LivingEntity && entity.getTags().contains(TAG)));
 
         leftovers.forEach(Entity::discard);
     }
@@ -741,6 +865,17 @@ public final class TerrainSites {
     @Nullable
     static Site place(ServerLevel level, int index, BlockPos centre, RandomSource random) {
 
+        return place(level, index, centre, random, 1, 0, SiteHazards.Kind.FLAT);
+    }
+
+    /**
+     * The same with room for a whole squad on the other side, and for a fight that wants more room between the sides than a
+     * melee fight does: the first of them where one opponent would stand, the rest beside it.
+     */
+    @Nullable
+    static Site place(ServerLevel level, int index, BlockPos centre, RandomSource random, int opponents, int apart,
+                      SiteHazards.Kind kind) {
+
         int x = centre.getX() + Mth.nextInt(random, -JITTER, JITTER);
         int z = centre.getZ() + Mth.nextInt(random, -JITTER, JITTER);
 
@@ -751,25 +886,14 @@ public final class TerrainSites {
             return null;
         }
 
-        BlockPos opponent = null;
+        // The room asked for, never more than the site holds, and then the ordinary distance if the ground has no room for
+        // it: a fight on less room than it wanted is still the fight, and losing it to a hillside would only starve the
+        // ranged matchups of fights.
+        BlockPos opponent = apart > 0 ? across(level, agent, Math.min(apart, FURTHEST_START), random) : null;
 
-        // A few directions at a random start, so the opponent is not always on the same side.
-        float heading = random.nextFloat() * Mth.TWO_PI;
+        if (opponent == null) {
 
-        for (int turn = 0; turn < 8 && opponent == null; turn++) {
-
-            float angle = heading + turn * (Mth.TWO_PI / 8.0F);
-            int distance = Mth.nextInt(random, OPPONENT_MIN_DISTANCE, OPPONENT_MAX_DISTANCE);
-
-            BlockPos candidate = nearestStanding(level,
-                    agent.getX() + Math.round(Mth.cos(angle) * distance),
-                    agent.getZ() + Math.round(Mth.sin(angle) * distance), 3);
-
-            if (candidate != null && Math.abs(candidate.getY() - agent.getY()) <= OPPONENT_MAX_CLIMB
-                    && candidate.distSqr(agent) >= OPPONENT_MIN_DISTANCE * OPPONENT_MIN_DISTANCE / 2) {
-
-                opponent = candidate;
-            }
+            opponent = across(level, agent, 0, random);
         }
 
         if (opponent == null) {
@@ -777,11 +901,103 @@ public final class TerrainSites {
             return null;
         }
 
-        AABB box = siteBox(level, centre);
-        int low = Math.min(agent.getY(), opponent.getY());
-        int high = Math.max(agent.getY(), opponent.getY());
+        List<BlockPos> side = squad(level, opponent, random, opponents);
 
-        return new Site(index, agent, opponent, new AABB(box.minX, low - 16, box.minZ, box.maxX, high + 24, box.maxZ));
+        if (side == null) {
+
+            return null;
+        }
+
+        AABB box = siteBox(level, centre);
+        int low = agent.getY();
+        int high = agent.getY();
+
+        for (BlockPos start : side) {
+
+            low = Math.min(low, start.getY());
+            high = Math.max(high, start.getY());
+        }
+
+        return new Site(index, agent, side, new AABB(box.minX, low - 16, box.minZ, box.maxX, high + 24, box.maxZ), kind);
+    }
+
+    /**
+     * Somewhere for the other side to stand that far from the agent, or at the ordinary seven to eleven blocks when asked
+     * for nothing in particular; null when the ground offers nowhere.
+     *
+     * <p>A few directions from a random start, so the opponent is not always on the same side of the agent. What counts as
+     * level ground grows with the distance: three blocks of climb across eight is the same hillside as five across twenty.
+     */
+    @Nullable
+    private static BlockPos across(ServerLevel level, BlockPos agent, int apart, RandomSource random) {
+
+        int nearest = apart > 0 ? apart : OPPONENT_MIN_DISTANCE;
+        int climb = Math.max(OPPONENT_MAX_CLIMB, nearest / CLIMB_PER_DISTANCE);
+        float heading = random.nextFloat() * Mth.TWO_PI;
+
+        for (int turn = 0; turn < 8; turn++) {
+
+            float angle = heading + turn * (Mth.TWO_PI / 8.0F);
+            int distance = apart > 0 ? apart : Mth.nextInt(random, OPPONENT_MIN_DISTANCE, OPPONENT_MAX_DISTANCE);
+
+            BlockPos candidate = nearestStanding(level,
+                    agent.getX() + Math.round(Mth.cos(angle) * distance),
+                    agent.getZ() + Math.round(Mth.sin(angle) * distance), SEARCH_AROUND_OPPONENT);
+
+            if (candidate != null && Math.abs(candidate.getY() - agent.getY()) <= climb
+                    && candidate.distSqr(agent) >= OPPONENT_MIN_DISTANCE * OPPONENT_MIN_DISTANCE / 2) {
+
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Where each of the other side starts: the first where a single opponent would, and every one after it in the nearest
+     * free place to that, so a squad meets the agent as a group. Null when the ground has no room for all of them, which
+     * leaves the site to the next fight rather than writing it off, see {@link #claim(ServerLevel, int, int)}.
+     */
+    @Nullable
+    private static List<BlockPos> squad(ServerLevel level, BlockPos first, RandomSource random, int opponents) {
+
+        List<BlockPos> side = new ArrayList<>(opponents);
+        side.add(first);
+
+        float heading = random.nextFloat() * Mth.TWO_PI;
+
+        for (int member = 1; member < opponents; member++) {
+
+            BlockPos found = null;
+
+            // Round the first of them, a turn further along for each, so the same squad does not always form the same shape.
+            for (int turn = 0; turn < 8 && found == null; turn++) {
+
+                float angle = heading + (member * 8 + turn) * (Mth.TWO_PI / 8.0F);
+                int spread = Mth.nextInt(random, 1, SQUAD_SPREAD);
+
+                BlockPos candidate = nearestStanding(level,
+                        first.getX() + Math.round(Mth.cos(angle) * spread),
+                        first.getZ() + Math.round(Mth.sin(angle) * spread), 1);
+
+                // Level with the rest of the squad rather than with the agent, which is what standing together means, and
+                // what lets a squad start across a hillside at all.
+                if (candidate != null && !side.contains(candidate) && Math.abs(candidate.getY() - first.getY()) <= OPPONENT_MAX_CLIMB) {
+
+                    found = candidate;
+                }
+            }
+
+            if (found == null) {
+
+                return null;
+            }
+
+            side.add(found);
+        }
+
+        return List.copyOf(side);
     }
 
     /** The closest place within the radius where something can stand on dry, solid ground with its head clear. */

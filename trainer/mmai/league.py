@@ -5,16 +5,30 @@ with a different loadout from one fight to the next; the game's gametest/league 
 every fight. This side reads them, keeps an Elo rating for every player, decides who the agent meets next, and writes
 all of it down:
 
-    runs/RUN/league/roster.csv          written by the workers: the mobs and the scripted fighter they field
-    runs/RUN/league/results/wNN.csv     appended by each worker: iteration,kind,opponent,loadout,opponent_loadout,outcome,ticks,cause
+    runs/RUN/league/roster.csv          written by the workers: the mobs and the scripted fighter they field, and the cap on each
+    runs/RUN/league/results/wNN.csv     appended by each worker: iteration,kind,opponent,loadout,opponent_loadout,outcome,ticks,cause,site,finish
     runs/RUN/league/matchmaking.csv     written here: each opponent's share of the training fights, and why
     runs/RUN/league/ratings.csv         written here: every player's rating, best first
     runs/RUN/league/opponents.csv       written here: the agent's recent record against each opponent
     runs/RUN/league/loadouts.csv        written here: the agent's recent record with each loadout
+    runs/RUN/league/ground.csv          written here: the fights on each kind of ground, and what finished the other side
     runs/RUN/league/evaluations.csv     written here: every evaluated checkpoint's record against each opponent
     runs/RUN/league/state.json          written here: everything a resumed run needs to carry on where it was
 
-Who is rated. Every player is a fixed policy: a kind of mob, the scripted fighter, a checkpoint on its most likely action.
+The ground. A quarter of the fights are drawn onto sites with something on them worth knocking an opponent into, lava or a
+cliff edge, and every fight says which kind of ground it was on and what finished the other side: the agent, the ground,
+its own side, or nothing. ground.csv adds that up per kind of ground. It is the one number that says whether the agent has
+learned that the terrain is a weapon, since a fight the ground finishes is its win either way.
+
+The difficulty ladder. Every opponent has three rungs, and its name says which: zombie on normal, zombie(hard) and
+zombie(easy) either side. Only normal is there from the start; a rung opens when the agent's evaluated record says it is
+ready for one. Past league_hard_at there is little left to learn from the opponent as it stands, so hard opens beside it;
+under league_easy_below there is nothing to learn from it yet, so easy does. Either needs league_rung_fights evaluation
+fights behind it. Once open a rung stays open, so its rating is never of a moving target and the agent has to keep what it
+won. Each rung is a player of its own, as each composition is, and a cap belongs to the opponent rather than the rung.
+
+Who is rated. Every player is a fixed policy: a kind of mob, a squad of them, a rung of the ladder, the scripted fighter,
+a checkpoint on its most likely action.
 The agent in training is none of those, since it samples and changes every iteration, so only evaluation fights are
 rated: a checkpoint on its most likely action, against an opponent drawn evenly from everyone. A fight scores one for a
 win, nothing for a loss, and a half when neither killed the other, on time or because a creeper blew itself up. Both
@@ -28,6 +42,12 @@ filled in from the ratings while there are few; an opponent's weight is that cha
 at an even fight. A floor of the fights is spread evenly, so an opponent the agent always beats, or never does, still
 comes round. Self play gets a share of its own, weighed the same way over a pool of checkpoints: the newest few, and the
 rest spaced out over the run so far, so the agent has to keep beating what it used to be as well as what it is.
+
+An opponent may also come with a cap on its share, which the workers write into roster.csv beside it, since the game is
+what knows: the warden cannot be beaten at all, the reward has no way to pay for getting away alive from one, and the
+floor alone would still hand it its even share of the fights. A cap holds it down to a fraction of that and gives what it
+gave up to the opponents there is something to learn from. Nothing caps the evaluation draw, so a capped opponent is
+rated on as many fights as any other.
 
 When a league run is done is not decided here. A checkpoint's fights against the mobs and the scripted fighter also go
 into the run's evaluation, drawn evenly across them, and evaluate.py keeps the best and stops the run once ten judged
@@ -54,6 +74,10 @@ logger = log.get("league")
 CHECKPOINT = "iteration-"
 SCRIPTED = "scripted"
 
+# The rungs of the difficulty ladder either side of normal, as the game writes them on the end of an opponent's name; see
+# the gametest's league/Opposition. Normal has no suffix, so every name the league had before the ladder means what it did.
+RUNGS = ("(hard)", "(easy)")
+
 OUTCOMES = ("win", "loss", "timeout", "draw")
 SCORES = {"win": 1.0, "loss": 0.0, "timeout": 0.5, "draw": 0.5}
 
@@ -68,6 +92,16 @@ def checkpoint_name(iteration: int) -> str:
 
 def checkpoint_iteration(name: str) -> int | None:
     return int(name[len(CHECKPOINT) :]) if name.startswith(CHECKPOINT) and name[len(CHECKPOINT) :].isdigit() else None
+
+
+def base(name: str) -> str:
+    """The opponent a name is a rung of: zombie for zombie(hard), and the name itself for anything else."""
+
+    for rung in RUNGS:
+        if name.endswith(rung):
+            return name[: -len(rung)]
+
+    return name
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -192,11 +226,12 @@ def win_chance(wins: float, fights: float, guess: float, guess_weight: float) ->
     return (wins + guess_weight * guess) / (fights + guess_weight)
 
 
-def shares(chances: dict[str, float], floor: float) -> dict[str, float]:
+def shares(chances: dict[str, float], floor: float, caps: dict[str, float] | None = None) -> dict[str, float]:
     """Each opponent's share of a group's fights, adding up to one.
 
     Weighed by chance times its complement, which is largest for an even fight and nothing for a certain one, and a
-    floor spread evenly so every opponent keeps coming round however the fights against it go.
+    floor spread evenly so every opponent keeps coming round however the fights against it go. Caps, where the workers
+    named any, hold an opponent down to at most its own share of the fights.
     """
 
     if not chances:
@@ -207,9 +242,45 @@ def shares(chances: dict[str, float], floor: float) -> dict[str, float]:
     even = 1.0 / len(chances)
 
     if total <= 0.0:
-        return {name: even for name in chances}
+        return capped({name: even for name in chances}, caps or {})
 
-    return {name: (1.0 - floor) * weight / total + floor * even for name, weight in weights.items()}
+    return capped({name: (1.0 - floor) * weight / total + floor * even for name, weight in weights.items()}, caps or {})
+
+
+def capped(group: dict[str, float], caps: dict[str, float]) -> dict[str, float]:
+    """The same shares with every cap honoured, what the capped ones gave up going to the rest in proportion.
+
+    Spreading what one gave up can push another over its own cap, so this goes round again until nothing is over, which
+    takes at most one pass per opponent. If every one of them ends up capped the shares add up to less than one, which
+    costs nothing: the workers draw from the shares in proportion, whatever they come to.
+    """
+
+    result = dict(group)
+    held: set[str] = set()
+
+    for _ in range(len(result)):
+        over = [name for name, share in result.items() if name not in held and share > caps.get(name, 1.0)]
+
+        if not over:
+            return result
+
+        spare = 0.0
+
+        for name in over:
+            spare += result[name] - caps[name]
+            result[name] = caps[name]
+            held.add(name)
+
+        free = {name: share for name, share in result.items() if name not in held}
+        loose = sum(free.values())
+
+        if loose <= 0.0:
+            return result
+
+        for name, share in free.items():
+            result[name] = share + spare * share / loose
+
+    return result
 
 
 def pool(checkpoints: list[int], size: int, recent: int) -> list[int]:
@@ -268,6 +339,33 @@ class Tally:
 
 
 @dataclass
+class Ground:
+    """How the fights on one kind of ground went, and how the other side went down.
+
+    The number this exists for is ``by_terrain``: a fight the ground finishes counts as the agent's win either way, so the
+    only way to see whether the agent has learned that lava and cliff edges are weapons is to count how often the ground is
+    what ended the fight, on ground that had any. Counted over the whole run rather than a window, since it is a trend and
+    not a current form, and saved with the rest so a resumed run keeps it.
+    """
+
+    fights: int = 0
+    wins: int = 0
+    by_agent: int = 0
+    by_terrain: int = 0
+    by_side: int = 0
+
+    def add(self, outcome: str, finish: str) -> None:
+        self.fights += 1
+        self.wins += outcome == "win"
+        self.by_agent += finish == "agent"
+        self.by_side += finish == "side"
+        self.by_terrain += finish not in ("agent", "side", "-")
+
+    def values(self) -> list[int]:
+        return [self.fights, self.wins, self.by_agent, self.by_terrain, self.by_side]
+
+
+@dataclass
 class Windows:
     """The most recent outcomes against each opponent, or with each loadout, so many of each."""
 
@@ -323,6 +421,18 @@ class League:
         self.shares: dict[str, float] = {}
         self.chances: dict[str, float] = {}
 
+        # What the workers say about each opponent they field: what kind of thing it is, and the largest share of the
+        # training fights it may take. Read afresh from roster.csv every iteration, so nothing of it is saved.
+        self.kinds: dict[str, str] = {}
+        self.caps: dict[str, float] = {}
+
+        # The rungs of the difficulty ladder opened so far, by full name: zombie(hard), 2x_zombie(easy). A ratchet, so it
+        # is saved with the rest and a resumed run does not have to earn them again.
+        self.rungs: set[str] = set()
+
+        # How the fights on each kind of ground went, and how often the ground itself finished the other side.
+        self.ground: dict[str, Ground] = {}
+
         self._resume()
 
     # -------------------------------------------------------------------------------------------------------------
@@ -334,13 +444,16 @@ class League:
             record[0] *= self.config.league_decay
             record[1] *= self.config.league_decay
 
+        # Read before the results, so a fight against an opponent nobody has rated yet is filed under the kind the workers
+        # say it is rather than the fallback: a player keeps the kind it was first entered under.
+        roster = self._roster()
+
         for row in self._read():
             self._take(*row)
 
-        roster = self._roster()
-
         # Nobody to weigh until a worker has said who it fields; until then the workers go round all of them evenly.
         if roster:
+            roster = roster + self._ladder(roster)
             self._matchmake(roster, self._pool(iteration))
             self._write(roster)
 
@@ -367,15 +480,18 @@ class League:
             end = data.rfind(b"\n") + 1
             self.offsets[file.name] = start + end
 
-            # The eighth field, what the agent died of, is for reading fights back later; nothing here needs it.
+            # The eighth field, what the agent died of, is for reading fights back later; nothing here needs it. The ninth
+            # and tenth, what ground the fight was on and what finished the other side, are newer than some runs, so a line
+            # without them still reads.
             for line in data[:end].decode("utf-8").splitlines():
                 parts = line.strip().split(",")
 
-                if len(parts) not in (7, 8) or parts[5] not in SCORES or parts[1] not in ("train", "eval"):
+                if not 7 <= len(parts) <= 10 or parts[5] not in SCORES or parts[1] not in ("train", "eval"):
                     continue
 
                 try:
-                    rows.append((int(parts[0]), parts[1], parts[2], parts[3], parts[4], parts[5], int(parts[6])))
+                    rows.append((int(parts[0]), parts[1], parts[2], parts[3], parts[4], parts[5], int(parts[6]),
+                                 parts[8] if len(parts) > 8 else "-", parts[9] if len(parts) > 9 else "-"))
 
                 except ValueError:
                     continue
@@ -383,7 +499,9 @@ class League:
         return rows
 
     def _take(self, iteration: int, kind: str, opponent: str, loadout: str, opponent_loadout: str, outcome: str,
-              ticks: int) -> None:
+              ticks: int, site: str, finish: str) -> None:
+
+        self.ground.setdefault(site, Ground()).add(outcome, finish)
 
         if kind == "train":
             record = self.training.setdefault(opponent, [0.0, 0.0])
@@ -404,10 +522,16 @@ class League:
         if checkpoint_iteration(name) is not None:
             return "checkpoint"
 
-        return "scripted" if name == SCRIPTED else "mob"
+        if name == SCRIPTED:
+            return "scripted"
+
+        # A rung of the ladder is the same kind of thing as the opponent it is a rung of: 2x_zombie(hard) is still a squad.
+        return self.kinds.get(base(name), "mob")
 
     def _roster(self) -> list[str]:
-        """The mobs and the scripted fighter the workers field, as they last said."""
+        """The mobs and the scripted fighter the workers field, as they last said, with what kind each is and the largest
+        share of the training fights it may take. A build that says neither leaves both at what they always were: a mob,
+        with no cap on it."""
 
         file = self.folder / "roster.csv"
 
@@ -417,7 +541,58 @@ class League:
         except OSError:
             return []
 
-        return [line.split(",")[0].strip() for line in lines if line.strip()]
+        names = []
+
+        for line in lines:
+            if not line.strip():
+                continue
+
+            parts = [part.strip() for part in line.split(",")]
+            names.append(parts[0])
+            self.kinds[parts[0]] = parts[1] if len(parts) > 1 and parts[1] else "mob"
+
+            try:
+                self.caps[parts[0]] = float(parts[2]) if len(parts) > 2 and parts[2] else 1.0
+
+            except ValueError:
+                self.caps[parts[0]] = 1.0
+
+        return names
+
+    def _ladder(self, roster: list[str]) -> list[str]:
+        """The rungs of the difficulty ladder the agent has earned, opening any that its evaluated record now calls for.
+
+        An opponent starts on normal. Once its evaluated win rate passes league_hard_at there is little left to learn from
+        it as it stands, so the hard rung opens beside it; while the rate is still under league_easy_below there is nothing
+        to learn from it yet, so the easy one does. Either needs league_rung_fights evaluation fights behind it, or one
+        lucky handful would open a rung.
+
+        A rung stays open once it is open. Closing one again would make its rating a moving target, and the agent would
+        stop having to hold what it won; and the fights cost little, since matchmaking sends them where the fight is even
+        and a rung the agent walks over is weighed down to the floor like any other opponent.
+        """
+
+        for name in roster:
+            tally = self.eval_windows.tally(name)
+
+            if tally.fights < self.config.league_rung_fights:
+                continue
+
+            rate = tally.wins / tally.fights
+            rung = "(hard)" if rate >= self.config.league_hard_at else "(easy)" if rate <= self.config.league_easy_below else None
+
+            if rung is None or name + rung in self.rungs:
+                continue
+
+            self.rungs.add(name + rung)
+
+            logger.info(
+                "%s is met on %s from now on: %.0f%% of the last %d evaluation fights on normal",
+                name, rung.strip("()"), 100.0 * rate, tally.fights,
+            )
+
+        # Only of the opponents the workers still field, so a run told to field fewer does not meet the rest of a rung.
+        return sorted(name for name in self.rungs if base(name) in roster)
 
     def _pool(self, iteration: int) -> list[str]:
         """The checkpoints the agent meets, of those whose weights are still on disk; the trainer keeps every one."""
@@ -443,7 +618,11 @@ class League:
 
         self_play = self.config.league_self_play if checkpoints else 0.0
 
-        fixed = shares({name: chances[name] for name in roster}, self.config.league_floor)
+        # A cap belongs to the opponent, so every rung of it is held to the same share: a hard warden is no more worth
+        # training against than a normal one.
+        caps = {name: self.caps.get(base(name), 1.0) for name in roster}
+
+        fixed = shares({name: chances[name] for name in roster}, self.config.league_floor, caps)
         frozen = shares({name: chances[name] for name in checkpoints}, self.config.league_floor)
 
         self.chances = chances
@@ -486,6 +665,11 @@ class League:
             for name in loadouts
         ])
 
+        self._table("ground.csv", "site,fights,wins,by_agent,by_terrain,by_side", [
+            f"{site}," + ",".join(str(value) for value in tally.values())
+            for site, tally in sorted(self.ground.items())
+        ])
+
         self._table("evaluations.csv", "iteration,opponent,fights,wins,losses,timeouts,draws", [
             f"{iteration},{opponent}," + ",".join(str(value) for value in tally.values())
             for (iteration, opponent), tally in sorted(self.evaluations.items())
@@ -513,12 +697,23 @@ class League:
             ", ".join(f"{name} {100 * self.shares[name]:.0f}%" for name in most),
         )
 
+        # What the hazard sites are for: the ground finishing the fight, and only on the ground that has any.
+        using = [
+            f"{site} {100.0 * tally.by_terrain / max(1, tally.wins):.0f}% of {tally.wins} wins"
+            for site, tally in sorted(self.ground.items()) if tally.by_terrain > 0
+        ]
+
+        if using:
+            logger.info("the ground finished the opponent in %s", "; ".join(using))
+
     # -------------------------------------------------------------------------------------------------------------
 
     def _save(self) -> None:
         state = {
             "offsets": self.offsets,
             "rated": self.rated,
+            "rungs": sorted(self.rungs),
+            "ground": {site: tally.values() for site, tally in self.ground.items()},
             "players": {
                 player.name: [player.kind, player.rating, player.games, player.wins, player.losses, player.draws]
                 for player in self.ratings.players.values()
@@ -548,6 +743,8 @@ class League:
 
         self.offsets = {name: int(offset) for name, offset in state.get("offsets", {}).items()}
         self.rated = int(state.get("rated", 0))
+        self.rungs = set(state.get("rungs", []))
+        self.ground = {site: Ground(*values) for site, values in state.get("ground", {}).items()}
 
         for name, (kind, rating, games, wins, losses, draws) in state.get("players", {}).items():
             self.ratings.players[name] = Player(name, kind, float(rating), int(games), int(wins), int(losses), int(draws))
@@ -564,4 +761,5 @@ class League:
             iteration, opponent = key.split("|", 1)
             self.evaluations[(int(iteration), opponent)] = Tally(*values)
 
-        logger.info("carrying on from %d rated fights over %d players", self.rated, len(self.ratings.players))
+        logger.info("carrying on from %d rated fights over %d players, %d rungs of the ladder open", self.rated,
+                    len(self.ratings.players), len(self.rungs))

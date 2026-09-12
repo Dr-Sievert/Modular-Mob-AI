@@ -110,12 +110,21 @@ one place, where it lands (`LivingEntityMixin`), so arrows count the same as swi
 ## The fights
 
 Training fights are one agent against one vindicator on natural terrain, generated as a normal world. A fight ends when
-either fighter dies, or after 1200 ticks (a minute), which counts as a loss.
+either fighter dies, or after 1200 ticks (a minute), which counts as a loss. A league fight's clock is the matchup's; see
+the league below.
 
 Each worker runs 25 fights at once on a quarter again as many sites (32), plus 4 spares, all held by
 `gametest/terrain/TerrainSites`:
-- A site is 80 × 80 blocks (5 × 5 chunks). Sites sit on a lattice 128 blocks apart, 8 to a row.
-- Both fighters start with open sky above them. Starts under canopies and mangrove roots lost 9.8% against 0.8%.
+- A site is 80 × 80 blocks (5 × 5 chunks) and sites sit 128 blocks apart, 8 to a row: three chunks of dead ground between
+  one fight and the next, which is why nothing on one site can reach or see anything on another. Both follow one number,
+  `-PsiteRadius` (`scripts\train.ps1 -SiteRadius`, `scripts\terrain.ps1 -Radius`), which is chunks either side of a site's
+  centre. It is one size for a whole run, not per matchup: a site's chunks are nearly all of a worker's heap, and the
+  terrain library holds its sites at the size it was built for. A worker will read a library built for bigger sites and use
+  the inner part; a library built for smaller ones it refuses and says which `-Radius` to rebuild with.
+- A site is handed out with a place to stand for the agent and one for each of the other side, 7 to 11 blocks away, a
+  squad's members within 3 blocks of each other. It also knows what is on it, which the league draws a share of its fights
+  by; see the league below.
+- Every fighter starts with open sky above it. Starts under canopies and mangrove roots lost 9.8% against 0.8%.
 - A site hosts 100 fights, then moves on to fresh ground once a spare is ready. A site where 2 fights time out is
   retired at once: that's the ground, not luck.
 - Chunks unload when a site moves on (`ChunkMapMixin`). Nothing is saved while tests run (`ServerLevelMixin`), and
@@ -157,18 +166,62 @@ for that even when a library exists.
 
 The league suite (`-Psuite=league`, `scripts\train.ps1 -Suite league`) is the same fight on the same sites against a
 different opponent every time, with a different loadout:
-- 26 mobs (`gametest/league/Roster`, which also says why the rest are left out): zombie, husk, drowned, zombie villager,
+- 37 mobs (`gametest/league/Roster`, which also says why the rest are left out): zombie, husk, drowned, zombie villager,
   skeleton, stray, bogged, wither skeleton, spider, cave spider, creeper, vindicator, pillager, witch, ravager, enderman,
-  silverfish, endermite, slime, magma cube, zombified piglin, piglin, piglin brute, hoglin, zoglin, breeze. Each gets its
-  own finalizeSpawn, is grown up, kept from zombifying and, for a slime, made its biggest, and is made to go for the
-  agent every tick it has let go: as its target, angered, or in its brain's memory. Slimes and breezes treat the agent
-  as a player (`SlimeInvoker`, `BreezeMixin`).
+  silverfish, endermite, slime, magma cube, zombified piglin, piglin, piglin brute, hoglin, zoglin, breeze, evoker,
+  blaze, ghast, phantom, vex, bee, wolf, polar bear, iron golem, snow golem, warden. Each gets its own finalizeSpawn, is
+  grown up, kept from zombifying and, for a slime, made its biggest, and is made to go for the agent every tick it has
+  let go: as its target, angered, or in its brain's memory. Slimes and breezes treat the agent as a player
+  (`SlimeInvoker`, `BreezeMixin`); a bee never counts as having stung, or it would die of its own sting (`BeeMixin`); a
+  snow golem is given fire resistance, or a warm biome would melt it.
+- Whatever flies starts in the air over its spawn spot, which always has open sky: a ghast 8 blocks up, a phantom 6, a
+  vex 3, a blaze and a bee 2. A flyer cannot be reached in melee at all, which is what the bow and crossbow loadouts are
+  for. An evoker's vexes are taken into the fight as it calls them, and swept up with it.
+- The warden is a benchmark, not a lesson: nothing beats it and the reward cannot pay for escaping, so its share of the
+  training fights is capped at 0.2% (`Roster.Member.trainingCap`, written into `roster.csv`). It stays fully rated.
+- 11 squads of several mobs at once (`gametest/league/Opposition`): `2x_zombie`, `2x_vindicator`, `3x_silverfish`,
+  `2x_skeleton`, `zombie+skeleton`, `witch+zombie`, `pillager+vindicator`, `spider+cave_spider`, `2x_wither_skeleton`,
+  `2x_creeper`, `phantom+zombie`. They are curated, not generated: every pair of 37 mobs would be 600 ratings saying
+  little. **Each composition is a player of its own** — two zombies are not twice a zombie, and nothing anywhere adds a
+  squad's members up. A squad fights as a side: the agent on one team and all of them on another
+  (`allegiance/Allegiance`), so each goes for the agent and the agent counts every one an enemy whatever it is; the teams
+  are disbanded the moment the fight ends. A fight against one mob still uses no teams at all. The warden is in no squad,
+  and a squad fight is not recorded for the viewer, whose format holds two fighters.
+- A difficulty ladder, three rungs per opponent, the name saying which: `zombie` on normal, `zombie(hard)` and
+  `zombie(easy)`. A rung is the `DifficultyInstance` the mob's own finalizeSpawn is handed — on hard it is likelier to
+  spawn in armour, likelier to have that armour and its weapon enchanted, rolls higher on the bonus health, damage and
+  follow range a zombie rolls for, and a spider gets a potion effect it never gets below hard. Nothing else changes. The
+  few things vanilla decides mid fight from the level's own difficulty (a husk's hunger, a zombie's reinforcements) stay
+  on normal for every fight: difficulty there belongs to the whole level and fifty fights share one, which is also why a
+  normal fight is exactly the fight it was before the ladder. **Each rung is a player of its own.** The trainer opens one
+  when the agent's evaluated win rate against the opponent passes 80% (hard) or is still under 20% (easy), over at least
+  30 evaluation fights, and a rung once open stays open. A run with no trainer goes round every rung the build enabled
+  (`-PleagueDifficulties`, normal and hard by default).
 - The scripted fighter and frozen checkpoints of the run, as another agent with a brain of its own on its most likely
   action, so only the agent's steps are recorded.
 - 10 loadouts (`gametest/league/Loadouts`, armed with `arena/Loadout`): iron, stone and diamond swords, an axe, a sword
   with iron armour, sword or axe with a shield, a bow, a crossbow, a sword with a bow behind it.
-- League fights happen at midnight with mob griefing off: no undead burn, spiders stay hostile, no crater stays in a kept
-  world. A creeper that blows itself up without killing the agent is a draw, which pays as a loss.
+- **Room and time per matchup** (`Roster.MELEE_TICKS` and its neighbours). A melee fight keeps the minute and the 7 to 11
+  blocks it always had. A fight against something that shoots from the ground (skeleton, stray, bogged, pillager, witch,
+  breeze, evoker, snow golem) gets 1,800 ticks and starts 20 blocks apart; something flying gets 2,400 and the same 20,
+  plus its air overhead. A squad takes whatever the mob on it that wants most asks for. A fight against another agent, the
+  scripted fighter or a checkpoint, keeps the melee minute whatever loadout it drew, so their ratings do not move. Ground
+  with no room for the wanted distance falls back to the ordinary one rather than losing the fight, and the clock is also
+  what the speed bonus is paid against, so fast means fast for the fight it was.
+- **Ground worth using.** Each site is labelled by what is on it (`gametest/terrain/SiteHazards`): `lava`, `drop` (a cliff
+  or ravine edge, a fall of more than 8), `hazard` (fire, magma, cactus, powder snow, berries, cobweb, dripstone), `water`
+  or `flat`. A quarter of the league's fights (`-PleagueHazards`) look for ground with something on it, since the terrain
+  is a weapon: a hundred health of iron golem goes into a lava lake as easily as a zombie does, and a fight the ground
+  finishes is already the agent's win. Only a quarter, because the plain melee on plain ground is still the fight it has to
+  win, and a run that only saw hazards would learn to hunt for them. Every fight records the ground it was on and what
+  finished the other side — the agent, the ground (as the damage names it: `lava`, `fall`), its own side, or nothing — and
+  `league/ground.csv` adds that up per kind of ground. **That number is the point**: a fight the ground ends counts as a
+  win either way, so terrain finishes rising on lava and cliff sites is the only sign the agent has learned the trick.
+  Labelling happens when a site is handed out, not in the library's index: it costs about 400 block lookups once per site
+  (a site hosts 100 fights), works on a library already built, and leaves the index format alone.
+- League fights happen at midnight, clear and with mob griefing off: no undead burn, spiders stay hostile, rain neither
+  hurts a blaze or a snow golem nor teleports an enderman, and no crater stays in a kept world. A creeper that blows
+  itself up without killing the agent is a draw, which pays as a loss.
 
 The trainer decides who the agent meets and rates everyone (`trainer/mmai/league.py`). Training fights are shared by the
 agent's chance against each opponent times its complement, from its recent fights and filled in from the ratings, with
@@ -180,13 +233,14 @@ the checkpoint's evaluation, so best weights and the end of the run work as on t
 
 | File (`runs/<run>/league/`) | Written by | Holds |
 | --- | --- | --- |
-| `roster.csv` | each worker as it starts | `opponent,kind`: the mobs and the scripted fighter it fields |
-| `results/wNN.csv` | each worker, a line a fight | `iteration,kind,opponent,loadout,opponent_loadout,outcome,ticks,cause`; kind `train` or `eval`, outcome `win`, `loss`, `timeout` or `draw`, cause what the agent died of when it died |
+| `roster.csv` | each worker as it starts | `opponent,kind,cap`: the mobs and the scripted fighter it fields, and the largest share of the training fights each may take (1 for no cap) |
+| `results/wNN.csv` | each worker, a line a fight | `iteration,kind,opponent,loadout,opponent_loadout,outcome,ticks,cause,site,finish`; kind `train` or `eval`, outcome `win`, `loss`, `timeout` or `draw`, cause what the agent died of when it died, site what was on the ground, finish what finished the other side (`agent`, `side`, a damage name like `lava`, or `-`) |
 | `matchmaking.csv` | the trainer, every iteration | `opponent,share,chance,rating,fights`: each opponent's share of the training fights, which the workers draw from |
 | `ratings.csv` | the trainer | every player's rating and rated record |
 | `opponents.csv`, `loadouts.csv` | the trainer | the agent's last 200 evaluation and training fights against each opponent and with each loadout |
+| `ground.csv` | the trainer | every fight of the run on each kind of ground, and what finished the other side: the agent, the ground, its own side |
 | `evaluations.csv` | the trainer | every evaluated checkpoint's record against each opponent |
-| `state.json` | the trainer | what a resumed run needs to carry the league on |
+| `state.json` | the trainer | what a resumed run needs to carry the league on, the rungs of the ladder it has opened included |
 
 ## The code
 
@@ -205,8 +259,8 @@ mod/                    the Gradle build (MultiLoader: common + fabric + neoforg
     Config.java           config/modular_mob_ai.properties, read by agents in a real game only
   common/src/gametest/java/net/sievert/modularmobai/gametest/
     tests/                the fights (closed arena, natural terrain, the league), the mechanics suite and the play suite
-    terrain/              the terrain sites
-    league/               the league: the mobs and how each is fielded, the loadouts, the draw and the results
+    terrain/              the terrain sites, the library they come from, and what each site has on it
+    league/               the league: the mobs and how each is fielded, the squads, the loadouts, the draw and the results
     replay/               fight recording for the viewer (FightRecorder, SiteBlocks)
     mixin/                game-test-only server changes: no saving, chunk unloading, no idle chunk ticking
     tools/                BrainTool: schema export and the parity check, runs without the game

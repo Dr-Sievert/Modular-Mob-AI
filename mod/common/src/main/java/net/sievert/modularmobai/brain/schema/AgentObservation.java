@@ -393,7 +393,13 @@ public final class AgentObservation {
         return HAZARD;
     }
 
-    private static boolean hazard(BlockState state) {
+    /**
+     * Whether a block hurts or kills a body in it or on it, which is what {@link #HAZARD} means. Public because anything
+     * that reasons about the ground the agent fights on has to mean the same by it as the agent does: a block one counts
+     * and the other does not is ground the agent refuses to use and the other promises. The game test side's
+     * {@code SiteHazards} asks this.
+     */
+    public static boolean hazard(BlockState state) {
 
         return state.getFluidState().is(FluidTags.LAVA)
                 || state.getBlock() instanceof BaseFireBlock

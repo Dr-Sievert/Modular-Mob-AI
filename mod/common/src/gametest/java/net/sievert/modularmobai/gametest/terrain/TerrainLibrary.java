@@ -82,13 +82,14 @@ public final class TerrainLibrary {
     static final int ROWS = 16;
 
     /**
-     * How far apart two blocks' origins have to be, in blocks of the world, for their region files never to touch. A block
-     * of the lattice covers {@code COLUMNS * SPACING} by {@code ROWS * SPACING}, under two thousand blocks, plus the ring
-     * of part generated ground the generator reaches out to; a region file is 512. Four thousand blocks is eight region
-     * files of clearance in the narrow direction and is not worth shaving, since the world is four million wide and land is
-     * not scarce.
+     * How far apart two blocks' origins have to be, in blocks of the world, for their region files never to touch: the
+     * length of a block along its longer side, plus two kilometres of slack for the ring of part generated ground the
+     * generator reaches out to and for the region files either sits in. A region file is 512 blocks, so the slack is four
+     * of them. It comes to 4,096 for the usual site radius of two and grows with the radius, as it has to: a site three
+     * chunks either side of its centre puts its blocks further apart. Nothing here is worth shaving, since the world sites
+     * are placed in is four million blocks wide and land is not scarce.
      */
-    static final int BLOCKS_APART = 4096;
+    static final int BLOCKS_APART = ROWS * TerrainSites.SPACING + 2048;
 
     /**
      * What a worker reads: where each block of the lattice is, how the lattice is laid out, which points no fight can start

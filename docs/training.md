@@ -84,6 +84,7 @@ Results so far (evaluated on the most likely action):
 scripts\terrain.ps1                       4,096 fight sites, on as much of the machine as fits
 scripts\terrain.ps1 -Add 2048             2,048 more, appended to the library that is already there
 scripts\terrain.ps1 -Sites 8192           a new library of that size; about 0.8 MB and 1.5 s of one builder per site
+scripts\terrain.ps1 -Radius 3             bigger sites, 112 blocks across rather than 80
 ```
 
 Training on natural ground reads its sites from the library and generates nothing, so a run stops and says to build one
@@ -99,12 +100,29 @@ Generating cost two to three cores and a third more memory per worker, and memor
 - Building a new one, or adding to one, while training runs is safe: a new library replaces the old one only once it is
   whole, and an addition's ground is moved in whole before a new index is moved over the old one, so nothing half finished
   is ever readable. A worker already running keeps its own links and never rereads the index.
-- Run it once per machine, and again whenever you want fresh ground. Build a new one rather than adding when the layout of
-  a block changes, since a point's number is worked out from it; the build refuses to mix two layouts in one index.
+- Run it once per machine, and again whenever you want fresh ground. Build a new one rather than adding when a block's
+  layout or a site's size changes, since a point's number is worked out from the layout and the ground a site needs from
+  the spacing; the build refuses to append blocks of a different shape to what is already there.
 - The index can carry facts about a point beyond whether a fight can start on it, as `kinds=lava,ravine` and then
   `kind.lava=3,17,42`, read, written and merged on append exactly as the unusable points are. Nothing fills them in yet;
   that is where sites the league should draw hazardous ground from will be named. A reader that does not know a kind ignores
   it, so adding one needs no rebuild.
+- `-Radius` is how much ground one site holds, in chunks either side of its centre: 2 (the default) is 80 blocks across,
+  3 is 112. It is the library's property, and the only way a fight gets more ground than 80 blocks; what a matchup can ask
+  for on its own is how far apart it starts and how much air it wants overhead. A run may use a library built for bigger
+  sites and fight on the inner part of each one; one built for smaller is refused, with the `-Radius` to rebuild at.
+  Measured from 2 to 3, on 320 sites and one worker fighting 300 league fights off them:
+
+  | | radius 2 (80 blocks) | radius 3 (112 blocks) |
+  | --- | --- | --- |
+  | disk a site | 0.84 MB | 1.38 MB (4,096 sites: 3.1 GB to about 5.5 GB) |
+  | build, 128 sites on one builder | 208 s | 272 s |
+  | worker heap it runs in | 1 GB | 1 GB, unchanged |
+  | 300 fights, one worker | 40 s | 50 s |
+
+  So the price of the bigger site is disk and about a quarter of the throughput, not memory: twice the chunks to tick, in
+  the same heap.
+
 ## Scripts
 
 ### `scripts\train.ps1`: one run
@@ -127,6 +145,7 @@ scripts\train.ps1 -Run league -Suite league -Seed vs-copy     the league, from v
 | `-Workers` | 0 = auto | worker processes (game servers) |
 | `-Slots` | 25 | fights at once per worker |
 | `-Heap` | from the suite | heap per worker: the build gives 1G on the terrain library, where a worker holds about half a gigabyte live, and 2G where a worker generates its own ground and settles at about 0.95 GB |
+| `-SiteRadius` | 2 | chunks either side of a fight site's centre: 2 is 80 blocks across, 3 is 112. No more than the terrain library was built for; 3 costs about a quarter of the throughput and no extra heap |
 | `-RolloutSteps` | 16384 (65536 with `-FromCopy`) | steps of experience per update (an iteration) |
 | `-Device` | cuda | `cpu` keeps the GPU out of it |
 | `-Suite` | terrain | `arena` is a closed 9-block box, for quick checks; `league` is every mob, the scripted fighter and the run's own checkpoints |
@@ -163,13 +182,27 @@ Every field of `Config` in `trainer/mmai/ppo.py` is an option, as `--field-name 
 | `--league-self-play` | 0.2 | share of league training fights against those checkpoints |
 | `--league-floor` | 0.25 | share of each group's fights spread evenly, whatever the agent's chances |
 | `--league-k` | 16 | Elo K (twice that for a player's first `--league-provisional` 30 rated fights) |
+| `--league-hard-at`, `--league-easy-below` | 0.80, 0.20 | evaluated win rate at which an opponent's hard or easy rung opens |
+| `--league-rung-fights` | 30 | evaluation fights an opponent needs before a rung can open |
 
 ### The league: `-Suite league` and `scripts\league.ps1`
 
-A league run fights 26 mobs, the scripted fighter and frozen checkpoints of itself, with a loadout drawn every fight; see
+A league run fights 37 mobs, 11 squads of several mobs at once, the scripted fighter and frozen checkpoints of itself,
+with a loadout drawn every fight; see
 [architecture.md](architecture.md#the-league). Matchmaking sends training fights where the agent wins about half the
 time; evaluation fights are drawn evenly and rated. A checkpoint is judged on 1,000 evaluation fights over the mobs and
-the scripted fighter, and the run is done after ten judged checkpoints in a row without a new best.
+the scripted fighter, and the run is done after ten judged checkpoints in a row without a new best. An opponent the
+workers cap, which today is only the warden, takes no more than its cap of the training fights however even the fight
+looks, and is rated on as many evaluation fights as any other.
+
+Every opponent also has a harder and an easier rung, `zombie(hard)` and `zombie(easy)`, which the run opens for itself as
+the agent earns them and then rates as players of their own. Nothing needs asking for: the log says
+`zombie is met on hard from now on: 84% of the last 40 evaluation fights on normal`, and the tier list shows both.
+
+A quarter of the fights are drawn onto ground with something on it worth knocking an opponent into, lava or a cliff edge
+(`-PleagueHazards=0.25`, 0 for none). Whether the agent is learning that trick is the `ground %` column of
+`scripts\league.ps1` and `league/ground.csv`: how many of its wins on each kind of ground were finished by the ground
+rather than by the agent. The log says `the ground finished the opponent in lava 8% of 240 wins; drop 3% of 510 wins`.
 
 ```
 scripts\train.ps1 -Run league -Suite league -Seed vs-copy     start one from vs-copy's best, run until done

@@ -8,6 +8,7 @@
 #   scripts\terrain.ps1                         4,096 sites on as much of the machine as fits, and 3.2 GB of disk
 #   scripts\terrain.ps1 -Add 2048               2,048 more sites appended to the library that is already there
 #   scripts\terrain.ps1 -Sites 8192 -Builders 6 more ground to go round, sooner, on a machine with the memory for it
+#   scripts\terrain.ps1 -Radius 3               bigger sites, 112 blocks across rather than 80
 #
 # Training on natural ground needs a library: scripts\train.ps1 stops and says to build one. More sites is always better
 # ground, at about 0.8 MB and a second and a half of one builder each, so the only limits are disk and patience; a builder
@@ -16,8 +17,24 @@
 #
 # -Add grows the library rather than replacing it: only the new sites are generated, they go somewhere well clear of every
 # block of ground already in it, and the sites that were there keep the numbers they had. Growing from 4,096 to 8,192
-# therefore costs what 4,096 sites cost, not what 8,192 do. Without -Add the library is built afresh, which is what to do
-# after changing how sites are laid out.
+# therefore costs what 4,096 sites cost, not what 8,192 do. Measured, 1,024 sites appended to a 4,096-site library took
+# 9 minutes on two builders and added 797 MB, against about 38 minutes to generate all 5,120 again. Without -Add the
+# library is built afresh, which is what to do after changing -Radius or how a block is laid out: a point's number comes
+# from the layout, so the build refuses to append blocks of a different shape to what is already there.
+#
+# -Radius is how much ground one site holds, in chunks either side of its centre: two, the default, is the 80 blocks across
+# every run so far has fought on, and three is 112. It is a property of the library rather than of a run: a worker will read
+# a library built for bigger sites and use the inner part of each one, but never one built for smaller, so growing a run's
+# sites means building the library again. Measured from two to three, on 320 sites and then on one worker fighting 300
+# league fights off them:
+#
+#   disk        0.84 MB a site to 1.38 MB, so 4,096 sites go from about 3.1 GB to about 5.5 GB
+#   build       128 sites on one builder, 208 s to 272 s
+#   memory      a worker still runs in a 1 GB heap; nothing had to be given more
+#   throughput  300 fights in 40 s to 50 s, a quarter slower, which is the cost of ticking twice the chunks
+#
+# What a matchup can ask for without any of that is how far apart it starts and how much air it wants overhead, which is
+# what the league's ranged and flying fights use.
 #
 # Vanilla generates most of a chunk one task at a time, so one builder gets through about half a site a second however
 # many cores are free; each builder is a server of its own with a -Heap sized heap. Workers link the library's files
@@ -29,6 +46,7 @@ param(
     [int] $Sites = 4096,
     [int] $Add = 0,
     [int] $Builders = 0,
+    [ValidateRange(1, 8)] [int] $Radius = 2,
     [string] $Heap = '2G'
 )
 
@@ -43,4 +61,4 @@ $builderArguments = if ($Builders -gt 0) { @("-Pworkers=$Builders") } else { @('
 # -Add says how many to append and wins over -Sites, which is how many a new library gets.
 $size = if ($Add -gt 0) { "-PaddSites=$Add" } else { "-PlibrarySites=$Sites" }
 
-Invoke-Gradle (@(':fabric:buildTerrainLibrary', $size, "-PworkerHeap=$Heap") + $builderArguments)
+Invoke-Gradle (@(':fabric:buildTerrainLibrary', $size, "-PsiteRadius=$Radius", "-PworkerHeap=$Heap") + $builderArguments)

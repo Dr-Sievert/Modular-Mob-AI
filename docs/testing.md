@@ -25,7 +25,7 @@ Each boots a headless server in seconds, and all of them need only Java (parity 
 scripts\test.ps1 -Terrain                 the fights on natural terrain; generates a world first
 scripts\test.ps1 -Arenas 200              more fights
 scripts\test.ps1 -Terrain -Replays        record every fight for the viewer, in runs\gametest\replays
-scripts\test.ps1 -League                  twice round every league opponent; a table of each, with how often it hit the agent
+scripts\test.ps1 -League                  194 fights, twice round every league opponent and squad on normal and on hard; a table of each
 scripts\test.ps1 -League -Weights models\vs-copy\best.mbw   the same with a network, which also fights a frozen copy of itself
 scripts\league.ps1 -Test                  the league's unit tests: Elo, matchmaking, the pool, reading and resuming results
 scripts\eval.ps1 -Weights models\vs-copy\best.mbw          a network's win rate, 2,000 fights, most likely action
@@ -98,7 +98,10 @@ mod\gradlew.bat -p mod :fabric:runGametestParallel -Psuite=terrain -Parenas=2000
 | `suite` | `arena` (closed box), `terrain` (natural ground, what training uses), `league` (terrain, a new opponent every fight), `mechanics`, `play`, `baseline` (villager against vindicator, no agent), `library` (no fights: builds the terrain library, see `scripts\terrain.ps1`) |
 | `terrainLibrary`, `librarySites` | `false` makes terrain workers generate their own ground even when a library exists; how many sites a library build generates |
 | `addSites` | how many sites to append to the library that is already there, instead of building a new one; only the new ones are generated |
+| `leagueOpponents`, `leagueLoadouts`, `leagueDifficulties` | league only: fewer opponents (`zombie,2x_zombie`), fewer loadouts, which rungs of the ladder a run with no trainer goes round (`easy,normal,hard`) |
+| `leagueHazards` | league only: the share of fights drawn onto ground with lava or an edge on it, 0.25 by default |
 | `arenas`, `workers`, `batchSize` | fights, worker processes, fights at once per worker |
+| `sites`, `siteRadius` | fight sites laid out, and chunks either side of each one's centre (2 = 80 blocks across) |
 | `brain`, `brainWeights` | `scripted` (default) or `neural` with a `.mbw` file |
 | `replayEvery`, `replayRun` | record one fight in N, into `runs\<replayRun>\replays` |
 | `workerHeap` | heap per worker; the build picks 1G on the terrain library and 2G otherwise when this is absent |

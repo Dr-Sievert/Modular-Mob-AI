@@ -4,6 +4,7 @@
   "package": "net.sievert.modularmobai.gametest.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "BeeMixin",
     "BreezeMixin",
     "ChunkMapMixin",
     "GameTestBatchFactoryMixin",

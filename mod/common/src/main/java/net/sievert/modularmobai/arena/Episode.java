@@ -1,5 +1,7 @@
 package net.sievert.modularmobai.arena;
 
+import java.util.List;
+
 import org.jetbrains.annotations.Nullable;
 
 import net.minecraft.world.entity.LivingEntity;
@@ -20,8 +22,8 @@ public final class Episode {
     @Nullable
     private final AABB bounds;
 
-    @Nullable
-    private final LivingEntity opponent;
+    /** Who hurting pays for; empty pays for hurting anything at all. */
+    private final List<LivingEntity> opponents;
 
     /**
      * @param maxTicks the arena's own time limit, which is what fast and slow are measured against
@@ -32,8 +34,19 @@ public final class Episode {
      */
     public Episode(int maxTicks, @Nullable AABB bounds, @Nullable LivingEntity opponent) {
 
+        this(maxTicks, bounds, opponent == null ? List.of() : List.of(opponent));
+    }
+
+    /**
+     * The same for a fight against several at once, where hurting any of them is what the agent is here for. A squad in the
+     * league is one fight with one reward, so every blow on any of them pays the same as a blow on a single opponent would.
+     *
+     * @param opponents everything hurting pays for; empty to pay for hurting anything
+     */
+    public Episode(int maxTicks, @Nullable AABB bounds, List<? extends LivingEntity> opponents) {
+
         this.bounds = bounds;
-        this.opponent = opponent;
+        this.opponents = List.copyOf(opponents);
         this.reward.beginEpisode(maxTicks);
     }
 
@@ -51,6 +64,6 @@ public final class Episode {
     /** Whether hurting this target is what the agent is here for. */
     public boolean pays(LivingEntity target) {
 
-        return this.opponent == null || target == this.opponent;
+        return this.opponents.isEmpty() || this.opponents.contains(target);
     }
 }

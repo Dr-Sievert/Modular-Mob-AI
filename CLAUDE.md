@@ -3,7 +3,7 @@
 A neural-network brain for Minecraft mobs. A player-shaped mob, the **agent**, is driven every tick by a small network
 running inside the game in plain Java. The network is trained offline with PyTorch PPO from what the game recorded.
 Today it beats a vindicator one on one on natural terrain (about 99.8%). Bows, crossbows, shields, axes, mining and
-placing work under a player's rules. An ELO league against most vanilla mobs is being built.
+placing work under a player's rules. An ELO league against every vanilla mob that fights fair is being built.
 
 Read these before changing anything:
 
@@ -39,7 +39,7 @@ Read these before changing anything:
 ```
 scripts\setup.ps1                      once per machine: Java 21, Python + PyTorch, compile, parity check
 scripts\test.ps1                       20 arena fights with the scripted fighter: expect 20/20, 54 ticks each
-scripts\test.ps1 -Mechanics            the item and block rules against a player's numbers: expect 19 passed
+scripts\test.ps1 -Mechanics            the item and block rules against a player's numbers: expect 23 passed
 scripts\test.ps1 -Play                 the agent in a real game (jar networks, /mmai, sides, Infinity loadouts): expect 17 passed
 scripts\play.ps1                       the dev client, agents on the best network in models\; -Model, -Weights, -Loader
 scripts\terrain.ps1                    once per machine before any training: the terrain library a run fights on

@@ -12,7 +12,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from mmai.league import League, Ratings, checkpoint_name, expected, pool, shares, win_chance
+from mmai.league import League, Ratings, base, capped, checkpoint_name, expected, pool, shares, win_chance
 from mmai.ppo import Config
 from mmai.run import RunDirectory
 
@@ -120,6 +120,32 @@ class MatchmakingTest(unittest.TestCase):
 
         self.assertEqual(shares({}, floor=0.25), {})
 
+    def test_a_cap_holds_an_opponent_down_and_the_rest_take_what_it_gave_up(self):
+        result = shares({"warden": 0.5, "zombie": 0.5, "creeper": 0.5}, floor=0.25, caps={"warden": 0.002})
+
+        self.assertAlmostEqual(result["warden"], 0.002)
+        self.assertAlmostEqual(result["zombie"], result["creeper"])
+        self.assertAlmostEqual(sum(result.values()), 1.0)
+
+    def test_an_uncapped_opponent_under_its_cap_is_left_alone(self):
+        plain = shares({"warden": 0.02, "zombie": 0.5}, floor=0.25)
+        held = shares({"warden": 0.02, "zombie": 0.5}, floor=0.25, caps={"warden": 0.5, "zombie": 1.0})
+
+        self.assertEqual(plain, held)
+
+    def test_capping_everyone_spends_less_than_all_the_fights(self):
+        result = capped({"a": 0.5, "b": 0.5}, {"a": 0.1, "b": 0.1})
+
+        self.assertAlmostEqual(result["a"], 0.1)
+        self.assertAlmostEqual(sum(result.values()), 0.2)
+
+    def test_what_one_cap_gives_up_does_not_push_another_over_its_own(self):
+        result = capped({"a": 0.6, "b": 0.3, "c": 0.1}, {"a": 0.1, "b": 0.35})
+
+        self.assertAlmostEqual(result["a"], 0.1)
+        self.assertAlmostEqual(result["b"], 0.35)
+        self.assertAlmostEqual(sum(result.values()), 1.0)
+
     def test_the_chance_is_the_record_filled_in_by_the_guess(self):
         self.assertAlmostEqual(win_chance(0.0, 0.0, 0.7, 10.0), 0.7)
         self.assertAlmostEqual(win_chance(90.0, 100.0, 0.2, 10.0), (90.0 + 2.0) / 110.0)
@@ -132,6 +158,93 @@ class MatchmakingTest(unittest.TestCase):
         self.assertEqual(pool(checkpoints, 3, 4), [425, 450, 475])
         self.assertEqual(pool(checkpoints, 5, 4), [0, 400, 425, 450, 475])
         self.assertEqual(len(pool(checkpoints, 8, 0)), 8)
+
+
+class LadderTest(unittest.TestCase):
+    """The rungs of the difficulty ladder, on a run folder as a training run leaves one."""
+
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()
+        self.run = RunDirectory(self.folder.name)
+        self.config = Config(league=True, checkpoint_every=25, device="cpu", league_rung_fights=10)
+
+        league = self.run.path / "league"
+        (league / "results").mkdir(parents=True)
+        (league / "roster.csv").write_text(
+            "opponent,kind,cap\nzombie,mob,1.00000\nravager,mob,1.00000\nwarden,mob,0.00200\n2x_zombie,squad,1.00000\n"
+            "scripted,scripted,1.00000\n", encoding="utf-8")
+
+        self.run.weights_file(0).write_bytes(b"")
+
+    def tearDown(self):
+        self.folder.cleanup()
+
+    def evaluations(self, opponent: str, wins: int, losses: int) -> None:
+        lines = [f"0,eval,{opponent},sword,-,win,200" for _ in range(wins)]
+        lines += [f"0,eval,{opponent},sword,-,loss,200" for _ in range(losses)]
+
+        with open(self.run.path / "league" / "results" / "w00.csv", "a", encoding="utf-8") as stream:
+            stream.write("".join(line + "\n" for line in lines))
+
+    def matchmaking(self) -> dict[str, float]:
+        text = (self.run.path / "league" / "matchmaking.csv").read_text(encoding="utf-8")
+        return {line.split(",")[0]: float(line.split(",")[1]) for line in text.splitlines()[1:]}
+
+    def test_the_name_of_a_rung_says_which_opponent_it_is_a_rung_of(self):
+        self.assertEqual(base("zombie(hard)"), "zombie")
+        self.assertEqual(base("2x_zombie(easy)"), "2x_zombie")
+        self.assertEqual(base("zombie"), "zombie")
+        self.assertEqual(base("iteration-000050"), "iteration-000050")
+
+    def test_hard_opens_once_the_agent_wins_most_and_easy_while_it_wins_almost_none(self):
+        self.evaluations("zombie", wins=9, losses=1)
+        self.evaluations("ravager", wins=1, losses=9)
+        self.evaluations("2x_zombie", wins=5, losses=5)
+
+        league = League(self.run, self.config)
+        league.update(0)
+
+        self.assertEqual(league.rungs, {"zombie(hard)", "ravager(easy)"})
+        self.assertIn("zombie(hard)", self.matchmaking())
+        self.assertNotIn("2x_zombie(hard)", self.matchmaking())
+        self.assertNotIn("2x_zombie(easy)", self.matchmaking())
+
+    def test_a_rung_waits_for_enough_fights_to_have_judged_it(self):
+        self.evaluations("zombie", wins=3, losses=0)
+
+        league = League(self.run, self.config)
+        league.update(0)
+
+        self.assertEqual(league.rungs, set())
+
+    def test_a_rung_stays_open_once_it_is_open_and_survives_a_resume(self):
+        self.evaluations("zombie", wins=10, losses=0)
+
+        first = League(self.run, self.config)
+        first.update(0)
+        self.assertEqual(first.rungs, {"zombie(hard)"})
+
+        # The agent now loses every fight on normal; the rung it earned is not taken away again.
+        self.evaluations("zombie", wins=0, losses=20)
+        first.update(1)
+        self.assertEqual(first.rungs, {"zombie(hard)"})
+
+        resumed = League(self.run, self.config)
+        self.assertEqual(resumed.rungs, {"zombie(hard)"})
+
+    def test_a_rung_is_the_same_kind_of_thing_and_under_the_same_cap_as_its_opponent(self):
+        self.evaluations("2x_zombie", wins=10, losses=0)
+        self.evaluations("warden", wins=0, losses=10)
+
+        league = League(self.run, self.config)
+        league.update(0)
+
+        ratings = {row[0]: row for row in [line.split(",") for line in
+                   (self.run.path / "league" / "ratings.csv").read_text(encoding="utf-8").splitlines()[1:]]}
+
+        self.assertEqual(ratings["2x_zombie(hard)"][1], "squad")
+        self.assertEqual(ratings["warden(easy)"][1], "mob")
+        self.assertLessEqual(self.matchmaking()["warden(easy)"], 0.002)
 
 
 class LeagueTest(unittest.TestCase):
@@ -185,6 +298,43 @@ class LeagueTest(unittest.TestCase):
         self.assertAlmostEqual(sum(rows.values()), 1.0, places=4)
         self.assertAlmostEqual(sum(rows[checkpoint_name(number)] for number in (0, 25, 50)), self.config.league_self_play, places=4)
 
+    def test_a_squad_is_rated_as_a_player_of_its_own_and_never_as_a_sum(self):
+        (self.run.path / "league" / "roster.csv").write_text(
+            "opponent,kind,cap\nzombie,mob,1.00000\n2x_zombie,squad,1.00000\nzombie+skeleton,squad,1.00000\nscripted,scripted,1.00000\n",
+            encoding="utf-8")
+
+        self.results(0, "50,eval,zombie,sword,-,win,200", "50,eval,2x_zombie,sword,-,loss,300",
+                     "50,eval,zombie+skeleton,bow,-,timeout,1200")
+
+        league = League(self.run, self.config)
+        league.update(50)
+
+        ratings = {row[0]: row for row in self.read("ratings.csv")}
+        opponents = {row[0]: row for row in self.read("opponents.csv")}
+
+        self.assertEqual(ratings["2x_zombie"][1], "squad")
+        self.assertEqual(ratings["zombie+skeleton"][1], "squad")
+        self.assertEqual(ratings["zombie"][1], "mob")
+
+        # Each of the three moved on its own fight and nothing added the squads up out of their members.
+        self.assertLess(float(ratings["zombie"][2]), 1500.0)
+        self.assertGreater(float(ratings["2x_zombie"][2]), 1500.0)
+        self.assertEqual(float(ratings["zombie+skeleton"][2]), 1500.0)
+        self.assertEqual(opponents["2x_zombie"][4:6], ["1", "0"])
+
+    def test_a_capped_opponent_takes_no_more_than_its_cap_and_is_still_drawn_for_evaluation(self):
+        (self.run.path / "league" / "roster.csv").write_text(
+            "opponent,kind,cap\nzombie,mob,1.00000\nwarden,mob,0.00200\nscripted,scripted,1.00000\n", encoding="utf-8")
+
+        league = League(self.run, self.config)
+        league.update(50)
+
+        rows = {row[0]: float(row[1]) for row in self.read("matchmaking.csv")}
+
+        self.assertLessEqual(rows["warden"], 0.002)
+        self.assertGreater(rows["warden"], 0.0)
+        self.assertGreater(rows["zombie"], rows["warden"])
+
     def test_an_opponent_always_beaten_is_met_less_than_an_even_one(self):
         self.results(0, *[f"50,train,zombie,sword,-,win,100" for _ in range(60)])
         self.results(1, *[f"50,train,creeper,sword,-,{'win' if index % 2 else 'loss'},100" for index in range(60)])
@@ -229,6 +379,44 @@ class LeagueTest(unittest.TestCase):
 
         self.assertEqual(resumed.rated, 3)
         self.assertEqual(json.loads((self.run.path / "league" / "state.json").read_text(encoding="utf-8"))["rated"], 3)
+
+    def test_the_ground_a_fight_was_on_and_what_finished_it_are_counted_per_kind(self):
+        self.results(0,
+                     "50,eval,zombie,sword,-,win,200,-,lava,lava",
+                     "50,train,zombie,sword,-,win,150,-,lava,agent",
+                     "50,train,creeper,sword,-,win,150,-,drop,fall",
+                     "50,train,zombie,sword,-,loss,300,opponent,flat,-",
+                     "50,train,2x_creeper,sword,-,win,150,-,flat,side")
+
+        league = League(self.run, self.config)
+        league.update(50)
+
+        ground = {row[0]: [int(value) for value in row[1:]] for row in self.read("ground.csv")}
+
+        # fights, wins, by_agent, by_terrain, by_side
+        self.assertEqual(ground["lava"], [2, 2, 1, 1, 0])
+        self.assertEqual(ground["drop"], [1, 1, 0, 1, 0])
+        self.assertEqual(ground["flat"], [2, 1, 0, 0, 1])
+
+    def test_a_result_written_before_the_ground_was_recorded_still_reads(self):
+        self.results(0, "50,eval,zombie,sword,-,win,200", "50,eval,creeper,sword,-,loss,300,lava")
+
+        league = League(self.run, self.config)
+        league.update(50)
+
+        ground = {row[0]: [int(value) for value in row[1:]] for row in self.read("ground.csv")}
+
+        self.assertEqual(league.rated, 2)
+        self.assertEqual(ground["-"], [2, 1, 0, 0, 0])
+
+    def test_the_ground_counts_survive_a_resume(self):
+        self.results(0, "50,train,zombie,sword,-,win,150,-,lava,lava")
+
+        first = League(self.run, self.config)
+        first.update(50)
+
+        resumed = League(self.run, self.config)
+        self.assertEqual(resumed.ground["lava"].by_terrain, 1)
 
     def test_the_tables_hold_every_opponent_and_loadout(self):
         self.results(0, "50,eval,zombie,sword,-,win,200", "50,train,creeper,bow,-,loss,300", "50,eval,iteration-000025,axe,bow,win,500")

@@ -197,6 +197,55 @@ are deliberate.
   earns a slot while it is moving, while the agent is ahead of it, and while its line would pass within a block and a
   half. Without that, slots filled with litter.
 
+## The league's curriculum
+
+- **A bigger fight site costs throughput and disk, not memory.** Going from a radius of 2 (80 blocks across) to 3 (112),
+  measured on 320 library sites and one worker fighting 300 league fights off them: 0.84 MB a site on disk becomes 1.38 MB,
+  so 4,096 sites go from 3.1 GB to about 5.5 GB; 128 sites take 208 s to build rather than 272 s; the worker still runs in a
+  1 GB heap; and 300 fights take 50 s rather than 40 s. Twice the chunks to tick in the same heap, which was the opposite
+  of the guess that the heap would have to double.
+- **Labelling a site by what is on it needs the ground heightmap, not the motion-blocking one.** The first cut read
+  `MOTION_BLOCKING`, which counts leaves, so a jungle canopy was the surface and every gap in it a nine block cliff: every
+  site in two runs came out labelled `drop`. `MOTION_BLOCKING_NO_LEAVES`, the same heightmap the sites are laid out on,
+  still finds a lava or water surface and stops finding treetops.
+- **One steep step is not a cliff.** Over 52 library sites, of 312 neighbouring samples each, a third have no nine block
+  step anywhere and the rest run from two to fifty eight. A threshold of one called everything an edge; eight labels about a
+  third of the library, which spread the fights over all five kinds of ground: measured over 600 fights, 34% water, 30%
+  flat, 18% other hazard, 16% drop, 2% lava.
+- **The overworld surface has very little lava.** Only 2% of fights landed on a site with any, so the edge to knock
+  something off, and cactus and powder snow, are what the agent will actually get to use. Lava-rich ground would have to be
+  put into the library deliberately.
+
+- **The terrain is a weapon, and nothing had ever told the agent so.** Its grid has marked lava, fire, magma, cactus,
+  powder snow, berries, cobwebs and drops of more than eight blocks as hazards since the hazard work, above solid, which is
+  what keeps it from walking onto them. What it never learned is that the same blocks are somewhere to put an opponent: a
+  hundred health of iron golem takes a long time to cut down and no time to knock into a lava lake, and a fight the ground
+  finishes already pays as a win. Sites are labelled by what is on them and a quarter of the fights are drawn onto the ones
+  with something, `-PleagueHazards`; the number that says whether any of it worked is the share of wins the ground finished,
+  per kind of ground, in `league/ground.csv`.
+- **A quarter, not all of it.** Plain melee on plain ground is still the fight the agent has to be able to win, and a run
+  that only ever fought beside lava would learn to go looking for lava rather than to fight.
+- **Labelling a site belongs where the site is handed out, not in the library index.** A site's ground is loaded and
+  ticking by then, so the scan costs no disk; it is about 400 block lookups once per site and a site hosts a hundred
+  fights; it works on a library that is already built rather than needing gigabytes generated again; and it leaves the
+  index format alone.
+
+## The league's opponents
+
+- **Some mobs kill themselves, and the agent was paid for it.** Each of these hands over a win nobody fought for, and a
+  rating built on those says nothing:
+  - a **bee** dies of its own sting: after stinging once its aiStep rolls for death every five ticks, which over a minute
+    it passes about three times in four, and its attack goal never runs again either. In the league a bee never counts as
+    having stung (`BeeMixin`), so it keeps fighting for as long as the agent lets it;
+  - a **snow golem** melts a heart a tick in any biome warm enough to rain, which is a third of the terrain library. It is
+    given fire resistance for good, which is what that damage goes through.
+- **The weather is worth switching off.** A fresh world starts clear, but a worker fights for hours of game time and the
+  first storm changes the fight for everything the weather touches: rain hurts a blaze and a snow golem, and teleports an
+  enderman. League fights now hold it clear along with the time of day.
+- **An evoker's vexes were swept away as wildlife.** The sweep that clears what the world generator put down takes
+  anything living that no fight spawned, and an evoker's only real attack is entities it summons mid fight. They are taken
+  into the fight as they appear, and the site's own cleanup takes them at the end, since the wildlife sweep cannot.
+
 ## Mechanics (a player's rules, and bugs that broke them)
 
 - **Forward movement did nothing before commit c38efe9.** Vanilla's `Mob.setSpeed` also writes the forward input, and it

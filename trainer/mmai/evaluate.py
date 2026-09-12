@@ -29,9 +29,19 @@ class Result:
     wins: int = 0
     timeouts: int = 0
 
+    # What the checkpoint was worth when it was judged, when something better than its win rate can say: a league run's
+    # Elo rating. None for a run whose opponent never changes, where the win rate is the whole story.
+    rating: float | None = None
+
     @property
     def rate(self) -> float:
         return self.wins / self.fights if self.fights else 0.0
+
+    @property
+    def score(self) -> float:
+        """What checkpoints are compared on. See {@link Evaluator} for why a league needs the rating."""
+
+        return self.rate if self.rating is None else self.rating
 
 
 class Evaluator:
@@ -40,15 +50,25 @@ class Evaluator:
     :param every: checkpoints come every this many iterations, and only those are evaluated
     :param fights: evaluation fights a checkpoint gets before it is judged
     :param patience: judged checkpoints in a row without a new best before the run counts as done
-    :param target: a win rate at which the run is done at once
+    :param target: a win rate at which the run is done at once, ignored when a rating decides instead
+    :param rating: what a checkpoint's iteration is worth, when a win rate cannot be compared across time
+
+    A win rate only says which checkpoint is better while every checkpoint met the same opponents. A league run's
+    opponents do not stay the same: a rung of hard opponents opens as the agent gets good enough for it, squads and new
+    mobs join, and the pool of its own past selves grows. Then a later, better fighter can win a smaller share of a
+    harder set, and judging on the win rate would keep an early checkpoint as the best for ever, which is what it did:
+    iteration 1175 stayed best while every rating said the newest checkpoints had passed it. So a league run judges on
+    the checkpoint's Elo rating, which is what accounts for who it beat, and nothing else changes.
     """
 
-    def __init__(self, run: RunDirectory, every: int, fights: int, patience: int, target: float) -> None:
+    def __init__(self, run: RunDirectory, every: int, fights: int, patience: int, target: float,
+                 rating=None) -> None:
         self.run = run
         self.every = every
         self.fights = fights
         self.patience = patience
         self.target = target
+        self.rating = rating
 
         self.folder = run.path / "eval"
         self.folder.mkdir(parents=True, exist_ok=True)
@@ -82,7 +102,9 @@ class Evaluator:
         if self.current is None:
             self._name(self._next(iteration))
 
-        if self.best is not None:
+        # A win rate target says nothing about a league, whose opponents keep getting harder on purpose: there such a run
+        # ends on patience alone, when no checkpoint has beaten the best for long enough.
+        if self.best is not None and self.rating is None:
             best = self.judged[self.best]
 
             if best.rate >= self.target:
@@ -125,10 +147,11 @@ class Evaluator:
 
     def _judge(self, iteration: int) -> None:
         live = self.results[iteration]
-        result = Result(live.fights, live.wins, live.timeouts)
+        rating = self.rating(iteration) if self.rating is not None else None
+        result = Result(live.fights, live.wins, live.timeouts, rating)
         self.judged[iteration] = result
 
-        if self.best is None or result.rate > self.judged[self.best].rate:
+        if self.best is None or result.score > self.judged[self.best].score:
             self.best = iteration
             self.since_best = 0
             # Swapped in whole like everything else here: scripts\publish.ps1 copies it out while the run goes on.
@@ -138,14 +161,18 @@ class Evaluator:
             verdict = "new best"
         else:
             self.since_best += 1
-            verdict = f"best is still iteration {self.best} at {100 * self.judged[self.best].rate:.1f}%"
+            best = self.judged[self.best]
+            stood = f"{best.rating:.0f}" if best.rating is not None else f"{100 * best.rate:.1f}%"
+            verdict = f"best is still iteration {self.best} at {stood}"
 
         fights = max(1, result.fights)
         lost = result.fights - result.wins - result.timeouts
+        rated = "" if result.rating is None else f", rated {result.rating:.0f}"
 
         logger.info(
-            "evaluation of iteration %d over %d fights: won %.1f%%, lost %.1f%%, timed out %.1f%%; %s",
-            iteration, result.fights, 100 * result.rate, 100 * lost / fights, 100 * result.timeouts / fights, verdict,
+            "evaluation of iteration %d over %d fights: won %.1f%%, lost %.1f%%, timed out %.1f%%%s; %s",
+            iteration, result.fights, 100 * result.rate, 100 * lost / fights, 100 * result.timeouts / fights,
+            rated, verdict,
         )
         self._write_table()
 
@@ -175,10 +202,12 @@ class Evaluator:
                 result.timeouts += parts[1] == "timeout"
 
     def _write_table(self) -> None:
-        lines = ["iteration,fights,wins,timeouts,win_rate,best"]
+        lines = ["iteration,fights,wins,timeouts,win_rate,best,rating"]
 
         for iteration, result in self.judged.items():
-            lines.append(f"{iteration},{result.fights},{result.wins},{result.timeouts},{result.rate:.4f},{int(iteration == self.best)}")
+            rating = "" if result.rating is None else f"{result.rating:.1f}"
+            lines.append(f"{iteration},{result.fights},{result.wins},{result.timeouts},{result.rate:.4f},"
+                         f"{int(iteration == self.best)},{rating}")
 
         temporary = self.table.with_suffix(".tmp")
         temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -195,11 +224,13 @@ class Evaluator:
         for line in self.table.read_text(encoding="utf-8").splitlines()[1:]:
             parts = line.split(",")
 
-            if len(parts) != 6:
+            # Six fields is a table written before ratings were kept; the seventh is empty for a run without them.
+            if len(parts) < 6:
                 continue
 
             iteration = int(parts[0])
-            self.judged[iteration] = Result(int(parts[1]), int(parts[2]), int(parts[3]))
+            rating = float(parts[6]) if len(parts) > 6 and parts[6] else None
+            self.judged[iteration] = Result(int(parts[1]), int(parts[2]), int(parts[3]), rating)
 
             if parts[5] == "1":
                 self.best = iteration
