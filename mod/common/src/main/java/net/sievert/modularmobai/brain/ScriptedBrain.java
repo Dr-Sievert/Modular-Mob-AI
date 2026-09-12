@@ -8,6 +8,7 @@ import it.unimi.dsi.fastutil.objects.ObjectIterator;
 
 import net.minecraft.util.Mth;
 import net.sievert.modularmobai.brain.schema.ActionSchema;
+import net.sievert.modularmobai.brain.schema.Species;
 import net.sievert.modularmobai.brain.schema.AgentObservation;
 import net.sievert.modularmobai.brain.schema.ObservationSchema;
 import net.sievert.modularmobai.entity.agent.AgentMob;
@@ -438,6 +439,16 @@ public final class ScriptedBrain implements Brain {
      */
     private static final int SWEEP_EVERY = 4096;
     private static final int SWEEP_AFTER_STEPS = 1200;
+
+    /**
+     * A player-shaped fighter: every field it reads and every control it presses is the humanoid's, so it drives that body
+     * and no other. A second body wanting a hand written teacher writes its own.
+     */
+    @Override
+    public Species species() {
+
+        return Species.HUMANOID;
+    }
 
     @Override
     public void act(BrainStep step) {

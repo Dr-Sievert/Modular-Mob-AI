@@ -44,6 +44,11 @@ crosshair within reach, as for a player.
 
 ## What the agent sees: 634 floats
 
+This is the **humanoid**'s observation, the player-shaped body every trained network drives. A layout belongs to a body
+rather than to the game: a body with no hands has no hotbar to see, no slot to choose and no use buttons to press, and no
+amount of masking makes those inputs mean anything. `brain/schema/Species.java` is what the rest of the game asks how wide
+an observation is, and the humanoid's answer is the table below. See "Adding a species" for how to write another.
+
 | Block | Size | Contents |
 | --- | --- | --- |
 | self | 20 | health, velocity (forward/up/right), on ground, in water, attack strength, use cooldown, using (main/off hand), sprinting, crouching, fall distance, body offset (sin/cos), pitch, aim (sin/cos), hurt time, enemies in range |
@@ -54,8 +59,9 @@ crosshair within reach, as for a player.
 
 Animals and villagers never take an enemy slot. The enemy's `kind` says what sort of thing it is: another agent, a
 player, a monster, something else alive, or, below zero, something shot at the agent. The layout is fixed: every trained
-network depends on it, and the schema id refuses a mismatch. Field constants are in
-`brain/schema/ObservationSchema.java`, and the encoder is `AgentObservation.java`.
+network depends on it, and the schema id refuses a mismatch. The humanoid's field constants are in
+`brain/schema/ObservationSchema.java`, its controls in `ActionSchema.java`, its encoder in `AgentObservation.java`, and the
+three add up to `Humanoid.java`, the descriptor the rest of the game reads.
 
 **The use charge** (the echo's last field) is how far the item in use has come, as the item itself reckons it: a bow
 gives the power its arrow would leave at, a crossbow the fraction of its wind that is in, anything else how much of its
@@ -249,7 +255,8 @@ mod/                    the Gradle build (MultiLoader: common + fabric + neoforg
   common/src/main/java/net/sievert/modularmobai/
     entity/agent/         the agent: body, controls, the record of what executed, item and block rules
     brain/                the driver, the batch, the brains (scripted, neural, demonstration) and the training link
-    brain/schema/         what an agent sees and does: observation layout and encoder, enemy slots, action layout
+    brain/schema/         what an agent sees and does: Species (a body's layout), the humanoid's own tables and encoder,
+                          enemy slots
     brain/nn/             the network runtime in plain Java: topology, weight file, forward pass, heads, rollout writer
     arena/                a fight someone set up: loadouts, the reward, what the agent may see
     allegiance/           sides: vanilla teams, the agent's enemy rule, mobs going after other teams (see playing.md)
@@ -278,10 +285,16 @@ Everything is little endian.
 
 ### `schema.json`
 
-Written by the mod (`BrainTool schema`) at the start of every training run. It holds the observation blocks, the action
-names, and the head table saying how the network's outputs become actions. Its **schema id** is the CRC32 of the file's
-bytes. It is stamped into every weight file and shard, so a mod running a different layout refuses the weights instead
-of feeding a network the wrong numbers.
+Written by the mod (`BrainTool schema <species> <file>`) at the start of every training run, for the body that run is
+training. It names the species, then the observation blocks in offset order, the action names, and the head table saying
+how the network's outputs become actions. Its **schema id** is the CRC32 of the file's bytes, **species name included**. It
+is stamped into every weight file and shard, so a mod running a different layout, or a network handed to the wrong body,
+refuses the weights instead of feeding a network the wrong numbers.
+
+The blocks are a list rather than an object keyed by name, because which blocks a body has is the thing that varies. Each
+carries whatever facts its kind has — an enemy block's `slots` and `stride`, a terrain block's `x`, `y` and `z` — and the
+training side reads them rather than assuming them; they have to multiply out to the block's size, which is checked on both
+sides. `-Pspecies=<name>` says which body a run is for; it is `humanoid` unless asked.
 
 ### `.mbw`: weights
 
@@ -290,7 +303,7 @@ Written by the trainer, read by the mod. A 52-byte header, then every parameter 
 ```
 0   'MBW1'
 4   u32 format version (1)
-8   u32 schema id
+8   u32 schema id          which body's layout these weights were trained against
 12  u32 topology hash      CRC32 of the six dimensions below
 16  u32 obsDim, h1, hidden, h3, outDim, stdDim
 40  f32 observation clip

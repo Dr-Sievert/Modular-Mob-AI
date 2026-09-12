@@ -242,6 +242,11 @@ afterEvaluate {
     // The small tool that lives in the game test sources. It touches nothing of the game, so it runs as a plain Java
     // program in a second rather than booting a server: the observation layout the training side builds a network from,
     // and the parity check between this build's forward pass and PyTorch's.
+    // Which body a run trains, and so which layout the training side is handed. One body has a trained network today, and
+    // naming it here rather than letting the tool guess is what keeps a run from quietly training the wrong shape; see
+    // brain/schema/Species.java and docs/architecture.md, "Adding a species".
+    def trainedSpecies = providers.gradleProperty('species').getOrElse('humanoid')
+
     def brainTool = { List<String> toolArguments ->
 
         def javaExe = runTask.javaLauncher.get().executablePath.asFile.absolutePath
@@ -1692,7 +1697,7 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
 
             directory.mkdirs()
 
-            brainTool(['schema', schema.absolutePath])
+            brainTool(['schema', trainedSpecies, schema.absolutePath])
             runPython(['train.py', 'parity', '--schema', schema.absolutePath, '--out', directory.absolutePath])
             brainTool(['parity', directory.absolutePath])
         }
@@ -1765,7 +1770,7 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
             demonstrations.mkdirs()
 
             // The trainer builds its network from the layout, so it goes in with the record.
-            brainTool(['schema', new File(runDirectory, 'schema.json').absolutePath])
+            brainTool(['schema', trainedSpecies, new File(runDirectory, 'schema.json').absolutePath])
 
             def properties = [
                     'modular_mob_ai.gametest.suite'        : suite,
@@ -1812,7 +1817,7 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
 
             // The layout the training side builds its network from, straight out of the game's own classes. Written every
             // run, so a schema that changed is caught here rather than by a network reading the wrong slots.
-            brainTool(['schema', new File(runDirectory, 'schema.json').absolutePath])
+            brainTool(['schema', trainedSpecies, new File(runDirectory, 'schema.json').absolutePath])
 
             // A training process left behind by a cancelled run would write weights into the same folder, so it is
             // stopped before another starts. One whose build is still going is not left behind: that run is training

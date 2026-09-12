@@ -14,8 +14,7 @@ import net.sievert.modularmobai.Constants;
 import net.sievert.modularmobai.brain.nn.RolloutWriter;
 import net.sievert.modularmobai.brain.nn.WeightFile;
 import net.sievert.modularmobai.brain.nn.WeightSet;
-import net.sievert.modularmobai.brain.schema.ActionSchema;
-import net.sievert.modularmobai.brain.schema.ObservationSchema;
+import net.sievert.modularmobai.brain.schema.Species;
 
 /**
  * This game process's end of a training run, which is nothing but files in one folder.
@@ -44,7 +43,11 @@ final class TrainingRun {
     private static final long WAIT_LIMIT_NANOS = 30L * 60L * 1_000_000_000L;
 
     private final Path directory;
-    private final int schemaId;
+    /**
+     * Which body this run is training, which the weights it was handed are what say. A run cannot change body part way
+     * through: the shards it has already written would be of something else.
+     */
+    private Species species;
     private final int round;
     private final int worker;
     private final int workerCount;
@@ -68,7 +71,6 @@ final class TrainingRun {
     private TrainingRun(Path directory, int iteration, int round, int worker, int workerCount, int totalSteps) {
 
         this.directory = directory;
-        this.schemaId = ObservationSchema.schemaId();
         this.iteration = iteration;
         this.round = round;
         this.worker = worker;
@@ -152,7 +154,7 @@ final class TrainingRun {
             if (this.open.remove(agent)) {
 
                 this.shard.end(agent, (step.flags[row] & BrainStep.FLAG_DONE) != 0, step.rewards[row],
-                        step.observations, row * ObservationSchema.OBS_DIM);
+                        step.observations, row * this.species.obsDim());
             }
         }
 
@@ -203,7 +205,7 @@ final class TrainingRun {
 
             int agent = step.agentIds[row];
             byte flags = step.flags[row];
-            int obs = row * ObservationSchema.OBS_DIM;
+            int obs = row * this.species.obsDim();
 
             if ((flags & BrainStep.FLAG_DONE) != 0) {
 
@@ -222,7 +224,7 @@ final class TrainingRun {
             }
 
             this.shard.step(agent, (flags & BrainStep.FLAG_NEW) != 0, step.rewards[row], logProbs[row],
-                    step.actions, row * ActionSchema.ACT_DIM, step.observations, obs);
+                    step.actions, row * this.species.actDim(), step.observations, obs);
         }
     }
 
@@ -239,8 +241,8 @@ final class TrainingRun {
         Path file = this.directory.resolve("rollouts").resolve(String.format(Locale.ROOT, "%06d", this.iteration))
                 .resolve(String.format(Locale.ROOT, "r%04d-w%02d%s", this.round, this.worker, RolloutWriter.EXTENSION));
 
-        return new RolloutWriter(file, this.schemaId, this.weights.topology().hash(), this.iteration, this.round,
-                this.worker, this.workerCount, ObservationSchema.OBS_DIM, ActionSchema.ACT_DIM,
+        return new RolloutWriter(file, this.species.schemaId(), this.weights.topology().hash(), this.iteration, this.round,
+                this.worker, this.workerCount, this.species.obsDim(), this.species.actDim(),
                 this.weights.topology().hidden());
     }
 
@@ -255,7 +257,21 @@ final class TrainingRun {
 
         try {
 
-            return WeightFile.read(file, this.schemaId);
+            WeightSet loaded = WeightFile.read(file);
+            Species resolved = NeuralBrain.check(loaded);
+
+            if (this.species == null) {
+
+                this.species = resolved;
+            }
+
+            else if (this.species != resolved) {
+
+                throw new IllegalStateException("This run has been training a " + this.species.name() + " and iteration "
+                        + iteration + " is for a " + resolved.name() + "; the shards already written are of another body");
+            }
+
+            return loaded;
         }
 
         catch (IOException exception) {

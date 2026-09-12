@@ -55,12 +55,18 @@ def generate(directory: str | Path, schema: Schema, h1: int, hidden: int, h3: in
     observations[0] *= 40.0
     observations[1] = -observations[1] * 40.0
 
-    # The hotbar decides which slots may be chosen. Some rows keep a few, one row keeps none at all.
-    hotbar = np.zeros((count, schema.hotbar.size), dtype=np.float32)
-    keep = generator.random((count, schema.hotbar.size)) < 0.5
-    hotbar[keep] = generator.integers(1, 8, size=int(keep.sum())).astype(np.float32) / 8.0
-    hotbar[0] = 0.0
-    observations[:, schema.hotbar.offset : schema.hotbar.offset + schema.hotbar.size] = hotbar
+    # Whatever a choice is masked by decides which of its options may be chosen, so the mask is exercised rather than
+    # assumed: some rows keep a few options, one row keeps none at all. Read from the head itself, so a body whose choices
+    # are masked by something other than a hotbar, or which has no choice to make at all, needs no change here.
+    for head in schema.categorical_heads:
+        if head.mask < 0:
+            continue
+
+        mask = np.zeros((count, head.size), dtype=np.float32)
+        keep = generator.random((count, head.size)) < 0.5
+        mask[keep] = generator.integers(1, 8, size=int(keep.sum())).astype(np.float32) / 8.0
+        mask[0] = 0.0
+        observations[:, head.mask : head.mask + head.size] = mask
 
     states = (generator.standard_normal((count, hidden)).astype(np.float32) * 0.5)
 

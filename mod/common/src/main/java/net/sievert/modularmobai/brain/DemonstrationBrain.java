@@ -10,8 +10,7 @@ import it.unimi.dsi.fastutil.ints.IntSet;
 import net.minecraft.util.Mth;
 import net.sievert.modularmobai.brain.nn.Heads;
 import net.sievert.modularmobai.brain.nn.RolloutWriter;
-import net.sievert.modularmobai.brain.schema.ActionSchema;
-import net.sievert.modularmobai.brain.schema.ObservationSchema;
+import net.sievert.modularmobai.brain.schema.Species;
 
 /**
  * Writes down what a teacher would do on every tick, for a network to learn to copy, while the teacher or a student
@@ -47,6 +46,7 @@ final class DemonstrationBrain implements Brain {
     /** What actually drives the agents: the teacher itself, or a student being corrected. */
     private final Brain driver;
     private final Brain teacher;
+    private final Species species;
     private final RolloutWriter shard;
 
     /** Standard deviation of what is added to each continuous control before it is applied, zero for none. */
@@ -75,12 +75,27 @@ final class DemonstrationBrain implements Brain {
         int worker = Integer.getInteger("modular_mob_ai.gametest.shardIndex", 0);
         int workers = Math.max(1, Integer.getInteger("modular_mob_ai.gametest.shardCount", 1));
 
+        // The teacher is asked about the very situations the driver got into, so both have to read the same observation and
+        // press the same controls. Two bodies could not label each other's fights at all.
+        if (driver.species() != teacher.species()) {
+
+            throw new IllegalArgumentException("A " + driver.species().name() + " cannot be labelled by a teacher for a "
+                    + teacher.species().name());
+        }
+
+        this.species = driver.species();
         this.driver = driver;
         this.teacher = teacher;
         this.noise = noise;
         this.random = new SplittableRandom(0x6A09E667L ^ worker);
         this.shard = new RolloutWriter(directory.resolve(String.format(Locale.ROOT, "w%02d%s", worker, RolloutWriter.EXTENSION)),
-                ObservationSchema.schemaId(), 0, 0, 0, worker, workers, ObservationSchema.OBS_DIM, ActionSchema.ACT_DIM, 0);
+                this.species.schemaId(), 0, 0, 0, worker, workers, this.species.obsDim(), this.species.actDim(), 0);
+    }
+
+    @Override
+    public Species species() {
+
+        return this.species;
     }
 
     @Override
@@ -88,7 +103,7 @@ final class DemonstrationBrain implements Brain {
 
         this.teacher.act(step);
 
-        int values = step.count * ActionSchema.ACT_DIM;
+        int values = step.count * this.species.actDim();
 
         if (this.chosen.length < values) {
 
@@ -113,7 +128,7 @@ final class DemonstrationBrain implements Brain {
 
             int agent = step.agentIds[row];
             byte flags = step.flags[row];
-            int obs = row * ObservationSchema.OBS_DIM;
+            int obs = row * this.species.obsDim();
 
             if ((flags & BrainStep.FLAG_DONE) != 0) {
 
@@ -132,14 +147,14 @@ final class DemonstrationBrain implements Brain {
             }
 
             this.shard.step(agent, (flags & BrainStep.FLAG_NEW) != 0, step.rewards[row], 0.0F,
-                    this.chosen, row * ActionSchema.ACT_DIM, step.observations, obs);
+                    this.chosen, row * this.species.actDim(), step.observations, obs);
         }
     }
 
     /** Pushes every continuous control the driver chose a little off, in what is applied only. */
     private void perturb(BrainStep step) {
 
-        for (Heads.Block block : ActionSchema.HEADS.blocks()) {
+        for (Heads.Block block : this.species.heads().blocks()) {
 
             if (block.kind() != Heads.Kind.CONTINUOUS) {
 
@@ -148,7 +163,7 @@ final class DemonstrationBrain implements Brain {
 
             for (int row = 0; row < step.count; row++) {
 
-                int base = row * ActionSchema.ACT_DIM + block.action();
+                int base = row * this.species.actDim() + block.action();
 
                 for (int i = 0; i < block.size(); i++) {
 

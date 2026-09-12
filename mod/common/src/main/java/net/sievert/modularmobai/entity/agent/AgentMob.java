@@ -72,6 +72,7 @@ import net.sievert.modularmobai.arena.Loadouts;
 import net.sievert.modularmobai.brain.Brain;
 import net.sievert.modularmobai.brain.BrainState;
 import net.sievert.modularmobai.brain.Brains;
+import net.sievert.modularmobai.brain.schema.Species;
 import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.mixin.ProjectileWeaponItemInvoker;
 
@@ -226,6 +227,18 @@ public class AgentMob extends PathfinderMob {
     public MobControls controls() {
 
         return this.controls;
+    }
+
+    /**
+     * Which body this is, and so what it sees and what it can be asked to do. A brain is trained for one species and is
+     * refused any other, so this is what decides whether a set of weights may drive this mob at all.
+     *
+     * <p>A second body overrides this and nothing else about the plumbing: the driver batches by brain, the observation is
+     * filled in by the species, and the action comes back through it. See {@code docs/architecture.md}, "Adding a species".
+     */
+    public Species species() {
+
+        return Species.HUMANOID;
     }
 
     public ExecutedControls executed() {

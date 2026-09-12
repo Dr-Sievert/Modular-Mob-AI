@@ -27,7 +27,6 @@ import net.sievert.modularmobai.brain.Brains;
 import net.sievert.modularmobai.brain.NeuralBrain;
 import net.sievert.modularmobai.brain.ScriptedBrain;
 import net.sievert.modularmobai.brain.nn.WeightFile;
-import net.sievert.modularmobai.brain.schema.ObservationSchema;
 import net.sievert.modularmobai.gametest.Evaluation;
 import net.sievert.modularmobai.gametest.GameTestTuning;
 import net.sievert.modularmobai.gametest.util.DeathCauses;
@@ -443,7 +442,7 @@ public final class League {
 
         try {
 
-            brain = NeuralBrain.deployed(WeightFile.read(file, ObservationSchema.schemaId()));
+            brain = NeuralBrain.deployed(WeightFile.read(file));
             frozen.put(iteration, brain);
             return brain;
         }
