@@ -83,18 +83,15 @@ $record = ''
 
 if ($Demos) {
 
-    $record = @(Get-RunDirectory $Demos, (Join-Path (Get-RunDirectory $Demos) 'demos'), $Demos, (Join-Path $Demos 'demos') |
-            Where-Object { Test-Path (Join-Path $_ '*.mbr') -PathType Leaf -ErrorAction SilentlyContinue } |
+    # A run's name, that run's demos folder, or either as a path: whichever of them holds shards, nearest first.
+    $fromName = Get-RunDirectory $Demos
+
+    $candidates = @((Join-Path $fromName 'demos'), $fromName, (Join-Path $Demos 'demos'), $Demos)
+
+    $record = @($candidates |
+            Where-Object { Test-Path $_ -PathType Container } |
+            Where-Object { @(Get-ChildItem $_ -Filter '*.mbr' -Recurse -ErrorAction SilentlyContinue).Count -gt 0 } |
             Select-Object -First 1)
-
-    if (-not $record) {
-
-        # Nothing directly inside any of them; look for the rounds a record is kept in.
-        $record = @(Get-RunDirectory $Demos, (Join-Path (Get-RunDirectory $Demos) 'demos'), $Demos, (Join-Path $Demos 'demos') |
-                Where-Object { Test-Path $_ } |
-                Where-Object { @(Get-ChildItem $_ -Filter '*.mbr' -Recurse -ErrorAction SilentlyContinue).Count -gt 0 } |
-                Select-Object -First 1)
-    }
 
     if (-not $record) {
 
@@ -106,6 +103,24 @@ if ($Demos) {
 
     Write-Host ("Copying from the record in ${record}: {0} shards, {1:N2} GB, no fighting of its own" -f
             $shards.Count, (($shards | Measure-Object Length -Sum).Sum / 1GB))
+
+    # The layout, which the game writes while recording and so nothing here would. It is the record's own by definition:
+    # every shard carries the schema it was recorded against and the trainer refuses one that does not match.
+    if (-not (Test-Path (Join-Path $directory 'schema.json'))) {
+
+        $layout = @((Split-Path -Parent $record), $record |
+                ForEach-Object { Join-Path $_ 'schema.json' } |
+                Where-Object { Test-Path $_ } |
+                Select-Object -First 1)
+
+        if (-not $layout) {
+
+            throw "No schema.json beside the record in $record; the run it came from should have one"
+        }
+
+        New-Item -ItemType Directory -Force $directory | Out-Null
+        Copy-Item $layout (Join-Path $directory 'schema.json')
+    }
 }
 
 function Invoke-Record([double] $Noise, [string[]] $Extra) {
