@@ -312,14 +312,23 @@ Every worker also gets `-XX:G1HeapRegionSize=4m`, without which a gigabyte heap 
 A worker on the `terrain` or `arena` suite runs with **no light engine at all**, since a vindicator fight never asks how
 bright anywhere is: about a fifth more fights per worker-second and nearly half the collections, measured over 24,000
 fights. The `league` suite keeps its light, because the undead burn by day and an enderman takes damage in rain, and so do
-the library build, `play` and `mechanics`; see `GameTestTuning.lighting`. The build protects the machine:
+the library build, `play` and `mechanics`; see `GameTestTuning.lighting`.
+
+On a chip with two kinds of core, every worker is confined to the **performance cores**, and it is worth more than
+everything else here put together: a worker's throughput doubles. A worker is bound by its one server thread, and because
+workers run at below normal priority Windows reads that thread as background work and parks it on an efficiency core, where
+the same forward pass costs 2.6 times as much. The build times a burst on every logical processor once per machine, keeps
+the mask in its calibration file, and sets it on each worker as it starts; the log says which cores they got. Priority is
+not the lever and stays below normal, which is what keeps the desktop yours. See [findings.md](findings.md) for the numbers
+and for why the mask must not include a single efficiency core. The build protects the machine:
 
 | Gradle property | Default | What it does |
 | --- | --- | --- |
 | `maxWorkers` | 16 | ceiling on workers in a round |
 | `memoryReserve` | 3 | GB left for everything else when deciding how many workers fit (heap + 0.5 GB each) |
 | `memoryFloor` | 1.5 | GB of free memory below which the workers are stopped rather than left to swap |
-| `workerCpus` | auto | cores each server sees |
+| `workerCores` | measured | `all` lets the workers run on every core, as they did before the performance cores were measured |
+| `workerCpus` | auto | cores each server sees, out of the performance cores it is allowed |
 | `workerStagger` | 1 | seconds between starting workers |
 | `terrainPool`, `terrainUses` | 8, 8 | kept terrain worlds, and how often each is reused |
 | `terrainSeed` | 0 = anywhere | pins where every worker's fight sites come from, so two rounds fight the same ground; what comparing two builds needs |
@@ -330,6 +339,16 @@ The trainer caps itself at half the GPU's memory and falls back to the CPU if an
 Throughput today: about 3.5k game ticks per second per worker inside training; vs-copy on 4 workers does about 12–16k.
 Every worker pauses while the trainer learns (about a fifth of the time), and each iteration waits for the slowest
 worker. Work to remove both is under way.
+
+Every worker also prints what the network itself cost it when its suite ends, which is the number to judge any change to
+the forward pass by:
+
+```
+  forward pass  2.94 s over 227,229 agent ticks, 12.9 us each, 21% of the run; vector loops
+```
+
+Nothing weaker is worth using: the same pass timed on its own in a loop comes out at 10.7 us because the weights stay in
+cache, and on an efficiency core at 24.8 us. See [findings.md](findings.md).
 
 ## Troubleshooting
 

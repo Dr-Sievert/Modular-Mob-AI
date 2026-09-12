@@ -289,6 +289,133 @@ afterEvaluate {
         return properties
     }
 
+    // Which logical processors a worker may run on, as a Windows affinity mask, or zero for "wherever it likes".
+    //
+    // A worker is bound by its one server thread, and on a chip with two kinds of core that thread is the single most
+    // important thing about a run. Workers run at below normal priority, so that the desktop stays usable, and Windows
+    // reads a below-normal thread as background work and parks it on an efficiency core. Measured on this i7-14700KF, the
+    // same forward pass takes 9.4 us an agent tick on a performance core and 24.8 on an efficiency one, and a worker left
+    // where Windows put it ran the pass at 29.4 us and 12,662 arena ticks a second of server thread; confined to the
+    // performance cores it ran at 11.5 us and 26,476, and 6,000 fights took 34 seconds instead of 61. Raising the priority
+    // to normal instead changed nothing at all, so the workers stay below normal and keep the desktop's protection, which
+    // measured as costing a foreground program nothing: the same burst took a median 10.8 us beside unconfined workers and
+    // 11.2 us beside confined ones.
+    //
+    // The mask has to be performance cores only. Leaving the efficiency cores in it as well, for the collector and the
+    // chunk threads to use, gives the whole gain back: Windows puts the server thread on an efficiency core whenever one
+    // is allowed, and a worker with one performance core plus all twelve efficiency ones measured 30.7 us, no better than
+    // no mask at all.
+    //
+    // Every worker gets the same mask rather than a slice of its own, because a worker wants a performance core for its
+    // server thread and bursts of the others for collection: two workers confined to one core between them measured worse
+    // than no mask at all, two sharing four cores ran the pass at 19 us, and two sharing all eight at 13 us.
+    //
+    // Which processors those are is measured, once per machine, and kept in the calibration file beside the worker sizing.
+    // The count comes from the chip's own numbers, which cannot be wrong: a performance core carries two logical
+    // processors and an efficiency core one, so a machine reporting L logical processors and C cores has L - C performance
+    // cores and twice that many logical processors. Which of them is then decided by timing the same arithmetic burst on
+    // every logical processor and taking that many of the fastest, best of three bursts each so that other work on the
+    // machine cannot push one of them into the wrong class. A machine whose cores are all alike, or whose spread is too
+    // small to believe, comes out with no mask. -PworkerCores=all skips it.
+    def performanceCores = { Properties calibration, File calibrationFile ->
+
+        def processors = Runtime.runtime.availableProcessors()
+
+        if (!System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('win')
+                || providers.gradleProperty('workerCores').getOrElse('') == 'all') {
+
+            return 0L
+        }
+
+        if (calibration.getProperty('performanceCoresFor') == String.valueOf(processors)) {
+
+            return Long.parseLong(calibration.getProperty('performanceCores', '0'))
+        }
+
+        // Sets its own affinity one processor at a time, which is the only way to find out what each one can do. The whole
+        // thing is a few seconds, once per machine. Written out and run as a file rather than passed as a command, because
+        // powershell -Command takes a multi-line script as one argument and then does not run all of it.
+        def probe = '''
+$ErrorActionPreference = 'Stop'
+$self = Get-Process -Id $PID
+$was = $self.ProcessorAffinity
+$count = [Environment]::ProcessorCount
+$times = @{}
+for ($cpu = 0; $cpu -lt $count; $cpu++) {
+    $self.ProcessorAffinity = [IntPtr]([long]1 -shl $cpu)
+    $fastest = [double]::MaxValue
+    for ($burst = 0; $burst -lt 3; $burst++) {
+        $watch = [Diagnostics.Stopwatch]::StartNew()
+        $sum = 0.0
+        for ($i = 1; $i -le 60000; $i++) { $sum += [Math]::Sqrt($i) }
+        $watch.Stop()
+        if ($watch.Elapsed.TotalMilliseconds -lt $fastest) { $fastest = $watch.Elapsed.TotalMilliseconds }
+    }
+    $times[$cpu] = $fastest
+}
+$self.ProcessorAffinity = $was
+$logical = (Get-CimInstance Win32_Processor | Measure-Object -Property NumberOfLogicalProcessors -Sum).Sum
+$cores = (Get-CimInstance Win32_Processor | Measure-Object -Property NumberOfCores -Sum).Sum
+$wanted = 2 * ([int]$logical - [int]$cores)
+$quickest = ($times.Values | Measure-Object -Minimum).Minimum
+$slowest = ($times.Values | Measure-Object -Maximum).Maximum
+$mask = 0
+if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $slowest -gt $quickest * 1.3) {
+    foreach ($entry in ($times.GetEnumerator() | Sort-Object Value | Select-Object -First $wanted)) {
+        $mask = $mask -bor ([long]1 -shl $entry.Key)
+    }
+}
+"$mask $([int]($quickest * 1000)) $([int]($slowest * 1000)) $wanted"
+'''
+
+        def mask = 0L
+        def report = 'could not be measured'
+
+        try {
+
+            def script = layout.buildDirectory.file('gametest-cores.ps1').get().asFile
+            script.parentFile.mkdirs()
+            script.text = probe
+
+            def builder = new ProcessBuilder('powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                    '-File', script.absolutePath)
+            builder.redirectErrorStream(true)
+
+            def measuring = builder.start()
+            def output = measuring.inputStream.getText('UTF-8').trim()
+            measuring.waitFor()
+
+            def parts = output.readLines().findAll { it.trim() ==~ /^-?\d+ \d+ \d+ \d+$/ }
+
+            if (!parts.isEmpty()) {
+
+                def numbers = parts.last().trim().split(/\s+/)
+                mask = Long.parseLong(numbers[0])
+                report = String.format(Locale.ROOT, "%d of %d logical processors, the burst taking %.1f ms on the quickest "
+                        + "and %.1f ms on the slowest", Long.bitCount(mask), processors,
+                        Integer.parseInt(numbers[1]) / 1000.0d, Integer.parseInt(numbers[2]) / 1000.0d)
+            }
+        }
+
+        catch (Exception exception) {
+
+            // Never worth failing a run over: without a mask the workers simply run where they always did.
+            report = "could not be measured (${exception})"
+        }
+
+        logger.lifecycle(mask == 0L
+                ? "Cores: no performance cores to confine the workers to (${report}); they run wherever Windows puts them"
+                : String.format(Locale.ROOT, "Cores: the workers will run on the performance cores only, mask 0x%X (%s)", mask, report))
+
+        calibration.setProperty('performanceCores', String.valueOf(mask))
+        calibration.setProperty('performanceCoresFor', String.valueOf(processors))
+
+        calibrationFile.parentFile.mkdirs()
+        calibrationFile.withOutputStream { calibration.store(it, 'Measured by runGametestParallel; delete to measure again') }
+
+        return mask
+    }
+
     // Only the parts of a world that hold its chunks. The test server writes fresh level data every time, and the saved
     // list of forced chunks would have the next worker load every site at once. Optionally only some of its region files.
     def copyWorld = { File from, File to, Closure wanted = { String name -> true } ->
@@ -580,6 +707,12 @@ afterEvaluate {
                     workers, freeGigabytes, reserveGigabytes, perWorkerGigabytes))
         }
 
+        // Which processors the workers may run on at all, and so how many there are to divide between them. See
+        // performanceCores: on a chip with two kinds of core this is worth more than everything else the build does to a
+        // worker put together.
+        def coreMask = performanceCores(calibration, calibrationFile)
+        def schedulable = coreMask == 0L ? cores : Long.bitCount(coreMask)
+
         // How the workers start and share the machine. A Minecraft server spends its first seconds compiling and loading
         // on every core it can see, and generates terrain on all of them after that, so each is shown its share of the
         // cores rather than all of them: the same total work, without a dozen servers fighting over every core at once.
@@ -587,7 +720,7 @@ afterEvaluate {
         // of it is paid once per worker by every run, and two servers booting side by side measured no slower than one.
         def staggerSeconds = Integer.parseInt(providers.gradleProperty('workerStagger').getOrElse('1'))
         def cpuSetting = providers.gradleProperty('workerCpus').getOrElse('auto')
-        def workerCpus = cpuSetting == 'auto' ? Math.max(2, cores.intdiv(workers)) : Integer.parseInt(cpuSetting)
+        def workerCpus = cpuSetting == 'auto' ? Math.max(2, schedulable.intdiv(workers)) : Integer.parseInt(cpuSetting)
 
         // Below this much free memory the workers are stopped rather than left to take the machine down with them.
         def minimumFreeGigabytes = Double.parseDouble(providers.gradleProperty('memoryFloor').getOrElse('1.5'))
@@ -918,14 +1051,23 @@ afterEvaluate {
 
             def process = builder.start()
 
-            // Below normal priority, so the desktop stays responsive however many of these are running. Best effort:
-            // a worker that could not be reprioritised still runs, just at the same priority as everything else.
+            // Below normal priority, so the desktop stays responsive however many of these are running, and on the
+            // performance cores, because below normal is exactly what makes Windows park the server thread on an
+            // efficiency core; see performanceCores. Both best effort: a worker that could not be placed still runs, just
+            // where Windows wants it. Set the moment it starts, so only the first fraction of a second of loading is spent
+            // anywhere else.
             if (System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('win')) {
 
                 try {
 
-                    new ProcessBuilder('powershell', '-NoProfile', '-Command',
-                            "(Get-Process -Id ${process.pid()}).PriorityClass = 'BelowNormal'").start().waitFor()
+                    def placing = "\$worker = Get-Process -Id ${process.pid()}; \$worker.PriorityClass = 'BelowNormal'"
+
+                    if (coreMask != 0L) {
+
+                        placing += "; \$worker.ProcessorAffinity = [IntPtr]${coreMask}L"
+                    }
+
+                    new ProcessBuilder('powershell', '-NoProfile', '-Command', placing.toString()).start().waitFor()
                 }
 
                 catch (Exception ignored) {
@@ -940,7 +1082,9 @@ afterEvaluate {
         }
 
         logger.lifecycle("Started ${workers} game test workers (${sizing}) under ${root}, ${staggerSeconds} s apart, "
-                + "${workerCpus > 0 ? workerCpus + ' cores' : 'every core'} and ${heap} each")
+                + "${workerCpus > 0 ? workerCpus + ' cores' : 'every core'} and ${heap} each"
+                + (coreMask == 0L ? '' : String.format(Locale.ROOT, ", on the %d performance cores (mask 0x%X)",
+                Long.bitCount(coreMask), coreMask)))
 
         // Each worker publishes how far it has got beside its durations file. Summing those gives the progress of the
         // run as a whole, reported every tenth so a long run says something while it works.
@@ -1228,7 +1372,9 @@ afterEvaluate {
             def observedBoot = Math.max(1.0d, seconds - longestTest)
             def observedRate = (durations.size() / (double) workers) / Math.max(0.001d, meanTest)
 
-            def measured = new Properties()
+            // Added to what is already there rather than replacing it, so that the measured performance core mask, which
+            // costs a few seconds to find and changes only when the machine does, survives every round.
+            def measured = calibration
             measured.setProperty('bootSeconds', String.format(Locale.ROOT, "%.2f", observedBoot))
             measured.setProperty('arenasPerWorkerSecond', String.format(Locale.ROOT, "%.3f", observedRate))
             measured.setProperty('arenas', String.valueOf(durations.size()))
