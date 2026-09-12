@@ -44,7 +44,7 @@ public final class ObservationSchema {
     // -----------------------------------------------------------------------------------------------------------
 
     public static final int ENEMY_SLOTS = 10;
-    public static final int ENEMY_STRIDE = 18;
+    public static final int ENEMY_STRIDE = 29;
     public static final int ENEMY_SIZE = ENEMY_SLOTS * ENEMY_STRIDE;
 
     /** How far an enemy can be and still hold a slot. Beyond this it is only part of the in range count. */
@@ -75,6 +75,60 @@ public final class ObservationSchema {
     public static final int ENEMY_SWINGING = 15;
     public static final int ENEMY_USING = 16;
     public static final int ENEMY_SPRINTING = 17;
+
+    // -----------------------------------------------------------------------------------------------------------
+    // What the thing in front of it actually is
+    //
+    // The five values of ENEMY_KIND say agent, player, monster, something else alive, or a projectile, and every hostile
+    // mob in the game is the one value "monster". ENEMY_HEALTH is a fraction, so a zombie at full health and a warden at
+    // full health both read 1, and neither carries anything, so their hands read the same too. A network fighting the
+    // league was therefore asked to tell two hundred opponents apart by how they moved, and to find out how hard one hits
+    // by being hit: against a creeper that is one fight too late, and against a warden it is the whole fight. The league
+    // showed it plainly — every ordinary mob beaten 75 to 98%, and 0% against two creepers, 0% against the warden.
+    //
+    // So a slot now says what the thing can do. Not a species number, which would have to be learned one mob at a time
+    // and would say nothing about a mob the run never met, but the capabilities the tactics actually turn on: how much
+    // there is of it, how hard and how far it hits, how fast it moves, how big it is, whether knockback moves it, and
+    // whether it explodes, shoots or flies. A creeper is then "twenty health, no weapon, explodes, fuse at 0.4" rather
+    // than "monster".
+    // -----------------------------------------------------------------------------------------------------------
+
+    /** Health in hearts rather than as a fraction: what it has now and what it has when whole, both over HEALTH_SCALE. */
+    public static final int ENEMY_MAX_HEALTH = 18;
+    public static final int ENEMY_HEALTH_LEFT = 19;
+
+    /** What one of its blows takes off, over DAMAGE_SCALE, and zero for anything that does not strike. */
+    public static final int ENEMY_DAMAGE = 20;
+
+    /** How fast it walks or flies, over SPEED_SCALE. */
+    public static final int ENEMY_SPEED = 21;
+
+    /**
+     * How big it is, each over SIZE_SCALE. Size is most of what tells one mob from another by eye, and it is also the
+     * reach: a mob strikes from its own width away, so a ravager at nearly two blocks wide hits from where a zombie cannot.
+     */
+    public static final int ENEMY_WIDTH = 22;
+    public static final int ENEMY_HEIGHT = 23;
+
+    /** How much of a knockback it shrugs off, 0 to 1. A warden and an iron golem barely move; that decides hazard pushes. */
+    public static final int ENEMY_KNOCKBACK_RESISTANCE = 24;
+
+    /**
+     * How far along a creeper's fuse is, 0 to 1, and 0 for everything else. The teacher had to guess this from empty hands
+     * and a mob that stopped coming, and the network had no way to guess it at all.
+     */
+    public static final int ENEMY_FUSE = 25;
+
+    /** What it does: goes off, shoots at range, or flies. */
+    public static final int ENEMY_EXPLODES = 26;
+    public static final int ENEMY_SHOOTS = 27;
+    public static final int ENEMY_FLIES = 28;
+
+    /** What the absolute numbers above are divided by, so that all of them sit in roughly nought to one. */
+    public static final float HEALTH_SCALE = 100.0F;
+    public static final float DAMAGE_SCALE = 20.0F;
+    public static final float SPEED_SCALE = 0.5F;
+    public static final float SIZE_SCALE = 4.0F;
 
     // -----------------------------------------------------------------------------------------------------------
     // Self

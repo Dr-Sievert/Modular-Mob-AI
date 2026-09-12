@@ -113,6 +113,36 @@ class MatchmakingTest(unittest.TestCase):
         self.assertAlmostEqual(result["ravager"], 0.1)
         self.assertAlmostEqual(result["creeper"], 0.8)
 
+    def test_the_frontier_takes_the_floor_off_a_fight_it_never_wins(self):
+        """What nine per cent of a run's fights were going on: an even floor gives a hopeless opponent the same standing
+        share as a close one, and a fight lost every time has no version of itself the agent got further in."""
+
+        chances = {"zombie": 0.5, "skeleton": 0.4, "warden": 0.0, "evoker": 0.01, "ghast": 0.05}
+
+        even = shares(chances, floor=0.25)
+        frontier = shares(chances, floor=0.25, frontier=0.15, probe=0.2)
+
+        self.assertAlmostEqual(sum(frontier.values()), 1.0)
+
+        for hopeless in ("warden", "evoker", "ghast"):
+            self.assertLess(frontier[hopeless], even[hopeless])
+
+        for close in ("zombie", "skeleton"):
+            self.assertGreater(frontier[close], even[close])
+
+    def test_a_hopeless_opponent_is_still_tried_now_and_then(self):
+        """It has to be: one that cannot be beaten at a thousand iterations may be beatable at ten thousand, and nothing
+        would ever find that out."""
+
+        result = shares({"zombie": 0.5, "warden": 0.0}, floor=0.25, frontier=0.15, probe=0.2)
+
+        self.assertGreater(result["warden"], 0.0)
+
+    def test_no_frontier_is_what_it_always_was(self):
+        chances = {"silverfish": 1.0, "creeper": 0.5, "ravager": 0.0}
+
+        self.assertEqual(shares(chances, floor=0.3), shares(chances, floor=0.3, frontier=0.0, probe=1.0))
+
     def test_nothing_to_tell_them_apart_is_an_even_spread(self):
         for chances, floor in (({"a": 1.0, "b": 1.0}, 0.25), ({"a": 0.3, "b": 0.3, "c": 0.3, "d": 0.3}, 0.0)):
             for share in shares(chances, floor).values():

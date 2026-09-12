@@ -59,8 +59,15 @@ to copy a hand-written fighter first, then improve the copy with reinforcement l
    - smaller, bounded steps: learning rate 5e-5, clip 0.1, target KL 0.01;
    - 30 iterations where only the critic learns;
    - little exploration: entropy 0.001, and a narrow spread on aim;
-   - a pull back towards the teacher's answers throughout (`--teacher-weight 0.5`: imitation loss on a sample of the
-     recorded demos).
+   - a pull back towards the teacher's answers (`--teacher-weight 0.5`: imitation loss on a sample of the recorded demos),
+     **falling to nothing over `--teacher-decay` iterations** (6,000) from the first one that pulled.
+
+     The fall is the point. Held at full strength for a whole run, the pull is a ceiling and not a floor: a league run at
+     0.2 for its entire life beat every ordinary mob 75 to 98% and still lost to the scripted fighter it had been copied
+     from, 32.5% over 200 fights, because an update that always carries an instruction to answer as the teacher would
+     cannot arrive anywhere the teacher is not. The teacher starts the copy and then gets out of the way. `--teacher-decay 0`
+     holds it where it is for ever, which is what the old behaviour was. Where the fall counts from is kept in the run's
+     state, so resuming does not start it over and a run cannot hold itself at full pull by being restarted.
 4. **Evaluation inside the run.** Every 25th iteration's checkpoint is played by the workers on its most likely action,
    in one fight in ten, until it has had `--eval-fights` fights (500 by default).
    - Verdicts go to `eval.csv`, and the best checkpoint's weights to `best.mbw`.
@@ -189,6 +196,8 @@ Every field of `Config` in `trainer/mmai/ppo.py` is an option, as `--field-name 
 | `--league-pool`, `--league-recent` | 8, 4 | checkpoints the league agent meets, and how many of them are the newest |
 | `--league-self-play` | 0.2 | share of league training fights against those checkpoints |
 | `--league-floor` | 0.25 | share of each group's fights spread evenly, whatever the agent's chances |
+| `--league-frontier` | 0.15 | below this chance an opponent keeps only `--league-probe` of that even floor: learning happens where fights are close, and an even floor over a hundred opponents was spending 9% of a run on sixteen it never once beat |
+| `--league-probe` | 0.2 | how much of the floor those keep, so they are still tried now and then — one that is hopeless at a thousand iterations may not be at ten thousand |
 | `--league-k` | 16 | Elo K (twice that for a player's first `--league-provisional` 30 rated fights) |
 | `--league-hard-at`, `--league-easy-below` | 0.80, 0.20 | evaluated win rate at which an opponent's hard or easy rung opens |
 | `--league-rung-fights` | 30 | evaluation fights an opponent needs before a rung can open |

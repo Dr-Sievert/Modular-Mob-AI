@@ -155,8 +155,8 @@ be the same weights on both sides. So you get a real check on a brand new body b
 
 ```
 scripts\parity.ps1
-  humanoid: schema f818e282, observation 634 wide, 11 actions from 19 logits
-  parity over 67 rows of 634 -> 256 -> GRU 128 -> 128 -> 19, a humanoid
+  humanoid: schema 1dffdc67, observation 744 wide, 11 actions from 19 logits
+  parity over 67 rows of 744 -> 256 -> GRU 128 -> 128 -> 19, a humanoid
     logits 2.325e-06   hidden state 4.917e-06   log probability 3.815e-06
   parity ok
   beast: schema 686280b1, observation 612 wide, 7 actions from 7 logits

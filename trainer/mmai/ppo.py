@@ -103,6 +103,15 @@ class Config:
     teacher_weight: float = 0.0
     teacher_rows: int = 262144
 
+    # Iterations over which that pull falls to nothing, counted from the first iteration this run ever pulled. Zero holds
+    # it where it is for ever.
+    #
+    # It has to fall, or the teacher is a ceiling rather than a floor. Pulled at 0.2 for its whole life, a league run beat
+    # every ordinary mob 75 to 98% and still lost to the scripted fighter it was copied from, 32.5% over 200 fights: an
+    # update that is always partly an instruction to answer as the teacher would cannot end anywhere the teacher is not. So
+    # the teacher gets the copy started and then gets out of the way, which is what it is for.
+    teacher_decay: int = 6000
+
     # Evaluation: every checkpoint is played by the workers on its most likely action, eval_fights times, see
     # evaluate.py. The run is done once one wins eval_target of its fights, or once eval_patience checkpoints in a row
     # have not beaten the best.
@@ -122,6 +131,14 @@ class Config:
     # Of each of those two shares, how much is spread evenly over its opponents whatever the agent's chances, so none
     # is forgotten. The rest goes by how close to an even fight each one is.
     league_floor: float = 0.25
+
+    # The chance below which an opponent is not yet worth practising against, and how much of the even floor it keeps while
+    # it is down there. Learning happens where the fights are close; a fight lost every single time has no version of
+    # itself the agent got further in, so there is nothing in it to move towards. Measured on a league run, sixteen such
+    # opponents were taking nine per cent of every round. They are still tried, at a fifth of the share, because one that
+    # is hopeless at a thousand iterations may not be at ten thousand.
+    league_frontier: float = 0.15
+    league_probe: float = 0.2
 
     # What the agent's training fights against an opponent still count for an iteration later, and how many fights'
     # worth the ratings' guess at its chances is worth beside them.
@@ -224,6 +241,9 @@ class Trainer:
         # The teacher's record, for the pull back towards it; empty unless the run has one, see set_teacher.
         self.teacher: list[Segment] = []
         self.teacher_groups: list[list[int]] = []
+
+        # The iteration the pull started at, which the decay counts from, and None until a run has a teacher at all.
+        self.teacher_from: int | None = None
         self.teacher_press_weight: Tensor | None = None
 
         logger.info(
@@ -581,13 +601,15 @@ class Trainer:
                     # The pull back towards the teacher: however noisy this update's advantages are, the policy cannot
                     # wander far from what the teacher does without paying for it, and where the fights clearly say
                     # otherwise the advantages still win.
-                    if config.teacher_weight > 0.0 and self.teacher_groups:
+                    pull = self.teacher_pull()
+
+                    if pull > 0.0 and self.teacher_groups:
                         group = self.teacher_groups[int(np.random.randint(len(self.teacher_groups)))]
                         teacher_obs, teacher_targets, teacher_mask = self._teacher_batch(self.teacher, group)
                         teacher_logits, _ = self.actor(teacher_obs, torch.zeros(teacher_obs.shape[0], config.hidden, device=self.device))
                         teacher_loss = -self._teacher_log_prob(
                             teacher_logits, teacher_obs, teacher_targets, self.teacher_press_weight)[teacher_mask].mean()
-                        loss = loss + config.teacher_weight * teacher_loss
+                        loss = loss + pull * teacher_loss
                         teacher_losses.append(teacher_loss.item())
 
                 self.optimizer.zero_grad(set_to_none=True)
@@ -694,6 +716,25 @@ class Trainer:
         self.actor.narrow_spread()
         logger.info("the copy explores with a spread of %s", self.actor.log_std.detach().exp().cpu().numpy().round(3))
 
+    def teacher_pull(self) -> float:
+        """
+        How hard this iteration pulls back towards the teacher: the configured weight, falling to nothing over
+        Config.teacher_decay iterations from the first one that pulled.
+
+        A teacher is a floor and not a ceiling. Held at full strength for a whole run, it beat every ordinary mob and
+        still lost to the teacher itself, because an update that always carries an instruction to answer as the teacher
+        would cannot arrive anywhere the teacher is not. So it starts the copy and then lets go.
+        """
+
+        weight = self.config.teacher_weight
+
+        if weight <= 0.0 or self.config.teacher_decay <= 0 or self.teacher_from is None:
+            return weight
+
+        gone = max(0, self.iteration - self.teacher_from)
+
+        return weight * max(0.0, 1.0 - gone / float(self.config.teacher_decay))
+
     def set_teacher(self, segments: list[Segment]) -> None:
         """Keeps a record of the teacher, taken at random up to so many rows, for the pull back towards it in every
         update; see Config.teacher_weight."""
@@ -707,6 +748,11 @@ class Trainer:
 
             kept.append(segments[index])
             rows += segments[index].steps
+
+        # Where the decay counts from: the first iteration this run ever pulled, kept in its state so that resuming does not
+        # start the fall over again and a run cannot hold itself at full pull by being restarted.
+        if self.teacher_from is None:
+            self.teacher_from = self.iteration
 
         self.teacher = kept
         self.teacher_groups = pack_by_rows(kept, 4096)
@@ -844,7 +890,7 @@ class Trainer:
 
         # Said on its own line rather than added to the one above, which scripts\watch.ps1 reads field by field.
         if self.config.teacher_weight > 0.0 and stats.get("teacher"):
-            logger.info("iteration %5d  teacher loss %+.4f", self.iteration, stats["teacher"])
+            logger.info("iteration %5d  teacher loss %+.4f  pull %.4f", self.iteration, stats["teacher"], self.teacher_pull())
 
     # -----------------------------------------------------------------------------------------------------------
     # Weights and checkpoints
@@ -868,6 +914,7 @@ class Trainer:
                 "reward_scaler": self.reward_scaler.state_dict(),
                 "iteration": self.iteration,
                 "total_steps": self.total_steps,
+                "teacher_from": self.teacher_from,
             },
             temporary,
         )
@@ -890,5 +937,8 @@ class Trainer:
         self.reward_scaler.load_state_dict(state["reward_scaler"])
         self.iteration = state["iteration"]
         self.total_steps = state["total_steps"]
+
+        # Absent from a state written before the pull could decay, which then starts falling from wherever that run is now.
+        self.teacher_from = state.get("teacher_from")
 
         logger.info("carrying on from %s at iteration %d", path, self.iteration)
