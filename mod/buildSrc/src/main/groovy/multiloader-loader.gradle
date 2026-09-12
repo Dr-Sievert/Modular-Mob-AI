@@ -1483,6 +1483,7 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
             def layoutLines = null
             def columns = 0
             def rows = 0
+            def spacing = 0
 
             // Point numbers in a set, as both unusable and the kinds are written: "3,17,42", moved along by an offset.
             def pointsOf = { Properties from, String key, int offset ->
@@ -1502,7 +1503,8 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
 
                 columns = existing.getProperty('columns') as int
                 rows = existing.getProperty('rows') as int
-                layoutLines = "spacing=${existing.getProperty('spacing')}\ncolumns=${columns}\nrows=${rows}\n"
+                spacing = existing.getProperty('spacing') as int
+                layoutLines = "spacing=${spacing}\ncolumns=${columns}\nrows=${rows}\n"
 
                 for (int block = 0; existing.containsKey("block.${block}".toString()); block++) {
 
@@ -1527,17 +1529,22 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
                 }
 
                 // A library can only grow by blocks of the shape it already has: a point's number is worked out from the
-                // columns and rows, so mixing two layouts in one index would move every point that already existed.
-                if (columns != 0 && (built.getProperty('columns') as int) != columns || rows != 0 && (built.getProperty('rows') as int) != rows) {
+                // columns and rows, so mixing two layouts in one index would move every point that already existed, and the
+                // spacing says how much ground a site holds, so mixing two of those would leave half the sites short of the
+                // chunks they tick. -PsiteRadius is what decides the spacing.
+                if (columns != 0 && ((built.getProperty('columns') as int) != columns || (built.getProperty('rows') as int) != rows
+                        || (built.getProperty('spacing') as int) != spacing)) {
 
-                    throw new GradleException("The library in ${terrainLibrary} is laid out ${columns} by ${rows} and this "
-                            + "build lays its blocks out ${built.getProperty('columns')} by ${built.getProperty('rows')}; "
-                            + "build a new library rather than adding to this one")
+                    throw new GradleException("The library in ${terrainLibrary} holds blocks of ${columns} by ${rows} sites "
+                            + "${spacing} blocks apart, and this build lays out ${built.getProperty('columns')} by "
+                            + "${built.getProperty('rows')} at ${built.getProperty('spacing')}; build a new library rather "
+                            + "than adding to this one, or add at the -Radius it was built with")
                 }
 
                 columns = built.getProperty('columns') as int
                 rows = built.getProperty('rows') as int
-                layoutLines = "spacing=${built.getProperty('spacing')}\ncolumns=${columns}\nrows=${rows}\n"
+                spacing = built.getProperty('spacing') as int
+                layoutLines = "spacing=${spacing}\ncolumns=${columns}\nrows=${rows}\n"
 
                 def offset = blocks.size() * columns * rows
 
@@ -1588,7 +1595,9 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
             // Every pair of blocks, old and new, far enough apart to have region files of its own. A builder keeps clear of
             // the library and of its own blocks, but two builders cannot see each other's choices, so this is the guard
             // that makes an addition safe. Checked before anything is moved into the library.
-            def apart = 4096
+            // The same distance TerrainLibrary.BLOCKS_APART works out: a block's longer side plus four region files of
+            // slack, which is 4,096 at the usual site radius of two and grows with it.
+            def apart = rows * spacing + 2048
             def origins = blocks.collect { it.split(',').collect { part -> part.trim() as int } }
 
             for (int a = 0; a < origins.size(); a++) {

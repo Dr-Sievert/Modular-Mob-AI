@@ -84,7 +84,6 @@ Results so far (evaluated on the most likely action):
 scripts\terrain.ps1                       4,096 fight sites, on as much of the machine as fits
 scripts\terrain.ps1 -Add 2048             2,048 more, appended to the library that is already there
 scripts\terrain.ps1 -Sites 8192           a new library of that size; about 0.8 MB and 1.5 s of one builder per site
-scripts\terrain.ps1 -Sites 8192           more ground; about 0.8 MB and 1.5 s of one builder per site
 scripts\terrain.ps1 -Radius 3             bigger sites, 112 blocks across rather than 80
 ```
 
@@ -101,14 +100,13 @@ Generating cost two to three cores and a third more memory per worker, and memor
 - Building a new one, or adding to one, while training runs is safe: a new library replaces the old one only once it is
   whole, and an addition's ground is moved in whole before a new index is moved over the old one, so nothing half finished
   is ever readable. A worker already running keeps its own links and never rereads the index.
-- Run it once per machine, and again whenever you want fresh ground. Build a new one rather than adding when the layout of
-  a block changes, since a point's number is worked out from it; the build refuses to mix two layouts in one index.
+- Run it once per machine, and again whenever you want fresh ground. Build a new one rather than adding when a block's
+  layout or a site's size changes, since a point's number is worked out from the layout and the ground a site needs from
+  the spacing; the build refuses to append blocks of a different shape to what is already there.
 - The index can carry facts about a point beyond whether a fight can start on it, as `kinds=lava,ravine` and then
   `kind.lava=3,17,42`, read, written and merged on append exactly as the unusable points are. Nothing fills them in yet;
   that is where sites the league should draw hazardous ground from will be named. A reader that does not know a kind ignores
   it, so adding one needs no rebuild.
-- Building a new one while training runs is safe: it replaces the old one only once it is whole.
-- Run it once per machine, and again whenever you want fresh ground.
 - `-Radius` is how much ground one site holds, in chunks either side of its centre: 2 (the default) is 80 blocks across,
   3 is 112. It is the library's property, and the only way a fight gets more ground than 80 blocks; what a matchup can ask
   for on its own is how far apart it starts and how much air it wants overhead. A run may use a library built for bigger
@@ -124,6 +122,7 @@ Generating cost two to three cores and a third more memory per worker, and memor
 
   So the price of the bigger site is disk and about a quarter of the throughput, not memory: twice the chunks to tick, in
   the same heap.
+
 ## Scripts
 
 ### `scripts\train.ps1`: one run

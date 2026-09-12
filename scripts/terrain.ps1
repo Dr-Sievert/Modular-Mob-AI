@@ -17,8 +17,10 @@
 #
 # -Add grows the library rather than replacing it: only the new sites are generated, they go somewhere well clear of every
 # block of ground already in it, and the sites that were there keep the numbers they had. Growing from 4,096 to 8,192
-# therefore costs what 4,096 sites cost, not what 8,192 do. Without -Add the library is built afresh, which is what to do
-# after changing how sites are laid out.
+# therefore costs what 4,096 sites cost, not what 8,192 do. Measured, 1,024 sites appended to a 4,096-site library took
+# 9 minutes on two builders and added 797 MB, against about 38 minutes to generate all 5,120 again. Without -Add the
+# library is built afresh, which is what to do after changing -Radius or how a block is laid out: a point's number comes
+# from the layout, so the build refuses to append blocks of a different shape to what is already there.
 #
 # -Radius is how much ground one site holds, in chunks either side of its centre: two, the default, is the 80 blocks across
 # every run so far has fought on, and three is 112. It is a property of the library rather than of a run: a worker will read
