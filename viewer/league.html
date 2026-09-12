@@ -294,6 +294,8 @@ async function loadRuns() {
 }
 
 async function loadRun() {
+  // The index of recorded fights belongs to the data it was built from, so it goes when that does.
+  state.index = null;
   if (!state.run) { state.data = null; return; }
   const query = state.model === null ? '' : '?model=' + encodeURIComponent(state.model);
   state.data = await json('/api/league/' + encodeURIComponent(state.run) + query);
@@ -395,14 +397,37 @@ function table(key, columns, rows, options) {
 // The drawer: the recorded fights of one matchup
 // ---------------------------------------------------------------------------------------------------------------------
 
-/** Every recorded fight of this run that matches, newest first. A replay only exists for one fight in a few hundred. */
-function recorded(match) {
-  const all = (state.data && state.data.fights.recorded) || [];
-  return all.filter(match).slice().reverse();
+/**
+ * The recorded fights of this run, filed under everything a row might be about, newest first. Built in one pass and kept
+ * until the data changes: a tier list of three hundred players asking a list of four thousand fights three hundred times
+ * is most of a redraw, and there is nothing in it that changes between rows.
+ */
+function index() {
+  if (state.index) return state.index;
+  const of = { opponent: new Map(), loadout: new Map(), site: new Map() };
+  const file = (map, key, fight) => {
+    if (key === undefined || key === null || key === '') return;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).unshift(fight);
+  };
+  for (const fight of (state.data ? state.data.fights.recorded : [])) {
+    file(of.opponent, fight.opponent, fight);
+    file(of.loadout, fight.loadout, fight);
+    file(of.site, fight.site, fight);
+    file(of.opponent, fight.iteration + '\t' + fight.opponent, fight);
+    file(of.loadout, fight.iteration + '\t' + fight.loadout, fight);
+  }
+  state.index = of;
+  return of;
 }
 
-function watch(title, match) {
-  const fights = recorded(match);
+/** Every recorded fight filed under that key, newest first, or none. */
+function recorded(what, key) {
+  return index()[what].get(key) || [];
+}
+
+function watch(title, what, key) {
+  const fights = recorded(what, key);
   if (!fights.length) return el('span', { class: 'faint', text: '–' });
   return el('button', {
     class: 'watch', title: fights.length + ' recorded fight(s) of this to watch',
@@ -474,7 +499,7 @@ function tierList(data, options) {
     { name: 'lost', value: (one) => one.losses, num: true },
     { name: 'drawn', value: (one) => one.draws, num: true },
     { name: 'share', value: (one) => one.share, num: true, title: 'Share of the training fights it is given now' },
-    { name: 'watch', value: (one) => recorded((fight) => fight.opponent === one.player).length, num: true },
+    { name: 'watch', value: (one) => recorded('opponent', one.player).length, num: true },
   ];
 
   const most = Math.max(1, ...shown.map((one) => one.games));
@@ -493,7 +518,7 @@ function tierList(data, options) {
       el('td', { class: 'num loss', text: one.losses || '' }),
       el('td', { class: 'num dim', text: one.draws || '' }),
       el('td', { class: 'num dim', text: one.share > 0 ? percent(one.share, 1) : '' }),
-      el('td', {}, watch('Fights against ' + one.player, (fight) => fight.opponent === one.player))),
+      el('td', {}, watch('Fights against ' + one.player, 'opponent', one.player))),
   });
 }
 
@@ -593,7 +618,7 @@ function opponentTable(data) {
     { name: 'won', value: (one) => one.trained && one.trainWins / one.trained, num: true },
     { name: 'all fights', value: (one) => one.run[0], num: true, title: 'Every fight of the run against it, both kinds' },
     { name: 'won', value: (one) => one.run[0] && one.run[1] / one.run[0], num: true },
-    { name: 'watch', value: (one) => recorded((fight) => fight.opponent === one.opponent).length, num: true },
+    { name: 'watch', value: (one) => recorded('opponent', one.opponent).length, num: true },
   ];
 
   return table('opponents', columns, rows, {
@@ -608,7 +633,7 @@ function opponentTable(data) {
       el('td', { class: 'num win', text: percent(one.trainWins, one.trained) }),
       el('td', { class: 'num', text: one.run[0] || '' }),
       el('td', { class: 'num win', text: percent(one.run[1], one.run[0]) }),
-      el('td', {}, watch('Fights against ' + one.opponent, (fight) => fight.opponent === one.opponent))),
+      el('td', {}, watch('Fights against ' + one.opponent, 'opponent', one.opponent))),
   });
 }
 
@@ -636,7 +661,7 @@ function loadoutTable(data) {
     { name: 'won', value: (one) => one.trained && one.trainWins / one.trained, num: true },
     { name: 'all fights', value: (one) => one.run[0], num: true },
     { name: 'won', value: (one) => one.run[0] && one.run[1] / one.run[0], num: true },
-    { name: 'watch', value: (one) => recorded((fight) => fight.loadout === one.loadout).length, num: true },
+    { name: 'watch', value: (one) => recorded('loadout', one.loadout).length, num: true },
   ];
 
   return table('loadouts', columns, rows, {
@@ -649,7 +674,7 @@ function loadoutTable(data) {
       el('td', { class: 'num win', text: percent(one.trainWins, one.trained) }),
       el('td', { class: 'num', text: one.run[0] || '' }),
       el('td', { class: 'num win', text: percent(one.run[1], one.run[0]) }),
-      el('td', {}, watch('Fights with a ' + one.loadout, (fight) => fight.loadout === one.loadout))),
+      el('td', {}, watch('Fights with a ' + one.loadout, 'loadout', one.loadout))),
   });
 }
 
@@ -678,7 +703,7 @@ function groundTable(data) {
     { name: 'ground', value: (one) => one.wins && one.terrain / one.wins, num: true,
       title: 'Of its wins, the share the ground finished rather than the agent' },
     { name: 'by side', value: (one) => one.side, num: true, title: 'A creeper that blew up its own mate' },
-    { name: 'watch', value: (one) => recorded((fight) => fight.site === one.site).length, num: true },
+    { name: 'watch', value: (one) => recorded('site', one.site).length, num: true },
   ];
 
   const most = Math.max(1, ...rows.map((one) => one.wins && one.terrain / one.wins));
@@ -694,7 +719,7 @@ function groundTable(data) {
       el('td', { class: 'num', text: one.terrain }),
       bar(one.wins ? one.terrain / one.wins : 0, most, percent(one.terrain, one.wins)),
       el('td', { class: 'num dim', text: one.side }),
-      el('td', {}, watch('Fights on ' + one.site, (fight) => fight.site === one.site))),
+      el('td', {}, watch('Fights on ' + one.site, 'site', one.site))),
   });
 }
 
@@ -804,8 +829,8 @@ function modelDetail(data) {
           el('td', { class: 'num', text: one.fights }),
           el('td', { class: 'num win', text: one.wins }),
           bar(one.fights ? one.wins / one.fights : 0, 1, percent(one.wins, one.fights)),
-          el('td', {}, watch(name + ' vs ' + one.name, (fight) => fight.iteration === model.iteration
-            && (key === 'model-opponents' ? fight.opponent === one.name : fight.loadout === one.name)))),
+          el('td', {}, watch(name + ' vs ' + one.name, key === 'model-opponents' ? 'opponent' : 'loadout',
+            model.iteration + '\t' + one.name))),
       }));
   };
 

@@ -346,8 +346,13 @@ class Fights:
             files = sorted(p for p in results.glob('w*.csv') if p.is_file())
         except OSError:
             return self
-        if any(self.offsets.get(path.name, 0) > path.stat().st_size for path in files):
-            self.forget()
+        # A file shorter than it was is a different run under the same name, and everything is read again from the start.
+        # One that vanished between the listing and the look is simply gone; the next refresh lists again.
+        try:
+            if any(self.offsets.get(path.name, 0) > path.stat().st_size for path in files):
+                self.forget()
+        except OSError:
+            return self
         for path in files:
             start = self.offsets.get(path.name, 0)
             try:
