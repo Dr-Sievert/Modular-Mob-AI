@@ -309,6 +309,25 @@ are deliberate.
     the agent's only when the weapon is charged (`AgentMob#drawingToFull`). One press is one full arrow, which is a thing
     a policy can find. Nothing else moves — no layout changes, no log probabilities change, the draw still costs a fifth
     of the movement every tick of it, changing slot still gives it up, and holding at full draw to aim is still allowed.
+  - What it did, on the same run and the same roster, about 1,150 training fights a loadout either side of the change:
+
+    | | button held | draw committed |
+    | --- | --- | --- |
+    | bow: draws started a fight | 42.6 | 15.0 |
+    | bow: arrows loosed a fight | 5.5 | 10.3 |
+    | bow: draws that finished | 13% | 69% |
+    | bow: won, training | 22.5% | 40.1% |
+    | crossbow: bolts fired a fight | 0.03 | 6.91 |
+    | crossbow: loads that finished | 0.07% | 62.8% |
+    | crossbow: won, training | 11.0% | 35.2% |
+
+  - **Evaluation cannot see this bug, and that is why it lasted.** A deployed agent takes its most likely action, so a
+    logit over a half means the button is pressed every tick and the draw completes: the coin flip only exists where the
+    actions are sampled, which is training. Evaluated on the same weights either side of the change, 300 fights a
+    loadout, the win rate barely moves — bow 41.3% to 40.0%, crossbow 37.3% to 42.7% — while timeouts fall about five
+    points and the fights it lands a hit in go from 169 and 188 of 300 to 207 and 224. The tables had been saying it all
+    along: bow 33.0% evaluated against 22.5% in training, crossbow 29.5% against 11.0%. **A loadout whose training rate
+    sits far below its evaluated rate is a loadout whose skill is being destroyed by sampling.**
   - The general lesson: **before shaping a reward for a skill, measure whether the policy can physically emit it.** Count
     the action, not the outcome. Both of these were invisible in the win rate and obvious in one histogram of hold
     lengths.
