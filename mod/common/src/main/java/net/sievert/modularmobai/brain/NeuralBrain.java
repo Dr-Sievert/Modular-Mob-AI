@@ -62,6 +62,20 @@ public final class NeuralBrain implements Brain {
         return new NeuralBrain(weights, null, null);
     }
 
+    /**
+     * Samples, like a policy in training, but records nothing: an opponent that plays the way the agent facing it plays.
+     *
+     * <p>This is what a frozen checkpoint in the self play pool needs to be. Deployed, it takes its most likely action
+     * while the agent learning against it is sampling, and the exploration the learner is paying for is a handicap it pays
+     * only on its own side: the league measured the learner winning 10 to 26% of its fights against copies of itself, where
+     * a mirror match is meant to be the even one that teaches most. Rated fights are a different matter and stay deployed
+     * on both sides, since a rating is a statement about the finished policy.
+     */
+    public static NeuralBrain exploring(WeightSet weights, RandomGenerator random) {
+
+        return new NeuralBrain(weights, random, null);
+    }
+
     static NeuralBrain training(TrainingRun run) {
 
         return new NeuralBrain(run.weights(), run.random(), run);
