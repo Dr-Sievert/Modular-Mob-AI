@@ -249,35 +249,3 @@ def read(path: str | Path) -> tuple[WeightHeader, np.ndarray]:
     flat = np.frombuffer(data, dtype="<f4", count=count, offset=layout.size)
 
     return WeightHeader(schema_id, topology, float(obs_clip), int(iteration)), flat
-
-
-def load_into(actor, flat: np.ndarray) -> None:
-    """Puts a flat parameter array back into a model, the exact inverse of :func:`segments`."""
-
-    topology = actor.topology
-
-    if flat.size != topology.size():
-        raise ValueError(f"{flat.size} parameters for a network that needs {topology.size()}")
-
-    offset = 0
-
-    with torch.no_grad():
-        for part in (
-            actor.norm_mean,
-            actor.norm_std,
-            actor.fc1.weight,
-            actor.fc1.bias,
-            actor.gru.weight_ih_l0,
-            actor.gru.bias_ih_l0,
-            actor.gru.weight_hh_l0,
-            actor.gru.bias_hh_l0,
-            actor.fc2.weight,
-            actor.fc2.bias,
-            actor.out.weight,
-            actor.out.bias,
-            actor.log_std,
-        ):
-            size = part.numel()
-            piece = torch.from_numpy(np.array(flat[offset : offset + size], dtype=np.float32))
-            part.copy_(piece.reshape(part.shape))
-            offset += size
