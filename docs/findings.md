@@ -325,9 +325,14 @@ are deliberate.
     logit over a half means the button is pressed every tick and the draw completes: the coin flip only exists where the
     actions are sampled, which is training. Evaluated on the same weights either side of the change, 300 fights a
     loadout, the win rate barely moves — bow 41.3% to 40.0%, crossbow 37.3% to 42.7% — while timeouts fall about five
-    points and the fights it lands a hit in go from 169 and 188 of 300 to 207 and 224. The tables had been saying it all
-    along: bow 33.0% evaluated against 22.5% in training, crossbow 29.5% against 11.0%. **A loadout whose training rate
-    sits far below its evaluated rate is a loadout whose skill is being destroyed by sampling.**
+    points and the fights it lands a hit in go from 169 and 188 of 300 to 207 and 224. So a run can be evaluated for ten
+    thousand iterations, judged on what it evaluates at, and never show the thing that is stopping it learning.
+  - **What the gap between evaluation and training is worth as a tell: a little, and only against its peers.** Every
+    loadout evaluates above what it trains at, because training explores and exploration costs; over a 200-fight window
+    the gap runs from 6 to 18 points and moves by 5 on noise alone. So no single loadout's gap means anything. What did
+    mean something was the ranking: with the button held, the bow and the crossbow sat at the wide end (10.5 and 18.5
+    points) and after the draw was committed the bow has the narrowest gap of all ten. The tell that was actually decisive
+    was neither — it was **counting the bolts**: 0.03 a fight cannot be explained away.
   - The general lesson: **before shaping a reward for a skill, measure whether the policy can physically emit it.** Count
     the action, not the outcome. Both of these were invisible in the win rate and obvious in one histogram of hold
     lengths.
