@@ -30,7 +30,9 @@ final class Beast implements Species {
                 Species.Block.shaped("enemies", BeastSchema.ENEMY_OFFSET, ObservationSchema.ENEMY_SIZE,
                         "slots", ObservationSchema.ENEMY_SLOTS, "stride", ObservationSchema.ENEMY_STRIDE),
                 Species.Block.shaped("terrain", BeastSchema.TERRAIN_OFFSET, ObservationSchema.TERRAIN_SIZE,
-                        "x", ObservationSchema.TERRAIN_X, "y", ObservationSchema.TERRAIN_Y, "z", ObservationSchema.TERRAIN_Z)));
+                        "x", ObservationSchema.TERRAIN_X, "y", ObservationSchema.TERRAIN_Y, "z", ObservationSchema.TERRAIN_Z),
+                Species.Block.shaped("rays", BeastSchema.RAY_OFFSET, ObservationSchema.RAY_SIZE,
+                        "rays", ObservationSchema.RAYS, "stride", ObservationSchema.RAY_STRIDE)));
 
         this.schemaId = Species.super.schemaId();
     }

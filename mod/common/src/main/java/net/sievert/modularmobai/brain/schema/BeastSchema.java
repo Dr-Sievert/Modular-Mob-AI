@@ -60,8 +60,9 @@ public final class BeastSchema {
     public static final int ECHO_OFFSET = SELF_OFFSET + SELF_SIZE;
     public static final int ENEMY_OFFSET = ECHO_OFFSET + ECHO_SIZE;
     public static final int TERRAIN_OFFSET = ENEMY_OFFSET + ObservationSchema.ENEMY_SIZE;
+    public static final int RAY_OFFSET = TERRAIN_OFFSET + ObservationSchema.TERRAIN_SIZE;
 
-    public static final int OBS_DIM = TERRAIN_OFFSET + ObservationSchema.TERRAIN_SIZE;
+    public static final int OBS_DIM = RAY_OFFSET + ObservationSchema.RAY_SIZE;
 
     // -----------------------------------------------------------------------------------------------------------
     // What it can be asked to do
