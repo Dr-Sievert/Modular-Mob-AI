@@ -8,6 +8,32 @@ $Gradle = Join-Path $Mod 'gradlew.bat'
 $Python = Join-Path $Root 'trainer\.venv\Scripts\python.exe'
 $Runs = Join-Path $Root 'runs'
 
+# A git worktree has no trainer environment of its own, and setting one up per worktree is gigabytes of PyTorch for a
+# checkout that lives a few hours. So a worktree borrows the main checkout's, found through git rather than guessed: the
+# common directory of a worktree is the main checkout's .git, whose parent is the checkout.
+#
+# This exists because the alternative was done by hand four times over and then cost the environment itself. Each
+# development worktree had a junction from its trainer\.venv to the real one, and a `robocopy /MIR` from an empty folder
+# to clear a worktree out followed one of those junctions and mirrored the emptiness into the environment every run on the
+# machine uses: torch, numpy and pyvenv.cfg gone in seconds. Nothing that walks a worktree can be trusted not to follow a
+# reparse point, so the right answer is for there to be no reparse point to follow.
+if (-not (Test-Path $Python)) {
+
+    $common = & git -C $Root rev-parse --path-format=absolute --git-common-dir 2>$null
+
+    if ($LASTEXITCODE -eq 0 -and $common) {
+
+        $main = Split-Path -Parent $common.Trim()
+        $borrowed = Join-Path $main 'trainer\.venv\Scripts\python.exe'
+
+        if ($main -and $borrowed -ne $Python -and (Test-Path $borrowed)) {
+
+            $Python = $borrowed
+            Write-Host "No trainer environment in this worktree; using the one in $main"
+        }
+    }
+}
+
 # What setup.ps1 downloads when the machine has no Java 21 or Python of its own. Never in git.
 $Tools = Join-Path $Root '.tools'
 

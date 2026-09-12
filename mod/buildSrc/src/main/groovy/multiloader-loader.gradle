@@ -602,13 +602,51 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
     }
 
     // The Python environment under trainer/, which is where everything on the training side lives.
+    //
+    // A git worktree has none of its own, and a worktree that lives a few hours does not want gigabytes of PyTorch set up
+    // in it, so it borrows the main checkout's. Where that is comes from git: a worktree's .git is a file naming the main
+    // checkout's, and its parent is the checkout. The alternative, a junction from the worktree's trainer/.venv to the real
+    // one, was made by hand in four worktrees at once and then cost the environment itself, because a recursive delete of a
+    // worktree followed the junction and emptied the real thing. Better that there is nothing to follow.
     def pythonExecutable = {
 
-        def trainerDir = new File(repositoryRoot, 'trainer')
         def windows = System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('win')
-        def venv = new File(trainerDir, windows ? '.venv/Scripts/python.exe' : '.venv/bin/python')
+        def relative = windows ? 'trainer/.venv/Scripts/python.exe' : 'trainer/.venv/bin/python'
+        def venv = new File(repositoryRoot, relative)
 
         if (!venv.isFile()) {
+
+            def dotGit = new File(repositoryRoot, '.git')
+            def borrowed = null
+
+            // "gitdir: <path>" in a worktree, pointing at <main>/.git/worktrees/<name>.
+            if (dotGit.isFile()) {
+
+                def line = dotGit.text.readLines().find { it.startsWith('gitdir:') }
+
+                if (line) {
+
+                    def gitDir = new File(line.substring('gitdir:'.length()).trim())
+                    def main = gitDir.absoluteFile
+
+                    // .../<main>/.git/worktrees/<name> -> <main>
+                    while (main != null && main.name != '.git') {
+
+                        main = main.parentFile
+                    }
+
+                    if (main?.parentFile != null) {
+
+                        borrowed = new File(main.parentFile, relative)
+                    }
+                }
+            }
+
+            if (borrowed?.isFile()) {
+
+                logger.lifecycle("No Python environment in this worktree; using ${borrowed}")
+                return borrowed
+            }
 
             throw new GradleException("No Python environment at ${venv}; run scripts/setup.ps1 or see trainer/README.md")
         }

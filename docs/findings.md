@@ -208,6 +208,16 @@ are deliberate.
   killed the live one. Starting a run that's already training is now refused.
 - **The machine blue-screened under load (2026-09-11).** The i7-14700KF was on microcode 0x11F, below Intel's fix for
   13th and 14th gen instability (0x12B). A BIOS update (A.K0, microcode 0x137) fixed it; crashes since are code bugs.
+- **Clearing out a development worktree emptied the trainer environment every run on the machine uses.** A worktree has no
+  `trainer\.venv`, and `brainParity` refuses without one, so four worktrees each had a junction from theirs to the real one.
+  Git then refused to delete the worktrees — "Filename too long", from the depth of Gradle's build folders — and the usual
+  Windows answer to that, `robocopy /MIR` from an empty folder, **follows a junction**: it mirrored the emptiness through
+  one and took torch, numpy and `pyvenv.cfg` with it. The 4,000-fight record that was being collected at the time survived,
+  because that half is Java; the imitation that followed it died on the import.
+  - The fix is that there is nothing to follow. A worktree with no environment of its own now borrows the main checkout's,
+    found through git — `git rev-parse --git-common-dir` in `scripts\_common.ps1`, and the `gitdir:` line of the worktree's
+    `.git` file in the build's `pythonExecutable` — so no junction is ever wanted. `robocopy /XJ` also excludes them, and
+    `rmdir /s` does not follow them, but a hazard that has to be remembered is a hazard.
 
 ## Perception
 
