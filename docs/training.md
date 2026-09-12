@@ -149,6 +149,7 @@ scripts\train.ps1 -Run league -Suite league -Seed vs-copy     the league, from v
 | `-RolloutSteps` | 16384 (65536 with `-FromCopy`) | steps of experience per update (an iteration) |
 | `-Device` | cuda | `cpu` keeps the GPU out of it |
 | `-Suite` | terrain | `arena` is a closed 9-block box, for quick checks; `league` is every mob, the scripted fighter and the run's own checkpoints |
+| `-LeagueModels` | | league only: published networks in `models\` to field as rated players, `vs-copy,vs-scratch`; see the league below |
 | `-ReplayEvery` | 200 | record one fight in this many per worker, for the viewer; 0 for none |
 | `-FromCopy` | off | the safeguarded settings for a run that starts from a copy |
 | `-Seed` | | start a new run from another's best checkpoint state: `runs\<seed>`, else `models\<seed>\state.pt`, else a folder by path; gentle settings as `-FromCopy` but no teacher pull, the critic alone for 30 iterations, 65536 steps and no battle limit by default |
@@ -187,8 +188,8 @@ Every field of `Config` in `trainer/mmai/ppo.py` is an option, as `--field-name 
 
 ### The league: `-Suite league` and `scripts\league.ps1`
 
-A league run fights 37 mobs, 11 squads of several mobs at once, the scripted fighter and frozen checkpoints of itself,
-with a loadout drawn every fight; see
+A league run fights 37 mobs, 11 squads of several mobs at once, the scripted fighter, any published networks it was told
+to field, and frozen checkpoints of itself, with a loadout drawn every fight; see
 [architecture.md](architecture.md#the-league). Matchmaking sends training fights where the agent wins about half the
 time; evaluation fights are drawn evenly and rated. A checkpoint is judged on 1,000 evaluation fights over the mobs and
 the scripted fighter, and the run is done after ten judged checkpoints in a row without a new best. An opponent the
@@ -210,7 +211,47 @@ scripts\league.ps1 -Run league                                the tier list, the
 scripts\league.ps1 -Run league -All                           every rated checkpoint in the tier list
 scripts\league.ps1 -Test                                      the unit tests of the Elo, matchmaking and pool arithmetic
 scripts\eval.ps1 -Run league -Suite league                    a network round every opponent, with a table at the end
+scripts\viewer.ps1 -League                                    all of it in the browser, and the per-model stats besides
 ```
+
+#### Published networks in the league: `-LeagueModels`
+
+A run only rates its own checkpoints, so two lineages never meet: a run trained from the teacher and one trained from
+nothing each have a tier list, and the only player they share is the scripted fighter. Naming a published network puts
+them on one list.
+
+```
+scripts\train.ps1 -Run league -Suite league -LeagueModels vs-copy,vs-scratch
+scripts\test.ps1 -League -LeagueModels vs-copy                a quick look with one in it
+```
+
+Each name is a folder under `models\`. It is fielded as another agent on its most likely action, exactly as a frozen
+checkpoint is, and **rated under its own name**, so `vs-copy` appears in the tier list, in `ratings.csv`, in
+`opponents.csv` and in the viewer beside the mobs. What it takes to read two runs together is that both field the same
+network: each rates it on its own fights, and the two answers should agree to within a tier. Where they do not, one run
+has met it far too seldom or the scales have drifted, and the tier lists should not be read against each other — the
+viewer's *Two runs* tab says so outright.
+
+What was chosen, and why:
+
+- **One anchor, still.** The scripted fighter alone is held at 1500. A model enters where everyone enters and its rating
+  moves on its fights like a mob's. Holding a model still as well would assert the distance between it and the scripted
+  fighter instead of measuring it, and every rating between the two would be pulled towards whatever that assumption was
+  wrong by. Nothing about the scale moves by adding players: every rated fight is zero sum except against the anchor,
+  whose K is zero, so a newcomer takes its points from the opponents it actually beats.
+- **In the mobs' group, not the self play share.** A model never learns, so matchmaking weighs it with the mobs and the
+  scripted fighter, towards the even fight, under the same floor. The self play share stays what it was, for the run's
+  own moving pool of checkpoints, which is what it is for.
+- **Every loadout**, as a checkpoint gets. The scripted fighter is melee only because it is the anchor and its strength
+  may not move under a run already going; a network fielded for the first time has nothing to hold still for.
+- **Its fights judge a checkpoint**, as the scripted fighter's do and a checkpoint's do not: what an evaluation fight has
+  to measure is an opponent that holds still.
+- **A rung of the difficulty ladder belongs to a mob or a squad**, and neither a model nor the scripted fighter gets one.
+
+A name is refused, by name and before any fight is set up, when no models folder and no jar has a network for it, when
+something in the league already answers to it (a mob, a squad, a rung, `scripted`, or the shape a checkpoint is written
+in), or when the network was trained for **another body** — the message names both bodies, since a beast's network cannot
+drive a humanoid at all; see [species.md](species.md).
 
 ### `scripts\compare.ps1`: from the copy and from nothing, side by side
 

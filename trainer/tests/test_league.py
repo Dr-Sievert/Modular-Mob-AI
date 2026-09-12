@@ -232,6 +232,41 @@ class LadderTest(unittest.TestCase):
         resumed = League(self.run, self.config)
         self.assertEqual(resumed.rungs, {"zombie(hard)"})
 
+    def test_nothing_but_a_mob_or_a_squad_earns_a_rung(self):
+        """The scripted fighter and a published network are fixed policies: there is no harder version of either to open."""
+
+        (self.run.path / "league" / "roster.csv").write_text(
+            "opponent,kind,cap\nzombie,mob,1.00000\nscripted,scripted,1.00000\nvs-copy,model,1.00000\n", encoding="utf-8")
+
+        self.evaluations("zombie", wins=10, losses=0)
+        self.evaluations("scripted", wins=10, losses=0)
+        self.evaluations("vs-copy", wins=0, losses=10)
+
+        league = League(self.run, self.config)
+        league.update(0)
+
+        self.assertEqual(league.rungs, {"zombie(hard)"})
+        self.assertNotIn("scripted(hard)", self.matchmaking())
+        self.assertNotIn("vs-copy(easy)", self.matchmaking())
+
+    def test_a_rung_opened_for_something_that_has_none_is_dropped_with_its_player(self):
+        """Runs already going opened scripted(easy), which their workers could never field. It goes, and so does the row it
+        left in the ratings, since it never fought."""
+
+        state = self.run.path / "league" / "state.json"
+        state.write_text(json.dumps({"rungs": ["scripted(easy)", "zombie(hard)"],
+                                     "players": {"scripted(easy)": ["scripted", 1500.0, 0, 0, 0, 0]}}), encoding="utf-8")
+
+        league = League(self.run, self.config)
+        self.assertEqual(league.rungs, {"scripted(easy)", "zombie(hard)"})
+
+        league.update(0)
+
+        self.assertEqual(league.rungs, {"zombie(hard)"})
+        self.assertNotIn("scripted(easy)", league.ratings.players)
+        self.assertNotIn("scripted(easy)", self.matchmaking())
+        self.assertIn("zombie(hard)", self.matchmaking())
+
     def test_a_rung_is_the_same_kind_of_thing_and_under_the_same_cap_as_its_opponent(self):
         self.evaluations("2x_zombie", wins=10, losses=0)
         self.evaluations("warden", wins=0, losses=10)
@@ -417,6 +452,50 @@ class LeagueTest(unittest.TestCase):
 
         resumed = League(self.run, self.config)
         self.assertEqual(resumed.ground["lava"].by_terrain, 1)
+
+    def test_a_published_model_is_a_player_in_the_mobs_group_and_not_a_second_anchor(self):
+        """Two lineages meet by both fielding the same published network. It is weighed with the mobs, since it never
+        learns, it starts where everyone starts, and only the scripted fighter is held still."""
+
+        (self.run.path / "league" / "roster.csv").write_text(
+            "opponent,kind,cap\nzombie,mob,1.00000\nscripted,scripted,1.00000\nvs-copy,model,1.00000\n", encoding="utf-8")
+
+        self.results(0, "50,eval,vs-copy,sword,bow,loss,300,opponent,flat,agent", "50,eval,scripted,axe,sword,win,200,-,flat,agent")
+
+        league = League(self.run, self.config)
+        league.update(50)
+
+        ratings = {row[0]: row for row in self.read("ratings.csv")}
+        shares = {row[0]: float(row[1]) for row in self.read("matchmaking.csv")}
+
+        self.assertEqual(ratings["vs-copy"][1], "model")
+
+        # Beating the agent pushed it up from where everyone starts, and the anchor did not move when it lost.
+        self.assertGreater(float(ratings["vs-copy"][2]), 1500.0)
+        self.assertEqual(float(ratings["scripted"][2]), 1500.0)
+
+        # In the fixed group with the mobs: the self-play share still belongs to the run's own checkpoints alone.
+        checkpoints = sum(share for name, share in shares.items() if name.startswith("iteration-"))
+        self.assertAlmostEqual(checkpoints, self.config.league_self_play, places=4)
+        self.assertGreater(shares["vs-copy"], 0.0)
+
+        # A fight against it judges the checkpoint as one against the scripted fighter does, both being fixed policies.
+        self.assertEqual(league.evaluations[(50, "vs-copy")].fights, 1)
+
+    def test_a_record_with_columns_this_side_does_not_use_still_reads(self):
+        """The per-fight record grows to the right: what the agent held, its swaps, uses and shots, and its replay."""
+
+        self.results(0, "50,eval,zombie,bow,-,win,200,-,lava,lava,bow,3,11,9,w00-f000400.json",
+                     "50,train,creeper,sword,-,loss,300,opponent,flat,-,iron_sword,0,0,0,-")
+
+        league = League(self.run, self.config)
+        league.update(50)
+
+        ground = {row[0]: [int(value) for value in row[1:]] for row in self.read("ground.csv")}
+
+        self.assertEqual(league.rated, 1)
+        self.assertEqual(ground["lava"], [1, 1, 0, 1, 0])
+        self.assertEqual(league.training["creeper"], [0.0, 1.0])
 
     def test_the_tables_hold_every_opponent_and_loadout(self):
         self.results(0, "50,eval,zombie,sword,-,win,200", "50,train,creeper,bow,-,loss,300", "50,eval,iteration-000025,axe,bow,win,500")

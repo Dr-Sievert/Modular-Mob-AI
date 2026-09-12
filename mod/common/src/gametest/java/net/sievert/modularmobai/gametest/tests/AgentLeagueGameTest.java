@@ -23,6 +23,7 @@ import net.sievert.modularmobai.gametest.Evaluation;
 import net.sievert.modularmobai.gametest.GameTestGroup;
 import net.sievert.modularmobai.gametest.GameTestTuning;
 import net.sievert.modularmobai.gametest.RepeatGameTest;
+import net.sievert.modularmobai.gametest.league.Behaviour;
 import net.sievert.modularmobai.gametest.league.League;
 import net.sievert.modularmobai.gametest.league.Opposition;
 import net.sievert.modularmobai.gametest.league.Roster;
@@ -35,8 +36,9 @@ import net.sievert.modularmobai.gametest.util.TestDurationStats;
  * An agent against the league on natural ground: every fight a different opponent, drawn by {@link League}, and a
  * different loadout. The opponent is a mob or a squad of several at once, set up and kept fighting by
  * {@link net.sievert.modularmobai.gametest.league.Roster} and named by
- * {@link net.sievert.modularmobai.gametest.league.Opposition}, or another agent: the scripted fighter, or a frozen
- * checkpoint of the network being trained, playing its most likely action with nothing recorded.
+ * {@link net.sievert.modularmobai.gametest.league.Opposition}, or another agent: the scripted fighter, a published network
+ * the run named ({@link net.sievert.modularmobai.gametest.league.Published}), or a frozen checkpoint of the network being
+ * trained, any of them playing its most likely action with nothing recorded.
  *
  * <p>Otherwise this is {@link AgentVindicatorTerrainGameTest}: the same sites, the same slots working through one shared
  * queue of fights, the same reward. How long a fight is given and how far apart it starts are the matchup's to say, since
@@ -122,6 +124,9 @@ public class AgentLeagueGameTest {
         private boolean landed;
         private boolean targeted;
 
+        /** What the agent did with its hands over this fight: the weapon it held, its swaps, uses and shots. */
+        private Behaviour did;
+
         /** Whether the agent hurt any of them at any point, which with the one above says whether they ever met. */
         private boolean struck;
 
@@ -190,6 +195,10 @@ public class AgentLeagueGameTest {
 
                         this.replay.tick();
                     }
+
+                    // The tick that just ran, as the body recorded it. Every fight, recorded or not: what the agent does
+                    // with a loadout is worth counting over all of them, not the one in two hundred with a replay.
+                    this.did.tick(this.agent);
 
                     for (int on = 0; on < this.opponents.size(); on++) {
 
@@ -329,6 +338,7 @@ public class AgentLeagueGameTest {
             this.landed = false;
             this.targeted = this.opponents.get(0) instanceof AgentMob;
             this.struck = false;
+            this.did = new Behaviour();
 
             // A replay holds one agent and one opponent, so a squad fight is not one: a recording with the rest of the side
             // missing would show the agent losing to nothing at all. See docs/replay-format.md.
@@ -390,9 +400,13 @@ public class AgentLeagueGameTest {
             TIME_TO_RESOLVE.record(this.helper.getTick() - this.started,
                     won ? TestDurationStats.Outcome.WIN : TestDurationStats.Outcome.LOSS, this.helper.getTick());
 
+            // The replay is named before it is written, and written just below, so the fight is written down knowing which
+            // file it will be in. One that then fails to write leaves a name pointing at nothing, which the viewer notices
+            // by listing the replays that are actually there.
             League.record(this.matchup, outcome, this.helper.getTick() - this.started, this.landed, this.targeted,
                     standing ? DeathCauses.NOTHING : DeathCauses.cause(this.agent, this.opponents), this.site.kind().label(),
-                    DeathCauses.finish(this.agent, this.opponents));
+                    DeathCauses.finish(this.agent, this.opponents), this.did,
+                    this.replay != null ? this.replay.name() : Behaviour.NOTHING);
 
             if (this.replay != null) {
 

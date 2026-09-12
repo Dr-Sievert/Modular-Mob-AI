@@ -42,6 +42,9 @@ that, the repository's `* text eol=lf` default rewrites their bytes and they no 
 ## Using a published network
 
 - **Evaluate it:** `scripts\eval.ps1 -Weights models\vs-copy\best.mbw`
+- **Put it in a league:** `scripts\train.ps1 -Run league -Suite league -LeagueModels vs-copy`. It is fielded as another
+  agent and rated under its own name, so a run that fields it can be read beside any other run that does; see
+  [training.md](training.md#published-networks-in-the-league--leaguemodels).
 - **In a game:** `scripts\play.ps1 -Model vs-copy`; see [playing.md](playing.md). Underneath, the game takes
   `-Dmodular_mob_ai.brain=neural -Dmodular_mob_ai.brain.weights=<path to .mbw>`. The mod's jar carries every network
   under `models\` from the moment it's built, by name (`/mmai brain @e vs-copy`), and `best` is the one with the highest

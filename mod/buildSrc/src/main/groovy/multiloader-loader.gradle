@@ -228,6 +228,11 @@ afterEvaluate {
     runTask.systemProperty('modular_mob_ai.league.loadouts', providers.gradleProperty('leagueLoadouts').getOrElse(''))
     runTask.systemProperty('modular_mob_ai.league.difficulties', providers.gradleProperty('leagueDifficulties').getOrElse(''))
 
+    // Published networks the league fields as rated players, by the name they are published under in models\:
+    // -PleagueModels=vs-copy,vs-scratch. Nobody unless named. Each is a player like any other, so two runs that field the
+    // same network have a tier list that can be read beside the other's; see gametest/league/Published.
+    runTask.systemProperty('modular_mob_ai.league.models', providers.gradleProperty('leagueModels').getOrElse(''))
+
     // What share of league fights look for ground with something on it worth knocking an opponent into, lava or a cliff
     // edge: -PleagueHazards=0.25, and 0 for none at all. A quarter unless told otherwise; see League.
     runTask.systemProperty('modular_mob_ai.league.hazards', providers.gradleProperty('leagueHazards').getOrElse(''))
@@ -246,6 +251,11 @@ afterEvaluate {
     // naming it here rather than letting the tool guess is what keeps a run from quietly training the wrong shape; see
     // brain/schema/Species.java and docs/architecture.md, "Adding a species".
     def trainedSpecies = providers.gradleProperty('species').getOrElse('humanoid')
+
+    // The same answer told to the game, so that anything asked to load a network for this run can say which body it has to
+    // fit before it tries: the league refuses a published network of another body by name rather than letting the driver
+    // find out in the middle of a fight. See gametest/league/Published and docs/species.md.
+    runTask.systemProperty('modular_mob_ai.species', trainedSpecies)
 
     def brainTool = { List<String> toolArguments, boolean quiet = false ->
 

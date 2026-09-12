@@ -9,6 +9,8 @@
 #   scripts\test.ps1 -League            194 fights on terrain, twice round every league opponent, then how each went
 #   scripts\test.ps1 -League -Weights runs\x\best.mbw
 #                                       a network drives the agents instead, and fights a frozen copy of itself as well
+#   scripts\test.ps1 -League -LeagueModels vs-copy
+#                                       published networks in the league as well, each a player of its own
 #   scripts\test.ps1 -Play              the agent in a real game: networks in the jar, /mmai, sides, Infinity loadouts
 #   scripts\test.ps1 -Play -Loader neoforge   any suite on NeoForge rather than Fabric
 
@@ -19,6 +21,9 @@ param(
     [switch] $League,
     [switch] $Play,
     [string] $Weights = '',
+
+    # League only: published networks in models\ to field as players of their own, by name. See docs\training.md.
+    [string] $LeagueModels = '',
     [switch] $Replays,
     [ValidateSet('fabric', 'neoforge')] [string] $Loader = 'fabric'
 )
@@ -40,7 +45,10 @@ if ($League -and -not $PSBoundParameters.ContainsKey('Arenas')) {
 # The game runs in a folder of its own under mod\, so a path relative to here would not be found from there.
 $brain = if ($Weights) { @('-Pbrain=neural', "-PbrainWeights=$((Resolve-Path $Weights).Path)") } else { @() }
 
+# A run that names no published networks fields none, so the property is left off the command line altogether.
+$models = if ($LeagueModels) { @("-PleagueModels=$LeagueModels") } else { @() }
+
 # The two loaders name their headless test run differently.
 $task = if ($Loader -eq 'neoforge') { ':neoforge:runGameTestServer' } else { ':fabric:runGametest' }
 
-Invoke-Gradle (@($task, "-Parenas=$Arenas", "-Psuite=$suite", "-PreplayEvery=$replayEvery") + $brain)
+Invoke-Gradle (@($task, "-Parenas=$Arenas", "-Psuite=$suite", "-PreplayEvery=$replayEvery") + $brain + $models)

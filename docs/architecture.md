@@ -202,10 +202,21 @@ different opponent every time, with a different loadout:
   on normal for every fight: difficulty there belongs to the whole level and fifty fights share one, which is also why a
   normal fight is exactly the fight it was before the ladder. **Each rung is a player of its own.** The trainer opens one
   when the agent's evaluated win rate against the opponent passes 80% (hard) or is still under 20% (easy), over at least
-  30 evaluation fights, and a rung once open stays open. A run with no trainer goes round every rung the build enabled
+  30 evaluation fights, and a rung once open stays open. Only a mob or a squad has rungs at all: a rung is how hard the
+  mobs on the other side spawn, and neither the scripted fighter nor a published network has anything to turn up. A run with no trainer goes round every rung the build enabled
   (`-PleagueDifficulties`, normal and hard by default).
 - The scripted fighter and frozen checkpoints of the run, as another agent with a brain of its own on its most likely
   action, so only the agent's steps are recorded.
+- **Published networks a run names** (`gametest/league/Published`, `scripts\train.ps1 -LeagueModels vs-copy,vs-scratch`).
+  A network under `models\` is a fixed policy anyone can load, so it plays as another agent exactly as a checkpoint does
+  and is rated under its own name. That is what puts two lineages on one tier list: a run that trained from the teacher
+  and one that trained from nothing never meet, but both can rate `vs-copy`, and each run's own checkpoints are then a
+  known distance from a player the other run fought too. A model is **not** a second anchor — the scripted fighter alone
+  is held still, so a model's rating is measured rather than asserted, and two runs disagreeing about what it is worth is
+  the sign that their scales have drifted apart. It never learns, so it is weighed with the mobs rather than in the self
+  play share, its fights judge a checkpoint as the scripted fighter's do, and it draws from every loadout, as a
+  checkpoint does. A network of another **body** is refused by name, naming both bodies, before a fight is set up; see
+  [species.md](species.md).
 - 10 loadouts (`gametest/league/Loadouts`, armed with `arena/Loadout`): iron, stone and diamond swords, an axe, a sword
   with iron armour, sword or axe with a shield, a bow, a crossbow, a sword with a bow behind it.
 - **Room and time per matchup** (`Roster.MELEE_TICKS` and its neighbours). A melee fight keeps the minute and the 7 to 11
@@ -234,14 +245,15 @@ The trainer decides who the agent meets and rates everyone (`trainer/mmai/league
 agent's chance against each opponent times its complement, from its recent fights and filled in from the ratings, with
 a quarter spread evenly and a fifth for a pool of 8 checkpoints (the newest 4, and 4 spread over the run). Evaluation
 fights, one in ten, play a checkpoint against an opponent drawn evenly from everyone, and those are rated: Elo, K 16 (32
-for a player's first 30 fights), the scripted fighter held at 1500. Those against mobs and the scripted fighter are also
-the checkpoint's evaluation, so best weights and the end of the run work as on the terrain suite, on 1,000 fights each.
-`scripts\league.ps1 -Run <run>` prints the tier list and the tables.
+for a player's first 30 fights), the scripted fighter held at 1500. Those against anything that holds still — the mobs,
+the scripted fighter, a published network — are also the checkpoint's evaluation, so best weights and the end of the run
+work as on the terrain suite, on 1,000 fights each. `scripts\league.ps1 -Run <run>` prints the tier list and the tables,
+and the viewer draws them: `scripts\viewer.ps1 -League`, see [viewer.md](viewer.md).
 
 | File (`runs/<run>/league/`) | Written by | Holds |
 | --- | --- | --- |
-| `roster.csv` | each worker as it starts | `opponent,kind,cap`: the mobs and the scripted fighter it fields, and the largest share of the training fights each may take (1 for no cap) |
-| `results/wNN.csv` | each worker, a line a fight | `iteration,kind,opponent,loadout,opponent_loadout,outcome,ticks,cause,site,finish`; kind `train` or `eval`, outcome `win`, `loss`, `timeout` or `draw`, cause what the agent died of when it died, site what was on the ground, finish what finished the other side (`agent`, `side`, a damage name like `lava`, or `-`) |
+| `roster.csv` | each worker as it starts | `opponent,kind,cap`: the mobs, the scripted fighter and the published networks it fields, and the largest share of the training fights each may take (1 for no cap). `kind` is `mob`, `squad`, `scripted` or `model` |
+| `results/wNN.csv` | each worker, a line a fight | `iteration,kind,opponent,loadout,opponent_loadout,outcome,ticks,cause,site,finish,weapon,swaps,uses,shots,replay`; kind `train` or `eval`, outcome `win`, `loss`, `timeout` or `draw`, cause what the agent died of when it died, site what was on the ground, finish what finished the other side (`agent`, `side`, a damage name like `lava`, or `-`), then what the agent did with its hands — the item it held longest, ticks that changed the kind of item held, uses begun, arrows and bolts loosed — and the file its replay is in, or `-`. **The columns grow to the right and never move**: a run appended to across builds has short older lines, and both the trainer and the viewer read one as saying nothing about what it leaves out |
 | `matchmaking.csv` | the trainer, every iteration | `opponent,share,chance,rating,fights`: each opponent's share of the training fights, which the workers draw from |
 | `ratings.csv` | the trainer | every player's rating and rated record |
 | `opponents.csv`, `loadouts.csv` | the trainer | the agent's last 200 evaluation and training fights against each opponent and with each loadout |

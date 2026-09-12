@@ -34,27 +34,27 @@ import net.sievert.modularmobai.gametest.util.DeathCauses;
 /**
  * Who each league fight is between, and how every one of them ended.
  *
- * <p>A league run's agent fights every hostile mob there is, squads of several of them at once, the scripted fighter, and
- * frozen copies of itself, with a different loadout from one fight to the next. What it meets in its training fights is
- * the trainer's call: it weighs every opponent by how close the agent is to an even fight against it, keeps a share for
- * each so none is forgotten, and writes the shares down here; see trainer/mmai/league.py. This side only draws from them,
- * fights, and writes down how each fight went. The ratings, the tier list and when the run is done are worked out over
- * there.
+ * <p>A league run's agent fights every hostile mob there is, squads of several of them at once, the scripted fighter,
+ * published networks a run names, and frozen copies of itself, with a different loadout from one fight to the next. What it
+ * meets in its training fights is the trainer's call: it weighs every opponent by how close the agent is to an even fight
+ * against it, keeps a share for each so none is forgotten, and writes the shares down here; see trainer/mmai/league.py.
+ * This side only draws from them, fights, and writes down how each fight went. The ratings, the tier list and when the run
+ * is done are worked out over there.
  *
  * <pre>
  *   runs/RUN/league/roster.csv        written here: opponent,kind,cap for every opponent this build fields that is not a checkpoint
  *   runs/RUN/league/matchmaking.csv   written by the trainer: opponent,share and more, read here whenever it changes
- *   runs/RUN/league/results/wNN.csv   appended here: iteration,kind,opponent,loadout,opponent_loadout,outcome,ticks,cause
+ *   runs/RUN/league/results/wNN.csv   appended here, a line a fight, see {@link #write}
  * </pre>
  *
  * <p>An opponent is a mob, a squad of mobs or a rung of the difficulty ladder by the name {@link Opposition} gives it,
- * {@code scripted}, or a checkpoint of the run as {@code iteration-000125},
- * whose weights play it on their most likely action, frozen, with nothing recorded: only the agent learns. An evaluation
- * fight, the one in ten {@link Evaluation} hands to a checkpoint, draws its opponent evenly from everyone instead of by the
- * shares, so a checkpoint is measured against all of them alike, and its fights are the ones the trainer rates. Those
- * against a mob or the scripted fighter also go into the checkpoint's evaluation, the win rate that decides the best
- * weights and when the run is done; those against another checkpoint only into the ratings, since what they measure
- * moves as the pool does.
+ * {@code scripted}, a published network a run named, see {@link Published}, or a checkpoint of the run as
+ * {@code iteration-000125}, whose weights play it on their most likely action, frozen, with nothing recorded: only the agent
+ * learns. An evaluation fight, the one in ten {@link Evaluation} hands to a checkpoint, draws its opponent evenly from
+ * everyone instead of by the shares, so a checkpoint is measured against all of them alike, and its fights are the ones the
+ * trainer rates. Those against anything that holds still — a mob, the scripted fighter, a published network — also go into
+ * the checkpoint's evaluation, the win rate that decides the best weights and when the run is done; those against another
+ * checkpoint only into the ratings, since what they measure moves as the pool does.
  *
  * <p>Outside a training run there is nobody to draw shares from, so every worker goes round every opponent in turn, the
  * scripted fighter included, and a network driving the agents also fights a frozen copy of itself. That is what a quick
@@ -188,8 +188,13 @@ public final class League {
         level.setDayTime(MIDNIGHT);
         level.setWeatherParameters(0, 0, false, false);
 
-        Constants.LOG.info("League fights: {} opponents of {} mobs and squads, the scripted fighter{}, {} loadouts; midnight "
+        // Asked for here, before the first fight is drawn, so that a published network a run cannot field — one of another
+        // body, or one by a name something else already answers to — stops the worker now rather than mid fight.
+        List<String> models = Published.fielded();
+
+        Constants.LOG.info("League fights: {} opponents of {} mobs and squads, the scripted fighter{}{}, {} loadouts; midnight "
                 + "and clear for good, no mob griefing", Opposition.fielded().size(), Roster.fielded().size(),
+                models.isEmpty() ? "" : ", the published networks " + models,
                 directory != null ? " and the run's checkpoints" : "", Loadouts.enabled().size());
     }
 
@@ -260,16 +265,19 @@ public final class League {
      * @param site     what was on the ground it was fought on, see {@link net.sievert.modularmobai.gametest.terrain.SiteHazards}
      * @param finish   what finished the other side: {@code agent}, or what the terrain did it with, {@code lava} or
      *                 {@code fall}, and {@code -} when nothing was finished at all
+     * @param did      what the agent did with its hands over the fight, see {@link Behaviour}
+     * @param replay   what this fight's replay is called, or {@code -} when it was not one of the recorded ones
      */
     public static synchronized void record(Matchup matchup, String outcome, long ticks, boolean landed, boolean targeted,
-                                           String cause, String site, String finish) {
+                                           String cause, String site, String finish, Behaviour did, String replay) {
 
         if (directory != null) {
 
-            write(matchup, outcome, ticks, cause, site, finish);
+            write(matchup, outcome, ticks, cause, site, finish, did, replay);
         }
 
-        // Only a mob or the scripted fighter holds still enough to judge a checkpoint by, see the class comment.
+        // Only an opponent that holds still is worth judging a checkpoint by: a mob, the scripted fighter, a published
+        // network. Another checkpoint is not, see the class comment.
         if (matchup.evaluation() != null && !matchup.opponent().startsWith(CHECKPOINT)) {
 
             Evaluation.record(matchup.evaluation(), outcome, ticks);
@@ -292,8 +300,8 @@ public final class League {
     // ---------------------------------------------------------------------------------------------------------------
 
     /**
-     * Every opponent that is not a checkpoint: the mobs and squads, the scripted fighter, and outside a training run, the
-     * network.
+     * Every opponent that is not a checkpoint: the mobs and squads, the scripted fighter, the published networks a run
+     * named, and outside a training run, the network driving the agents.
      *
      * <p>In a training run this is the opponents on normal, which is what the trainer was told the build fields and what it
      * falls back to before it has weighed anybody. Outside one there is no trainer to open a rung of the difficulty ladder,
@@ -304,6 +312,7 @@ public final class League {
         List<String> names = new ArrayList<>(directory == null ? Opposition.rotation() : Opposition.fielded());
 
         names.add(SCRIPTED);
+        names.addAll(Published.fielded());
 
         if (directory == null && selfWeights() != null) {
 
@@ -377,6 +386,13 @@ public final class League {
         else if (name.equals(SELF)) {
 
             brain = Brains.network(selfWeights());
+        }
+
+        else if (Published.fields(name)) {
+
+            // A published network, on its most likely action, frozen: a fixed policy like the scripted fighter, and rated
+            // under its own name. It draws from every loadout, unlike the anchor; see Published.
+            brain = Published.brain(name);
         }
 
         else if (name.startsWith(CHECKPOINT)) {
@@ -493,6 +509,10 @@ public final class League {
      * Tells the trainer who this build fields, so it can weigh them before any of them has fought, and how large a share of
      * the training fights each may take: one that cannot be beaten at all, the warden, has that capped here rather than in
      * the trainer, since it is the mob that knows, see {@link Roster.Member#trainingCap}.
+     *
+     * <p>A published network goes in with the mobs and the scripted fighter rather than with the checkpoints, because it
+     * never learns: the trainer weighs the fixed group by how even each fight is, and keeps the self play share for the
+     * run's own moving pool. Its kind is what tells the tier list what it is, see {@link Published}.
      */
     private static void writeRoster() throws IOException {
 
@@ -505,6 +525,11 @@ public final class League {
         }
 
         out.append(SCRIPTED).append(",scripted,1.00000\n");
+
+        for (String name : Published.fielded()) {
+
+            out.append(String.format(Locale.ROOT, "%s,%s,1.00000\n", name, Published.KIND));
+        }
 
         Path target = directory.resolve("roster.csv");
         Path temporary = directory.resolve(String.format(Locale.ROOT, "roster.w%02d.tmp", worker));
@@ -558,7 +583,8 @@ public final class League {
                 String name = parts[0].trim();
                 double share = Double.parseDouble(parts[1].trim());
 
-                boolean known = Opposition.named(name) != null || name.equals(SCRIPTED) || name.matches(CHECKPOINT + "\\d+");
+                boolean known = Opposition.named(name) != null || name.equals(SCRIPTED) || Published.fields(name)
+                        || name.matches(CHECKPOINT + "\\d+");
 
                 if (!known || !(share > 0.0D)) {
 
@@ -596,14 +622,28 @@ public final class League {
         }
     }
 
-    private static void write(Matchup matchup, String outcome, long ticks, String cause, String site, String finish) {
+    /**
+     * One line a fight, appended to this worker's own file:
+     *
+     * <pre>
+     *   iteration,kind,opponent,loadout,opponent_loadout,outcome,ticks,cause,site,finish,weapon,swaps,uses,shots,replay
+     * </pre>
+     *
+     * <p>The columns grow to the right and never move, because a run's file is appended to across builds: a worker resumed
+     * after a column was added leaves the older lines exactly as they were, and both the trainer and the viewer read a short
+     * line as one that simply does not say those things. The last five are the newest — what the agent held and did with it,
+     * and which replay is of this very fight, so a row in the viewer can open it.
+     */
+    private static void write(Matchup matchup, String outcome, long ticks, String cause, String site, String finish,
+                              Behaviour did, String replay) {
 
         int iteration = matchup.evaluation() != null ? matchup.evaluation().iteration()
                 : Brains.defaultBrain() instanceof NeuralBrain neural ? neural.weights().iteration() : -1;
 
-        String line = String.format(Locale.ROOT, "%d,%s,%s,%s,%s,%s,%d,%s,%s,%s%n", iteration,
+        String line = String.format(Locale.ROOT, "%d,%s,%s,%s,%s,%s,%d,%s,%s,%s,%s,%d,%d,%d,%s%n", iteration,
                 matchup.evaluation() != null ? "eval" : "train", matchup.opponent(), matchup.loadout().name(),
-                matchup.opponentLoadout() == null ? "-" : matchup.opponentLoadout().name(), outcome, ticks, cause, site, finish);
+                matchup.opponentLoadout() == null ? "-" : matchup.opponentLoadout().name(), outcome, ticks, cause, site, finish,
+                did.weapon(), did.swaps(), did.uses(), did.shots(), replay);
 
         try {
 

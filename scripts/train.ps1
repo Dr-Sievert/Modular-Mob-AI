@@ -12,6 +12,9 @@
 #   scripts\train.ps1 -Run league -Suite league -TeacherWeight 0.5
 #                                               the same, pulled back towards the teacher's recorded answers every update,
 #                                               which scripts\dagger.ps1 records for a league run
+#   scripts\train.ps1 -Run league -Suite league -LeagueModels vs-copy,vs-scratch
+#                                               the same, with two published networks in the league as rated players, so its
+#                                               tier list can be read beside another run's that fields them too
 #   scripts\compare.ps1                         two runs side by side instead, see there
 #
 # Every checkpoint is played by the workers on its most likely action, in one fight in ten, and the best so far is kept
@@ -56,6 +59,13 @@ param(
     [int] $RolloutSteps = 16384,
     [ValidateSet('cuda', 'cpu')] [string] $Device = 'cuda',
     [ValidateSet('terrain', 'arena', 'league')] [string] $Suite = 'terrain',
+
+    # League only: published networks in models\ to field as rated players, by name, 'vs-copy,vs-scratch'. Each becomes a
+    # player of the league like any mob, rated under its own name, so two runs that field the same network have tier lists
+    # that can be read side by side. They never learn, so they share the mobs' matchmaking rather than the self-play share;
+    # the scripted fighter stays the only anchor. A name of another body, or one an opponent already answers to, is refused
+    # by name. See docs\training.md and mod\...\gametest\league\Published.java.
+    [string] $LeagueModels = '',
     # Which body to train. The humanoid is the player-shaped agent every trained network drives; see docs\species.md for
     # what another one takes. A run cannot change body part way through: its shards would be of something else.
     [string] $Species = 'humanoid',
@@ -282,8 +292,9 @@ $arguments = (@(
     "-PreplayEvery=$ReplayEvery",
     "-PtrainArgs=--device $Device $Extra".Trim()
 # An empty -Heap is left off the command line altogether rather than passed as nothing, so that the build sees no
-# property at all and falls back to the heap that suits what this run fights on.
-) + $workerArguments + @(if ($Heap) { "-PworkerHeap=$Heap" }))
+# property at all and falls back to the heap that suits what this run fights on. The same for the published networks: a
+# run that names none fields none.
+) + $workerArguments + @(if ($Heap) { "-PworkerHeap=$Heap" }) + @(if ($LeagueModels) { "-PleagueModels=$LeagueModels" }))
 
 if ($Full) {
 

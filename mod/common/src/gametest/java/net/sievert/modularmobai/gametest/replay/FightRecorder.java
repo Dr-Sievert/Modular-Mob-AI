@@ -390,6 +390,16 @@ public final class FightRecorder {
     }
 
     /**
+     * What this fight's replay is called, which is settled when the recording starts rather than when it is written. The
+     * league writes it down beside the fight, so a row of the tier list can open the very fight it is a row about; see
+     * {@link net.sievert.modularmobai.gametest.league.League#record}.
+     */
+    public String name() {
+
+        return String.format(Locale.ROOT, "w%02d-f%06d.json", worker, this.fight);
+    }
+
+    /**
      * Writes the replay, once the arena has said how the fight ended. Whatever the ending paid, the win or the loss on
      * time, was paid after the last tick was written down, and is added to it.
      */
@@ -408,7 +418,7 @@ public final class FightRecorder {
                 this.rewards.set(last, this.rewards.getFloat(last) + this.episode.reward().episodeTotal() - this.rewardSeen);
             }
 
-            Path target = directory.resolve(String.format(Locale.ROOT, "w%02d-f%06d.json", worker, this.fight));
+            Path target = directory.resolve(this.name());
             Path temporary = target.resolveSibling(target.getFileName() + ".tmp");
 
             Files.createDirectories(directory);

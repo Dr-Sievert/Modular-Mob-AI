@@ -27,6 +27,7 @@ scripts\test.ps1 -Arenas 200              more fights
 scripts\test.ps1 -Terrain -Replays        record every fight for the viewer, in runs\gametest\replays
 scripts\test.ps1 -League                  194 fights, twice round every league opponent and squad on normal and on hard; a table of each
 scripts\test.ps1 -League -Weights models\vs-copy\best.mbw   the same with a network, which also fights a frozen copy of itself
+scripts\test.ps1 -League -LeagueModels vs-copy              published networks in the league too, each a player of its own; two more fights
 scripts\league.ps1 -Test                  the league's unit tests: Elo, matchmaking, the pool, reading and resuming results
 scripts\eval.ps1 -Weights models\vs-copy\best.mbw          a network's win rate, 2,000 fights, most likely action
 scripts\eval.ps1 -Run vs-copy -Iteration 650 -Arenas 400   a checkpoint of a local run
@@ -100,6 +101,7 @@ mod\gradlew.bat -p mod :fabric:runGametestParallel -Psuite=terrain -Parenas=2000
 | `terrainLibrary`, `librarySites` | `false` makes terrain workers generate their own ground even when a library exists; how many sites a library build generates |
 | `addSites` | how many sites to append to the library that is already there, instead of building a new one; only the new ones are generated |
 | `leagueOpponents`, `leagueLoadouts`, `leagueDifficulties` | league only: fewer opponents (`zombie,2x_zombie`), fewer loadouts, which rungs of the ladder a run with no trainer goes round (`easy,normal,hard`) |
+| `leagueModels` | league only: published networks in `models\` to field as rated players (`vs-copy,vs-scratch`); nobody unless named, and a name that is another player's, or a network of another body, is refused by name |
 | `leagueHazards` | league only: the share of fights drawn onto ground with lava or an edge on it, 0.25 by default |
 | `arenas`, `workers`, `batchSize` | fights, worker processes, fights at once per worker |
 | `sites`, `siteRadius` | fight sites laid out, and chunks either side of each one's centre (2 = 80 blocks across) |

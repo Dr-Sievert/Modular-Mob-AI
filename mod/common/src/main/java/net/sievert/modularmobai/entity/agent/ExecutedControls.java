@@ -64,6 +64,18 @@ public final class ExecutedControls {
     /** The use went to the block under the aim and the block took it, which is what placing a block looks like here. */
     public boolean usedOnBlock;
 
+    /**
+     * An arrow or a bolt actually left: a drawn bow let go of with enough in the string to send one, or a loaded crossbow
+     * fired. Not a use, and not the release of one either: a bow let go of at once sends nothing, and loading a crossbow is
+     * a use that shoots nothing.
+     *
+     * <p>Nothing in any observation reads this, and nothing should. The echo a network is fed is a fixed layout that every
+     * trained network depends on, and what an arrow did is already in the reward and in the enemy slots that see it fly. It
+     * is here because this is the one record of what the body did on a tick, and the league writes down how many shots a
+     * fight took; see {@link net.sievert.modularmobai.gametest.league.Behaviour}.
+     */
+    public boolean shotFired;
+
     /** The slot actually held once the swap resolved, which is the requested one clamped into the hotbar. */
     public int selectedSlot;
 
@@ -90,6 +102,7 @@ public final class ExecutedControls {
         this.usingOffhand = false;
         this.useProgress = 0.0F;
         this.usedOnBlock = false;
+        this.shotFired = false;
         this.selectedSlot = 0;
         this.swappedWeapon = false;
     }

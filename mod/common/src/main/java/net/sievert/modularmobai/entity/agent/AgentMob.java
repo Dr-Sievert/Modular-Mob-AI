@@ -1067,6 +1067,10 @@ public class AgentMob extends PathfinderMob {
 
             ((ProjectileWeaponItemInvoker) bow).modular_mob_ai$shoot(server, this, this.getUsedItemHand(), stack, arrows,
                     power * BOW_SPEED, PLAYER_INACCURACY, power == 1.0F, null);
+
+            // Recorded where the arrow actually goes, and nowhere else: a bow let go of with too little in the string, or
+            // with nothing to fire, does not shoot. See ExecutedControls#shotFired.
+            this.executed.shotFired = true;
         }
 
         server.playSound(null, this.getX(), this.getY(), this.getZ(), SoundEvents.ARROW_SHOOT, this.getSoundSource(),
@@ -1096,6 +1100,10 @@ public class AgentMob extends PathfinderMob {
 
         ((ProjectileWeaponItemInvoker) crossbow).modular_mob_ai$shoot(server, this, hand, stack, loaded.getItems(), speed,
                 PLAYER_INACCURACY, true, null);
+
+        // The bolts are away; loading the crossbow, which is the use before this one, shot nothing. See
+        // ExecutedControls#shotFired.
+        this.executed.shotFired = true;
     }
 
     // ---------------------------------------------------------------------------------------------------------------

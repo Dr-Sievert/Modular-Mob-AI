@@ -1,12 +1,13 @@
 """The league: who a league run's agent fights, how every player in it rates, and the numbers behind the tier list.
 
-A league run's agent fights nearly every hostile mob there is, the scripted fighter, and frozen checkpoints of itself,
+A league run's agent fights nearly every hostile mob there is, the scripted fighter, published networks the run names, and
+frozen checkpoints of itself,
 with a different loadout from one fight to the next; the game's gametest/league has who and how. The workers write down
 every fight. This side reads them, keeps an Elo rating for every player, decides who the agent meets next, and writes
 all of it down:
 
-    runs/RUN/league/roster.csv          written by the workers: the mobs and the scripted fighter they field, and the cap on each
-    runs/RUN/league/results/wNN.csv     appended by each worker: iteration,kind,opponent,loadout,opponent_loadout,outcome,ticks,cause,site,finish
+    runs/RUN/league/roster.csv          written by the workers: the mobs, the scripted fighter and the models they field, and the cap on each
+    runs/RUN/league/results/wNN.csv     appended by each worker, a line a fight; the columns are in the game's league/League#write
     runs/RUN/league/matchmaking.csv     written here: each opponent's share of the training fights, and why
     runs/RUN/league/ratings.csv         written here: every player's rating, best first
     runs/RUN/league/opponents.csv       written here: the agent's recent record against each opponent
@@ -28,13 +29,22 @@ fights behind it. Once open a rung stays open, so its rating is never of a movin
 won. Each rung is a player of its own, as each composition is, and a cap belongs to the opponent rather than the rung.
 
 Who is rated. Every player is a fixed policy: a kind of mob, a squad of them, a rung of the ladder, the scripted fighter,
-a checkpoint on its most likely action.
+a published network the run fields, a checkpoint on its most likely action.
 The agent in training is none of those, since it samples and changes every iteration, so only evaluation fights are
 rated: a checkpoint on its most likely action, against an opponent drawn evenly from everyone. A fight scores one for a
 win, nothing for a loss, and a half when neither killed the other, on time or because a creeper blew itself up. Both
 sides move by K times how far the score was from what their ratings expected. The scripted fighter is held where
 everyone starts, so the scale means the same from run to run: 1500 fights like the scripted fighter, and 400 points
 above a player wins ten fights to its one.
+
+Published networks. A run can name networks published under models/ and field them as players (the game's
+league/Published; scripts\\train.ps1 -LeagueModels). Nothing here treats one specially: the workers write it into
+roster.csv as a player of kind "model", it is weighed with the mobs and the scripted fighter rather than in the self-play
+share, since it never learns, and its rating starts where everyone's does and moves on its own fights. It is deliberately
+not a second anchor: one fixed point is what makes the scale mean the same everywhere, and a second would assert the
+distance between the two of them instead of measuring it. That is the whole trick to putting two lineages on one tier
+list — both runs rate the same fixed network against the same anchor, and comparing what each says it is worth is also the
+check that the two scales have not drifted apart.
 
 Matchmaking. The training fights go where there is the most to learn: to opponents the agent beats about half the time.
 Its chance against each is estimated from its recent training fights against it, which fade an iteration at a time, and
@@ -77,6 +87,10 @@ SCRIPTED = "scripted"
 # The rungs of the difficulty ladder either side of normal, as the game writes them on the end of an opponent's name; see
 # the gametest's league/Opposition. Normal has no suffix, so every name the league had before the ladder means what it did.
 RUNGS = ("(hard)", "(easy)")
+
+# The kinds of player that have rungs at all: a rung is how hard the mobs on one side spawn, so only they and the squads of
+# them have one. The scripted fighter and a published network are fixed policies with nothing to turn up.
+RUNGED = ("mob", "squad")
 
 OUTCOMES = ("win", "loss", "timeout", "draw")
 SCORES = {"win": 1.0, "loss": 0.0, "timeout": 0.5, "draw": 0.5}
@@ -480,13 +494,15 @@ class League:
             end = data.rfind(b"\n") + 1
             self.offsets[file.name] = start + end
 
-            # The eighth field, what the agent died of, is for reading fights back later; nothing here needs it. The ninth
-            # and tenth, what ground the fight was on and what finished the other side, are newer than some runs, so a line
-            # without them still reads.
+            # Only the fields this side uses are read, by position, and the record grows to the right: the eighth, what the
+            # agent died of, and everything past the tenth — what the agent held, its swaps, uses and shots, and which replay
+            # is of the fight — are for reading fights back later, in the viewer. The ninth and tenth, what ground the fight
+            # was on and what finished the other side, are newer than some runs, so a line without them still reads, and so
+            # does one longer than anything this build knows about.
             for line in data[:end].decode("utf-8").splitlines():
                 parts = line.strip().split(",")
 
-                if not 7 <= len(parts) <= 10 or parts[5] not in SCORES or parts[1] not in ("train", "eval"):
+                if len(parts) < 7 or parts[5] not in SCORES or parts[1] not in ("train", "eval"):
                     continue
 
                 try:
@@ -567,12 +583,20 @@ class League:
         to learn from it yet, so the easy one does. Either needs league_rung_fights evaluation fights behind it, or one
         lucky handful would open a rung.
 
+        Only a mob or a squad has rungs. A rung is the DifficultyInstance a mob's own finalizeSpawn is handed, and neither
+        the scripted fighter nor a published network has one: there is no such thing as a hard scripted fighter, and a run
+        that opened one would spend a share of its fights on a name its workers cannot field at all. One opened before that
+        was noticed is dropped, along with the player it entered, if that player never fought.
+
         A rung stays open once it is open. Closing one again would make its rating a moving target, and the agent would
         stop having to hold what it won; and the fights cost little, since matchmaking sends them where the fight is even
         and a rung the agent walks over is weighed down to the floor like any other opponent.
         """
 
         for name in roster:
+            if self._kind(name) not in RUNGED:
+                continue
+
             tally = self.eval_windows.tally(name)
 
             if tally.fights < self.config.league_rung_fights:
@@ -590,6 +614,18 @@ class League:
                 "%s is met on %s from now on: %.0f%% of the last %d evaluation fights on normal",
                 name, rung.strip("()"), 100.0 * rate, tally.fights,
             )
+
+        wrong = {name for name in self.rungs if self._kind(base(name)) not in RUNGED}
+
+        for name in wrong:
+            player = self.ratings.players.get(name)
+
+            # Never rated, so nothing is lost by forgetting it; one that somehow did fight keeps its row, since its fights
+            # really happened.
+            if player is not None and player.games == 0:
+                del self.ratings.players[name]
+
+        self.rungs -= wrong
 
         # Only of the opponents the workers still field, so a run told to field fewer does not meet the rest of a rung.
         return sorted(name for name in self.rungs if base(name) in roster)
