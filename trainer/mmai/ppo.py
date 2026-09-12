@@ -276,6 +276,7 @@ class Trainer:
                 "log probabilities drifted by %.2e from what the game recorded; the two sides disagree about the network",
                 drift,
             )
+            self._describe_drift(segments, replayed)
 
         vram = 0.0
 
@@ -285,6 +286,49 @@ class Trainer:
 
         stats.update({"steps": steps, "drift": drift, "seconds": time.time() - started, "vram": vram})
         return stats
+
+    def _describe_drift(self, segments: list[Segment], replayed: list[Replayed]) -> None:
+        """Says as much as can be said about the one row that disagreed most, because a drift warning is a max over tens of
+        thousands of rows and the shards are gone by the time anyone reads the log.
+
+        The two things it is worth telling apart: a masked choice, where the game and this side disagreed about which
+        choices were open and so about the whole distribution, and a continuous control whose spread has grown so narrow
+        that a millionth of a difference in the mean is a large difference in a log probability. So it names the row, says
+        whether it is the row a segment starts on (the only row whose memory came from another policy), and prints the
+        action, the spread of each continuous control, and the mask each choice was under.
+        """
+
+        worst = (0.0, -1, -1)
+
+        for index, segment in enumerate(segments):
+            if segment.steps <= 0:
+                continue
+
+            difference = np.abs(replayed[index].log_probs - segment.log_probs)
+            step = int(difference.argmax())
+            worst = max(worst, (float(difference[step]), index, step), key=lambda found: found[0])
+
+        size, index, step = worst
+
+        if index < 0:
+            return
+
+        segment = segments[index]
+        heads = ", ".join(f"{head.name} {head.kind}[{head.size}]" for head in self.schema.heads)
+        spread = np.exp(self.actor.log_std.detach().cpu().numpy())
+
+        logger.warning(
+            "  worst row: agent %s, step %d of %d, %s; the game said %.6f and this side %.6f",
+            segment.key, step, segment.steps, "the row the segment starts on" if step == 0 else "mid segment",
+            float(segment.log_probs[step]), float(replayed[index].log_probs[step]),
+        )
+        logger.warning("  action %s", np.array2string(segment.actions[step], precision=4, suppress_small=True))
+        logger.warning("  heads %s; continuous spread %s", heads, np.array2string(spread, precision=4))
+
+        for head in self.schema.heads:
+            if head.mask >= 0:
+                mask = segment.obs[step, head.mask : head.mask + head.size]
+                logger.warning("  %s was masked by %s", head.name, np.array2string(mask, precision=3))
 
     def _scale(self, segments: list[Segment]) -> list[np.ndarray]:
         """Rewards as the critic sees them, and the episode totals as the game paid them."""
