@@ -295,6 +295,23 @@ are deliberate.
   samples, and a bow pays nothing until twenty ticks of held use have gone by, so no amount of exploration finds one. The
   loadouts show it: bow 42% won and crossbow 48% against 75-82% for every melee loadout.
   - The answer is the teacher, not the reward. Anything the teacher cannot do is worth building there first.
+- **A skill that takes twenty ticks of the same choice cannot be sampled, and the teacher alone will not hold it.** Once
+  the teacher had been taught to shoot (85% with a bow) and the run was pulled towards it, the network did start pressing
+  use — and got no further. Measured over its own recordings, its longest hold was **6 ticks and not one draw in 2,984
+  reached 20**, against the teacher's mean of 10.7 with 22% at 20 or more. It pressed use on 47.6% of the ticks an item
+  was already in use: a coin flip, so a full draw is that raised to the twentieth, which is once in ten million. What the
+  league saw: 42.6 draws a fight and 5.5 weak arrows with a bow, and with a crossbow, which fires nothing at all short of
+  a full wind, **41.5 loads a fight and 0.03 bolts**, 15% won against 50-62% for melee.
+  - Behaviour cloning cannot fix it on its own. The pull raises the chance of a press; PPO lowers it, because every draw
+    it samples is aborted and an aborted draw is pure cost — a fifth of the movement, the swing swallowed, no arrow. The
+    two settle at a coin flip, which is the worst of both.
+  - The fix is in the body, not the reward or the trainer: a draw once started runs to full on its own, and letting go is
+    the agent's only when the weapon is charged (`AgentMob#drawingToFull`). One press is one full arrow, which is a thing
+    a policy can find. Nothing else moves — no layout changes, no log probabilities change, the draw still costs a fifth
+    of the movement every tick of it, changing slot still gives it up, and holding at full draw to aim is still allowed.
+  - The general lesson: **before shaping a reward for a skill, measure whether the policy can physically emit it.** Count
+    the action, not the outcome. Both of these were invisible in the win rate and obvious in one histogram of hold
+    lengths.
 - **A teacher that keeps state has to check it against the body.** The teacher labels a student's fight in a DAgger
   round, and there its own presses never happen. A state machine that assumed they had would decide on the first tick of
   the first fight that the quiver was empty and the off hand held no shield, and would never show the student either

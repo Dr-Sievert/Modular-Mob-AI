@@ -186,6 +186,49 @@ public class AgentMechanicsGameTest {
         });
     }
 
+    /**
+     * One press draws all the way and looses at full power. The button is down for a single tick and up for every tick
+     * after it, and the arrow that leaves twenty ticks later is the same critical a held button would have sent.
+     *
+     * <p>This is the body's one deliberate departure from a player's hands, and it is what makes a drawn weapon learnable
+     * at all: see AgentMob#drawingToFull. Letting go is still the agent's, once the draw is full — which is what the shot
+     * above does, and why it can hold the aim before it looses.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 100)
+    public static void onePressDrawsToFullAndLooses(GameTestHelper helper) {
+
+        AgentMob agent = agent(helper, new BlockPos(4, 2, 1), 0.0F, 0.0F);
+        Loadout.BOW.equip(agent);
+
+        run(helper, tick -> {
+
+            agent.controls().use = tick == 0;
+
+            if (tick > 0 && tick < 20) {
+
+                helper.assertTrue(agent.isUsingItem() && agent.executed().using, "The draw stopped when the button came up");
+                helper.assertTrue(helper.getEntities(EntityType.ARROW).isEmpty(), "An arrow left before the draw was full");
+            }
+
+            List<Arrow> arrows = helper.getEntities(EntityType.ARROW);
+
+            if (arrows.isEmpty()) {
+
+                helper.assertTrue(tick < 24, "One press never loosed an arrow");
+                return false;
+            }
+
+            Arrow arrow = arrows.get(0);
+            double speed = arrow.getDeltaMovement().length();
+
+            helper.assertTrue(arrow.isCritArrow(), "One press sent less than a full draw");
+            helper.assertTrue(Math.abs(speed - 3.0D) < 0.1D, "The arrow left at " + speed + ", not a full draw's three");
+            helper.assertValueEqual(agent.getHotbarItem(1).getCount(), 63, "arrows left in the hotbar");
+            helper.assertFalse(agent.isUsingItem(), "The bow is still drawn after the shot");
+            return true;
+        });
+    }
+
     /** No arrow, no draw: holding use on a bow with nothing to fire does not so much as raise it. */
     @GameTest(template = ARENA, timeoutTicks = 100)
     public static void bowWithoutArrowsDoesNotDraw(GameTestHelper helper) {
@@ -259,8 +302,9 @@ public class AgentMechanicsGameTest {
     // ---------------------------------------------------------------------------------------------------------------
 
     /**
-     * A crossbow let go before it is wound does not load. Wound all the way and let go, it takes an arrow and keeps it for
-     * as long as it is left alone, and the next use fires it: a critical, at a player's speed, which a mob's never is.
+     * A crossbow let go before it is wound keeps winding, since a draw runs to full once it is started. It is not loaded
+     * while it winds, and no arrow is spent. Wound all the way and let go, it takes an arrow and keeps it for as long as
+     * it is left alone, and the next use fires it: a critical, at a player's speed, which a mob's never is.
      */
     @GameTest(template = ARENA, timeoutTicks = 150)
     public static void crossbowChargesHoldsItsLoadAndFires(GameTestHelper helper) {
@@ -278,6 +322,7 @@ public class AgentMechanicsGameTest {
 
             if (tick == 11) {
 
+                helper.assertTrue(agent.isUsingItem(), "A crossbow let go early stopped winding");
                 helper.assertFalse(CrossbowItem.isCharged(crossbow), "A crossbow let go early is loaded");
                 helper.assertValueEqual(agent.getHotbarItem(1).getCount(), 64, "arrows after letting go early");
             }
