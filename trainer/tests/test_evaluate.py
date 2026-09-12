@@ -102,6 +102,43 @@ class BetterTest(unittest.TestCase):
             self.assertFalse(evaluator._better(lucky, best))
 
 
+class ResumeTest(unittest.TestCase):
+    def resumed(self, folder: str, table: str, lines: str = "") -> Evaluator:
+        run = RunDirectory(Path(folder) / "run")
+        run.path.mkdir(parents=True, exist_ok=True)
+        (run.path / "eval.csv").write_text(table, encoding="utf-8")
+
+        if lines:
+            (run.path / "eval").mkdir(parents=True, exist_ok=True)
+            (run.path / "eval" / "w00.csv").write_text(lines, encoding="utf-8")
+
+        return Evaluator(run, every=25, fights=10, patience=40, target=0.995, rating=lambda iteration: 1500.0)
+
+    def test_a_resumed_run_gets_one_more_checkpoint_before_it_may_stop(self):
+        """What ended a run the moment it started: it came back holding a best nothing could beat, counted 47 against a
+        patience of 40, and said it was done, while the next checkpoint went on to beat it."""
+
+        header = "iteration,fights,wins,timeouts,win_rate,best,rating\n"
+        rows = "100,1000,655,0,0.6550,1,1748.0\n"
+        rows += "".join(f"{200 + 25 * i},1000,600,0,0.6000,0,1600.0\n" for i in range(47))
+
+        with tempfile.TemporaryDirectory() as folder:
+            evaluator = self.resumed(folder, header + rows)
+
+            self.assertEqual(evaluator.best, 100)
+            self.assertLess(evaluator.since_best, evaluator.patience)
+            self.assertIsNone(evaluator.update(1200), "a resumed run called itself done before judging anything")
+
+    def test_a_best_with_no_opponents_clears_the_count(self):
+        header = "iteration,fights,wins,timeouts,win_rate,best,rating\n"
+
+        with tempfile.TemporaryDirectory() as folder:
+            evaluator = self.resumed(folder, header + "100,1000,655,0,0.6550,1,1748.0\n"
+                                                     "200,1000,600,0,0.6000,0,1600.0\n")
+
+            self.assertEqual(evaluator.since_best, 0)
+
+
 class ReadingTest(unittest.TestCase):
     def test_the_opponent_column_is_read_and_an_older_line_still_counts(self):
         with tempfile.TemporaryDirectory() as folder:
