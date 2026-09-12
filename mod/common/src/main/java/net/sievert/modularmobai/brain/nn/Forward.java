@@ -31,10 +31,131 @@ package net.sievert.modularmobai.brain.nn;
  *
  * The reset gate multiplies the whole of {@code W_hn h + b_hn}, hidden bias included. Getting that wrong is the most
  * common port bug there is, and the parity test exists to catch it.
+ *
+ * <p>The loops themselves come in two forms, and which one a process uses is settled once, when this class loads. The
+ * plain ones below are written so that the compiler's own vectoriser can take their innermost loop, which it does; the
+ * ones in {@link ForwardVectors} say the same arithmetic in explicit vector instructions, which is worth about 15% more
+ * again. Those need {@code jdk.incubator.vector}, which the build adds wherever it compiles and runs workers, and which a
+ * jar dropped into someone else's game will not have: there the class simply does not load and the plain loops run. The
+ * choice is made in the static initialiser and never looked at again, so a tick pays nothing for it.
+ *
+ * <p>Both forms are bit for bit the same, not nearly the same, and the parity check proves it at every batch size from 1
+ * to 64 rather than taking it on trust. A vector add is an add per lane, in the same order, and nothing is fused: the
+ * measurements in findings.md say fusing the multiplies buys 3.5% and drifts the logits by 7e-3 relative, which is not a
+ * trade anything here wants.
  */
 public final class Forward {
 
     private Forward() {}
+
+    /**
+     * The loops each layer is made of, so that the explicit vector ones can be swapped in whole where the virtual machine
+     * has them. Everything here writes only into the arrays it is handed, and every implementation has to give the same
+     * bits as {@link #SCALAR}.
+     */
+    interface Loops {
+
+        /** See {@link Forward#linear}. The two running sum arrays belong to the caller and are overwritten. */
+        void linear(float[] src, int srcStride, float[] dst, int dstStride, float[][] rows, float[] params, int bias,
+                    int agents, float[] first, float[] second);
+
+        /** {@code values[i] = values[i] < 0 ? 0 : values[i]}, over the first {@code count} of them. */
+        void relu(float[] values, int count);
+
+        /** See {@link Forward#normalise}. */
+        void normalise(float[] obs, float[] into, float[] params, int mean, int std, float clip, int in, int agents);
+    }
+
+    /** The plain loops, which every machine has and which every other form has to agree with. */
+    private static final Loops SCALAR = new Loops() {
+
+        @Override
+        public void linear(float[] src, int srcStride, float[] dst, int dstStride, float[][] rows, float[] params,
+                           int bias, int agents, float[] first, float[] second) {
+
+            Forward.linear(src, srcStride, dst, dstStride, rows, params, bias, agents, first, second);
+        }
+
+        @Override
+        public void relu(float[] values, int count) {
+
+            Forward.relu(values, count);
+        }
+
+        @Override
+        public void normalise(float[] obs, float[] into, float[] params, int mean, int std, float clip, int in, int agents) {
+
+            Forward.normalise(obs, into, params, mean, std, clip, in, agents);
+        }
+    };
+
+    /** The explicit vector loops where this virtual machine has the incubator module, the plain ones where it does not. */
+    private static final Loops LOOPS = chooseLoops();
+
+    /**
+     * Looks for the explicit vector loops once, by name, and falls back to the plain ones on anything at all going wrong.
+     * By name, because naming {@link ForwardVectors} in a field type or a {@code new} would have this class refuse to load
+     * at all where the module is missing, and the whole point is that the mod still runs there. {@code ForwardVectors}
+     * touches a vector species in its own static initialiser, so a missing module fails here rather than later.
+     *
+     * <p>{@code -Dmodular_mob_ai.brain.vectors=false} keeps the plain loops on a machine that does have the module, which
+     * is how the two were measured against each other a round at a time, and is the way out if some virtual machine's own
+     * vector support ever turns out to be wrong. Read here and nowhere else, so a tick never asks.
+     */
+    private static Loops chooseLoops() {
+
+        if ("false".equalsIgnoreCase(System.getProperty("modular_mob_ai.brain.vectors", "true"))) {
+
+            return SCALAR;
+        }
+
+        try {
+
+            return (Loops) Class.forName(Forward.class.getPackageName() + ".ForwardVectors")
+                    .getDeclaredConstructor().newInstance();
+        }
+
+        catch (Throwable ignored) {
+
+            // A machine without jdk.incubator.vector on its module path, which is every game that did not start from this
+            // build. Nothing is wrong; the arithmetic is the same either way, only slower.
+            return SCALAR;
+        }
+    }
+
+    /** Whether this process is using the explicit vector loops. For the parity check and for a line in a log. */
+    public static boolean vectorised() {
+
+        return LOOPS != SCALAR;
+    }
+
+    /**
+     * How long every pass so far has taken, and over how many agent ticks, so that a worker can say at the end of its run
+     * what the pass actually cost it. Two {@code System.nanoTime} calls per tick per brain, some tens of nanoseconds
+     * against the hundreds of microseconds the pass itself takes.
+     *
+     * <p>Worth carrying because a pass timed on its own measures something else. Running it in a loop keeps the 1.3 MB of
+     * weights in the second level cache, where the arithmetic is what is left to save; in a real tick the server thread
+     * has ticked chunks and entities and written 634 floats an agent in between, and the weights are cold every time. The
+     * two numbers came out a fifth apart, and this is the one a run is paid in. See findings.md.
+     *
+     * <p>Plain longs, read and written from the one server thread that does the passes. A client with several levels could
+     * in principle lose a count off the end; it is a measurement, not bookkeeping.
+     */
+    private static long nanos;
+
+    private static long agentTicks;
+
+    /** Nanoseconds the pass has taken in this process, over {@link #agentTicks} agent ticks. */
+    public static long nanos() {
+
+        return nanos;
+    }
+
+    public static long agentTicks() {
+
+        return agentTicks;
+    }
 
     /**
      * Working space for one batch, grown when a batch outgrows it and reused for every tick after, and the weights laid
@@ -127,6 +248,26 @@ public final class Forward {
      */
     public static void forward(WeightSet weights, float[] obs, float[] hidden, float[] logits, int agents, Scratch scratch) {
 
+        final long started = System.nanoTime();
+
+        forward(weights, obs, hidden, logits, agents, scratch, LOOPS);
+
+        nanos += System.nanoTime() - started;
+        agentTicks += Math.max(0, agents);
+    }
+
+    /**
+     * The pass with the plain loops, whatever this machine chose for itself: what the parity check holds the vector loops
+     * against, at every batch size from 1 to 64. Nothing else has any reason to call it.
+     */
+    public static void forwardScalar(WeightSet weights, float[] obs, float[] hidden, float[] logits, int agents, Scratch scratch) {
+
+        forward(weights, obs, hidden, logits, agents, scratch, SCALAR);
+    }
+
+    private static void forward(WeightSet weights, float[] obs, float[] hidden, float[] logits, int agents, Scratch scratch,
+                                Loops loops) {
+
         if (agents <= 0) {
 
             return;
@@ -144,13 +285,16 @@ public final class Forward {
         scratch.ensure(topology, agents);
         scratch.layOut(weights);
 
-        normalise(weights, obs, scratch.input, agents);
+        final float[] first = scratch.sums;
+        final float[] second = scratch.pairedSums;
 
-        linear(scratch.input, in, scratch.layer1, h1, scratch.fc1, w, topology.fc1B(), agents, scratch);
-        relu(scratch.layer1, agents * h1);
+        loops.normalise(obs, scratch.input, w, topology.normMean(), topology.normStd(), weights.obsClip(), in, agents);
 
-        linear(scratch.layer1, h1, scratch.gatesIn, 3 * h, scratch.gruIh, w, topology.gruBih(), agents, scratch);
-        linear(hidden, h, scratch.gatesHidden, 3 * h, scratch.gruHh, w, topology.gruBhh(), agents, scratch);
+        loops.linear(scratch.input, in, scratch.layer1, h1, scratch.fc1, w, topology.fc1B(), agents, first, second);
+        loops.relu(scratch.layer1, agents * h1);
+
+        loops.linear(scratch.layer1, h1, scratch.gatesIn, 3 * h, scratch.gruIh, w, topology.gruBih(), agents, first, second);
+        loops.linear(hidden, h, scratch.gatesHidden, 3 * h, scratch.gruHh, w, topology.gruBhh(), agents, first, second);
 
         final float[] gi = scratch.gatesIn;
         final float[] gh = scratch.gatesHidden;
@@ -170,21 +314,14 @@ public final class Forward {
             }
         }
 
-        linear(hidden, h, scratch.layer3, h3, scratch.fc2, w, topology.fc2B(), agents, scratch);
-        relu(scratch.layer3, agents * h3);
+        loops.linear(hidden, h, scratch.layer3, h3, scratch.fc2, w, topology.fc2B(), agents, first, second);
+        loops.relu(scratch.layer3, agents * h3);
 
-        linear(scratch.layer3, h3, logits, out, scratch.head, w, topology.outB(), agents, scratch);
+        loops.linear(scratch.layer3, h3, logits, out, scratch.head, w, topology.outB(), agents, first, second);
     }
 
     /** {@code clamp((x - mean) / std, -clip, clip)}, the same operations in the same order as the training side. */
-    private static void normalise(WeightSet weights, float[] obs, float[] into, int agents) {
-
-        final Topology topology = weights.topology();
-        final float[] w = weights.params();
-        final int in = topology.obsDim();
-        final int mean = topology.normMean();
-        final int std = topology.normStd();
-        final float clip = weights.obsClip();
+    static void normalise(float[] obs, float[] into, float[] w, int mean, int std, float clip, int in, int agents) {
 
         for (int agent = 0; agent < agents; agent++) {
 
@@ -205,14 +342,14 @@ public final class Forward {
      * @param dstStride how far apart consecutive agents' outputs are in {@code dst}
      * @param rows      the weights transposed, one array per input
      * @param bias      where the layer's biases start in {@code params}
+     * @param first     the running sums of the first agent of a pair, as wide as the widest layer
+     * @param second    the same for the second, unused when a lone agent is left over
      */
-    private static void linear(float[] src, int srcStride, float[] dst, int dstStride, float[][] rows,
-                               float[] params, int bias, int agents, Scratch scratch) {
+    static void linear(float[] src, int srcStride, float[] dst, int dstStride, float[][] rows,
+                       float[] params, int bias, int agents, float[] first, float[] second) {
 
         final int in = rows.length;
         final int out = rows[0].length;
-        final float[] first = scratch.sums;
-        final float[] second = scratch.pairedSums;
 
         int agent = 0;
 
@@ -310,7 +447,7 @@ public final class Forward {
         }
     }
 
-    private static void relu(float[] values, int count) {
+    static void relu(float[] values, int count) {
 
         for (int index = 0; index < count; index++) {
 
