@@ -126,7 +126,11 @@ class Actor(nn.Module):
         self.register_buffer("norm_mean", torch.zeros(topology.obs_dim))
         self.register_buffer("norm_std", torch.ones(topology.obs_dim))
 
-        self.fc1 = nn.Linear(topology.obs_dim, topology.h1)
+        # One small matrix run over every enemy slot in turn, where this network has one; see Topology and Actor.encode.
+        if topology.pooled():
+            self.slot_encoder = nn.Linear(topology.slot_stride, topology.slot_enc)
+
+        self.fc1 = nn.Linear(topology.fc1_in(), topology.h1)
         self.gru = nn.GRU(topology.h1, topology.hidden, batch_first=True)
         self.fc2 = nn.Linear(topology.hidden, topology.h3)
         self.out = nn.Linear(topology.h3, topology.out_dim)
@@ -168,7 +172,9 @@ class Actor(nn.Module):
             self.log_std.copy_(torch.maximum(torch.minimum(self.log_std, self.most_log_std), self.least_log_std))
 
     def _init(self) -> None:
-        for module in (self.fc1, self.fc2):
+        encoder = (self.slot_encoder,) if self.topology.pooled() else ()
+
+        for module in (self.fc1, self.fc2) + encoder:
             nn.init.orthogonal_(module.weight, gain=2**0.5)
             nn.init.zeros_(module.bias)
 
@@ -183,7 +189,12 @@ class Actor(nn.Module):
                 nn.init.zeros_(parameter)
 
     @staticmethod
-    def for_schema(schema: Schema, h1: int, hidden: int, h3: int, obs_clip: float = 10.0) -> "Actor":
+    def for_schema(schema: Schema, h1: int, hidden: int, h3: int, obs_clip: float = 10.0, slot_enc: int = 0) -> "Actor":
+        """
+        :param slot_enc: width of the shared encoder over the enemy slots, or zero for a plain first layer. Where the slots
+            are comes from the body's own schema, which is the only thing that knows.
+        """
+
         aim = tuple(
             head.std + i
             for head in schema.heads
@@ -192,11 +203,58 @@ class Actor(nn.Module):
             if schema.action_names[head.action + i].startswith("aim")
         )
 
-        return Actor(Topology(schema.obs_dim, h1, hidden, h3, schema.logit_dim, schema.std_dim), obs_clip, aim)
+        enemies = schema.require("enemies") if slot_enc > 0 else None
+
+        topology = Topology(
+            schema.obs_dim, h1, hidden, h3, schema.logit_dim, schema.std_dim,
+            enemies.offset if enemies else 0,
+            enemies.facts["slots"] if enemies else 0,
+            enemies.facts["stride"] if enemies else 0,
+            slot_enc if enemies else 0,
+        )
+
+        return Actor(topology, obs_clip, aim)
 
     def normalise(self, raw_obs: Tensor) -> Tensor:
         """The same three operations in the same order as the game: subtract, divide, clamp."""
         return ((raw_obs - self.norm_mean) / self.norm_std).clamp(-self.obs_clip, self.obs_clip)
+
+    def encode(self, normalised: Tensor, raw_obs: Tensor) -> Tensor:
+        """
+        What the first layer is given: the observation itself, or the observation with its ten enemy slots replaced by the
+        features a shared encoder found in them.
+
+        Each occupied slot goes through the same small matrix and the largest answer per feature is kept, so what reaches
+        the rest of the network is *what is out there* rather than what is in slot three. A plain first layer has to learn
+        every opponent once per slot, which is why one skeleton was beaten 84% of the time and two 9%. Max rather than
+        mean because a fight is decided by the most dangerous thing in view; how many things there are is already in the
+        self block, as the count of bodies in range.
+
+        **Only occupied slots are pooled**, and the mask comes from the raw observation rather than the normalised one. An
+        empty slot is all zeros, so the encoder would answer it with ReLU(bias), and any feature whose bias came out
+        positive would then be won by slots with nothing in them: the network's view of the worst thing out there would be
+        partly noise from empty air. The mask cannot be taken from the normalised row because an absent slot's present flag
+        normalises to (0 - mean) / std, which is not zero. With nothing in view at all the features are zero, which is a
+        thing the network can recognise and no real opponent produces.
+
+        The slots are cut out and the rest kept in order, so what the first layer sees is the blocks before the slots, then
+        the pooled features, then the blocks after: the game does exactly the same, and the parity check proves it.
+        """
+
+        topology = self.topology
+
+        if not topology.pooled():
+            return normalised
+
+        at, count, stride = topology.slot_at, topology.slots, topology.slot_stride
+
+        slots = normalised[..., at:at + count * stride].unflatten(-1, (count, stride))
+        present = raw_obs[..., at:at + count * stride].unflatten(-1, (count, stride))[..., :1] > 0.5
+
+        encoded = torch.relu(self.slot_encoder(slots))
+        pooled = encoded.masked_fill(~present, 0.0).amax(dim=-2).clamp(min=0.0)
+
+        return torch.cat([normalised[..., :at], pooled, normalised[..., at + count * stride:]], dim=-1)
 
     def forward(self, raw_obs: Tensor, hidden: Tensor) -> tuple[Tensor, Tensor]:
         """
@@ -204,7 +262,7 @@ class Actor(nn.Module):
         :param hidden: ``(batch, hidden)``, the state going into the first step
         :returns: the raw logits ``(batch, time, out_dim)`` and the state after every step ``(batch, time, hidden)``
         """
-        encoded = torch.relu(self.fc1(self.normalise(raw_obs)))
+        encoded = torch.relu(self.fc1(self.encode(self.normalise(raw_obs), raw_obs)))
         states, _ = self.gru(encoded, hidden.unsqueeze(0).contiguous())
 
         return self.out(torch.relu(self.fc2(states))), states
