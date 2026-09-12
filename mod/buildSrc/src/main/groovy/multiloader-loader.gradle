@@ -761,6 +761,12 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
         // Below this much free memory the workers are stopped rather than left to take the machine down with them.
         def minimumFreeGigabytes = Double.parseDouble(providers.gradleProperty('memoryFloor').getOrElse('1.5'))
 
+        // How long the shortage has to last first. Killing on the first reading threw away a round whenever anything else
+        // on the machine took a large bite for a moment: a game starting, a browser, a script of ours reading a rollout
+        // shard. Ten seconds under the floor is a real shortage; a spike is not, and the floor sits well clear of nothing
+        // so waiting it out costs the machine little.
+        def memoryGraceSeconds = Double.parseDouble(providers.gradleProperty('memoryGrace').getOrElse('10'))
+
         // Anything else a worker's virtual machine should be started with, split on spaces: a profiler, or a collector to
         // try out, without editing the build. A relative file lands in the worker's own folder, which the next run clears.
         //
@@ -890,6 +896,9 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
 
         // Everything that should stop a round early, checked while workers are starting and while they run: the caller's
         // own reason, and the machine running out of memory. Either one kills the workers before throwing.
+        // When memory first went under the floor and has stayed there, or zero while it is above it.
+        def lowSince = 0L
+
         def checkHealth = {
 
             def trouble = abortCheck != null ? abortCheck() : null
@@ -898,10 +907,24 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
 
                 def free = memory.freeMemorySize / gigabyte
 
-                if (free < minimumFreeGigabytes) {
+                if (free >= minimumFreeGigabytes) {
 
-                    trouble = String.format(Locale.ROOT, "Stopped the workers to protect the machine: only %.1f GB of "
-                            + "memory left free (the floor is %.1f GB, set with -PmemoryFloor)", free, minimumFreeGigabytes)
+                    lowSince = 0L
+                }
+
+                else {
+
+                    def now = System.nanoTime()
+                    lowSince = lowSince == 0L ? now : lowSince
+                    def heldSeconds = (now - lowSince) / 1_000_000_000.0d
+
+                    if (heldSeconds >= memoryGraceSeconds) {
+
+                        trouble = String.format(Locale.ROOT, "Stopped the workers to protect the machine: only %.1f GB of "
+                                + "memory left free for %.0f s together (the floor is %.1f GB for %.0f s, set with "
+                                + "-PmemoryFloor and -PmemoryGrace)", free, heldSeconds, minimumFreeGigabytes,
+                                memoryGraceSeconds)
+                    }
                 }
             }
 
