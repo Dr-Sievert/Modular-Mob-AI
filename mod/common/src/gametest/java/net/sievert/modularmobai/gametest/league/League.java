@@ -13,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 
 import org.jetbrains.annotations.Nullable;
@@ -27,6 +28,7 @@ import net.sievert.modularmobai.brain.Brains;
 import net.sievert.modularmobai.brain.NeuralBrain;
 import net.sievert.modularmobai.brain.ScriptedBrain;
 import net.sievert.modularmobai.brain.nn.WeightFile;
+import net.sievert.modularmobai.brain.nn.WeightSet;
 import net.sievert.modularmobai.gametest.Evaluation;
 import net.sievert.modularmobai.gametest.GameTestTuning;
 import net.sievert.modularmobai.gametest.util.DeathCauses;
@@ -150,8 +152,14 @@ public final class League {
     private static List<String> drawn = List.of();
     private static double[] cumulative = new double[0];
 
-    /** Frozen checkpoints by iteration, kept only while the matchmaking names them. */
+    /**
+     * Frozen checkpoints by iteration, kept only while the matchmaking names them: the ones that take their most likely
+     * action, for the rated fights, and the ones that sample as the learner does, for the training fights. Two of each
+     * because the same weights are wanted both ways and a brain settles which it is when it is built; see
+     * {@link #checkpoint}.
+     */
     private static final Map<Integer, Brain> frozen = new HashMap<>();
+    private static final Map<Integer, Brain> exploring = new HashMap<>();
 
     @Nullable
     private static ScriptedBrain scripted;
@@ -397,7 +405,8 @@ public final class League {
 
         else if (name.startsWith(CHECKPOINT)) {
 
-            brain = directory == null ? null : checkpoint(Integer.parseInt(name.substring(CHECKPOINT.length())));
+            brain = directory == null ? null
+                    : checkpoint(Integer.parseInt(name.substring(CHECKPOINT.length())), evaluation != null);
         }
 
         else {
@@ -444,10 +453,26 @@ public final class League {
         return scripted;
     }
 
+    /**
+     * A frozen copy of the agent from an earlier iteration, to fight.
+     *
+     * <p>Whether it explores is the whole difference between a mirror match and a handicap. In a training fight it samples,
+     * exactly as the agent learning against it does, so the two sides are the same policy played the same way and the
+     * fight is the even one that self play is for: deployed against a sampling learner it won 74 to 90% of them, and a
+     * fifth of every run's fights go to this pool. In a rated fight it takes its most likely action, on both sides, because
+     * a rating is a statement about the finished policy and the scale would move under every run if that changed.
+     *
+     * <p>Its exploration is drawn from a generator of its own rather than from the fight's, which would pull draws out from
+     * under the site the fight is on and the mobs in it, and two runs of the same weights would stop agreeing. Seeded by
+     * the iteration, so which way a given frozen copy jitters is at least the same question every time it is asked.
+     *
+     * @param rated whether this fight is one the ratings are worked out from
+     */
     @Nullable
-    private static Brain checkpoint(int iteration) {
+    private static Brain checkpoint(int iteration, boolean rated) {
 
-        Brain brain = frozen.get(iteration);
+        Map<Integer, Brain> pool = rated ? frozen : exploring;
+        Brain brain = pool.get(iteration);
 
         if (brain != null) {
 
@@ -458,8 +483,9 @@ public final class League {
 
         try {
 
-            brain = NeuralBrain.deployed(WeightFile.read(file));
-            frozen.put(iteration, brain);
+            WeightSet weights = WeightFile.read(file);
+            brain = rated ? NeuralBrain.deployed(weights) : NeuralBrain.exploring(weights, new Random(iteration));
+            pool.put(iteration, brain);
             return brain;
         }
 
@@ -613,6 +639,7 @@ public final class League {
             cumulative = running;
             matchmakingModified = modified;
             frozen.keySet().retainAll(named);
+            exploring.keySet().retainAll(named);
         }
 
         catch (IOException | RuntimeException exception) {
