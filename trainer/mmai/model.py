@@ -8,8 +8,8 @@ which way it is moving, whether it just swung, or that it was behind a pillar a 
 per agent by the game, recorded at the start of each stretch of a fight, and replayed from there when learning.
 
 The critic stays here. It is a separate network rather than a head on the shared trunk, so the value loss never shapes
-the features the policy is built from, and nothing in the game has to carry weights it will never use. It reads the
-observation and the actor's memory of the fight so far, and it is free to grow privileged inputs the actor never sees.
+the features the policy is built from, and nothing in the game has to carry weights it will never use. Because it is
+never exported it has a memory of its own rather than a borrowed one, and inputs the actor never sees; see Critic.
 
 The observation normaliser lives on the actor, as buffers, because the game has to apply exactly the same transform. It
 is frozen during an update and refreshed afterwards from what the iteration actually saw.
@@ -268,29 +268,108 @@ class Actor(nn.Module):
         return self.out(torch.relu(self.fc2(states))), states
 
 
-class Critic(nn.Module):
-    """What a position was worth, for the advantages. Never exported, so it may know more than the actor does."""
+# What the critic is told that the actor is not, in order; Trainer._scale fills them in. All of it is the past. A value
+# estimate may condition on anything that happened before the step it prices and must see nothing after it: the return is
+# the target, so an input carrying any part of the return would teach the critic to read the answer off its own inputs
+# instead of learning what a position is worth.
+#
+#   paid   the fight's reward account before this row, in the same scaled units as the target
+#   last   what the action on the row before this one earned, and nought on a segment's first row
+#   age    how many ticks the fight has run before this row, over EPISODE_TICKS
+#   start  one on a segment's first row: the one row whose previous reward is in a shard this side no longer has, and
+#          whose own memory starts from nothing rather than from where the fight had got to
+PRIVILEGED = ("paid", "last", "age", "start")
 
-    def __init__(self, obs_dim: int, hidden: int, width: int = 256) -> None:
+# Only the scale the age is divided by, so a training fight's clock lands near one; a league matchup sets its own limit
+# and a longer fight simply reads above one. The observation already carries the elapsed *fraction* of this fight's limit
+# (SELF_CLOCK), so it is the age in ticks beside it that says how long the limit itself is.
+EPISODE_TICKS = 1200
+
+
+class Critic(nn.Module):
+    """What a position was worth, for the advantages. Never exported, so it may remember more and know more than the actor.
+
+    **A memory of its own.** It used to read the actor's hidden state, recovered by the replay and held still: memory
+    trained for another job, summarising what a policy needs in order to choose a button rather than what a value needs in
+    order to price a position. It now runs its own GRU over the segment the way the actor's is run, with its own state
+    carried from chunk to chunk by the replay. On the league the scripted teacher still scores about 78% where the best
+    network scores about 55%, and advantage noise is the lever on that gap: every improvement in credit assignment
+    anywhere goes through the value estimate.
+
+    **It starts each segment from nothing.** The actor's state on a segment's first row comes from the game, which carried
+    it tick by tick and wrote it down. Nothing carries the critic's: the game never runs the critic, so there is no
+    recording to replay from, and a state held here from the previous iteration would have been produced by weights that
+    have since moved. Zero is the honest reading, and the privileged inputs are what make it cheap — the age and the
+    reward already paid say where in the fight this row is without a memory having to.
+
+    **What it knows that the actor does not**: see PRIVILEGED. Everything the game itself knows is already in the
+    observation, the clock included, so what is left to hand the critic is what the *trainer* knows and the game wrote
+    down nowhere: the reward, which appears in no observation, and the shape of the episode the segments were cut out of.
+
+    With no GRU it is exactly the network that was here before this, parameter names included, so a state saved by an
+    older trainer loads into it unchanged; see Config.critic_gru and Trainer.load.
+    """
+
+    def __init__(self, obs_dim: int, hidden: int, width: int = 256, gru: int = 0, privileged: int = 0) -> None:
+        """
+        :param gru: width of its own recurrent memory, or zero for the plain feed-forward critic
+        :param privileged: how many of the PRIVILEGED columns it reads; the rest are ignored
+        """
         super().__init__()
 
-        self.net = nn.Sequential(
-            nn.Linear(obs_dim + hidden, width),
-            nn.ReLU(),
-            nn.Linear(width, width),
-            nn.ReLU(),
-            nn.Linear(width, 1),
-        )
+        self.gru_width = gru
+        self.privileged = privileged
+        inputs = obs_dim + hidden + privileged
 
-        for module in self.net:
-            if isinstance(module, nn.Linear):
-                nn.init.orthogonal_(module.weight, gain=2**0.5)
-                nn.init.zeros_(module.bias)
+        if gru > 0:
+            # Named in the order the forward pass runs them, which is the actor's shape with the slots left out: encode,
+            # remember, decide what the position is worth.
+            self.encoder = nn.Linear(inputs, width)
+            self.gru = nn.GRU(width, gru, batch_first=True)
+            self.middle = nn.Linear(gru, width)
+            self.value = nn.Linear(width, 1)
+            linear = (self.encoder, self.middle, self.value)
 
-        nn.init.orthogonal_(self.net[-1].weight, gain=1.0)
+        else:
+            self.gru = None
+            self.net = nn.Sequential(
+                nn.Linear(inputs, width),
+                nn.ReLU(),
+                nn.Linear(width, width),
+                nn.ReLU(),
+                nn.Linear(width, 1),
+            )
+            linear = tuple(module for module in self.net if isinstance(module, nn.Linear))
 
-    def forward(self, normalised_obs: Tensor, memory: Tensor) -> Tensor:
-        return self.net(torch.cat([normalised_obs, memory], dim=-1)).squeeze(-1)
+        for module in linear:
+            nn.init.orthogonal_(module.weight, gain=2**0.5)
+            nn.init.zeros_(module.bias)
+
+        nn.init.orthogonal_(linear[-1].weight, gain=1.0)
+
+        if self.gru is not None:
+            for name, parameter in self.gru.named_parameters():
+                if "weight" in name:
+                    nn.init.orthogonal_(parameter)
+                else:
+                    nn.init.zeros_(parameter)
+
+    def forward(self, normalised_obs: Tensor, memory: Tensor, privileged: Tensor, hidden: Tensor) -> tuple[Tensor, Tensor]:
+        """
+        :param memory: the actor's hidden state at each step, ``(batch, time, hidden)``
+        :param privileged: ``(batch, time, len(PRIVILEGED))``; the columns past what this critic reads are ignored, so the
+            trainer works them out once and every shape of critic takes the same batch
+        :param hidden: ``(batch, gru)``, its own state going into the first step, zero width where it has no memory
+        :returns: the value of every step ``(batch, time)`` and its own state after every step ``(batch, time, gru)``
+        """
+        inputs = torch.cat([normalised_obs, memory, privileged[..., : self.privileged]], dim=-1)
+
+        if self.gru is None:
+            return self.net(inputs).squeeze(-1), hidden.unsqueeze(1).expand(-1, inputs.shape[-2], -1)
+
+        states, _ = self.gru(torch.relu(self.encoder(inputs)), hidden.unsqueeze(0).contiguous())
+
+        return self.value(torch.relu(self.middle(states))).squeeze(-1), states
 
 
 class RunningNormalizer:

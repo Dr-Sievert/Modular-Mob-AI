@@ -22,7 +22,7 @@ import torch
 from torch import Tensor
 
 from . import files, log
-from .model import INITIAL_LOG_STD, Actor, Critic, PolicyHeads, RewardScaler, RunningNormalizer
+from .model import EPISODE_TICKS, INITIAL_LOG_STD, PRIVILEGED, Actor, Critic, PolicyHeads, RewardScaler, RunningNormalizer
 from .rollout import Segment, pack_by_rows
 from .schema import Schema
 from .weights import export as export_weights
@@ -83,6 +83,16 @@ class Config:
 
     # The critic, which never leaves this side and so costs the game nothing.
     critic_width: int = 256
+
+    # Its own recurrent memory, and the privileged inputs that come with it; see model.Critic. On for a new run, because
+    # the critic used to borrow the actor's memory, which was trained to choose a button rather than to price a position.
+    # Off is exactly the network that was there before this, and is what a run started before this carries on with
+    # whatever is set here: the shape of a critic comes from the run's own state and not from a flag, see Trainer.load.
+    critic_gru: bool = True
+
+    # How wide that memory is. Zero for the width of the actor's, which is the only width there has ever been a reason to
+    # pick: the critic is reading the same fight over the same chunks.
+    critic_gru_width: int = 0
 
     obs_clip: float = 10.0
 
@@ -217,6 +227,11 @@ class Replayed:
     advantages: np.ndarray
     returns: np.ndarray
 
+    # The critic's own memory going into each step, and what it was told besides the observation; zero width and unused
+    # where the critic has no memory of its own. See model.Critic and model.PRIVILEGED.
+    critic_hidden_in: np.ndarray
+    privileged: np.ndarray
+
 
 class Trainer:
     def __init__(self, config: Config, schema: Schema) -> None:
@@ -258,7 +273,7 @@ class Trainer:
         self.heads = PolicyHeads(schema.heads)
         self.actor = Actor.for_schema(schema, config.h1, config.hidden, config.h3, config.obs_clip,
                                       config.slot_enc).to(self.device)
-        self.critic = Critic(schema.obs_dim, config.hidden, config.critic_width).to(self.device)
+        self.critic = self._new_critic((config.critic_gru_width or config.hidden) if config.critic_gru else 0)
 
         self.optimizer = torch.optim.Adam(
             list(self.actor.parameters()) + list(self.critic.parameters()), lr=config.learning_rate, eps=1e-5
@@ -275,7 +290,8 @@ class Trainer:
         self.total_steps = 0
         self.started = time.time()
 
-        # Episodes straddle iterations, so their totals are kept here until they end.
+        # Episodes straddle iterations, so their totals are kept here until they end: what the game paid, how many steps it
+        # has run, and what it paid in the scaled units the critic is told about; see _scale.
         self.episodes: dict[tuple[int, int], list[float]] = {}
 
         self.finished_returns: list[float] = []
@@ -295,11 +311,20 @@ class Trainer:
         self.teacher_released: int | None = None
 
         logger.info(
-            "%s, critic %d wide, learning on %s",
+            "%s, critic %d wide%s, learning on %s",
             self.actor.topology.describe(),
             config.critic_width,
+            f" with {self.critic.gru_width} of its own memory and {len(PRIVILEGED)} privileged inputs"
+            if self.critic.gru_width else ", feed-forward on the actor's memory",
             self.device,
         )
+
+    def _new_critic(self, gru: int) -> Critic:
+        """The critic of a given width of memory, or the plain feed-forward one at zero. Built here rather than inline
+        because a resume builds the one its state holds rather than the one the flags ask for; see load."""
+
+        return Critic(self.schema.obs_dim, self.config.hidden, self.config.critic_width, gru,
+                      len(PRIVILEGED) if gru else 0).to(self.device)
 
     # -----------------------------------------------------------------------------------------------------------
     # One iteration
@@ -312,10 +337,10 @@ class Trainer:
         steps = sum(segment.steps for segment in segments)
         self.total_steps += steps
 
-        scaled = self._scale(segments)
+        scaled, privileged = self._scale(segments)
 
         try:
-            replayed = self._replay(segments, scaled)
+            replayed = self._replay(segments, scaled, privileged)
             batch = self._chunks(segments, replayed)
             stats = self._learn(batch)
 
@@ -328,7 +353,7 @@ class Trainer:
 
             self._fall_back_to_cpu()
 
-            replayed = self._replay(segments, scaled)
+            replayed = self._replay(segments, scaled, privileged)
             batch = self._chunks(segments, replayed)
             stats = self._learn(batch)
 
@@ -398,17 +423,29 @@ class Trainer:
                 mask = segment.obs[step, head.mask : head.mask + head.size]
                 logger.warning("  %s was masked by %s", head.name, np.array2string(mask, precision=3))
 
-    def _scale(self, segments: list[Segment]) -> list[np.ndarray]:
-        """Rewards as the critic sees them, and the episode totals as the game paid them."""
+    def _scale(self, segments: list[Segment]) -> tuple[list[np.ndarray], list[np.ndarray]]:
+        """Rewards as the critic sees them, the episode totals as the game paid them, and what only this side knows.
 
-        scaled = []
+        The privileged rows are worked out here because this is the one place that knows both a step's scaled reward and
+        where the fight stood before the segment it belongs to: the totals per agent are kept across iterations, so a
+        segment cut out of the middle of a fight still knows how long the fight has run and what it has been paid. One row
+        per observation, the row the segment ended on included, since that row is what a cut fight is bootstrapped from.
+
+        Every column is strictly behind the row it sits on; see model.PRIVILEGED for why that matters and what they are.
+        """
+
+        scaled, privileged = [], []
 
         for segment in segments:
-            totals = self.episodes.setdefault(segment.key, [0.0, 0.0])
+            totals = self.episodes.setdefault(segment.key, [0.0, 0.0, 0.0])
 
             if segment.new:
                 totals[0] = 0.0
                 totals[1] = 0.0
+                totals[2] = 0.0
+
+            # Where the fight stood before this stretch of it, which is what its first row is priced against.
+            paid, age = totals[2], totals[1]
 
             totals[0] += float(segment.rewards.sum())
             totals[1] += segment.steps
@@ -425,6 +462,18 @@ class Trainer:
                     else reward
                 )
 
+            # The reward on a row was earned by the action on the row before it, so the account on row j is the rewards of
+            # steps 0 to j - 1 and the last one paid is step j - 1. Neither ever reaches step j, which is the first term of
+            # the very return this row's value is fitted to.
+            rows = np.zeros((segment.steps + 1, len(PRIVILEGED)), dtype=np.float32)
+            rows[:, 0] = paid + np.concatenate([[0.0], np.cumsum(values, dtype=np.float64)])
+            rows[1:, 1] = values
+            rows[:, 2] = (age + np.arange(segment.steps + 1)) / float(EPISODE_TICKS)
+            rows[0, 3] = 1.0
+
+            totals[2] = float(rows[-1, 0])
+            privileged.append(rows)
+
             if segment.done:
                 self.finished_returns.append(totals[0])
                 self.finished_lengths.append(totals[1])
@@ -438,11 +487,18 @@ class Trainer:
 
             scaled.append(values)
 
-        return scaled
+        return scaled, privileged
 
     @torch.no_grad()
-    def _replay(self, segments: list[Segment], scaled: list[np.ndarray]) -> list[Replayed]:
-        """Runs the policy the game acted with back over what it saw, to recover the memory and the values."""
+    def _replay(self, segments: list[Segment], scaled: list[np.ndarray],
+                privileged: list[np.ndarray]) -> list[Replayed]:
+        """Runs the policy the game acted with back over what it saw, to recover the memory and the values.
+
+        The critic's own memory is recovered the same way and in the same pass, from zero at each segment's start rather
+        than from anything recorded: the game never runs the critic, so there is nothing of it in a shard. That is what
+        lets the update replay a segment in chunks of seq_len and have each chunk start from the state the one before it
+        ended on, exactly as the actor's chunks do.
+        """
 
         config = self.config
         replayed: list[Replayed | None] = [None] * len(segments)
@@ -456,6 +512,7 @@ class Trainer:
             obs = torch.zeros(len(group), width, self.schema.obs_dim)
             actions = torch.zeros(len(group), width, self.schema.act_dim)
             hidden = torch.zeros(len(group), config.hidden)
+            told = torch.zeros(len(group), width, len(PRIVILEGED))
 
             for row, index in enumerate(group):
                 segment = segments[index]
@@ -464,19 +521,26 @@ class Trainer:
                 obs[row, :length] = torch.from_numpy(segment.obs)
                 actions[row, : segment.steps] = torch.from_numpy(segment.actions)
                 hidden[row] = torch.from_numpy(segment.h0)
+                told[row, :length] = torch.from_numpy(privileged[index])
 
             obs = obs.to(self.device)
             actions = actions.to(self.device)
             hidden = hidden.to(self.device)
+            told = told.to(self.device)
+
+            # Zero, because nothing carries the critic's memory between segments: see the docstring above.
+            critic_hidden = torch.zeros(len(group), self.critic.gru_width, device=self.device)
 
             logits, memory = self.actor(obs, hidden)
-            values = self.critic(self.actor.normalise(obs), memory)
+            values, critic_memory = self.critic(self.actor.normalise(obs), memory, told, critic_hidden)
             log_probs = self.heads.log_prob(self.heads.distributions(logits, self.actor.log_std, obs), actions)
 
             memory = memory.cpu().numpy()
+            critic_memory = critic_memory.cpu().numpy()
             values = values.cpu().numpy()
             log_probs = log_probs.cpu().numpy()
             starts = hidden.cpu().numpy()
+            critic_starts = critic_hidden.cpu().numpy()
 
             lengths = np.array([segments[index].steps for index in group], dtype=np.int64)
             done = np.array([segments[index].done for index in group], dtype=bool)
@@ -497,6 +561,8 @@ class Trainer:
 
                 # The memory going into a step is the memory coming out of the one before it.
                 hidden_in = np.concatenate([starts[row : row + 1], memory[row, : steps - 1]], axis=0)
+                critic_hidden_in = np.concatenate(
+                    [critic_starts[row : row + 1], critic_memory[row, : steps - 1]], axis=0)
 
                 bootstrap = float(bootstraps[row])
                 advantages = advantages_all[row, :steps]
@@ -511,6 +577,8 @@ class Trainer:
                     rewards=scaled[index],
                     advantages=advantages,
                     returns=returns,
+                    critic_hidden_in=critic_hidden_in,
+                    privileged=privileged[index][:steps].copy(),
                 )
 
         return [item for item in replayed if item is not None]
@@ -576,10 +644,14 @@ class Trainer:
             return chunks
 
         hidden_in = torch.from_numpy(np.concatenate([data.hidden_in for data in replayed])).to(device)
+        critic_hidden_in = torch.from_numpy(np.concatenate([data.critic_hidden_in for data in replayed])).to(device)
+        starts = torch.from_numpy(offsets[owner] + first).to(device)
 
         return {
             "obs": gathered([segment.obs[: segment.steps] for segment in segments]),
-            "hidden": hidden_in[torch.from_numpy(offsets[owner] + first).to(device)],
+            "hidden": hidden_in[starts],
+            "critic_hidden": critic_hidden_in[starts],
+            "privileged": gathered([data.privileged for data in replayed]),
             "memory": gathered([data.memory for data in replayed]),
             "actions": gathered([segment.actions for segment in segments]),
             "log_probs": gathered([segment.log_probs for segment in segments]),
@@ -624,8 +696,11 @@ class Trainer:
                 entropy = self.heads.entropy(distributions)
 
                 # The critic reads the memory the policy had at the time, recovered once by the replay and held still for
-                # the whole update, so no gradient of the value loss ever reaches the policy's features.
-                values = self.critic(self.actor.normalise(obs), batch["memory"][rows])
+                # the whole update, so no gradient of the value loss ever reaches the policy's features. Its own memory is
+                # recovered the same way, so a chunk in the middle of a fight starts from where the chunk before it ended
+                # rather than from nothing.
+                values, _ = self.critic(self.actor.normalise(obs), batch["memory"][rows],
+                                        batch["privileged"][rows], batch["critic_hidden"][rows])
 
                 ratio = (log_probs - old_log_probs).exp()
                 chunk_advantages = advantages[rows]
@@ -1038,6 +1113,9 @@ class Trainer:
                 "schema_id": self.schema.schema_id,
                 "actor": self.actor.state_dict(),
                 "critic": self.critic.state_dict(),
+                # The shape of the critic in this file, since load builds the one the state holds rather than the one the
+                # flags ask for. Zero is the plain feed-forward critic, and so is the absence of this key.
+                "critic_gru_width": self.critic.gru_width,
                 "optimizer": self.optimizer.state_dict(),
                 "normalizer": self.normalizer.state_dict(),
                 "reward_scaler": self.reward_scaler.state_dict(),
@@ -1059,6 +1137,29 @@ class Trainer:
             raise ValueError(
                 f"{path} was trained against schema {state['schema_id']:08x} and the game is running "
                 f"{self.schema.schema_id:08x}"
+            )
+
+        # A critic's shape comes from the state and not from the flags, because a critic is learned rather than
+        # configured: swapping its architecture under a run in progress throws away everything it knew about the fight and
+        # hands the policy nonsense advantages for as long as it takes to learn again, which is the whole reason
+        # --critic-warmup exists. A state written before the critic had a memory of its own names no width at all, and
+        # that reads as the plain feed-forward critic it holds, whose parameters this one's still are.
+        saved_gru = int(state.get("critic_gru_width", 0))
+
+        if saved_gru != self.critic.gru_width:
+            logger.warning(
+                "%s holds %s and these settings ask for %s; the run carries on with the critic it has. Start a new run to "
+                "change it.",
+                path.name,
+                f"a critic with {saved_gru} of its own memory" if saved_gru else "the plain feed-forward critic",
+                f"one with {self.critic.gru_width}" if self.critic.gru_width else "the plain feed-forward one",
+            )
+
+            # Before the optimizer is loaded: its saved state is indexed by position over the actor's parameters and then
+            # the critic's, so the critic has to be the one the file was written with.
+            self.critic = self._new_critic(saved_gru)
+            self.optimizer = torch.optim.Adam(
+                list(self.actor.parameters()) + list(self.critic.parameters()), lr=self.config.learning_rate, eps=1e-5
             )
 
         self.actor.load_state_dict(state["actor"])
