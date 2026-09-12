@@ -336,6 +336,38 @@ are deliberate.
   - The general lesson: **before shaping a reward for a skill, measure whether the policy can physically emit it.** Count
     the action, not the outcome. Both of these were invisible in the win rate and obvious in one histogram of hold
     lengths.
+- **Every button is close to a coin flip, so nothing that needs a held button works.** The drawn weapon was the loudest
+  case, not the only one. Over sixty training replays, 20,319 ticks (replays are the cheap place to measure this: a
+  rollout shard is deleted the moment the trainer reads it, a replay stays on disk and costs a hundred kilobytes):
+
+  | button | holds | mean length | reached 8 | reached 20 | down |
+  | --- | --- | --- | --- | --- | --- |
+  | jump | 3,646 | 2.34 | 2.3% | 0.2% | 42.0% |
+  | sprint | 3,111 | 2.83 | 6.2% | 1.2% | 43.3% |
+  | sneak | 3,345 | 2.27 | 1.2% | 0.3% | 37.3% |
+  | attack | 3,256 | 3.06 | 4.3% | 0.7% | 49.1% |
+  | use | 3,433 | 2.88 | 2.6% | 0.6% | 48.6% |
+  | use off hand | 3,294 | 2.51 | 2.0% | 0.4% | 40.8% |
+
+  - **Breaking a block was the second casualty.** Powder snow takes eight ticks of held attack, a cobweb eight, dirt
+    fifteen, and a player's client throws the crack away the instant the button comes up. At 4.3% of holds reaching eight,
+    the agent could break nothing — so it could not dig itself out of powder snow, which is what 1.3% of its fights were
+    ending in, nor out of a cobweb, nor clear the plant in the way that the swing rules had been taught to clear. The
+    teacher had a powder snow escape written and working; the network could not copy it, because the escape is a held
+    button. A crack now waits where it got to while the aim stays on the block, the press still being the only thing that
+    deepens it.
+  - What is left on the list, and not yet worth changing: a shield is a held button too, but a shield blocks on the tick
+    it is up, so a short raise is worth something where a short draw is worth nothing — and the loadout rows agree, the
+    shield adding a point or two rather than nothing. Sprint holds the same way, and the sprint blow only needs the tick
+    of the hit. **Sneak the teacher never presses at all**, in either record, which means sneaking is a control the network
+    has never seen used; in 1.21 it stops a body walking off an edge, which is worth trying against the fall deaths.
+- **An experiment on one worker, judged on the league rating, cannot be judged.** league-pull05 forked league2 at
+  iteration 6,000 to try a teacher pull of 0.05 against 0.2, and over 500 iterations on its single worker it produced three
+  evaluations: 1610 against league2's 1600 to 1604 at the same iterations. But league2's own rating wanders between 1567
+  and 1632 from one checkpoint to the next, so ±30 of noise swamps it and the arm was retired without a verdict. **Give an
+  experiment enough workers to outrun the noise of the thing it is measured with, or do not start it.** The rating moves
+  that much because the opponents move: matchmaking steers towards an even fight, so a checkpoint that got stronger is
+  rated on harder opponents.
 - **A teacher that keeps state has to check it against the body.** The teacher labels a student's fight in a DAgger
   round, and there its own presses never happen. A state machine that assumed they had would decide on the first tick of
   the first fight that the quiver was empty and the off hand held no shield, and would never show the student either

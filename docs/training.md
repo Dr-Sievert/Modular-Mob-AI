@@ -382,6 +382,7 @@ and for why the mask must not include a single efficiency core. The build protec
 | `maxWorkers` | 16 | ceiling on workers in a round |
 | `memoryReserve` | 3 | GB left for everything else when deciding how many workers fit (heap + 0.5 GB each) |
 | `memoryFloor` | 1.5 | GB of free memory below which the workers are stopped rather than left to swap |
+| `memoryGrace` | 10 | seconds the shortage has to last first, so that a moment's dip from something else on the machine does not cost a round |
 | `workerCores` | measured | `all` lets the workers run on every core, as they did before the performance cores were measured |
 | `workerCpus` | auto | cores each server sees, out of the performance cores it is allowed |
 | `workerStagger` | 1 | seconds between starting workers |
@@ -410,7 +411,7 @@ cache, and on an efficiency core at 24.8 us. See [findings.md](findings.md).
 | Symptom | Cause, fix |
 | --- | --- |
 | "Run 'X' is already training" | a live trainer for that run; watch it, or `scripts\stop.ps1 -Run X` first |
-| "Stopped the workers to protect the machine" | free memory fell under `memoryFloor`; use fewer workers, or close things |
+| "Stopped the workers to protect the machine" | free memory stayed under `memoryFloor` for `memoryGrace` seconds; use fewer workers, or close things. **A game test build counts**: on a 32 GB machine, six training workers and a `scripts\test.ps1` at the same time is over the line, and the build wins because the runs are the ones being watched. Leave a run's worth of memory free while developing |
 | a worker "stopped with exit code 1" | read its `mod\fabric\build\training\<run>\worker-N\log.txt`; `OutOfMemoryError` means the heap is too small |
 | iterations suddenly take many times longer | one worker is slow and every worker waits for it; check its garbage collection with `jstat -gcutil <pid>` |
 | `PermissionError` on a rename | fixed in `mmai/files.py`; a reader held the file open |
