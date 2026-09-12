@@ -309,9 +309,72 @@ are deliberate.
     the agent's only when the weapon is charged (`AgentMob#drawingToFull`). One press is one full arrow, which is a thing
     a policy can find. Nothing else moves — no layout changes, no log probabilities change, the draw still costs a fifth
     of the movement every tick of it, changing slot still gives it up, and holding at full draw to aim is still allowed.
+  - What it did, on the same run and the same roster, about 1,150 training fights a loadout either side of the change:
+
+    | | button held | draw committed |
+    | --- | --- | --- |
+    | bow: draws started a fight | 42.6 | 15.0 |
+    | bow: arrows loosed a fight | 5.5 | 10.3 |
+    | bow: draws that finished | 13% | 69% |
+    | bow: won, training | 22.5% | 40.1% |
+    | crossbow: bolts fired a fight | 0.03 | 6.91 |
+    | crossbow: loads that finished | 0.07% | 62.8% |
+    | crossbow: won, training | 11.0% | 35.2% |
+
+  - **Evaluation cannot see this bug, and that is why it lasted.** A deployed agent takes its most likely action, so a
+    logit over a half means the button is pressed every tick and the draw completes: the coin flip only exists where the
+    actions are sampled, which is training. Evaluated on the same weights either side of the change, 300 fights a
+    loadout, the win rate barely moves — bow 41.3% to 40.0%, crossbow 37.3% to 42.7% — while timeouts fall about five
+    points and the fights it lands a hit in go from 169 and 188 of 300 to 207 and 224. So a run can be evaluated for ten
+    thousand iterations, judged on what it evaluates at, and never show the thing that is stopping it learning.
+  - **What the gap between evaluation and training is worth as a tell: a little, and only against its peers.** Every
+    loadout evaluates above what it trains at, because training explores and exploration costs; over a 200-fight window
+    the gap runs from 6 to 18 points and moves by 5 on noise alone. So no single loadout's gap means anything. What did
+    mean something was the ranking: with the button held, the bow and the crossbow sat at the wide end (10.5 and 18.5
+    points) and after the draw was committed the bow has the narrowest gap of all ten. The tell that was actually decisive
+    was neither — it was **counting the bolts**: 0.03 a fight cannot be explained away.
   - The general lesson: **before shaping a reward for a skill, measure whether the policy can physically emit it.** Count
     the action, not the outcome. Both of these were invisible in the win rate and obvious in one histogram of hold
     lengths.
+- **Every button is close to a coin flip, so nothing that needs a held button works.** The drawn weapon was the loudest
+  case, not the only one. Over sixty training replays, 20,319 ticks (replays are the cheap place to measure this: a
+  rollout shard is deleted the moment the trainer reads it, a replay stays on disk and costs a hundred kilobytes):
+
+  | button | holds | mean length | reached 8 | reached 20 | down |
+  | --- | --- | --- | --- | --- | --- |
+  | jump | 3,646 | 2.34 | 2.3% | 0.2% | 42.0% |
+  | sprint | 3,111 | 2.83 | 6.2% | 1.2% | 43.3% |
+  | sneak | 3,345 | 2.27 | 1.2% | 0.3% | 37.3% |
+  | attack | 3,256 | 3.06 | 4.3% | 0.7% | 49.1% |
+  | use | 3,433 | 2.88 | 2.6% | 0.6% | 48.6% |
+  | use off hand | 3,294 | 2.51 | 2.0% | 0.4% | 40.8% |
+
+  - **Breaking a block was the second casualty.** Powder snow takes eight ticks of held attack, a cobweb eight, dirt
+    fifteen, and a player's client throws the crack away the instant the button comes up. At 4.3% of holds reaching eight,
+    the agent could break nothing — so it could not dig itself out of powder snow, which is what 1.3% of its fights were
+    ending in, nor out of a cobweb, nor clear the plant in the way that the swing rules had been taught to clear. The
+    teacher had a powder snow escape written and working; the network could not copy it, because the escape is a held
+    button. A crack now waits where it got to while the aim stays on the block, the press still being the only thing that
+    deepens it.
+  - What is left on the list, and not yet worth changing: a shield is a held button too, but a shield blocks on the tick
+    it is up, so a short raise is worth something where a short draw is worth nothing — and the loadout rows agree, the
+    shield adding a point or two rather than nothing. Sprint holds the same way, and the sprint blow only needs the tick
+    of the hit. **Sneak the teacher never presses at all**, in either record, which means sneaking is a control the network
+    has never seen used; in 1.21 it stops a body walking off an edge, which is worth trying against the fall deaths.
+- **The evaluation repeats itself, and that is worth knowing before trusting a comparison.** An evaluation fights the same
+  sites in the same order every time it is run, so two builds measured this way were on the same ground without being asked
+  to be, which is what made the committed draw's before and after comparable. What is left over is the mobs and the dice:
+  four evaluations of one network over 300 fights measured 44.7%, 44.7%, 45.7% and 46.3%, the last two on a different
+  sample of the library (`eval.ps1 -Ground`). So about a point at 300 fights, and a difference of five points means
+  something while a difference of one does not. `-Ground` is for asking the same question of different ground, not for
+  steadying the answer — it was added believing the opposite, and the measurement said otherwise.
+- **An experiment on one worker, judged on the league rating, cannot be judged.** league-pull05 forked league2 at
+  iteration 6,000 to try a teacher pull of 0.05 against 0.2, and over 500 iterations on its single worker it produced three
+  evaluations: 1610 against league2's 1600 to 1604 at the same iterations. But league2's own rating wanders between 1567
+  and 1632 from one checkpoint to the next, so ±30 of noise swamps it and the arm was retired without a verdict. **Give an
+  experiment enough workers to outrun the noise of the thing it is measured with, or do not start it.** The rating moves
+  that much because the opponents move: matchmaking steers towards an even fight, so a checkpoint that got stronger is
+  rated on harder opponents.
 - **A teacher that keeps state has to check it against the body.** The teacher labels a student's fight in a DAgger
   round, and there its own presses never happen. A state machine that assumed they had would decide on the first tick of
   the first fight that the quiver was empty and the off hand held no shield, and would never show the student either
