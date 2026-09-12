@@ -14,6 +14,7 @@ matching, something about the network has drifted apart and every ratio in the u
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -22,7 +23,7 @@ import torch
 from torch import Tensor
 
 from . import files, log
-from .model import INITIAL_LOG_STD, Actor, Critic, PolicyHeads, RewardScaler, RunningNormalizer
+from .model import INITIAL_LOG_STD, Actor, AuxiliaryHeads, Critic, PolicyHeads, RewardScaler, RunningNormalizer
 from .rollout import Segment, pack_by_rows
 from .schema import Schema
 from .weights import export as export_weights
@@ -74,6 +75,29 @@ class Config:
     # Rewards are divided by the running spread of the return, so the value loss stays the same size whatever the reward
     # is measured in. Off for a task whose rewards are already near unit scale.
     scale_rewards: bool = True
+
+    # How hard the auxiliary predictions pull on the actor's memory; see model.AuxiliaryHeads for what they are and
+    # _aux_targets for where each one's answer comes from. The policy gradient is one noisy number a step and is the whole
+    # of what the memory learns from today; these are three dense targets that every rollout row already carries, so they
+    # cost the game nothing and need no change on its side.
+    #
+    # Small, because a hint is what they are and not the job. A run that is going well has a policy loss of a few
+    # hundredths, while a head that has learned nothing yet scores about one -- a normalised target has unit variance by
+    # construction, so predicting its average is an error of one, and a coin-flip ending costs 0.69. A coefficient anywhere
+    # near one would therefore hand the memory to the predictors and leave the fights to decide what is left of it. At 0.05
+    # the three together weigh about what the policy loss does to begin with, and less as the predictions come good, which
+    # is what a hint should do. Nothing here has been measured over a whole run yet: the aux line is what to judge it by,
+    # and a run with this at zero is the comparison.
+    #
+    # Zero turns them off entirely: not multiplied by zero but never built, so the update is exactly the one before they
+    # existed, down to the order the minibatches come in. A network built and never used still draws from the random
+    # generator, and every draw after it would land differently.
+    aux_coef: float = 0.05
+
+    # How far ahead "the fight ends soon" looks, in ticks. A second and a half, which is about the span a fight is
+    # actually decided over -- a swing lands, a creeper goes off -- and the same length as the chunk the GRU is trained
+    # through. Nearer the end of a segment than this, the answer is only known where the recording shows the end.
+    aux_horizon: int = 32
 
     # The network the game runs: 634 -> h1 -> GRU hidden -> h3 -> 19 logits. The hidden width is the agent's memory and
     # the middle of the tick budget; the encoder is wide because the observation is.
@@ -267,6 +291,28 @@ class Trainer:
         # What the optimizer is actually running at, which steer_rate moves and the run's state keeps.
         self.rate = config.learning_rate
 
+        # The auxiliary predictions, with an optimizer of their own; see model.AuxiliaryHeads and Config.aux_coef. Built
+        # only where they are asked for, and kept out of the optimizer above, which buys two things:
+        #  - every state.pt written before these existed resumes without complaint. Adam refuses a saved state whose
+        #    parameter group is a different size from the one it is being loaded into, so putting these in the same group
+        #    would end every run that is training today the moment it restarted;
+        #  - a predictor has no KL, so its rate has no business being steered by how far the policy moved. It learns at the
+        #    configured rate throughout.
+        # Their gradient still reaches the actor either way: the loss is one loss, and the path back through the memory is
+        # what shapes anything at all here.
+        body = schema.block("self")
+
+        self.aux = (
+            AuxiliaryHeads(self.actor.topology.hidden, body.size if body else 0, self.actor.topology.hidden)
+            .to(self.device)
+            if config.aux_coef > 0.0
+            else None
+        )
+
+        self.aux_optimizer = (
+            torch.optim.Adam(self.aux.parameters(), lr=config.learning_rate, eps=1e-5) if self.aux is not None else None
+        )
+
         self.normalizer = RunningNormalizer(schema.obs_dim)
         self.normalizer.into(self.actor)
         self.reward_scaler = RewardScaler(config.gamma)
@@ -300,6 +346,14 @@ class Trainer:
             config.critic_width,
             self.device,
         )
+
+        if self.aux is not None:
+            logger.info(
+                "auxiliary predictions at %.3f, %s parameters that are never exported: %s",
+                config.aux_coef,
+                f"{sum(parameter.numel() for parameter in self.aux.parameters()):,}",
+                self.aux.describe(),
+            )
 
     # -----------------------------------------------------------------------------------------------------------
     # One iteration
@@ -587,7 +641,69 @@ class Trainer:
             "returns": gathered([data.returns for data in replayed]),
             "values": gathered([data.values for data in replayed]),
             "mask": valid_on_device,
+            **self._aux_targets(segments, replayed, gathered),
         }
+
+    def _aux_targets(self, segments: list[Segment], replayed: list[Replayed],
+                     gathered: Callable[[list[np.ndarray]], Tensor]) -> dict[str, Tensor]:
+        """What the auxiliary heads are asked to predict, per step, cut into chunks by the same gather as everything else
+        in the batch, and empty where the heads are off.
+
+        Every answer is read out of rows the game already wrote:
+
+        - **the body's own block one step on.** A segment carries one observation more than it has steps -- the row the
+          fight ended on, or the row the recording stopped at -- so even the last step of a segment has a next observation
+          and none is thrown away. It has to be gathered per segment rather than sliced out of the finished chunks: shifted
+          there, the last step of every chunk would be handed the first observation of the next chunk, and the last step of
+          every segment the first observation of somebody else's fight.
+        - **what each step earned**, as the critic sees it. A row's reward belongs to the action on the row before it, which
+          ``Segment.rewards`` has already lined up, so this is the reward that arrives on the step after the one predicting
+          it.
+        - **whether the fight ends within the horizon, and whether that is even known.** A segment that ends is known
+          throughout. One that was only cut off says nothing about what came after its last row, so a step nearer that row
+          than the horizon is masked out rather than labelled "no end soon" -- which is exactly where a fight cut in half
+          was often about to finish, and labelling it would teach the opposite of the truth.
+        """
+
+        if self.aux is None:
+            return {}
+
+        horizon = max(1, self.config.aux_horizon)
+        targets: dict[str, Tensor] = {}
+        body = self.schema.block("self")
+
+        if body is not None:
+            at, size = body.offset, body.size
+
+            # The same three operations, on the same frozen statistics, that the network's own input goes through: a target
+            # on one scale and an input on another are two different tasks. Before the gather rather than after it, so that
+            # what pads a chunk out is still zero afterwards as it is in every other field, and once an update rather than
+            # once a minibatch, since the normaliser does not move while one is running.
+            mean = self.actor.norm_mean[at : at + size].cpu().numpy()
+            spread = self.actor.norm_std[at : at + size].cpu().numpy()
+            clip = self.actor.obs_clip
+
+            targets["aux_state"] = gathered([
+                np.clip((segment.obs[1 : segment.steps + 1, at : at + size] - mean) / spread, -clip, clip)
+                .astype(np.float32, copy=False)
+                for segment in segments
+            ])
+
+        targets["aux_reward"] = gathered([data.rewards for data in replayed])
+
+        ending, known = [], []
+
+        for segment in segments:
+            left = segment.steps - 1 - np.arange(segment.steps)
+
+            ending.append((left < horizon).astype(np.float32) if segment.done
+                          else np.zeros(segment.steps, dtype=np.float32))
+            known.append(np.ones(segment.steps, dtype=bool) if segment.done else left >= horizon)
+
+        targets["aux_ending"] = gathered(ending)
+        targets["aux_known"] = gathered(known)
+
+        return targets
 
     def _learn(self, batch: dict[str, Tensor]) -> dict:
         config = self.config
@@ -600,6 +716,7 @@ class Trainer:
 
         chunks = int(batch["obs"].shape[0])
         policy_losses, value_losses, entropies, clip_fractions, approximate_kls, teacher_losses = [], [], [], [], [], []
+        aux_losses: dict[str, list[float]] = {}
         epochs_run = 0
 
         self.actor.train()
@@ -617,7 +734,7 @@ class Trainer:
                 old_log_probs = batch["log_probs"][rows]
                 old_values = batch["values"][rows]
 
-                logits, _ = self.actor(obs, batch["hidden"][rows])
+                logits, live_memory = self.actor(obs, batch["hidden"][rows])
                 distributions = self.heads.distributions(logits, self.actor.log_std, obs)
 
                 log_probs = self.heads.log_prob(distributions, batch["actions"][rows])
@@ -660,12 +777,42 @@ class Trainer:
                         loss = loss + pull * teacher_loss
                         teacher_losses.append(teacher_loss.item())
 
+                    # The auxiliary predictions, off the memory this pass just produced rather than the replayed copy, so
+                    # that their gradient reaches the GRU and the encoder under it -- which is the whole of what they are
+                    # for. Not during the critic's warmup: those iterations exist to hold a copied policy still while the
+                    # critic catches up, and a loss that moves the memory moves the policy with it.
+                    if self.aux is not None:
+                        for name, piece in self.aux.losses(
+                            live_memory,
+                            batch["aux_state"][rows] if "aux_state" in batch else None,
+                            batch["aux_reward"][rows],
+                            batch["aux_ending"][rows],
+                            mask,
+                            mask & batch["aux_known"][rows],
+                        ).items():
+                            loss = loss + config.aux_coef * piece
+                            aux_losses.setdefault(name, []).append(piece.item())
+
                 self.optimizer.zero_grad(set_to_none=True)
+
+                if self.aux_optimizer is not None:
+                    self.aux_optimizer.zero_grad(set_to_none=True)
+
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(
                     list(self.actor.parameters()) + list(self.critic.parameters()), config.max_grad_norm
                 )
+
+                # Clipped on their own, since they are stepped on their own. A head left unclipped is one blown gradient
+                # away from feeding nonsense back into the memory it is supposed to be shaping.
+                if self.aux_optimizer is not None:
+                    torch.nn.utils.clip_grad_norm_(self.aux.parameters(), config.max_grad_norm)
+
                 self.optimizer.step()
+
+                if self.aux_optimizer is not None:
+                    self.aux_optimizer.step()
+
                 self.actor.bound_spread()
 
                 with torch.no_grad():
@@ -694,6 +841,7 @@ class Trainer:
             "clip": float(np.mean(clip_fractions)),
             "kl": kl,
             "teacher": float(np.mean(teacher_losses)) if teacher_losses else 0.0,
+            "aux": {name: float(np.mean(values)) for name, values in aux_losses.items()},
             "epochs": epochs_run,
             "chunks": chunks,
             "rate": self.steer_rate(kl),
@@ -957,6 +1105,12 @@ class Trainer:
             eps=1e-5,
         )
 
+        # Adam's moments live where its parameters did, so the auxiliary optimizer is rebuilt rather than moved, exactly as
+        # the one above is.
+        if self.aux is not None:
+            self.aux.to(self.device)
+            self.aux_optimizer = torch.optim.Adam(self.aux.parameters(), lr=self.config.learning_rate, eps=1e-5)
+
     # -----------------------------------------------------------------------------------------------------------
     # Episode figures
     # -----------------------------------------------------------------------------------------------------------
@@ -1021,6 +1175,16 @@ class Trainer:
         if self.config.teacher_weight > 0.0 and stats.get("teacher"):
             logger.info("iteration %5d  teacher loss %+.4f  pull %.4f", self.iteration, stats["teacher"], self.teacher_pull())
 
+        # The same, one field per head, so that a prediction that stops improving can be told from one that never started.
+        # Also on its own line, and for the same reason.
+        if stats.get("aux"):
+            logger.info(
+                "iteration %5d  aux%s  coef %.3f",
+                self.iteration,
+                "".join(f"  {name} {value:.4f}" for name, value in stats["aux"].items()),
+                self.config.aux_coef,
+            )
+
     # -----------------------------------------------------------------------------------------------------------
     # Weights and checkpoints
     # -----------------------------------------------------------------------------------------------------------
@@ -1039,6 +1203,9 @@ class Trainer:
                 "actor": self.actor.state_dict(),
                 "critic": self.critic.state_dict(),
                 "optimizer": self.optimizer.state_dict(),
+                # Absent for a run with aux_coef 0, which has no such heads at all.
+                "aux": self.aux.state_dict() if self.aux is not None else None,
+                "aux_optimizer": self.aux_optimizer.state_dict() if self.aux_optimizer is not None else None,
                 "normalizer": self.normalizer.state_dict(),
                 "reward_scaler": self.reward_scaler.state_dict(),
                 "iteration": self.iteration,
@@ -1069,6 +1236,19 @@ class Trainer:
         self.reward_scaler.load_state_dict(state["reward_scaler"])
         self.iteration = state["iteration"]
         self.total_steps = state["total_steps"]
+
+        # The auxiliary heads never leave this side, so a state that has none is no reason to stop: a run that trained
+        # without them, or one from before they existed, carries on with heads that start from nothing and a policy that is
+        # exactly what it saved. The other way round costs nothing either -- a run turned back to aux_coef 0 simply leaves
+        # them where they were written.
+        if self.aux is not None and state.get("aux") and state.get("aux_optimizer"):
+            self.aux.load_state_dict(state["aux"])
+            self.aux_optimizer.load_state_dict(state["aux_optimizer"])
+
+            # Adam saves the rate it was running at, and a run seeded from somebody else's state would otherwise take
+            # theirs; the heads always learn at this run's configured rate.
+            for group in self.aux_optimizer.param_groups:
+                group["lr"] = self.config.learning_rate
 
         # Absent from a state written before the pull could decay, which then starts falling from wherever that run is now.
         self.teacher_from = state.get("teacher_from")

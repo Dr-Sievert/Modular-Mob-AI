@@ -207,6 +207,8 @@ Every field of `Config` in `trainer/mmai/ppo.py` is an option, as `--field-name 
 | `--entropy-coef` | 0.01 | exploration bonus |
 | `--critic-warmup` | 0 | iterations where only the critic learns |
 | `--teacher-weight` | 0 | pull towards the run's demos; needs `runs\<run>\demos` |
+| `--aux-coef` | 0.05 | how hard the auxiliary predictions pull on the memory; 0 turns them off, see below |
+| `--aux-horizon` | 32 | ticks ahead that "the fight ends soon" looks |
 | `--seq-len` | 32 | ticks of GRU unrolled per training chunk |
 | `--h1 --hidden --h3` | 256, 128, 128 | network widths; only for a new run, and the game needs no change |
 | `--eval-fights` | 500 | fights per judged checkpoint (2,000 tells 99.6% from 99.9%) |
@@ -221,6 +223,42 @@ Every field of `Config` in `trainer/mmai/ppo.py` is an option, as `--field-name 
 | `--league-k` | 16 | Elo K (twice that for a player's first `--league-provisional` 30 rated fights) |
 | `--league-hard-at`, `--league-easy-below` | 0.80, 0.20 | evaluated win rate at which an opponent's hard or easy rung opens |
 | `--league-rung-fights` | 30 | evaluation fights an opponent needs before a rung can open |
+
+#### Auxiliary predictions: `--aux-coef`
+
+The agent's memory — the GRU's 128 numbers — is trained by the policy gradient and by nothing else. That is one noisy
+number a step for a network whose whole job is to understand what the fight is doing. The critic reads the memory as well,
+but the value loss is deliberately kept from reaching the policy's features, so nothing it works out arrives there either.
+
+So the memory is also asked to **predict**, from three targets that every rollout row already carries. Nothing changes on
+the game's side, and nothing is added to the network the game runs: the heads are a module the trainer owns, they are not
+part of the actor, and the weight file is the same file it was (`trainer/tests/test_aux_heads.py` proves the exported
+parameter count is unchanged).
+
+| Prediction | Target | Why |
+| --- | --- | --- |
+| the body a tick on | the observation's own self block one row later, through the same normaliser the input goes through | a memory that can say where its own body is about to be has learned what the controls do. The fields that barely move are free to get right and stop mattering; what is left of the error is velocity, the attack cooldown, hurt time, on the ground or not |
+| what the step earns | the scaled reward, the one the critic is fitted against | this is exactly the signal the wall around the value loss keeps out, and knowing that a blow is about to land is what the policy wants to be built on |
+| the fight ending soon | whether the fight ends within `--aux-horizon` ticks | a win pays for being quick and the clock running out is a loss, so the difference between a fight seconds from over and one that has just begun is worth real reward |
+
+Each loss is reported on the run's own `aux` line, one field per head, which is separate from the iteration line
+`scripts\watch.ps1` reads field by field.
+
+Two things to know before turning the dial:
+
+- **`--aux-coef 0` is the old update exactly.** Off means the heads are never built, not built and multiplied by zero: a
+  network that exists draws from the random generator as it is made, and every draw after it — the order the minibatches
+  come in included — would land somewhere else. Zero is the comparison to run against.
+- **`--aux-coef 0.05` is a starting guess and has not been measured over a run.** A head that has learned nothing scores
+  about one, against a policy loss of a few hundredths, so at 0.05 the three of them together weigh about what the policy
+  does at the start and less as they come good. Judge it on the `aux` line and on `scripts\bench.ps1` against a run with
+  it off, the way anything else here is judged.
+
+The heads learn in an optimizer of their own, at the configured rate and never at the steered one: a predictor has no KL.
+That is also what lets a run that started before they existed resume into them — Adam refuses a saved state whose
+parameter group is a size other than the one it is loaded into, so heads in the main optimizer would have ended every run
+on the machine the moment it restarted. Nothing is predicted during `--critic-warmup`, since those iterations exist to
+hold a copied policy still and a loss that moves the memory moves the policy with it.
 
 ### The league: `-Suite league` and `scripts\league.ps1`
 
