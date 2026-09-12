@@ -82,8 +82,13 @@ class Config:
 
     # The most of the GPU's memory this process may take. Past physical memory Windows quietly spills into system memory
     # and everything slows to a crawl; with a ceiling, running out is an error that says so, and the update falls back to
-    # the CPU instead. An update here needs about a gigabyte, so half a 16 GB card is room to spare.
-    gpu_memory_fraction: float = 0.5
+    # the CPU instead.
+    #
+    # A quarter, because half was a ceiling two runs could not share. The allocator keeps whatever it has ever grown to, so
+    # two trainers each entitled to half a 16 GB card had taken 12.7 GB of it between them for a measured peak of 1.59 GB
+    # each, and a third run would have been left to thrash or fall back to the CPU. A quarter is still 4 GB, more than
+    # twice what an update of the widest network here has ever needed, and four runs fit.
+    gpu_memory_fraction: float = 0.25
 
     # CPU threads for torch. The workers sit idle while an update runs, so the update may have a fair share of the cores.
     threads: int = 8

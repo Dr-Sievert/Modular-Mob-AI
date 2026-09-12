@@ -9,6 +9,8 @@ import java.util.SplittableRandom;
 import java.util.random.RandomGenerator;
 
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
+import it.unimi.dsi.fastutil.ints.Int2IntMap;
+import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap;
 import it.unimi.dsi.fastutil.ints.IntSet;
 import net.sievert.modularmobai.Constants;
 import net.sievert.modularmobai.brain.nn.RolloutWriter;
@@ -63,6 +65,30 @@ final class TrainingRun {
 
     /** Agents with a segment open in the current shard. */
     private final IntSet open = new IntOpenHashSet();
+
+    /** How many rows each open agent has written since its segment began, for {@link #SEGMENT_ROWS}. */
+    private final Int2IntMap sinceStart = new Int2IntOpenHashMap();
+
+    /**
+     * The most rows a segment may run before a new one is begun, carrying the hidden state of the row it starts on.
+     *
+     * <p>The training side replays a whole segment through the network to work out what it would say now, and compares
+     * that against the log probabilities the game recorded. Every step of the replay carries a little floating point
+     * difference forward in the recurrent state, so the longer the segment the further the two sides drift, and the
+     * comparison is not a nicety: those log probabilities are the denominator of every ratio PPO clips.
+     *
+     * <p>Measured on the two runs going tonight, whose segments were bounded by nothing but the shard: 149 warnings in one
+     * run, the worst at 3.62, which is a ratio wrong by a factor of thirty seven. The diagnosis named the row — step 1,396
+     * of a segment 1,515 long, where the game had said 0.71 and the training side worked out -2.91. A fight cannot last
+     * more than 1,200 ticks, so a segment that long had already run through an episode boundary and was replaying one
+     * fight's state into the next. Across live shards: median 124 rows, but 1.5% over 1,200.
+     *
+     * <p>256 keeps a segment well inside the range the replay stays honest over, and costs nothing: a cut is one row of
+     * bookkeeping and 128 floats of hidden state in the shard, the training side already reads several segments per agent,
+     * and the recurrent state itself is unbroken because the new segment starts from exactly the state the old one was at.
+     * Backpropagation runs over chunks of 32, so it never wanted more than this anyway.
+     */
+    private static final int SEGMENT_ROWS = 256;
 
     /** Which rows of the current step start a segment, and the memory each had going in. */
     private boolean[] starts = new boolean[0];
@@ -161,6 +187,7 @@ final class TrainingRun {
         // Anything still open was not in this step, which means it went away without a last step. The training side
         // bootstraps those from the last row they did write.
         this.open.clear();
+        this.sinceStart.clear();
         this.shard.close(false);
 
         this.iteration++;
@@ -185,9 +212,13 @@ final class TrainingRun {
 
             byte flags = step.flags[row];
 
-            // A new episode always starts a segment, even for an id that somehow still has one open.
+            // A new episode always starts a segment, even for an id that somehow still has one open, and so does a segment
+            // that has run its length: see SEGMENT_ROWS for what an unbounded one did to the log probabilities.
+            int agent = step.agentIds[row];
+
             boolean starting = (flags & BrainStep.FLAG_DONE) == 0
-                    && ((flags & BrainStep.FLAG_NEW) != 0 || !this.open.contains(step.agentIds[row]));
+                    && ((flags & BrainStep.FLAG_NEW) != 0 || !this.open.contains(agent)
+                        || this.sinceStart.get(agent) >= SEGMENT_ROWS);
 
             this.starts[row] = starting;
 
@@ -212,6 +243,7 @@ final class TrainingRun {
                 if (this.open.remove(agent)) {
 
                     this.shard.end(agent, true, step.rewards[row], step.observations, obs);
+                    this.sinceStart.remove(agent);
                 }
 
                 continue;
@@ -221,10 +253,13 @@ final class TrainingRun {
 
                 this.shard.beginSegment(this.startStates, row * step.hiddenSize);
                 this.open.add(agent);
+                this.sinceStart.put(agent, 0);
             }
 
             this.shard.step(agent, (flags & BrainStep.FLAG_NEW) != 0, step.rewards[row], logProbs[row],
                     step.actions, row * this.species.actDim(), step.observations, obs);
+
+            this.sinceStart.put(agent, this.sinceStart.get(agent) + 1);
         }
     }
 
