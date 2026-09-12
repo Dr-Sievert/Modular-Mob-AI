@@ -4,6 +4,14 @@
 copied into `models\<run>\` and committed, so anyone with the repository can fight them, evaluate them or train on from
 them.
 
+> **Every network below is retired.** They were trained against the humanoid's old 634-float observation, schema
+> `f818e282`, and this build's humanoid is 744 floats, schema `1dffdc67`: the enemy slots now say what an opponent *is* —
+> hearts, damage, speed, size, knockback resistance, a creeper's fuse, explodes, shoots, flies — because before that a
+> zombie and a warden filled a slot identically and the league cost of that was 0% against the warden. A weight file
+> carries the schema it was trained on and the game refuses one it cannot drive, so these load nowhere and are kept only as
+> a record of what was measured. The chain is being rebuilt from the teacher: record, imitate, DAgger, league. See
+> [architecture.md](architecture.md) for the layout and [findings.md](findings.md) for why it changed.
+
 ```
 models\<run>\
   best.mbw      the network the game loads (the run's best evaluated checkpoint)

@@ -20,10 +20,12 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.projectile.Arrow;
 import net.minecraft.world.item.CrossbowItem;
 import net.minecraft.world.item.Item;
@@ -1173,6 +1175,96 @@ public class AgentMechanicsGameTest {
     }
 
     // ---------------------------------------------------------------------------------------------------------------
+    // Telling one opponent from another
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * A slot says what the thing in it can do, which is what lets one mob be told from another at all. Before these
+     * fields a zombie and a warden filled a slot identically — both "monster", both at a health of 1, both empty handed —
+     * and the league showed what that cost: every ordinary mob beaten 75 to 98% and 0% against the warden and against two
+     * creepers.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 100)
+    public static void aSlotSaysWhatTheOpponentCanDo(GameTestHelper helper) {
+
+        AgentMob agent = agent(helper, new BlockPos(4, 2, 1), 0.0F, 0.0F);
+        Mob zombie = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new BlockPos(3, 2, 4));
+        Mob skeleton = helper.spawnWithNoFreeWill(EntityType.SKELETON, new BlockPos(5, 2, 4));
+
+        run(helper, tick -> {
+
+            if (tick < 2) {
+
+                return false;
+            }
+
+            float[] observation = new float[ObservationSchema.OBS_DIM];
+            AgentObservation.write(agent, agent.brain().enemySlots(), observation, 0);
+
+            int zombieAt = ObservationSchema.enemyOffset(slotOf(agent, zombie));
+            int skeletonAt = ObservationSchema.enemyOffset(slotOf(agent, skeleton));
+
+            // Hearts, not a fraction: twenty of them, whole.
+            helper.assertValueEqual(observation[zombieAt + ObservationSchema.ENEMY_MAX_HEALTH],
+                    20.0F / ObservationSchema.HEALTH_SCALE, "a zombie's max health");
+            helper.assertValueEqual(observation[zombieAt + ObservationSchema.ENEMY_HEALTH_LEFT],
+                    20.0F / ObservationSchema.HEALTH_SCALE, "a zombie's health left");
+
+            // What tells these two apart without either having moved: one shoots, the other hits harder up close.
+            helper.assertValueEqual(observation[skeletonAt + ObservationSchema.ENEMY_SHOOTS], 1.0F, "a skeleton shoots");
+            helper.assertValueEqual(observation[zombieAt + ObservationSchema.ENEMY_SHOOTS], 0.0F, "a zombie shoots");
+            helper.assertTrue(observation[zombieAt + ObservationSchema.ENEMY_DAMAGE]
+                    > observation[skeletonAt + ObservationSchema.ENEMY_DAMAGE], "a zombie hits harder than a skeleton");
+
+            for (int at : new int[] {zombieAt, skeletonAt}) {
+
+                helper.assertValueEqual(observation[at + ObservationSchema.ENEMY_FLIES], 0.0F, "either of them flying");
+                helper.assertValueEqual(observation[at + ObservationSchema.ENEMY_EXPLODES], 0.0F, "either of them exploding");
+                helper.assertValueEqual(observation[at + ObservationSchema.ENEMY_FUSE], 0.0F, "either of them with a fuse");
+                helper.assertTrue(observation[at + ObservationSchema.ENEMY_WIDTH] > 0.0F, "a body with no width");
+                helper.assertTrue(observation[at + ObservationSchema.ENEMY_HEIGHT] > 0.0F, "a body with no height");
+                helper.assertTrue(observation[at + ObservationSchema.ENEMY_SPEED] > 0.0F, "a body that cannot move");
+                helper.assertValueEqual(observation[at + ObservationSchema.ENEMY_KNOCKBACK_RESISTANCE], 0.0F,
+                        "what a zombie or a skeleton shrugs off");
+            }
+
+            return true;
+        });
+    }
+
+    /** A creeper says it explodes, and says how far along its fuse is, which the teacher used to have to guess. */
+    @GameTest(template = ARENA, timeoutTicks = 100)
+    public static void aCreeperSaysItExplodesAndHowCloseItIs(GameTestHelper helper) {
+
+        AgentMob agent = agent(helper, new BlockPos(4, 2, 2), 0.0F, 0.0F);
+        Creeper creeper = helper.spawnWithNoFreeWill(EntityType.CREEPER, new BlockPos(4, 2, 4));
+
+        run(helper, tick -> {
+
+            if (tick == 2) {
+
+                creeper.ignite();
+                return false;
+            }
+
+            if (tick < 8) {
+
+                return false;
+            }
+
+            float[] observation = new float[ObservationSchema.OBS_DIM];
+            AgentObservation.write(agent, agent.brain().enemySlots(), observation, 0);
+            int at = ObservationSchema.enemyOffset(slotOf(agent, creeper));
+
+            helper.assertValueEqual(observation[at + ObservationSchema.ENEMY_EXPLODES], 1.0F, "a creeper exploding");
+            helper.assertTrue(observation[at + ObservationSchema.ENEMY_FUSE] > 0.0F,
+                    "a lit creeper's fuse reads " + observation[at + ObservationSchema.ENEMY_FUSE]);
+            helper.assertTrue(observation[at + ObservationSchema.ENEMY_FUSE] < 1.0F, "the fuse is already spent");
+            return true;
+        });
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
     // Lava poured for a fight, and taken away again
     // ---------------------------------------------------------------------------------------------------------------
 
@@ -1320,11 +1412,11 @@ public class AgentMechanicsGameTest {
     }
 
     /** Which of the agent's enemy slots this entity holds, or -1 for none. */
-    private static int slotOf(AgentMob agent, Arrow arrow) {
+    private static int slotOf(AgentMob agent, Entity of) {
 
         for (int slot = 0; slot < ObservationSchema.ENEMY_SLOTS; slot++) {
 
-            if (agent.brain().enemySlots().occupant(slot) == arrow) {
+            if (agent.brain().enemySlots().occupant(slot) == of) {
 
                 return slot;
             }

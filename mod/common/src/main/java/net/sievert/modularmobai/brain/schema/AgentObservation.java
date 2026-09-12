@@ -1,11 +1,27 @@
 package net.sievert.modularmobai.brain.schema;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.FlyingMob;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.ai.attributes.Attribute;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.ambient.Bat;
+import net.minecraft.world.entity.animal.Bee;
+import net.minecraft.world.entity.animal.Parrot;
+import net.minecraft.world.entity.animal.allay.Allay;
+import net.minecraft.world.entity.boss.wither.WitherBoss;
+import net.minecraft.world.entity.monster.Blaze;
+import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.monster.Enemy;
+import net.minecraft.world.entity.monster.RangedAttackMob;
+import net.minecraft.world.entity.monster.Shulker;
+import net.minecraft.world.entity.monster.breeze.Breeze;
+import net.minecraft.world.entity.monster.Ghast;
+import net.minecraft.world.entity.monster.Vex;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.item.AxeItem;
@@ -228,6 +244,10 @@ public final class AgentObservation {
             out[at + ObservationSchema.ENEMY_KIND] = entityKind(enemy);
             out[at + ObservationSchema.ENEMY_SPRINTING] = enemy.isSprinting() ? 1.0F : 0.0F;
 
+            // How big it is, which every entity has, an arrow included: an arrow is thin and a ghast fills the sky.
+            out[at + ObservationSchema.ENEMY_WIDTH] = enemy.getBbWidth() / ObservationSchema.SIZE_SCALE;
+            out[at + ObservationSchema.ENEMY_HEIGHT] = enemy.getBbHeight() / ObservationSchema.SIZE_SCALE;
+
             // What only a body has. A projectile is left at zero for all of it: no health, no hands, no swing and nothing
             // in use, which is the plain truth about an arrow and is why its kind is off the ladder the bodies are on.
             if (enemy instanceof LivingEntity living) {
@@ -237,8 +257,63 @@ public final class AgentObservation {
                 out[at + ObservationSchema.ENEMY_OFF_HAND] = itemKind(living.getOffhandItem());
                 out[at + ObservationSchema.ENEMY_SWINGING] = living.swinging ? 1.0F : 0.0F;
                 out[at + ObservationSchema.ENEMY_USING] = living.isUsingItem() ? 1.0F : 0.0F;
+
+                writeCapabilities(living, out, at);
             }
         }
+    }
+
+    /**
+     * What the body in a slot can do: how much of it there is, how hard it hits, how fast it moves, how much knockback it
+     * shrugs off, and whether it explodes, shoots or flies.
+     *
+     * <p>This is what tells a creeper from a zombie and a warden from either, which nothing in the layout did before: the
+     * kind says "monster" for all three and the health is a fraction, so all three read the same at full health with empty
+     * hands. Every number is the mob's own, from its attributes and its class, so a mob the run never met still describes
+     * itself and a network has capabilities to condition on rather than two hundred opponents to memorise.
+     *
+     * <p>The scale is deliberately absolute. A fraction of health says how nearly dead something is; hearts say whether it
+     * can be killed before it kills you, and that is the question the tactics turn on.
+     */
+    private static void writeCapabilities(LivingEntity living, float[] out, int at) {
+
+        out[at + ObservationSchema.ENEMY_MAX_HEALTH] = living.getMaxHealth() / ObservationSchema.HEALTH_SCALE;
+        out[at + ObservationSchema.ENEMY_HEALTH_LEFT] = living.getHealth() / ObservationSchema.HEALTH_SCALE;
+        out[at + ObservationSchema.ENEMY_DAMAGE] = attribute(living, Attributes.ATTACK_DAMAGE) / ObservationSchema.DAMAGE_SCALE;
+        out[at + ObservationSchema.ENEMY_SPEED] = attribute(living, Attributes.MOVEMENT_SPEED) / ObservationSchema.SPEED_SCALE;
+        out[at + ObservationSchema.ENEMY_KNOCKBACK_RESISTANCE] = attribute(living, Attributes.KNOCKBACK_RESISTANCE);
+
+        if (living instanceof Creeper creeper) {
+
+            out[at + ObservationSchema.ENEMY_EXPLODES] = 1.0F;
+            out[at + ObservationSchema.ENEMY_FUSE] = creeper.getSwelling(1.0F);
+        }
+
+        out[at + ObservationSchema.ENEMY_SHOOTS] = shoots(living) ? 1.0F : 0.0F;
+        out[at + ObservationSchema.ENEMY_FLIES] = flies(living) ? 1.0F : 0.0F;
+    }
+
+    /** An attribute's value, or zero where the mob has no such attribute at all, which asking for it outright would throw on. */
+    private static float attribute(LivingEntity living, Holder<Attribute> attribute) {
+
+        return living.getAttributes().hasAttribute(attribute) ? (float) living.getAttributeValue(attribute) : 0.0F;
+    }
+
+    /**
+     * Whether it attacks from range. {@link RangedAttackMob} covers everything that draws or throws; the rest are named
+     * because they shoot through goals of their own rather than through that interface.
+     */
+    private static boolean shoots(LivingEntity living) {
+
+        return living instanceof RangedAttackMob || living instanceof Ghast || living instanceof Blaze
+                || living instanceof Shulker || living instanceof Breeze || living instanceof WitherBoss;
+    }
+
+    /** Whether it is in the air by nature, which decides whether a sword can reach it at all. */
+    private static boolean flies(LivingEntity living) {
+
+        return living instanceof FlyingMob || living instanceof Bee || living instanceof Vex
+                || living instanceof Allay || living instanceof Bat || living instanceof Parrot;
     }
 
     /**

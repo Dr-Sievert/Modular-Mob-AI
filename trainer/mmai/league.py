@@ -240,12 +240,20 @@ def win_chance(wins: float, fights: float, guess: float, guess_weight: float) ->
     return (wins + guess_weight * guess) / (fights + guess_weight)
 
 
-def shares(chances: dict[str, float], floor: float, caps: dict[str, float] | None = None) -> dict[str, float]:
+def shares(chances: dict[str, float], floor: float, caps: dict[str, float] | None = None,
+           frontier: float = 0.0, probe: float = 1.0) -> dict[str, float]:
     """Each opponent's share of a group's fights, adding up to one.
 
     Weighed by chance times its complement, which is largest for an even fight and nothing for a certain one, and a
-    floor spread evenly so every opponent keeps coming round however the fights against it go. Caps, where the workers
-    named any, hold an opponent down to at most its own share of the fights.
+    floor so every opponent keeps coming round however the fights against it go. Caps, where the workers named any, hold
+    an opponent down to at most its own share of the fights.
+
+    The floor is where a run's fights quietly go. Spread evenly it is the same share for an even fight and for one the
+    agent has never once won, and with a hundred opponents on the roster and sixteen of them hopeless that was **nine per
+    cent of a run's fights spent losing every time**: a fight lost every time carries almost nothing to learn from, since
+    there is no version of it the agent got further in. So an opponent below `frontier` chance keeps only `probe` of the
+    floor — enough to be tried again as the agent gets better, since one that was hopeless in the first thousand
+    iterations may not be in the ten thousandth — and what it gives up goes to the fights that are close.
     """
 
     if not chances:
@@ -258,7 +266,14 @@ def shares(chances: dict[str, float], floor: float, caps: dict[str, float] | Non
     if total <= 0.0:
         return capped({name: even for name in chances}, caps or {})
 
-    return capped({name: (1.0 - floor) * weight / total + floor * even for name, weight in weights.items()}, caps or {})
+    # The floor, as much of it as each opponent has earned, put back to adding up to one so that holding the hopeless down
+    # hands their share to the rest rather than losing it.
+    held = {name: even * (1.0 if chance >= frontier else probe) for name, chance in chances.items()}
+    standing = sum(held.values())
+    held = {name: share / standing for name, share in held.items()} if standing > 0.0 else held
+
+    return capped({name: (1.0 - floor) * weight / total + floor * held[name]
+                   for name, weight in weights.items()}, caps or {})
 
 
 def capped(group: dict[str, float], caps: dict[str, float]) -> dict[str, float]:
@@ -658,7 +673,11 @@ class League:
         # training against than a normal one.
         caps = {name: self.caps.get(base(name), 1.0) for name in roster}
 
-        fixed = shares({name: chances[name] for name in roster}, self.config.league_floor, caps)
+        fixed = shares({name: chances[name] for name in roster}, self.config.league_floor, caps,
+                       self.config.league_frontier, self.config.league_probe)
+
+        # The pool of its own past selves is left alone: every one of those is a fight worth having by construction, since it
+        # was the agent not long ago.
         frozen = shares({name: chances[name] for name in checkpoints}, self.config.league_floor)
 
         self.chances = chances

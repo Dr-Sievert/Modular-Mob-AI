@@ -42,7 +42,7 @@ those rules from the echo:
 There is no aim assist. The agent turns with its yaw and pitch controls, and a swing hits whatever is under its
 crosshair within reach, as for a player.
 
-## What the agent sees: 634 floats
+## What the agent sees: 744 floats
 
 This is the **humanoid**'s observation, the player-shaped body every trained network drives. A layout belongs to a body
 rather than to the game: a body with no hands has no hotbar to see, no slot to choose and no use buttons to press, and no
@@ -55,12 +55,23 @@ seven controls and no categorical head at all. See [species.md](species.md) for 
 | self | 20 | health, velocity (forward/up/right), on ground, in water, attack strength, use cooldown, using (main/off hand), sprinting, crouching, fall distance, body offset (sin/cos), pitch, aim (sin/cos), hurt time, enemies in range |
 | hotbar | 9 | what each hotbar slot holds |
 | echo | 20 | what the body actually did last tick: moved (forward/strafe), jumped, sprinted, sneaked, turned (yaw/pitch), attacked, hit, attack strength and damage, crit, sweep, sprint knockback, used (main/off hand/on a block), selected slot, swapped weapon, **how far the use has charged** |
-| enemies | 10 × 18 | every hostile within 32 blocks, and anything shot at the agent, in ten stable slots, in its own frame: present, position (forward/up/right), distance, velocity, health, facing (sin/cos), pitch, **kind**, main and off hand item, swinging, using, sprinting |
+| enemies | 10 × 29 | every hostile within 32 blocks, and anything shot at the agent, in ten stable slots, in its own frame. Where it is and what it is doing: present, position (forward/up/right), distance, velocity, health as a fraction, facing (sin/cos), pitch, **kind**, main and off hand item, swinging, using, sprinting. **What it is**: max health and health left in hearts, attack damage, speed, width, height, knockback resistance, a creeper's fuse, and whether it explodes, shoots or flies |
 | terrain | 9 × 5 × 9 = 405 | the blocks around it, from 2 below the feet to 2 above: 0 empty, 0.5 fluid, 1 solid by collision, 1.5 hazard. A hazard hurts or kills a body in it or on it: lava, fire, magma, cactus, lit campfires, wither roses, pointed dripstone, powder snow, berry bushes, cobwebs. An empty cell in the bottom layer reads as a hazard when the fall below it would be more than 8 blocks, or would end in a hazard |
 
 Animals and villagers never take an enemy slot. The enemy's `kind` says what sort of thing it is: another agent, a
 player, a monster, something else alive, or, below zero, something shot at the agent. The layout is fixed: every trained
-network depends on it, and the schema id refuses a mismatch. The humanoid's field constants are in
+network depends on it, and the schema id refuses a mismatch.
+
+**What the opponent is, not just where.** `kind` has five values and every hostile mob in the game is the one value
+"monster", so for a long time a creeper, a zombie, a ravager and a warden filled a slot identically: same kind, health as
+a *fraction* so all of them read 1 when whole, and empty hands for all four. The league showed the bill — every ordinary
+mob beaten 75 to 98%, and 0% against the warden and against two creepers — because the network was being asked to tell two
+hundred opponents apart by how they moved, and to learn how hard one hits by being hit, which against a creeper is a fight
+too late. So a slot now carries the capabilities the tactics turn on: **hearts rather than a fraction** (what it has and
+what it has when whole), attack damage, speed, width and height, knockback resistance (a warden barely moves, which decides
+whether it can be pushed into anything), a creeper's **fuse**, and three flags for explodes, shoots and flies. Capabilities
+rather than a species number, so a mob the run never met still describes itself, and one policy conditions on what it faces
+instead of memorising a roster. Written by `AgentObservation#writeCapabilities`. The humanoid's field constants are in
 `brain/schema/ObservationSchema.java`, its controls in `ActionSchema.java`, its encoder in `AgentObservation.java`, and the
 three add up to `Humanoid.java`, the descriptor the rest of the game reads.
 
@@ -114,8 +125,8 @@ The continuous controls add a learned spread while training (`logStd`, per contr
 
 ## The network
 
-`634 -> 256 -> GRU 128 -> 128 -> 19`: an encoder, a recurrent layer that carries 128 numbers of memory from tick to tick
-for the whole fight (blank at the start of each fight), and one head per kind of control. That's 331,019 parameters.
+`744 -> 256 -> GRU 128 -> 128 -> 19`: an encoder, a recurrent layer that carries 128 numbers of memory from tick to tick
+for the whole fight (blank at the start of each fight), and one head per kind of control. That's 359,399 parameters.
 Training runs the GRU through chunks of 32 ticks. The widths are trainer options (`--h1 --hidden --h3`); the game reads
 them from the weight file, so a wider network needs no Java change. `scripts\parity.ps1` checks that the Java forward
 pass matches PyTorch's to within about 1e-6.
