@@ -228,6 +228,17 @@ are deliberate.
 
 ## The league's curriculum
 
+- **The loadout and the opponent have to be drawn together.** Drawn independently, a bow was handed out against a creeper it
+  should kite exactly as often as against a ghast it cannot reach, so the gradient reaching the drawing of a bow was an
+  average over the matchups where a bow is the answer and the matchups where it is hopeless: measured over a league run's
+  fights, the ranged loadouts won about 40% and the melee ones far more. The unit of matchmaking is now the pairing, and on 150
+  fights drawn from a table where a sword cannot touch a ghast, the sword's ghast fights fell from the 17 the independent draw
+  would have spent on them to 4 while the bow's rose to 30. What made it cheap is that a pairing's chance is never asked to
+  stand on its own: the table is 490 pairings and a run's faded record is a couple of thousand fights, so the estimate is the
+  pairing's own record over a prior built from the opponent's chance and the loadout's own record, which is ten times denser.
+- **Pairing costs nothing in coverage.** The floor is spread over the pairings rather than the opponents, which is the same
+  share per pairing as before: an opponent's even floor was already being split between the ten loadouts by the even loadout
+  draw.
 - **A bigger fight site costs throughput and disk, not memory.** Going from a radius of 2 (80 blocks across) to 3 (112),
   measured on 320 library sites and one worker fighting 300 league fights off them: 0.84 MB a site on disk becomes 1.38 MB,
   so 4,096 sites go from 3.1 GB to about 5.5 GB; 128 sites take 208 s to build rather than 272 s; the worker still runs in a

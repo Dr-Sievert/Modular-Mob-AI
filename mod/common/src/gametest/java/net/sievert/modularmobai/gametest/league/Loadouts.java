@@ -5,6 +5,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
+import org.jetbrains.annotations.Nullable;
+
 import net.minecraft.world.item.AxeItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -16,6 +18,11 @@ import net.sievert.modularmobai.arena.Loadout;
 /**
  * What the agent carries into a league fight, and what any agent it fights carries: one of these, drawn afresh every
  * fight, so the network learns each weapon rather than one.
+ *
+ * <p>In a training run the agent's own is not drawn here at all. It comes with the opponent, as one pairing of the two, so
+ * that a bow is handed out against what a bow can learn from; {@link Pairings} says why, and the trainer is told which
+ * loadouts a run fields through roster.csv. Everywhere else — an evaluation fight, a run with no trainer, whatever the
+ * agent's opponent carries — the draw is even over all of them, as it always was.
  *
  * <pre>
  *   -Dmodular_mob_ai.league.loadouts=NAME,NAME   only these, by name; every one of them unless given
@@ -34,6 +41,12 @@ public final class Loadouts {
     private Loadouts() {}
 
     private static final String PROPERTY = "modular_mob_ai.league.loadouts";
+
+    /**
+     * What a loadout is called in roster.csv, where the workers tell the trainer which ones they field so that it can weigh a
+     * pairing of a loadout and an opponent rather than an opponent alone; see {@link Pairings} and {@link League#writeRoster}.
+     */
+    public static final String KIND = "loadout";
 
     public static final Loadout STONE_SWORD = Loadout.of("stone_sword", ItemStack.EMPTY, new ItemStack(Items.STONE_SWORD));
 
@@ -90,6 +103,25 @@ public final class Loadouts {
         }
 
         return enabled;
+    }
+
+    /**
+     * The loadout of that name among the ones this process draws from, or null for anything else: a name from a build with
+     * more loadouts than this one, or one a run was told to leave out. A pairing naming it is dropped rather than refused,
+     * since the trainer only hears what a run fields on its next read of roster.csv.
+     */
+    @Nullable
+    public static Loadout named(String name) {
+
+        for (Loadout loadout : enabled()) {
+
+            if (loadout.name().equals(name)) {
+
+                return loadout;
+            }
+        }
+
+        return null;
     }
 
     /**

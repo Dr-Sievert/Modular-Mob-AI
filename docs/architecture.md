@@ -310,10 +310,15 @@ different opponent every time, with a different loadout:
   hurts a blaze or a snow golem nor teleports an enderman, and no crater stays in a kept world. A creeper that blows
   itself up without killing the agent is a draw, which pays as a loss.
 
-The trainer decides who the agent meets and rates everyone (`trainer/mmai/league.py`). Training fights are shared by the
-agent's chance against each opponent times its complement, from its recent fights and filled in from the ratings, with
-a quarter spread evenly and a fifth for a pool of 8 checkpoints (the newest 4, and 4 spread over the run). Evaluation
-fights, one in ten, play a checkpoint against an opponent drawn evenly from everyone, and those are rated: Elo, K 16 (32
+The trainer decides who the agent meets and rates everyone (`trainer/mmai/league.py`). What it shares out is a **pairing**
+of one loadout with one opponent, not an opponent to be handed a loadout afterwards: drawn apart, a bow went to a creeper it
+should kite as often as to a ghast it cannot reach, and what a run learned about drawing a bow was averaged over both.
+Training fights are shared by the agent's chance in each pairing times its complement, from its recent fights in that
+pairing and filled in from the loadout's own record, the opponent's and the ratings, with a quarter spread evenly and a
+fifth for a pool of 8 checkpoints (the newest 4, and 4 spread over the run). A cap is the opponent's and holds every loadout
+against it down between them. Evaluation fights, one in ten, play a checkpoint against an opponent drawn evenly from
+everyone with a loadout drawn evenly too — pairing them would move the scale every rating is measured on — and those are
+rated: Elo, K 16 (32
 for a player's first 30 fights), the scripted fighter held at 1500. Those against anything that holds still — the mobs,
 the scripted fighter, a published network — are also the checkpoint's evaluation, so best weights and the end of the run
 work as on the terrain suite, on 1,000 fights each. `scripts\league.ps1 -Run <run>` prints the tier list and the tables,
@@ -321,9 +326,10 @@ and the viewer draws them: `scripts\viewer.ps1 -League`, see [viewer.md](viewer.
 
 | File (`runs/<run>/league/`) | Written by | Holds |
 | --- | --- | --- |
-| `roster.csv` | each worker as it starts | `opponent,kind,cap`: the mobs, the scripted fighter and the published networks it fields, and the largest share of the training fights each may take (1 for no cap). `kind` is `mob`, `squad`, `scripted` or `model` |
+| `roster.csv` | each worker as it starts | `opponent,kind,cap`: the mobs, the scripted fighter and the published networks it fields, and the largest share of the training fights each may take (1 for no cap). `kind` is `mob`, `squad`, `scripted` or `model`, and `loadout` for the rows that are not opponents at all but the loadouts the worker arms the agent with, which the trainer needs to weigh a pairing |
 | `results/wNN.csv` | each worker, a line a fight | `iteration,kind,opponent,loadout,opponent_loadout,outcome,ticks,cause,site,finish,weapon,swaps,uses,shots,replay`; kind `train` or `eval`, outcome `win`, `loss`, `timeout` or `draw`, cause what the agent died of when it died, site what was on the ground, finish what finished the other side (`agent`, `side`, a damage name like `lava`, or `-`), then what the agent did with its hands — the item it held longest, ticks that changed the kind of item held, uses begun, arrows and bolts loosed — and the file its replay is in, or `-`. **The columns grow to the right and never move**: a run appended to across builds has short older lines, and both the trainer and the viewer read one as saying nothing about what it leaves out |
-| `matchmaking.csv` | the trainer, every iteration | `opponent,share,chance,rating,fights`: each opponent's share of the training fights, which the workers draw from |
+| `pairs.csv` | the trainer, every iteration | `loadout,opponent,share,chance,fights,wins`: each pairing of a loadout and an opponent, the share of the training fights it gets, the agent's chance in it, and the faded training record behind that chance. **This is what a worker draws a training fight from**; largest share first |
+| `matchmaking.csv` | the trainer, every iteration | `opponent,share,chance,rating,fights`: the same shares added up per opponent, which is what the tables and the tier list read, what says which checkpoints are in the pool, and what a worker falls back to when there is no pair table |
 | `ratings.csv` | the trainer | every player's rating and rated record |
 | `opponents.csv`, `loadouts.csv` | the trainer | the agent's last 200 evaluation and training fights against each opponent and with each loadout |
 | `ground.csv` | the trainer | every fight of the run on each kind of ground, and what finished the other side: the agent, the ground, its own side |

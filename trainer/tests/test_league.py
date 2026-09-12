@@ -12,7 +12,8 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from mmai.league import League, Ratings, base, capped, checkpoint_name, expected, pool, shares, win_chance
+from mmai.league import (League, Ratings, base, capped, checkpoint_name, expected, pair_guess, pool, shares,
+                         win_chance)
 from mmai.ppo import Config
 from mmai.run import RunDirectory
 
@@ -179,6 +180,54 @@ class MatchmakingTest(unittest.TestCase):
     def test_the_chance_is_the_record_filled_in_by_the_guess(self):
         self.assertAlmostEqual(win_chance(0.0, 0.0, 0.7, 10.0), 0.7)
         self.assertAlmostEqual(win_chance(90.0, 100.0, 0.2, 10.0), (90.0 + 2.0) / 110.0)
+
+    def test_a_pairing_is_weighed_the_way_an_opponent_is(self):
+        """The keys being pairs changes nothing about the rule: the even one gets the most and they add up to one."""
+
+        chances = {("bow", "creeper"): 0.5, ("bow", "ghast"): 0.02, ("sword", "creeper"): 0.95, ("sword", "ghast"): 0.5}
+        result = shares(chances, floor=0.25)
+
+        self.assertAlmostEqual(sum(result.values()), 1.0)
+        self.assertEqual(max(result, key=result.get), ("bow", "creeper"))
+        self.assertGreater(result[("sword", "ghast")], result[("sword", "creeper")])
+        self.assertGreater(result[("bow", "ghast")], 0.0)
+
+    def test_a_cap_is_the_opponents_and_holds_every_loadout_against_it_between_them(self):
+        """Two thousandths of the fights against the warden, not two thousandths with each of three loadouts."""
+
+        pairs = {(loadout, opponent): 0.5 for loadout in ("sword", "bow", "axe") for opponent in ("warden", "zombie")}
+        groups = {pair: pair[1] for pair in pairs}
+        result = shares(pairs, floor=0.25, caps={"warden": 0.002}, groups=groups)
+
+        warden = sum(share for pair, share in result.items() if pair[1] == "warden")
+
+        self.assertAlmostEqual(warden, 0.002)
+        self.assertAlmostEqual(sum(result.values()), 1.0)
+
+        # What it gave up went to the pairings with the zombie, and the three of those are still even with each other.
+        for loadout in ("bow", "axe"):
+            self.assertAlmostEqual(result[(loadout, "zombie")], result[("sword", "zombie")])
+            self.assertAlmostEqual(result[(loadout, "warden")], result[("sword", "warden")])
+
+    def test_a_group_cap_keeps_the_balance_inside_the_group(self):
+        result = capped({("bow", "warden"): 0.3, ("sword", "warden"): 0.1, ("sword", "zombie"): 0.6},
+                        {"warden": 0.04}, {("bow", "warden"): "warden", ("sword", "warden"): "warden",
+                                           ("sword", "zombie"): "zombie"})
+
+        self.assertAlmostEqual(result[("bow", "warden")], 0.03)
+        self.assertAlmostEqual(result[("sword", "warden")], 0.01)
+        self.assertAlmostEqual(sum(result.values()), 1.0)
+
+    def test_the_guess_for_a_pairing_is_the_opponent_moved_by_how_the_loadout_does(self):
+        # A loadout that does what the average loadout does says nothing about the opponent, so the guess is the opponent's.
+        self.assertAlmostEqual(pair_guess(0.4, 0.55, 0.55), 0.4)
+
+        # One that wins less often than the average moves it down, and one that wins more moves it up, and never past either
+        # end: a loadout that has won everything so far still does not beat the warden.
+        self.assertLess(pair_guess(0.4, 0.3, 0.55), 0.4)
+        self.assertGreater(pair_guess(0.4, 0.8, 0.55), 0.4)
+        self.assertLess(pair_guess(0.02, 1.0, 0.5), 1.0)
+        self.assertGreater(pair_guess(0.98, 0.0, 0.5), 0.0)
 
     def test_the_pool_is_the_newest_and_the_rest_spread_out(self):
         checkpoints = list(range(0, 500, 25))
@@ -526,6 +575,105 @@ class LeagueTest(unittest.TestCase):
         self.assertEqual(league.rated, 1)
         self.assertEqual(ground["lava"], [1, 1, 0, 1, 0])
         self.assertEqual(league.training["creeper"], [0.0, 1.0])
+
+    def armed(self, *loadouts: str) -> None:
+        """A roster as a worker that says which loadouts it fields writes one, which is what makes the fights pairings."""
+
+        rows = "".join(f"{name},loadout,1.00000\n" for name in loadouts)
+        (self.run.path / "league" / "roster.csv").write_text(
+            "opponent,kind,cap\nzombie,mob,1.00000\ncreeper,mob,1.00000\nghast,mob,1.00000\nscripted,scripted,1.00000\n" + rows,
+            encoding="utf-8")
+
+    def test_the_pairings_are_written_and_add_up_to_the_opponents_shares(self):
+        self.armed("sword", "bow")
+
+        league = League(self.run, self.config)
+        league.update(50)
+
+        pairs = {(row[0], row[1]): float(row[2]) for row in self.read("pairs.csv")}
+        opponents = {row[0]: float(row[1]) for row in self.read("matchmaking.csv")}
+
+        # Every loadout against every opponent and every checkpoint in the pool: two by seven.
+        self.assertEqual(len(pairs), 14)
+        self.assertAlmostEqual(sum(pairs.values()), 1.0, places=4)
+
+        for opponent, share in opponents.items():
+            self.assertAlmostEqual(share, sum(value for pair, value in pairs.items() if pair[1] == opponent), places=5)
+
+        # The self-play share still belongs to the checkpoints, however it is split between the loadouts.
+        checkpoints = sum(share for pair, share in pairs.items() if pair[1].startswith("iteration-"))
+        self.assertAlmostEqual(checkpoints, self.config.league_self_play, places=4)
+
+    def test_a_loadout_that_cannot_win_a_matchup_stops_being_given_it(self):
+        """The whole point of pairing: the bow is hopeless against the ghast and even against the creeper, and the sword is
+        even against both. The bow's ghast fights go to the fights that are close, and the sword's ghast fights stay."""
+
+        self.armed("sword", "bow")
+
+        self.results(0, *[f"50,train,ghast,bow,-,loss,600" for _ in range(40)])
+        self.results(1, *[f"50,train,ghast,sword,-,{'win' if index % 2 else 'loss'},600" for index in range(40)])
+        self.results(2, *[f"50,train,creeper,bow,-,{'win' if index % 2 else 'loss'},300" for index in range(40)])
+        self.results(3, *[f"50,train,creeper,sword,-,{'win' if index % 2 else 'loss'},300" for index in range(40)])
+
+        league = League(self.run, self.config)
+        league.update(50)
+
+        pairs = {(row[0], row[1]): float(row[2]) for row in self.read("pairs.csv")}
+
+        self.assertLess(pairs[("bow", "ghast")], pairs[("sword", "ghast")] / 3.0)
+        self.assertLess(pairs[("bow", "ghast")], pairs[("bow", "creeper")] / 3.0)
+
+        # Still drawn, because a loadout that cannot win a matchup today may be able to in ten thousand iterations.
+        self.assertGreater(pairs[("bow", "ghast")], 0.0)
+
+        # And the opponent has not been written off with it: the sword's fights against the ghast are as close as ever.
+        self.assertGreater(pairs[("sword", "ghast")], pairs[("sword", "zombie")])
+
+    def test_the_pair_records_fade_and_survive_a_resume(self):
+        self.armed("sword", "bow")
+        self.results(0, "50,train,ghast,bow,-,loss,600", "50,train,creeper,sword,-,win,300")
+
+        first = League(self.run, self.config)
+        first.update(50)
+
+        self.assertEqual(first.training_pairs[("bow", "ghast")], [0.0, 1.0])
+        self.assertEqual(first.training_loadouts["sword"], [1.0, 1.0])
+
+        resumed = League(self.run, self.config)
+
+        self.assertEqual(resumed.training_pairs[("sword", "creeper")], [1.0, 1.0])
+        self.assertEqual(resumed.training_loadouts["bow"], [0.0, 1.0])
+
+        resumed.update(51)
+
+        self.assertAlmostEqual(resumed.training_pairs[("bow", "ghast")][1], self.config.league_decay)
+
+    def test_a_run_whose_workers_name_no_loadouts_is_matchmade_as_it_always_was(self):
+        """A build too old to say which loadouts it fields draws the loadout itself, so there is nothing to pair with and no
+        table to leave lying about."""
+
+        league = League(self.run, self.config)
+        league.update(50)
+
+        rows = {row[0]: float(row[1]) for row in self.read("matchmaking.csv")}
+
+        self.assertEqual(league.pair_shares, {})
+        self.assertFalse((self.run.path / "league" / "pairs.csv").is_file())
+        self.assertAlmostEqual(sum(rows.values()), 1.0, places=4)
+
+    def test_a_pair_table_from_loadouts_a_run_no_longer_fields_is_taken_away(self):
+        self.armed("sword", "bow")
+
+        league = League(self.run, self.config)
+        league.update(50)
+        self.assertTrue((self.run.path / "league" / "pairs.csv").is_file())
+
+        (self.run.path / "league" / "roster.csv").write_text(
+            "opponent,kind,cap\nzombie,mob,1.00000\nscripted,scripted,1.00000\n", encoding="utf-8")
+
+        league.update(51)
+
+        self.assertFalse((self.run.path / "league" / "pairs.csv").is_file())
 
     def test_the_tables_hold_every_opponent_and_loadout(self):
         self.results(0, "50,eval,zombie,sword,-,win,200", "50,train,creeper,bow,-,loss,300", "50,eval,iteration-000025,axe,bow,win,500")

@@ -1,10 +1,11 @@
 # The league of a run on the league suite: every player by rating with its tier, how the agent does against each
-# opponent, and with each loadout. Only reads the files the trainer keeps in runs\<run>\league, so it can be run at any
-# time, during the run or after it.
+# opponent, with each loadout, and where the training fights go now. Only reads the files the trainer keeps in
+# runs\<run>\league, so it can be run at any time, during the run or after it.
 #
 #   scripts\league.ps1 -Run league              the tier list, the newest checkpoints in it, and the tables
 #   scripts\league.ps1 -Run league -All         every checkpoint that has been rated, not only the newest
-#   scripts\league.ps1 -Test                    the league's unit tests: the Elo arithmetic, matchmaking, the pool
+#   scripts\league.ps1 -Run league -Pairings 40 more of the pairings the fights are drawn as
+#   scripts\league.ps1 -Test                    the league's unit tests: the Elo arithmetic, the pairings, the pool
 #
 # Ratings are Elo, from evaluation fights only: a checkpoint on its most likely action against an opponent drawn evenly
 # from everyone, one point for a win, half for a timeout or a draw. The scripted fighter is held at 1500, so the scale
@@ -18,6 +19,9 @@
 param(
     [string] $Run = 'default',
     [int] $Checkpoints = 8,
+
+    # How many pairings of a loadout and an opponent to show, largest share first; there are hundreds of them.
+    [int] $Pairings = 15,
     [switch] $All,
     [switch] $Test
 )
@@ -66,6 +70,7 @@ function Read-Table([string] $File) {
 $ratings = Read-Table (Join-Path $league 'ratings.csv')
 $opponents = Read-Table (Join-Path $league 'opponents.csv')
 $loadouts = Read-Table (Join-Path $league 'loadouts.csv')
+$pairs = Read-Table (Join-Path $league 'pairs.csv')
 $ground = Read-Table (Join-Path $league 'ground.csv')
 
 # The checkpoint evaluation judged best, which is the one in best.mbw; none until the first has been judged.
@@ -160,6 +165,28 @@ if ($loadouts.Count -gt 0) {
         Write-Host ('{0,-20} {1,6} {2,6} {3,6} {4,9} {5,6}   {6,6} {7,6}' -f $row.loadout, $fights, (Format-Percent $row.eval_wins $fights),
                 (Format-Percent $row.eval_losses $fights), (Format-Percent $row.eval_timeouts $fights), (Format-Percent $row.eval_draws $fights),
                 $trained, (Format-Percent $row.train_wins $trained))
+    }
+}
+
+if ($pairs.Count -gt 0) {
+
+    Write-Host ''
+    Write-Host 'Where the training fights go now, as pairings of a loadout and an opponent, which is what a fight is drawn as:'
+    Write-Host 'the largest shares first. A pairing near an even result gets the most, a floor keeps every one of them coming'
+
+    $shownPairs = @($pairs | Select-Object -First $Pairings)
+    $more = if ($shownPairs.Count -lt $pairs.Count) { ' with the most, -Pairings for more' } else { '' }
+
+    Write-Host ("round, and a cap is the opponent's. {0:N0} pairings in all; showing {1}{2}:" -f $pairs.Count, $shownPairs.Count, $more)
+    Write-Host ('{0,-20} {1,-28} {2,7} {3,7}   {4,7} {5,6}' -f 'loadout', 'opponent', 'share %', 'chance', 'fights', 'won %')
+
+    foreach ($row in $shownPairs) {
+
+        # The record is the faded one the chance leans on, so its fights are not whole numbers.
+        $fought = [double]$row.fights
+
+        Write-Host ('{0,-20} {1,-28} {2,7:N2} {3,7:N2}   {4,7:N0} {5,6}' -f $row.loadout, $row.opponent, (100.0 * [double]$row.share),
+                [double]$row.chance, $fought, (Format-Percent ([int][double]$row.wins) ([int]$fought)))
     }
 }
 
