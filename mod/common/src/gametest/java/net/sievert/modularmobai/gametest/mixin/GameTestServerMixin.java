@@ -11,6 +11,7 @@ import net.sievert.modularmobai.gametest.GameTestBenchmark;
 import net.sievert.modularmobai.gametest.GameTestTuning;
 import net.sievert.modularmobai.gametest.terrain.TerrainLibrary;
 import net.sievert.modularmobai.gametest.terrain.TerrainSites;
+import net.sievert.modularmobai.gametest.util.ServerThreadAffinity;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -35,6 +36,17 @@ public class GameTestServerMixin {
 
     @Unique
     private long modular_mob_ai$ticks;
+
+    // The first tick is where the server thread finds out which processors it is allowed, because a thread can only set its
+    // own affinity: see ServerThreadAffinity. Here rather than earlier on purpose. Starting up is the one part of a worker
+    // that really does want every core, since it compiles and loads on all of them, and by this point that is over and
+    // everything that follows is this thread ticking. Costs a field read a tick once it has settled, and does nothing at
+    // all unless the build asked for a mask.
+    @Inject(method = "tickServer", at = @At("HEAD"))
+    private void modular_mob_ai$pinServerThread(BooleanSupplier hasTimeLeft, CallbackInfo ci) {
+
+        ServerThreadAffinity.pinCallingThread();
+    }
 
     @Inject(method = "tickServer", at = @At("TAIL"))
     private void modular_mob_ai$countAndThrottle(BooleanSupplier hasTimeLeft, CallbackInfo ci) {

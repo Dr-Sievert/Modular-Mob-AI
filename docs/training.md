@@ -418,6 +418,7 @@ and for why the mask must not include a single efficiency core. The build protec
 | `memoryGrace` | 10 | seconds the shortage has to last first, so that a moment's dip from something else on the machine does not cost a round |
 | `pourHazards` | true | whether a fight that asks for ground with something worth knocking an opponent into, and is handed flat ground, gets a pool of lava poured beside it for that fight and the ground put back after; `false` leaves it to what the library happens to hold, which is lava on 2% of fights |
 | `workerCores` | measured | `all` lets the workers run on every core, as they did before the performance cores were measured |
+| `serverThreadCores` | off | `performance` pins each worker's server thread to the performance cores and lets the rest of the process have every core; `one` gives each server thread a performance core of its own. Measured a dead heat and worse respectively, so off; see [findings.md](findings.md) |
 | `workerCpus` | auto | cores each server sees, out of the performance cores it is allowed |
 | `workerStagger` | 1 | seconds between starting workers |
 | `terrainPool`, `terrainUses` | 8, 8 | kept terrain worlds, and how often each is reused |

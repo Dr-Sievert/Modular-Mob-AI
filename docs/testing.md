@@ -138,6 +138,7 @@ mod\gradlew.bat -p mod :fabric:runGametestParallel -Psuite=terrain -Parenas=2000
 | `replayEvery`, `replayRun` | record one fight in N, into `runs\<replayRun>\replays` |
 | `workerHeap` | heap per worker; the build picks 1G on the terrain library and 2G otherwise when this is absent |
 | `workerCores` | `all` lets the workers run on every core; by default they are confined to the performance cores, which doubles a worker's throughput on a chip that has two kinds |
+| `serverThreadCores` | `performance` confines the server thread instead of the whole worker, leaving the rest of the process every core; off by default, because it measured no faster |
 | `terrainSeed` | pins where the fight sites come from, so two rounds fight the same ground; 0, the default, picks somewhere new |
 | `ticksPerSecond` | ceiling on the tick rate; unthrottled by default, since a game-test server never sleeps |
 

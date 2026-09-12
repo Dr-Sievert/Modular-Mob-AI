@@ -46,6 +46,35 @@ are deliberate.
   - **The mask has to be performance cores only.** Leaving the efficiency cores in as well, for the collector and the chunk
     threads, gives the whole gain back: Windows puts the server thread on an efficiency core whenever one is allowed. One
     performance core plus all twelve efficiency ones measured 30.7 us, no better than no mask at all.
+  - **Pinning the server thread alone, and letting the process have every core, measures the same and is not worth taking.**
+    The idea is tempting: the process mask keeps a worker's collector, chunk workers, netty and compiler threads off twelve
+    efficiency cores that sit almost idle while the eight performance ones are pegged, and only the server thread ever
+    needed a fast core. Windows sets affinity per thread, and a Java thread hands out no native handle, so the thread has
+    to pin itself from inside: `SetThreadAffinityMask` on `GetCurrentThread` through JNA, which the game already ships.
+    That works — the pin is real, and the forward pass drops from an unmasked 31.1 us an agent tick to 20 us, exactly what
+    confining the process gives — and it buys nothing. Measured one worker at a time with two training runs live, the arms
+    interleaved, `-Psuite=arena -Parenas=3000 -Pworkers=1`, in arena ticks a second of server thread processor time:
+
+    | | process on the performance cores | server thread pinned, process everywhere |
+    | --- | --- | --- |
+    | the scripted fighter, three pairs | 13,061, 11,194, 10,103 | 11,457, 11,486, 11,285 |
+    | a network driving, four pairs | 9,698, 8,612, 8,772, 9,390 | 10,116, 9,510, 8,617, 9,185 |
+    | the pass, per agent tick, those rounds | 19.4, 22.0, 20.9, 19.1 us | 18.8, 19.5, 21.6, 20.5 us |
+    | no mask at all, for comparison | | 7,707, 8,048 and 31.1 us |
+
+    Which is a dead heat: 2.6% on the rate and 2.5% the other way on the clock, inside the 12% each arm swings by on this
+    machine. So the default is off, `-PserverThreadCores=performance` turns it on, and the reason it wins nothing is the
+    reason the efficiency cores look idle in the first place: a headless worker is one server thread and a handful of
+    threads with almost nothing to do. The cores going spare are not throughput being thrown away, they are work that does
+    not exist. What the pin does buy is steadiness — the process-masked arm swung from 10.1k to 13.1k where the pinned one
+    stayed within 2% — which is worth nothing to a run and something to a measurement.
+    - Untested, and the only case left where it could pay: **many** workers, where every one of them has its collector and
+      chunk threads on the same sixteen logical processors as every server thread. That comparison wants eight workers of
+      each arm on a quiet machine, about twelve gigabytes, and could not be run while two runs were training.
+    - **A performance core of its own per worker is worse, not better.** `-PserverThreadCores=one` gives each server thread
+      one logical processor nothing else of that worker uses, which reads like the ideal and measures at 23.3 and 25.5 us a
+      pass against 20, and 6,057 and 7,375 steady arena ticks a second against about 8,400. A thread pinned to one
+      processor waits behind whatever else Windows puts there, and on this machine that is another run's workers.
   - **Every worker gets the whole mask, never a slice.** A worker wants a performance core for its server thread and bursts
     of the others for collection. Two workers confined to one core between them measured *worse* than no mask at all (14.1k
     arena ticks a second against 22.6k, and the round took 123 s); two sharing four cores ran the pass at 19-21 us; two
