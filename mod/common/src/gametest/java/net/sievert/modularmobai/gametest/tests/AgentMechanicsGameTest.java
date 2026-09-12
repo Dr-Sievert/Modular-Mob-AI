@@ -24,6 +24,8 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.ai.attributes.AttributeInstance;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.projectile.Arrow;
@@ -868,6 +870,169 @@ public class AgentMechanicsGameTest {
 
             return true;
         });
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // The attack cooldown, and what a press costs
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * What a press of attack costs, which is the whole reason the cooldown is worth waiting for: a swing that meets
+     * nothing at all restarts it, and one that meets a block leaves it exactly where it was.
+     *
+     * <p>Both halves are a player's, from Minecraft#startAttack: a miss restarts the ticker, a block starts cracking
+     * instead and never touches it. The pair is pinned here because the difference between them is what decides whether
+     * holding the button down is expensive or free, and a run's recorded fights are read against it. Measured over the
+     * league's replays, about half the agent's presses meet a block and cost nothing, a fifth meet thin air and cost the
+     * cooldown, and an eighth land on the opponent.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 100)
+    public static void aSwingAtAirCostsTheCooldownAndOneAtABlockDoesNot(GameTestHelper helper) {
+
+        // Level, with nothing in front of it: the wall ahead is five and a half blocks off, further than the four and a
+        // half a block is reached at, so a swing from here meets nothing whatever.
+        AgentMob agent = agent(helper, MINER, 0.0F, 0.0F);
+        Loadout.SWORD.equip(agent);
+
+        int air = 20;
+
+        // Then the same sword on dirt at eye level, for fewer presses than the fifteen ticks it takes, so the block is
+        // still standing when the cooldown is read.
+        int block = air + 20;
+        int presses = 10;
+
+        run(helper, tick -> {
+
+            agent.controls().attack = tick == air || tick >= block && tick < block + presses;
+
+            if (tick == air) {
+
+                helper.assertValueEqual(agent.getAttackStrengthScale(0.0F), 1.0F, "attack strength before the swing at air");
+            }
+
+            // The ticker restarts inside the tick and is advanced at the end of it, as vanilla advances a player's after
+            // resolving its attack, so one tick of the sword's twelve and a half is back by the time this reads it.
+            if (tick == air + 1) {
+
+                helper.assertValueEqual(agent.getAttackStrengthScale(0.0F),
+                        1.0F / agent.getCurrentItemAttackStrengthDelay(), "attack strength after a swing at thin air");
+
+                helper.setBlock(AT_EYE_LEVEL, Blocks.DIRT);
+            }
+
+            if (tick == block) {
+
+                helper.assertValueEqual(agent.getAttackStrengthScale(0.0F), 1.0F, "attack strength recovered before the block");
+            }
+
+            if (tick == block + presses) {
+
+                helper.assertFalse(helper.getBlockState(AT_EYE_LEVEL).isAir(), "The dirt broke before the cooldown was read");
+                helper.assertValueEqual(agent.getAttackStrengthScale(0.0F), 1.0F,
+                        "attack strength after " + presses + " swings into a block");
+                return true;
+            }
+
+            return false;
+        });
+    }
+
+    /**
+     * Holding attack down is strictly worse than waiting for the cooldown, which is what makes spamming it a mistake
+     * rather than a trick. Two blows thirteen ticks apart take more health off than fourteen presses in a row do.
+     *
+     * <p>Two of a player's rules make that so, and neither is the agent's. Damage goes with the square of the cooldown,
+     * so a swing a tick after the last carries a fifth of the weapon. And a blow gives a body twenty ticks of hurt
+     * immunity, in the first half of which a follow-up that is not greater than the blow that started it is thrown out
+     * whole, and after which it lands but only for what it exceeds. So the presses in between reach a body still
+     * flinching from the first and are worth nothing.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 140)
+    public static void holdingAttackTakesLessHealthThanWaitingForTheCooldown(GameTestHelper helper) {
+
+        AgentMob agent = agent(helper, new BlockPos(4, 2, 2), 0.0F, 0.0F);
+        Loadout.SWORD.equip(agent);
+
+        // Far enough apart that a sweep at one never reaches the other, and both held where they stand: a blow throws a
+        // body two and a half blocks back, which would take the second one out of reach and make this a test of walking.
+        Mob waitedFor = heldStill(helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new BlockPos(4, 2, 4)));
+        Mob spammedAt = heldStill(helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new BlockPos(2, 2, 2)));
+
+        // Two blows thirteen ticks apart: twelve ticks is the sword's cooldown, and the second lands after the first
+        // one's immunity has run down enough to take a fresh blow.
+        int first = 20;
+        int second = first + 13;
+        int turn = second + 14;
+
+        // Then the same fourteen ticks, every one of them pressed, once the cooldown is full again.
+        int held = turn + 13;
+        int last = held + 14;
+
+        // The health each has left, and how many separate blows took any off it, counted rather than assumed: a blow
+        // thrown out inside the immunity window takes nothing, and a blow that missed is worth knowing about.
+        float[] left = {waitedFor.getHealth(), spammedAt.getHealth()};
+        int[] landed = new int[2];
+
+        run(helper, tick -> {
+
+            agent.controls().attack = tick == first || tick == second || tick >= held && tick < last;
+
+            for (int side = 0; side < 2; side++) {
+
+                Mob mob = side == 0 ? waitedFor : spammedAt;
+
+                if (mob.getHealth() < left[side]) {
+
+                    landed[side]++;
+                    left[side] = mob.getHealth();
+                }
+            }
+
+            if (tick == turn) {
+
+                // Round to the west, where the other one stands.
+                agent.setYRot(90.0F);
+                agent.setYHeadRot(90.0F);
+            }
+
+            if (tick == held) {
+
+                helper.assertValueEqual(agent.getAttackStrengthScale(0.0F), 1.0F, "attack strength before the held presses");
+            }
+
+            if (tick == last) {
+
+                float waitedLost = waitedFor.getMaxHealth() - left[0];
+                float spammedLost = spammedAt.getMaxHealth() - left[1];
+
+                String what = "holding it down took " + spammedLost + " health in " + landed[1] + " blows out of "
+                        + (last - held) + " presses, where waiting took " + waitedLost + " in " + landed[0] + " out of 2";
+
+                helper.assertValueEqual(landed[0], 2, "blows landed by the two that waited for the cooldown");
+                helper.assertTrue(spammedLost > 0.0F, "The held presses landed nothing at all: " + what);
+                helper.assertTrue(spammedLost < 0.75F * waitedLost,
+                        "Holding attack down was not three quarters of waiting or less: " + what);
+                return true;
+            }
+
+            return false;
+        });
+    }
+
+    /**
+     * A body that no blow can shift, by the attribute a warden has most of. Nothing else about being hit changes: the
+     * damage, the hurt immunity and the flinch are all still a player's.
+     */
+    private static Mob heldStill(Mob mob) {
+
+        AttributeInstance resistance = mob.getAttribute(Attributes.KNOCKBACK_RESISTANCE);
+
+        if (resistance != null) {
+
+            resistance.setBaseValue(1.0D);
+        }
+
+        return mob;
     }
 
     // ---------------------------------------------------------------------------------------------------------------
