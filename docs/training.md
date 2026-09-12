@@ -61,10 +61,19 @@ Generating cost two to three cores and a third more memory per worker, and memor
 - Run it once per machine, and again whenever you want fresh ground.
 - `-Radius` is how much ground one site holds, in chunks either side of its centre: 2 (the default) is 80 blocks across,
   3 is 112. It is the library's property, and the only way a fight gets more ground than 80 blocks; what a matchup can ask
-  for on its own is how far apart it starts and how much air it wants overhead. Each step up costs roughly the ratio of the
-  chunks a site holds, 49 against 25 from 2 to 3: about twice the disk, twice the build time and twice a worker's live
-  heap, so raise `-Heap` or drop `-Slots` with it. A run may use a library built for bigger sites; one built for smaller is
-  refused, with the `-Radius` to rebuild at.
+  for on its own is how far apart it starts and how much air it wants overhead. A run may use a library built for bigger
+  sites and fight on the inner part of each one; one built for smaller is refused, with the `-Radius` to rebuild at.
+  Measured from 2 to 3, on 320 sites and one worker fighting 300 league fights off them:
+
+  | | radius 2 (80 blocks) | radius 3 (112 blocks) |
+  | --- | --- | --- |
+  | disk a site | 0.84 MB | 1.38 MB (4,096 sites: 3.1 GB to about 5.5 GB) |
+  | build, 128 sites on one builder | 208 s | 272 s |
+  | worker heap it runs in | 1 GB | 1 GB, unchanged |
+  | 300 fights, one worker | 40 s | 50 s |
+
+  So the price of the bigger site is disk and about a quarter of the throughput, not memory: twice the chunks to tick, in
+  the same heap.
 ## Scripts
 
 ### `scripts\train.ps1`: one run
@@ -87,7 +96,7 @@ scripts\train.ps1 -Run league -Suite league -Seed vs-copy     the league, from v
 | `-Workers` | 0 = auto | worker processes (game servers) |
 | `-Slots` | 25 | fights at once per worker |
 | `-Heap` | 1536M | heap per worker; it needs about 0.95 GB live, so 1 GB thrashes |
-| `-SiteRadius` | 2 | chunks either side of a fight site's centre: 2 is 80 blocks across, 3 is 112. No more than the terrain library was built for, and each step up roughly doubles a worker's live heap |
+| `-SiteRadius` | 2 | chunks either side of a fight site's centre: 2 is 80 blocks across, 3 is 112. No more than the terrain library was built for; 3 costs about a quarter of the throughput and no extra heap |
 | `-RolloutSteps` | 16384 (65536 with `-FromCopy`) | steps of experience per update (an iteration) |
 | `-Device` | cuda | `cpu` keeps the GPU out of it |
 | `-Suite` | terrain | `arena` is a closed 9-block box, for quick checks; `league` is every mob, the scripted fighter and the run's own checkpoints |

@@ -15,12 +15,18 @@
 # fights before any site is seen twice.
 #
 # -Radius is how much ground one site holds, in chunks either side of its centre: two, the default, is the 80 blocks across
-# every run so far has fought on, and three is 112. It is a property of the library, not of a run: a worker refuses a
-# library built for another radius rather than fighting on ground that is not there, so changing it means building the
-# library again and giving every worker a larger -Heap or fewer -Slots. The cost is nearly the ratio of the chunks a site
-# holds, 49 against 25 from two to three: about twice the disk, twice the build time, and twice a worker's live heap, since
-# a worker's sites are nearly all of its memory. What a matchup can ask for without any of that is how far apart it starts
-# and how much air it wants overhead, which is what the league's ranged and flying fights use.
+# every run so far has fought on, and three is 112. It is a property of the library rather than of a run: a worker will read
+# a library built for bigger sites and use the inner part of each one, but never one built for smaller, so growing a run's
+# sites means building the library again. Measured from two to three, on 320 sites and then on one worker fighting 300
+# league fights off them:
+#
+#   disk        0.84 MB a site to 1.38 MB, so 4,096 sites go from about 3.1 GB to about 5.5 GB
+#   build       128 sites on one builder, 208 s to 272 s
+#   memory      a worker still runs in a 1 GB heap; nothing had to be given more
+#   throughput  300 fights in 40 s to 50 s, a quarter slower, which is the cost of ticking twice the chunks
+#
+# What a matchup can ask for without any of that is how far apart it starts and how much air it wants overhead, which is
+# what the league's ranged and flying fights use.
 #
 # Vanilla generates most of a chunk one task at a time, so one builder gets through about half a site a second however
 # many cores are free; each builder is a server of its own with a -Heap sized heap. Workers link the library's files

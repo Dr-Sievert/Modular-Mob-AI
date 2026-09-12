@@ -57,6 +57,23 @@ are deliberate.
 
 ## The league's curriculum
 
+- **A bigger fight site costs throughput and disk, not memory.** Going from a radius of 2 (80 blocks across) to 3 (112),
+  measured on 320 library sites and one worker fighting 300 league fights off them: 0.84 MB a site on disk becomes 1.38 MB,
+  so 4,096 sites go from 3.1 GB to about 5.5 GB; 128 sites take 208 s to build rather than 272 s; the worker still runs in a
+  1 GB heap; and 300 fights take 50 s rather than 40 s. Twice the chunks to tick in the same heap, which was the opposite
+  of the guess that the heap would have to double.
+- **Labelling a site by what is on it needs the ground heightmap, not the motion-blocking one.** The first cut read
+  `MOTION_BLOCKING`, which counts leaves, so a jungle canopy was the surface and every gap in it a nine block cliff: every
+  site in two runs came out labelled `drop`. `MOTION_BLOCKING_NO_LEAVES`, the same heightmap the sites are laid out on,
+  still finds a lava or water surface and stops finding treetops.
+- **One steep step is not a cliff.** Over 52 library sites, of 312 neighbouring samples each, a third have no nine block
+  step anywhere and the rest run from two to fifty eight. A threshold of one called everything an edge; eight labels about a
+  third of the library, which spread the fights over all five kinds of ground: measured over 600 fights, 34% water, 30%
+  flat, 18% other hazard, 16% drop, 2% lava.
+- **The overworld surface has very little lava.** Only 2% of fights landed on a site with any, so the edge to knock
+  something off, and cactus and powder snow, are what the agent will actually get to use. Lava-rich ground would have to be
+  put into the library deliberately.
+
 - **The terrain is a weapon, and nothing had ever told the agent so.** Its grid has marked lava, fire, magma, cactus,
   powder snow, berries, cobwebs and drops of more than eight blocks as hazards since the hazard work, above solid, which is
   what keeps it from walking onto them. What it never learned is that the same blocks are somewhere to put an opponent: a

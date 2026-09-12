@@ -46,7 +46,8 @@ param(
 
     # How much ground one fight site holds, in chunks either side of its centre: two is the 80 blocks across every run so
     # far has fought on, three is 112. It has to be no more than the terrain library was built for, scripts\terrain.ps1
-    # -Radius, and each step up roughly doubles what a worker's heap has to hold, so give -Heap a number with it.
+    # -Radius, which is also where what the bigger site costs is measured: about a quarter of the throughput, and no more
+    # heap than a worker already has.
     [ValidateRange(1, 8)] [int] $SiteRadius = 2,
 
     [int] $RolloutSteps = 16384,

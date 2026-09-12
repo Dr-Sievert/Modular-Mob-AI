@@ -73,10 +73,17 @@ public final class SiteHazards {
 
     /**
      * How far apart the columns sampled across a site are. Four blocks is fine enough that a lava lake, a cactus patch or
-     * the lip of a ravine cannot hide between samples, and coarse enough that a whole site is four hundred odd lookups: it
-     * is scanned once per site, and a site hosts a hundred fights.
+     * the lip of a ravine cannot hide between samples, and coarse enough that a site is a few hundred lookups: it is
+     * scanned once per site, and a site hosts a hundred fights.
      */
     private static final int STEP = 4;
+
+    /**
+     * How much of a site is looked at, as a share of its width. The fighters start within a few blocks of the middle and a
+     * minute of fighting does not carry them far, so what is out at the corners is ground neither of them will ever see; a
+     * label taken from the whole site would promise lava that is forty blocks away.
+     */
+    private static final double LOOKED_AT = 0.6D;
 
     /**
      * The fall that makes an edge worth knocking something off: more than eight blocks, which is where the agent's own
@@ -84,30 +91,42 @@ public final class SiteHazards {
      */
     private static final int DROP = 9;
 
+    /**
+     * How many pairs of neighbouring samples have to be a long fall apart before a site counts as having an edge worth
+     * using. One is nothing: ground steps that far somewhere in almost any patch of it.
+     *
+     * <p>Measured over fifty two sites of the terrain library, of 312 neighbouring pairs each: a third of them have no such
+     * pair at all, and the rest run from two to fifty eight. Eight is where a run of edge starts rather than a single ledge,
+     * and it labels about a third of the library, which is room enough for the quarter of the fights that ask for it.
+     */
+    private static final int EDGES = 8;
+
     /** What is on the site around that centre, over a square that many blocks across. */
     static Kind of(ServerLevel level, BlockPos centre, int size) {
 
-        int across = size / STEP;
-        int[] surface = new int[(across + 1) * (across + 1)];
+        int looked = (int) (size * LOOKED_AT);
+        int across = looked / STEP;
+        int side = across + 1;
+        int[] surface = new int[side * side];
 
         boolean lava = false;
         boolean hazard = false;
         boolean water = false;
 
-        for (int row = 0; row <= across; row++) {
+        for (int row = 0; row < side; row++) {
 
-            for (int column = 0; column <= across; column++) {
+            for (int column = 0; column < side; column++) {
 
-                int x = centre.getX() - size / 2 + column * STEP;
-                int z = centre.getZ() - size / 2 + row * STEP;
+                int x = centre.getX() - looked / 2 + column * STEP;
+                int z = centre.getZ() - looked / 2 + row * STEP;
 
-                // The first thing that stops movement, fluids counted, so the top of a lava lake is the surface and not
-                // whatever stone lies under it.
-                int top = level.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z);
+                // The first thing that stops movement, fluids counted but leaves not, which is the same ground the sites
+                // are laid out on. Counting leaves made a jungle canopy the surface, and every gap in it a cliff.
+                int top = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
                 BlockPos at = new BlockPos(x, top - 1, z);
                 BlockState state = level.getBlockState(at);
 
-                surface[row * (across + 1) + column] = top;
+                surface[row * side + column] = top;
 
                 lava |= state.getFluidState().is(FluidTags.LAVA);
                 water |= state.getFluidState().is(FluidTags.WATER);
@@ -120,7 +139,7 @@ public final class SiteHazards {
             return Kind.LAVA;
         }
 
-        if (edged(surface, across + 1)) {
+        if (edges(surface, side) >= EDGES) {
 
             return Kind.DROP;
         }
@@ -129,11 +148,13 @@ public final class SiteHazards {
     }
 
     /**
-     * Whether any two samples next to each other are a long fall apart, which is a cliff or the lip of a ravine. Measured
-     * between neighbours rather than across the whole site, since a site that climbs eighty blocks over eighty is a slope
-     * and nothing to knock anything off.
+     * How many pairs of samples next to each other are a long fall apart, which is what a cliff or the lip of a ravine
+     * looks like. Measured between neighbours rather than across the whole site, since a site that climbs forty blocks over
+     * forty is a slope and nothing to knock anything off.
      */
-    private static boolean edged(int[] surface, int side) {
+    private static int edges(int[] surface, int side) {
+
+        int found = 0;
 
         for (int row = 0; row < side; row++) {
 
@@ -143,17 +164,17 @@ public final class SiteHazards {
 
                 if (column + 1 < side && Math.abs(here - surface[row * side + column + 1]) >= DROP) {
 
-                    return true;
+                    found++;
                 }
 
                 if (row + 1 < side && Math.abs(here - surface[(row + 1) * side + column]) >= DROP) {
 
-                    return true;
+                    found++;
                 }
             }
         }
 
-        return false;
+        return found;
     }
 
     /**
