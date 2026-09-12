@@ -53,6 +53,13 @@ if ($Weights) {
 
     $file = (Resolve-Path $Weights -ErrorAction SilentlyContinue).Path
 
+    # Said here rather than left to Split-Path, which answers a missing file with a page of PowerShell. A run keeps only its
+    # last few weight files, so naming one by hand is a race worth losing politely.
+    if (-not $file) {
+
+        throw "No weights at $Weights. A run keeps only its most recent few, so copy one aside before evaluating it."
+    }
+
     # Named after the folder it came from, so models\vs-copy\best.mbw gives replays in runs\eval-vs-copy-best.
     $Run = Split-Path (Split-Path $file -Parent) -Leaf
 }
