@@ -64,6 +64,13 @@ to copy a hand-written fighter first, then improve the copy with reinforcement l
 4. **Evaluation inside the run.** Every 25th iteration's checkpoint is played by the workers on its most likely action,
    in one fight in ten, until it has had `--eval-fights` fights (500 by default).
    - Verdicts go to `eval.csv`, and the best checkpoint's weights to `best.mbw`.
+   - **Which is best is decided on the opponents two checkpoints both met**, each opponent counting once however often it
+     was drawn, and a new best has to win by a point. A league's roster grows as rungs and squads open, so the plain win
+     rate asks a harder question of a later checkpoint and once kept iteration 1175 as the best for ever; the Elo rating was
+     tried next and is worse, since it wanders by thirty to forty points with the field and picking its maximum picks the
+     luckiest draw. The rating is still written down, and decides nothing. Only checkpoints are excluded from the record
+     that decides this — a fight against a mob, the scripted fighter or a published network is what counts, since those hold
+     still.
    - The run is done when a checkpoint reaches `--eval-target` (0.995), or after `--eval-patience` judged checkpoints in
      a row without a new best (10).
    - The build then starts no more rounds, and the `finished` file says why.

@@ -295,7 +295,7 @@ public final class League {
         // network. Another checkpoint is not, see the class comment.
         if (matchup.evaluation() != null && !matchup.opponent().startsWith(CHECKPOINT)) {
 
-            Evaluation.record(matchup.evaluation(), outcome, ticks);
+            Evaluation.record(matchup.evaluation(), outcome, ticks, matchup.opponent());
         }
 
         boolean byTheGround = DeathCauses.byTheGround(finish);
