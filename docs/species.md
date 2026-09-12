@@ -192,7 +192,7 @@ happen to be the same width. It is stamped into every weight file and every roll
 5. Register the entity in `ModEntities` and both loaders.
 6. `scripts\parity.ps1` — it checks your body without being told to. It must say `parity ok`.
 7. `scripts\test.ps1` and `scripts\test.ps1 -Mechanics` — the humanoid must be untouched: 20 of 20 arena fights at
-   **exactly 54 ticks**, 31 of 31 mechanics. The 54 is deterministic, so any change in it is a change in behaviour.
+   **exactly 54 ticks**, 37 of 37 mechanics. The 54 is deterministic, so any change in it is a change in behaviour.
 8. A game test that spawns your body and drives it. `PlayGameTest.aSecondBodyIsDrivenAndARefusedBrainIsNamed` is the
    pattern: spawn it, check the refusal is named both ways, then drive it with a brain of its own and watch it move. An
    agent out in the world stands still with nobody in view whatever its brain says, so give it something to see.

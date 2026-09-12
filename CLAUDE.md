@@ -42,17 +42,18 @@ Read these before changing anything:
   must be deleted by hand, `robocopy /XJ` or `rmdir /s` do not follow junctions.
 - Mixins that change vanilla behaviour are deliberate and documented at the top of each mixin. Several fix real bugs;
   see findings.md before removing one.
-- **The agent's hands are a player's in all but two places, and both are deliberate.** A drawn weapon runs to full once
-  started, and a block keeps the crack it has while the aim stays on it. A network chooses each button afresh every tick,
-  so without these two a bow fires weak arrows, a crossbow fires none at all, and no block is ever broken. Don't "restore
-  parity" here; see [docs/architecture.md](docs/architecture.md) and findings.md.
+- **The agent's hands are a player's in all but three places, and all three are deliberate.** A drawn weapon runs to full
+  once started, the hand keeps the slot it started a draw in until the draw is done, and a block keeps the crack it has
+  while the aim stays on it. A network chooses each button **and its slot** afresh every tick, so without these three a bow
+  fires weak arrows, a crossbow fires none at all, a bow with a sword beside it cancels its own draw, and no block is ever
+  broken. Don't "restore parity" here; see [docs/architecture.md](docs/architecture.md) and findings.md.
 
 ## Everyday commands (Windows PowerShell, from the repository root)
 
 ```
 scripts\setup.ps1                      once per machine: Java 21, Python + PyTorch, compile, parity check
 scripts\test.ps1                       20 arena fights with the scripted fighter: expect 20/20, 54 ticks each
-scripts\test.ps1 -Mechanics            the item and block rules against a player's numbers: expect 34 passed
+scripts\test.ps1 -Mechanics            the item and block rules against a player's numbers: expect 37 passed
 scripts\test.ps1 -Play                 the agent in a real game (jar networks, /mmai, sides, Infinity loadouts): expect 17 passed
 scripts\play.ps1                       the dev client, agents on the best network in models\; -Model, -Weights, -Loader
 scripts\terrain.ps1                    once per machine before any training: the terrain library a run fights on

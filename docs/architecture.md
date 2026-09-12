@@ -99,18 +99,28 @@ whatever it carries, since vanilla spends nothing from it and the real-game load
 (`arena/Loadouts`). The beast gets the clock as well, for the same reward and the same timed fights, and not the arrows:
 it has no hands, so there is no quiver to be out of.
 
-### The two places the hands are not a player's
+### The three places the hands are not a player's
 
-Both are there for one reason, and it is not a shortcut: a network chooses every button afresh each tick from a
-probability, so a skill that needs the same button held for twenty ticks needs that probability to land twenty times over,
-and it never does. Measured, the network's longest hold was six ticks and not one draw in 2,984 reached twenty. See
+All three are there for one reason, and it is not a shortcut: a network chooses every control afresh each tick from a
+distribution, so a skill that needs the same choice for twenty ticks needs that distribution to land twenty times over, and
+it never does. Measured, the network's longest hold was six ticks and not one draw in 2,984 reached twenty. See
 [findings.md](findings.md#learning) for the numbers and for what it cost.
 
 **A draw runs to full on its own.** Once a bow or a crossbow has started drawing, the button coming up does not stop it,
 and the agent's choice comes back only when the weapon is charged — hold to keep aiming, let go to loose. A press is
 therefore one arrow rather than twenty presses in a row. The draw is still paid for, a fifth of the movement for every tick
-of it and the swing swallowed, and changing slot still gives it up, which is how the teacher trades a shot for a blow.
-Everything else drops the moment its button does: a shield, a bite of food. `AgentMob#drawingToFull`.
+of it and the swing swallowed. Everything else drops the moment its button does: a shield, a bite of food.
+`AgentMob#drawingToFull`.
+
+**The hand keeps the slot it started a draw in.** The button is not the only thing a draw needs twenty ticks of; the slot
+is the other, and changing slot cancels a use outright, with no release and so no arrow. So while a bow or a crossbow is in
+use in the main hand, a slot the brain asks for is refused, and it is granted on the first tick after the use ends — the
+arrow goes, and the sword comes up on the tick behind it. What it is worth is nearly every arrow a mixed loadout ever
+fired: a bow alone, which has no other slot worth slipping to, finished 91% of its draws, while a bow with a sword beside it
+started 2.42 draws a fight and loosed 0.09 arrows. Nothing is queued: the intent buffer is a keyboard, not a list of events,
+so a refused slot is simply the one the brain is still asking for. A loaded crossbow is not held to its slot, since its bolt
+is in the item rather than the hand, and an off-hand draw is not either, since changing slot does not disturb one.
+`AgentMob#drawHoldsTheSlot`.
 
 **A crack waits for the next press.** Breaking a block takes eight ticks of held attack for powder snow, eight for a
 cobweb, fifteen for dirt, and a player's client throws the progress away the instant the button lifts. The agent keeps it

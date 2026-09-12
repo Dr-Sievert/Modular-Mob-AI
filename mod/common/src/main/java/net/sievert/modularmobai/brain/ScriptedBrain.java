@@ -256,8 +256,9 @@ public final class ScriptedBrain implements Brain {
 
     /**
      * A draw already under way is worth finishing even as the target closes, since a full arrow is most of a sword's blow
-     * and nearly in hand. Inside this the draw is dropped for the sword instead: changing slots cancels a draw without
-     * firing, so the arrow is kept rather than thrown away.
+     * and nearly in hand. Inside this the bow is given up for the sword instead, which is now a swap and no longer a
+     * cancel: the body keeps the slot until the draw is charged, so the arrow goes and the sword comes up behind it. See
+     * AgentMob#drawHoldsTheSlot.
      */
     private static final float ABANDON_DRAW_RANGE = 2.6F;
 
@@ -429,7 +430,7 @@ public final class ScriptedBrain implements Brain {
             this.sinceJump = CRIT_JUMP_COOLDOWN;
         }
 
-        /** Nothing in sight: a draw is cancelled by the slot it is held in going away, and there is nothing to flee. */
+        /** Nothing in sight: whatever was drawing runs to full and looses on its own, and there is nothing to flee. */
         private void idle() {
 
             this.draw = this.draw == DRAW_LOADED ? DRAW_LOADED : DRAW_IDLE;
@@ -640,8 +641,8 @@ public final class ScriptedBrain implements Brain {
         a[act + ActionSchema.AIM_PITCH] =
                 Mth.clamp((wantedPitch - pitch) / MobControls.MAX_AIM_PITCH_PER_TICK, -1.0F, 1.0F);
 
-        // Whatever it swings with, held ready. A draw that was under way is cancelled by the slot changing under it,
-        // which is the one way of letting a nocked arrow go without firing it.
+        // Whatever it swings with, held ready. A draw that was under way is not cancelled by asking for another slot: the
+        // body holds the slot until the draw is charged, looses, and swaps then. See AgentMob#drawHoldsTheSlot.
         a[act + ActionSchema.SELECTED_SLOT] = Math.max(0, melee);
 
         if (me.draw == DRAW_DRAWING) {
@@ -1132,11 +1133,12 @@ public final class ScriptedBrain implements Brain {
 
     /**
      * Whether a draw begun now would be full before the target could interrupt it. A draw is twenty ticks of standing at a
-     * fifth of walking pace, and changing slot is the only way out of one, so a draw begun at something that arrives inside
-     * those twenty ticks is a draw thrown away: no arrow, and a fifth of the movement for as long as it lasted. The
-     * distance alone never said that. Over 400 of the teacher's own recorded sword and bow fights, of the draws it gave up
-     * before twenty ticks, 79% were begun between five and seven and a half blocks — the band that every walker in the
-     * league crosses in less than a draw.
+     * fifth of walking pace and there is no way out of one, so a draw begun at something that arrives inside those twenty
+     * ticks is twenty ticks spent shooting at a thing that is already swinging, and before the slot was committed it was
+     * worse still: the draw was given up and there was no arrow at the end of it either. The distance alone never said
+     * that. Over 400 of the teacher's own recorded sword and bow fights, of the draws it gave up before twenty ticks, 79%
+     * were begun between five and seven and a half blocks — the band that every walker in the league crosses in less than
+     * a draw.
      *
      * <p>It costs the opening draw very little. Fights start a median nine blocks apart; a zombie has to be past five and a
      * half and the fastest thing that walks, a vindicator, past seven and a third, so the arrow the teacher opens with is
