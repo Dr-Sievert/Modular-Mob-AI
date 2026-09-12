@@ -10,6 +10,11 @@ the league standings of every run that has one: see [the league page](#the-leagu
   and opens the browser on it. The page lists every run's replays (`runs\<name>\replays\*.json`) and checks for new
   ones every 3 seconds, so fights show up while training records them. Starting it again while it runs only opens the
   browser.
+  - The list is every replay on disk, not only the ones opened: each is listed from the first four kilobytes of its
+    file, and only a replay that is clicked is fetched whole. Twenty four thousand of them list in about a second, and
+    the answer is kept until a replay appears, goes or is written over. `/` searches it — an opponent, a loadout, a
+    biome, a ground, an iteration or a file name — and what each fight was comes from the run's per-fight records; see
+    [../docs/viewer.md](../docs/viewer.md).
   - `-League` opens the league standings instead of a replay, and the *League* button in the header goes there too.
   - `-Run imitate` opens that run's newest replay. `-Port 8800` tries that port first; the default is 8765, then the
     next free one.
@@ -40,7 +45,12 @@ When the viewer is served, the 3D view draws the fighters as their Minecraft mob
 - **Models:** the agent uses the player model with wide arms in its own skin (the mod's `agent.png`) and holds an iron
   sword. There are also the vindicator (arms folded until it fights, then its axe raised), pillager, evoker,
   skeleton (bow), stray, bogged, wither skeleton, zombie, husk, drowned and iron golem. Any other mob is a humanoid in
-  its own texture, or a box when there is no texture.
+  its own texture, or a box when the jar has no texture for it.
+- **Textures by name:** which texture a mob gets is looked up in the jar's own list, `/api/entities`, rather than
+  guessed from its id. Vanilla files a mob's texture by family as often as by name — `spider/cave_spider`,
+  `hoglin/zoglin`, `illager/ravager`, `piglin/zombified_piglin` — and two of them are named nothing like their id at
+  all (`bear/polarbear`, `slime/magmacube`), which is why those mobs used to come out as boxes while the jar had them
+  all along.
 - **Animation:** it comes from the replay. The head follows yaw and pitch, the body lags towards where the mob walks,
   and the legs swing with its speed. Arms swing on `swing` ticks, the mob flashes red on `hurt` ticks, and it falls
   over at 0 health.
@@ -51,6 +61,14 @@ When the viewer is served, the 3D view draws the fighters as their Minecraft mob
   their shape, and fences and walls are posts. A block the viewer knows no shape for is a cube in the texture its name
   suggests. Grass, leaves and water take their biome's colour, one colour for the whole site. Corners hidden by other
   blocks are darkened, as in the game's smooth lighting. `B` switches to every block in its map colour.
+
+**When a texture is missing.** The page asks the server what the jar has — `/api/blocks` for the block names,
+`/api/entities` for the entity paths — and then asks only for those, so `No such texture in the Minecraft jar: <path>`
+in the server's log means this page built a path the jar does not have, and names it. A block the jar gives nothing for
+is drawn in its map colour and named once in the browser's console, `No texture in the jar for: …`, which is the check
+that a whole class of blocks has not quietly stopped resolving: open a handful of replays in 3D with the console open,
+and anything named there wants a rule in `blockTextures`. That is where the rules live, so that is where the check is;
+a second copy of them in a script would drift from the page it is meant to be checking.
 
 The textures come from your own Minecraft 1.21.1 client jar, which building the mod put in the Gradle cache.
 `serve.py` looks for it in the Fabric Loom and NeoForge folders there (under `GRADLE_USER_HOME`, or `~/.gradle`), or
@@ -68,6 +86,7 @@ and says why.
 | , . | Previous or next hit. |
 | - + | Speed, from 0.25× to 8×. |
 | ↑ ↓ | Previous or next replay in the list. |
+| / | Search the list. Several words all have to match. |
 | V | Map or 3D view. |
 | F | Fullscreen. |
 | C, 0 | Follow camera; whole terrain. |
@@ -93,6 +112,12 @@ The server serves it through three endpoints, all of them read-only:
 | `GET /league` | the page |
 | `GET /api/league` | every run with a `league\ratings.csv`, with its player and rated-fight counts, for the picker |
 | `GET /api/league/<run>[?model=N]` | one run: the trainer's tables, its `eval.csv`, and the sums of its per-fight records, with one model's own tables when asked |
+
+A fourth, `GET /api/matchups/<run>`, is for the replay list rather than this page: what each replay of that run on disk
+was a fight of — opponent, loadout, ground, kind and what killed the agent — by file name, out of the same per-fight
+records. A replay does not carry its opponent anywhere near its front (it sits in `entities`, behind the site's blocks),
+so the list would have to read whole files to show it. A run with no league answers `{"league": false}` and its replays
+say only what their own headers hold.
 
 The per-fight records are read on from where they last got to rather than re-read, so the page can poll every few
 seconds against a run of hundreds of thousands of fights. A results file that has grown *shorter* is a different run

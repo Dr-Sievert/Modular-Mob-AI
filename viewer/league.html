@@ -110,6 +110,10 @@ tr.sep td { border-top: 1px solid var(--line2); }
 .watch { display: inline-block; padding: 0 5px; border-radius: 5px; border: 1px solid var(--line2); color: var(--muted);
   background: transparent; cursor: pointer; font: 11px var(--mono); }
 .watch:hover { color: var(--text); border-color: var(--cyan); }
+/* A row with nothing recorded still says how many fights it is about, and still opens: the drawer is where the command
+   that would record some lives. It is drawn flat so a column of them does not read as a column of buttons. */
+.watch.none { border-color: transparent; color: var(--faint); }
+.watch.none:hover { border-color: var(--line2); color: var(--muted); }
 
 /* ---- the rating curve --------------------------------------------------------------------------------------- */
 .chart { width: 100%; height: 230px; }
@@ -136,6 +140,11 @@ tr.sep td { border-top: 1px solid var(--line2); }
 .drawer .row:hover { background: #19202a; }
 .drawer .row .what { overflow: hidden; text-overflow: ellipsis; }
 .drawer .row .len { color: var(--muted); font: 11.5px var(--mono); }
+.drawer .ask { padding: 10px 13px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 11.5px;
+  line-height: 1.6; }
+.drawer .ask b { color: var(--text); font-weight: 600; }
+.drawer .cmd { display: block; margin: 8px 0 2px; padding: 8px 9px; border-radius: 8px; background: var(--panel);
+  border: 1px solid var(--line2); font: 11px var(--mono); color: #cfd6e2; white-space: pre-wrap; word-break: break-word; }
 .badge { display: inline-grid; place-items: center; padding: 2px 0; border-radius: 5px; font-size: 9.5px; font-weight: 750;
   letter-spacing: .6px; text-transform: uppercase; }
 .badge.win { color: #052010; background: var(--win); }
@@ -294,8 +303,6 @@ async function loadRuns() {
 }
 
 async function loadRun() {
-  // The index of recorded fights belongs to the data it was built from, so it goes when that does.
-  state.index = null;
   if (!state.run) { state.data = null; return; }
   const query = state.model === null ? '' : '?model=' + encodeURIComponent(state.model);
   state.data = await json('/api/league/' + encodeURIComponent(state.run) + query);
@@ -398,49 +405,142 @@ function table(key, columns, rows, options) {
 // ---------------------------------------------------------------------------------------------------------------------
 
 /**
- * The recorded fights of this run, filed under everything a row might be about, newest first. Built in one pass and kept
- * until the data changes: a tier list of three hundred players asking a list of four thousand fights three hundred times
- * is most of a redraw, and there is nothing in it that changes between rows.
+ * The recorded fights of one run, filed under everything a row might be about, newest first. Built in one pass and kept
+ * against the data it was built from: a tier list of three hundred players asking a list of four thousand fights three
+ * hundred times is most of a redraw, and there is nothing in it that changes between rows. Held in a WeakMap rather than
+ * in state, so that the index of a run's data cannot outlive it and cannot be read for another run — the second tier
+ * list of the two-runs tab is the other run's, and its rows have to count its own fights.
  */
-function index() {
-  if (state.index) return state.index;
+const indexes = new WeakMap();
+
+function index(data) {
+  if (!data) return { opponent: new Map(), loadout: new Map(), site: new Map() };
+  const already = indexes.get(data);
+  if (already) return already;
   const of = { opponent: new Map(), loadout: new Map(), site: new Map() };
   const file = (map, key, fight) => {
     if (key === undefined || key === null || key === '') return;
     if (!map.has(key)) map.set(key, []);
     map.get(key).unshift(fight);
   };
-  for (const fight of (state.data ? state.data.fights.recorded : [])) {
+  for (const fight of data.fights.recorded) {
     file(of.opponent, fight.opponent, fight);
     file(of.loadout, fight.loadout, fight);
     file(of.site, fight.site, fight);
     file(of.opponent, fight.iteration + '\t' + fight.opponent, fight);
     file(of.loadout, fight.iteration + '\t' + fight.loadout, fight);
   }
-  state.index = of;
+  indexes.set(data, of);
   return of;
 }
 
-/** Every recorded fight filed under that key, newest first, or none. */
-function recorded(what, key) {
-  return index()[what].get(key) || [];
+/** Every recorded fight of that run filed under that key, newest first, or none. */
+function recorded(data, what, key) {
+  return index(data)[what].get(key) || [];
 }
 
-function watch(title, what, key) {
-  const fights = recorded(what, key);
-  if (!fights.length) return el('span', { class: 'faint', text: '–' });
+/** What a run recorded, as the server measured it, with nothing assumed where it has written too little to say. */
+function recording(data) {
+  return (data && data.fights.recording) || { fights: 0, named: 0, on_disk: 0, every: null };
+}
+
+/**
+ * The note under a table with a recorded column, which is the honest answer to why most rows have nothing in it. Every
+ * number in it is measured: the fights come from the per-fight records, the replays from what is on disk, and the one in
+ * N from the gaps between the replay names the recorder left, since nothing a run writes down says what -ReplayEvery it
+ * was started with.
+ */
+function recordingNote(data) {
+  const mine = recording(data);
+  if (!mine.fights) {
+    return el('div', { class: 'note' }, 'The recorded column is the fights of a row that were written down as replays. '
+      + 'Nothing has been recorded yet.');
+  }
+  return el('div', { class: 'note' }, 'The last column is how many of a row’s own fights can be watched, against how many '
+    + 'were fought. ' + data.run + ' has recorded ' + mine.named.toLocaleString() + ' of its '
+    + mine.fights.toLocaleString() + ' fights'
+    + (mine.every ? ', one in ' + mine.every + ' per worker (scripts\\train.ps1 -ReplayEvery)' : '')
+    + ', and ' + mine.on_disk.toLocaleString() + ' of those are still on disk — so most rows have none, and a 0 there '
+    + 'means none of that row’s fights was recorded, not that the fights are missing. Click any count for the list, or '
+    + 'for the command that records some.');
+}
+
+/**
+ * A row's recorded fights against the fights it is about: "▸ 3 / 214", or "0 / 214" for a row with none. It is the
+ * second number that stops an empty cell reading as a page that has lost something — a run records one fight in 200 per
+ * worker, so most matchups were never written down at all, and the difference between "none recorded" and "none played"
+ * is the whole of what this column is for. Both open the drawer: with none, that is where the command that would record
+ * some is.
+ */
+function watch(data, title, what, key, fought, ask) {
+  const fights = recorded(data, what, key);
+  const total = Number(fought) || 0;
+  const label = (fights.length ? '▸ ' + fights.length : '0') + (total ? ' / ' + total.toLocaleString() : '');
+  const every = recording(data).every;
   return el('button', {
-    class: 'watch', title: fights.length + ' recorded fight(s) of this to watch',
-    onclick: (event) => { event.stopPropagation(); openDrawer(title, fights); },
-  }, '▸ ' + fights.length);
+    class: 'watch' + (fights.length ? '' : ' none'),
+    title: (fights.length ? fights.length + ' of ' : 'None of ') + (total ? total.toLocaleString() + ' fights' : 'these fights')
+           + ' recorded' + (every ? '; training records one fight in ' + every + ' per worker' : '')
+           + (fights.length ? '. Click to watch them.' : '. Click for the command that records some.'),
+    onclick: (event) => { event.stopPropagation(); openDrawer(data, title, fights, { fought: total, ask: ask || {} }); },
+  }, label);
 }
 
-function openDrawer(title, fights) {
+/**
+ * The command that would record fights of this row, from the repository root. An evaluation is the one thing that can be
+ * pointed at a matchup: it takes the opponents and the loadouts to fight, and -ReplayEvery 1 writes every fight down.
+ * The kind of ground cannot be asked for, so a row about the ground gets the command without it.
+ */
+function recordCommand(run, ask) {
+  const weights = ask.iteration === undefined || ask.iteration === null
+    ? '-Weights runs\\' + run + '\\best.mbw'
+    : '-Run ' + run + ' -Iteration ' + ask.iteration;
+  return 'scripts\\eval.ps1 ' + weights + ' -Suite league -Arenas 40 -ReplayEvery 1'
+    + (ask.opponent && ask.opponent !== '-' ? ' -Opponents ' + ask.opponent : '')
+    + (ask.loadout && ask.loadout !== '-' ? ' -Loadouts ' + ask.loadout : '');
+}
+
+/** The head of the drawer: how much of this row was recorded, and, when that is nothing, how to record some. */
+function askBlock(data, about) {
+  const run = data.run, mine = recording(data), command = recordCommand(run, about.ask);
+  const copy = el('button', { class: 'btn small', text: 'Copy' });
+  copy.addEventListener('click', () => {
+    navigator.clipboard.writeText(command).then(() => { copy.textContent = 'Copied'; },
+      () => { copy.textContent = 'Select it and copy'; });
+  });
+  const folder = about.ask.iteration === undefined || about.ask.iteration === null
+    ? 'runs\\eval-' + run + '-best\\replays' : 'runs\\eval-' + run + '-' + String(about.ask.iteration).padStart(6, '0') + '\\replays';
+  // "None of these 214 fights was recorded", rather than a row that merely looks empty. A row whose fights nothing here
+  // counts — there is no such row today — says only what it has.
+  const said = !about.fought ? (about.count ? about.count + ' recorded fights.' : 'Nothing recorded.')
+    : (about.count ? about.count + ' of ' : 'None of ') + about.fought.toLocaleString() + ' fights '
+      + (about.count ? 'recorded.' : 'was recorded.');
+  return el('div', { class: 'ask' },
+    el('div', {}, el('b', { text: said }),
+      ' ' + run + ' has written ' + mine.named.toLocaleString() + ' replays of its ' + mine.fights.toLocaleString()
+      + ' fights' + (mine.every ? ', one in ' + mine.every + ' per worker (scripts\\train.ps1 -ReplayEvery)' : '')
+      + ', of which ' + mine.on_disk.toLocaleString() + ' are still on disk.'),
+    el('div', { style: 'margin-top:7px' }, 'To record ' + (about.count ? 'more of these' : 'some') + ':'),
+    el('code', { class: 'cmd', text: command }),
+    el('div', {}, copy, ' ', el('span', { text: ' They land in ' + folder + ' and show up in the replay list.' })),
+    about.ask.iteration === undefined || about.ask.iteration === null ? null
+      : el('div', { class: 'faint', style: 'margin-top:6px', text: 'That checkpoint has to be one the run still keeps in '
+          + 'runs\\' + run + '\\weights; runs\\' + run + '\\best.mbw is always there.' }),
+    // The ground a fight lands on is drawn by the suite, not chosen: a quarter of the fights are put on something worth
+    // knocking an opponent into, and which of them comes up is the library's business. So a row about the ground gets the
+    // command without a way to ask for that ground, and is told so rather than left to wonder why it did nothing.
+    about.ask.ground ? el('div', { class: 'faint', style: 'margin-top:6px', text: 'Which ground a fight lands on cannot '
+      + 'be asked for: the league suite draws it. Recording every fight of a short evaluation is how to catch one.' }) : null);
+}
+
+function openDrawer(data, title, fights, about) {
   $('drawer-title').textContent = title;
   const body = $('drawer-body');
   body.textContent = '';
+  if (about) body.append(askBlock(data, { ...about, count: fights.length }));
   for (const fight of fights) {
-    const url = '/?run=' + encodeURIComponent(state.run) + '&replay=' + encodeURIComponent(fight.file);
+    // The run the fights belong to, which on the two-runs tab is not always the one the header has picked.
+    const url = '/?run=' + encodeURIComponent(data.run) + '&replay=' + encodeURIComponent(fight.file);
     body.append(el('a', { class: 'row', href: url, target: '_blank', rel: 'noopener' },
       el('span', { class: 'badge ' + fight.outcome, text: fight.outcome }),
       el('span', { class: 'what' },
@@ -499,7 +599,8 @@ function tierList(data, options) {
     { name: 'lost', value: (one) => one.losses, num: true },
     { name: 'drawn', value: (one) => one.draws, num: true },
     { name: 'share', value: (one) => one.share, num: true, title: 'Share of the training fights it is given now' },
-    { name: 'watch', value: (one) => recorded('opponent', one.player).length, num: true },
+    { name: 'recorded', value: (one) => recorded(data, 'opponent', one.player).length, num: true,
+      title: 'Recorded fights of the run against it, of every fight of the run against it' },
   ];
 
   const most = Math.max(1, ...shown.map((one) => one.games));
@@ -518,7 +619,8 @@ function tierList(data, options) {
       el('td', { class: 'num loss', text: one.losses || '' }),
       el('td', { class: 'num dim', text: one.draws || '' }),
       el('td', { class: 'num dim', text: one.share > 0 ? percent(one.share, 1) : '' }),
-      el('td', {}, watch('Fights against ' + one.player, 'opponent', one.player))),
+      el('td', {}, watch(data, 'Fights against ' + one.player, 'opponent', one.player,
+        (data.fights.opponents[one.player] || [0])[0], { opponent: one.player }))),
   });
 }
 
@@ -618,7 +720,8 @@ function opponentTable(data) {
     { name: 'won', value: (one) => one.trained && one.trainWins / one.trained, num: true },
     { name: 'all fights', value: (one) => one.run[0], num: true, title: 'Every fight of the run against it, both kinds' },
     { name: 'won', value: (one) => one.run[0] && one.run[1] / one.run[0], num: true },
-    { name: 'watch', value: (one) => recorded('opponent', one.opponent).length, num: true },
+    { name: 'recorded', value: (one) => recorded(data, 'opponent', one.opponent).length, num: true,
+      title: 'Recorded fights against it, of every fight of the run against it' },
   ];
 
   return table('opponents', columns, rows, {
@@ -633,7 +736,8 @@ function opponentTable(data) {
       el('td', { class: 'num win', text: percent(one.trainWins, one.trained) }),
       el('td', { class: 'num', text: one.run[0] || '' }),
       el('td', { class: 'num win', text: percent(one.run[1], one.run[0]) }),
-      el('td', {}, watch('Fights against ' + one.opponent, 'opponent', one.opponent))),
+      el('td', {}, watch(data, 'Fights against ' + one.opponent, 'opponent', one.opponent, one.run[0],
+        { opponent: one.opponent }))),
   });
 }
 
@@ -661,7 +765,8 @@ function loadoutTable(data) {
     { name: 'won', value: (one) => one.trained && one.trainWins / one.trained, num: true },
     { name: 'all fights', value: (one) => one.run[0], num: true },
     { name: 'won', value: (one) => one.run[0] && one.run[1] / one.run[0], num: true },
-    { name: 'watch', value: (one) => recorded('loadout', one.loadout).length, num: true },
+    { name: 'recorded', value: (one) => recorded(data, 'loadout', one.loadout).length, num: true,
+      title: 'Recorded fights with it, of every fight of the run with it' },
   ];
 
   return table('loadouts', columns, rows, {
@@ -674,7 +779,8 @@ function loadoutTable(data) {
       el('td', { class: 'num win', text: percent(one.trainWins, one.trained) }),
       el('td', { class: 'num', text: one.run[0] || '' }),
       el('td', { class: 'num win', text: percent(one.run[1], one.run[0]) }),
-      el('td', {}, watch('Fights with a ' + one.loadout, 'loadout', one.loadout))),
+      el('td', {}, watch(data, 'Fights with a ' + one.loadout, 'loadout', one.loadout, one.run[0],
+        { loadout: one.loadout }))),
   });
 }
 
@@ -703,7 +809,8 @@ function groundTable(data) {
     { name: 'ground', value: (one) => one.wins && one.terrain / one.wins, num: true,
       title: 'Of its wins, the share the ground finished rather than the agent' },
     { name: 'by side', value: (one) => one.side, num: true, title: 'A creeper that blew up its own mate' },
-    { name: 'watch', value: (one) => recorded('site', one.site).length, num: true },
+    { name: 'recorded', value: (one) => recorded(data, 'site', one.site).length, num: true,
+      title: 'Recorded fights on it, of every fight of the run on it' },
   ];
 
   const most = Math.max(1, ...rows.map((one) => one.wins && one.terrain / one.wins));
@@ -719,7 +826,10 @@ function groundTable(data) {
       el('td', { class: 'num', text: one.terrain }),
       bar(one.wins ? one.terrain / one.wins : 0, most, percent(one.terrain, one.wins)),
       el('td', { class: 'num dim', text: one.side }),
-      el('td', {}, watch('Fights on ' + one.site, 'site', one.site))),
+      // The denominator is the records' own count for that ground and not the trainer's fights column beside it, so that
+      // it counts exactly the fights the recorded list was drawn from.
+      el('td', {}, watch(data, 'Fights on ' + one.site, 'site', one.site,
+        ((data.fights.sites || {})[one.site] || [0])[0], { ground: one.site }))),
   });
 }
 
@@ -816,12 +926,20 @@ function modelDetail(data) {
   const pairs = (counts, title, key) => {
     const rows = Object.entries(counts).map(([one, [fights, wins]]) => ({ name: one, fights, wins }));
     return el('div', { class: 'card' }, el('h2', {}, title, el('small', { text: name })),
+      // Said here because these two tables are the one place where the recorded count and the fights beside it are not
+      // counted over the same fights: a row is this checkpoint's evaluation fights, while a replay of that iteration may
+      // be a training fight, which is still worth watching and so is still linked.
+      el('div', { class: 'note' }, 'Recorded is every replay of this checkpoint '
+        + (key === 'model-opponents' ? 'against that opponent' : 'with that loadout')
+        + '. One may be from a training fight of the same iteration, which the fights column does not count.'),
       table(key, [
         { name: title.split(' ')[0], value: (one) => one.name, left: true },
         { name: 'fights', value: (one) => one.fights, num: true },
         { name: 'won', value: (one) => one.wins, num: true },
         { name: 'win rate', value: (one) => one.fights && one.wins / one.fights, num: true },
-        { name: 'watch', value: (one) => 0, num: true },
+        { name: 'recorded', value: (one) => recorded(data, key === 'model-opponents' ? 'opponent' : 'loadout',
+          model.iteration + '\t' + one.name).length, num: true,
+          title: 'Recorded fights of this checkpoint against it, of the evaluation fights this row counts' },
       ], rows, {
         sort: { column: 3, down: false },
         row: (one) => el('tr', {},
@@ -829,8 +947,10 @@ function modelDetail(data) {
           el('td', { class: 'num', text: one.fights }),
           el('td', { class: 'num win', text: one.wins }),
           bar(one.fights ? one.wins / one.fights : 0, 1, percent(one.wins, one.fights)),
-          el('td', {}, watch(name + ' vs ' + one.name, key === 'model-opponents' ? 'opponent' : 'loadout',
-            model.iteration + '\t' + one.name))),
+          el('td', {}, watch(data, name + ' vs ' + one.name, key === 'model-opponents' ? 'opponent' : 'loadout',
+            model.iteration + '\t' + one.name, one.fights,
+            key === 'model-opponents' ? { opponent: one.name, iteration: model.iteration }
+                                      : { loadout: one.name, iteration: model.iteration }))),
       }));
   };
 
@@ -1057,6 +1177,7 @@ function draw() {
       el('div', { class: 'note' }, 'Elo from evaluation fights only: a checkpoint on its most likely action against an '
         + 'opponent drawn evenly from everyone. The scripted fighter is held at 1500, so the scale means the same in every '
         + 'run; a tier is 150 points. Won, lost and drawn are the player’s own, not the agent’s.'),
+      recordingNote(data),
       tierList(data, {})));
     main.append(overall(data));
   } else if (state.tab === 'opponents') {
@@ -1065,15 +1186,17 @@ function draw() {
       el('div', { class: 'note' }, 'A mob, a squad of several at once (2x_zombie), a rung of the difficulty ladder '
         + '(zombie(hard)), the scripted fighter, or a published network the run fields. Every one is a player in its own '
         + 'right: two zombies are not twice a zombie, and nothing here adds any of them up.'),
+      recordingNote(data),
       opponentTable(data)));
   } else if (state.tab === 'loadouts') {
     main.append(el('div', { class: 'card' },
-      el('h2', {}, 'With each loadout the agent carried'), loadoutTable(data)));
+      el('h2', {}, 'With each loadout the agent carried'), recordingNote(data), loadoutTable(data)));
     main.append(el('div', { class: 'card' },
       el('h2', {}, 'On each kind of ground, and what finished the other side'),
       el('div', { class: 'note' }, 'A quarter of the fights are drawn onto ground with something on it worth knocking an '
         + 'opponent into. The ground column is the number to watch: a fight the terrain ends is the agent’s win either '
         + 'way, so it is the only sign that the agent has learned the terrain is a weapon.'),
+      recordingNote(data),
       groundTable(data)));
   } else if (state.tab === 'models') {
     main.append(el('div', { class: 'card' },

@@ -37,7 +37,12 @@ scripts\bench.ps1 -Weights models\league-sharp\best.mbw,models\league2\best.mbw
 
 `eval.ps1` fights with no exploration and records nothing for training. With 2,000 fights the win rate is within about
 a point either way; with 400, within about two and a half. It takes `-Workers` (8), `-Slots`, `-Heap`, `-Suite`,
-`-Loadouts`, `-Ground` and `-ReplayEvery`.
+`-Loadouts`, `-Opponents`, `-Ground` and `-ReplayEvery`.
+
+`-Opponents` narrows a league evaluation to those players by the names the league writes in its results, `ravager`,
+`2x_zombie`, `zombie(hard)`. With `-ReplayEvery 1` that is how to get a replay of a matchup training never wrote one of:
+`scripts\eval.ps1 -Weights runs\<run>\best.mbw -Suite league -Arenas 40 -ReplayEvery 1 -Opponents ravager` leaves forty
+fights in `runs\eval-<run>-best\replays`. The league page offers that command itself; see [viewer.md](viewer.md).
 
 `bench.ps1` is `eval.ps1` over several networks with the answers side by side, and it is what to reach for whenever the
 question is which of two networks is better. Four things it does that doing it by hand does not:
