@@ -100,6 +100,11 @@ class Config:
     # that has not yet learned the fight are mostly noise, and a policy near its best has little to gain and everything to
     # lose from following noise. Pulled back towards the teacher's own answers, recorded in the run's demos, the policy
     # only moves where the fights clearly say so. Scored the way the copy was, on up to teacher_rows of its steps.
+    # Width of the shared encoder over the enemy slots, or zero for a first layer that takes every slot's numbers on their
+    # own. See weights.Topology: ten slots of the same shape, learned once instead of ten times, which is the difference
+    # between beating one skeleton 84% of the time and two of them 9%.
+    slot_enc: int = 0
+
     teacher_weight: float = 0.0
     teacher_rows: int = 262144
 
@@ -216,7 +221,8 @@ class Trainer:
                 logger.warning("under 2 GB of GPU memory is free; something else is using the card and updates may be slow")
 
         self.heads = PolicyHeads(schema.heads)
-        self.actor = Actor.for_schema(schema, config.h1, config.hidden, config.h3, config.obs_clip).to(self.device)
+        self.actor = Actor.for_schema(schema, config.h1, config.hidden, config.h3, config.obs_clip,
+                                      config.slot_enc).to(self.device)
         self.critic = Critic(schema.obs_dim, config.hidden, config.critic_width).to(self.device)
 
         self.optimizer = torch.optim.Adam(

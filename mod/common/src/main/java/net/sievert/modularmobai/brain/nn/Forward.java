@@ -183,6 +183,11 @@ public final class Forward {
         private float[][] gruHh;
         private float[][] fc2;
         private float[][] head;
+
+        /** What the first layer is given where the slots are pooled: null for a network whose first layer takes the row. */
+        private float[] encoded;
+        private float[][] slot;
+
         private WeightSet laidOut;
 
         private void ensure(Topology topology, int agents) {
@@ -197,6 +202,7 @@ public final class Forward {
             int capacity = Math.max(16, agents + (agents >> 1));
 
             this.input = new float[capacity * topology.obsDim()];
+            this.encoded = topology.pooled() ? new float[capacity * topology.fc1In()] : null;
             this.layer1 = new float[capacity * topology.h1()];
             this.gatesIn = new float[capacity * 3 * topology.hidden()];
             this.gatesHidden = new float[capacity * 3 * topology.hidden()];
@@ -213,7 +219,8 @@ public final class Forward {
             Topology topology = weights.topology();
             float[] w = weights.params();
 
-            this.fc1 = transpose(w, topology.fc1W(), topology.obsDim(), topology.h1());
+            this.slot = topology.pooled() ? transpose(w, topology.slotW(), topology.slotStride(), topology.slotEnc()) : null;
+            this.fc1 = transpose(w, topology.fc1W(), topology.fc1In(), topology.h1());
             this.gruIh = transpose(w, topology.gruWih(), topology.h1(), 3 * topology.hidden());
             this.gruHh = transpose(w, topology.gruWhh(), topology.hidden(), 3 * topology.hidden());
             this.fc2 = transpose(w, topology.fc2W(), topology.hidden(), topology.h3());
@@ -290,7 +297,12 @@ public final class Forward {
 
         loops.normalise(obs, scratch.input, w, topology.normMean(), topology.normStd(), weights.obsClip(), in, agents);
 
-        loops.linear(scratch.input, in, scratch.layer1, h1, scratch.fc1, w, topology.fc1B(), agents, first, second);
+        // Where this network pools its enemy slots, the first layer is given the row with those slots replaced by what the
+        // shared encoder found in them; otherwise it is given the row itself.
+        final float[] intoFc1 = topology.pooled() ? pool(topology, w, obs, scratch, agents) : scratch.input;
+        final int fc1In = topology.fc1In();
+
+        loops.linear(intoFc1, fc1In, scratch.layer1, h1, scratch.fc1, w, topology.fc1B(), agents, first, second);
         loops.relu(scratch.layer1, agents * h1);
 
         loops.linear(scratch.layer1, h1, scratch.gatesIn, 3 * h, scratch.gruIh, w, topology.gruBih(), agents, first, second);
@@ -345,6 +357,80 @@ public final class Forward {
      * @param first     the running sums of the first agent of a pair, as wide as the widest layer
      * @param second    the same for the second, unused when a lone agent is left over
      */
+    /**
+     * The enemy slots through one shared encoder, the largest answer per feature kept, and the result put where the slots
+     * were. Returns the row the first layer should be given.
+     *
+     * <p>Only occupied slots count, and whether a slot is occupied is read from the <b>raw</b> observation rather than the
+     * normalised one. An empty slot is all zeros, so the encoder answers it with ReLU of the bias, and any feature whose
+     * bias came out positive would be won by slots holding nothing: the network's view of the worst thing in front of it
+     * would be partly noise from empty air. The flag cannot be read after normalising either, where an absent slot reads
+     * {@code (0 - mean) / std} and is not zero. With nothing in view every feature is zero, which no occupied slot can
+     * produce, since ReLU of a real slot is at worst zero and the mask lets nothing else through.
+     *
+     * <p>The same thing, in the same order, as the training side's Actor.encode. The parity check is what holds the two to
+     * it.
+     */
+    private static float[] pool(Topology topology, float[] w, float[] obs, Scratch scratch, int agents) {
+
+        final int in = topology.obsDim();
+        final int at = topology.slotAt();
+        final int slots = topology.slots();
+        final int stride = topology.slotStride();
+        final int enc = topology.slotEnc();
+        final int width = topology.fc1In();
+        final int after = at + slots * stride;
+
+        final float[] normalised = scratch.input;
+        final float[] out = scratch.encoded;
+        final float[][] rows = scratch.slot;
+        final int bias = topology.slotB();
+
+        for (int agent = 0; agent < agents; agent++) {
+
+            final int from = agent * in;
+            final int to = agent * width;
+
+            System.arraycopy(normalised, from, out, to, at);
+            System.arraycopy(normalised, from + after, out, to + at + enc, in - after);
+
+            for (int j = 0; j < enc; j++) {
+
+                out[to + at + j] = 0.0F;
+            }
+
+            for (int slot = 0; slot < slots; slot++) {
+
+                final int row = from + at + slot * stride;
+
+                // The present flag is the first number of a slot, in the row as the game wrote it.
+                if (obs[row] < 0.5F) {
+
+                    continue;
+                }
+
+                for (int j = 0; j < enc; j++) {
+
+                    float sum = w[bias + j];
+
+                    for (int k = 0; k < stride; k++) {
+
+                        sum += rows[k][j] * normalised[row + k];
+                    }
+
+                    float activated = sum < 0.0F ? 0.0F : sum;
+
+                    if (activated > out[to + at + j]) {
+
+                        out[to + at + j] = activated;
+                    }
+                }
+            }
+        }
+
+        return out;
+    }
+
     static void linear(float[] src, int srcStride, float[] dst, int dstStride, float[][] rows,
                        float[] params, int bias, int agents, float[] first, float[] second) {
 

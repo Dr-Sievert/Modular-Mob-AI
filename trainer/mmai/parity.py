@@ -26,7 +26,7 @@ MAGIC = b"MBP1"
 
 
 def generate(directory: str | Path, schema: Schema, h1: int, hidden: int, h3: int, obs_clip: float = 10.0,
-             count: int = 67, seed: int = 12345) -> Path:
+             count: int = 67, seed: int = 12345, slot_enc: int = 0) -> Path:
     """Writes ``weights.mbw`` and ``fixture.bin`` into the directory, and returns it."""
 
     directory = Path(directory)
@@ -35,7 +35,7 @@ def generate(directory: str | Path, schema: Schema, h1: int, hidden: int, h3: in
     torch.manual_seed(seed)
     generator = np.random.default_rng(seed)
 
-    actor = Actor.for_schema(schema, h1, hidden, h3, obs_clip)
+    actor = Actor.for_schema(schema, h1, hidden, h3, obs_clip, slot_enc)
     heads = PolicyHeads(schema.heads)
 
     with torch.no_grad():

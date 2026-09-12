@@ -38,10 +38,17 @@ public final class WeightFile {
 
     public static final String EXTENSION = ".mbw";
 
-    public static final int VERSION = 1;
+    /**
+     * 2 added the four numbers that describe a shared encoder over the enemy slots; see Topology. A version 1 file still
+     * reads, as a network without one, because the shapes it can describe are a subset of what 2 can, and refusing them
+     * would retire every network trained before this for no reason.
+     */
+    public static final int VERSION = 2;
+    public static final int OLDEST = 1;
 
     private static final byte[] MAGIC = {'M', 'B', 'W', '1'};
-    private static final int HEADER_BYTES = 52;
+    private static final int HEADER_BYTES_V1 = 52;
+    private static final int HEADER_BYTES = 68;
 
     public static WeightSet read(Path path) throws IOException {
 
@@ -57,7 +64,8 @@ public final class WeightFile {
      */
     public static WeightSet read(byte[] bytes, String name, String source) throws IOException {
 
-        if (bytes.length < HEADER_BYTES) {
+        // The shorter of the two headers, since which one this is cannot be known before the version is read.
+        if (bytes.length < HEADER_BYTES_V1) {
 
             throw refuse(source, "is " + bytes.length + " bytes, shorter than the header");
         }
@@ -75,15 +83,35 @@ public final class WeightFile {
 
         int version = buffer.getInt();
 
-        if (version != VERSION) {
+        if (version < OLDEST || version > VERSION) {
 
-            throw refuse(source, "is format version " + version + " and this build reads version " + VERSION);
+            throw refuse(source, "is format version " + version + " and this build reads " + OLDEST + " to " + VERSION);
+        }
+
+        int headerBytes = version >= 2 ? HEADER_BYTES : HEADER_BYTES_V1;
+
+        if (bytes.length < headerBytes) {
+
+            throw refuse(source, "is shorter than the header its own version needs");
         }
 
         int schemaId = buffer.getInt();
         int storedHash = buffer.getInt();
 
-        Topology topology = new Topology(buffer.getInt(), buffer.getInt(), buffer.getInt(), buffer.getInt(), buffer.getInt(), buffer.getInt());
+        int obsDim = buffer.getInt();
+        int h1 = buffer.getInt();
+        int hidden = buffer.getInt();
+        int h3 = buffer.getInt();
+        int outDim = buffer.getInt();
+        int stdDim = buffer.getInt();
+
+        // Version 1 is exactly a version 2 file with these at zero: a network whose first layer takes the whole row.
+        int slotAt = version >= 2 ? buffer.getInt() : 0;
+        int slots = version >= 2 ? buffer.getInt() : 0;
+        int slotStride = version >= 2 ? buffer.getInt() : 0;
+        int slotEnc = version >= 2 ? buffer.getInt() : 0;
+
+        Topology topology = new Topology(obsDim, h1, hidden, h3, outDim, stdDim, slotAt, slots, slotStride, slotEnc);
 
         if (topology.hash() != storedHash) {
 
@@ -99,7 +127,7 @@ public final class WeightFile {
             throw refuse(source, "holds " + count + " parameters but " + topology + " needs " + topology.size());
         }
 
-        long expectedLength = HEADER_BYTES + 4L * count;
+        long expectedLength = headerBytes + 4L * count;
 
         if (bytes.length != expectedLength) {
 

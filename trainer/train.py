@@ -82,7 +82,8 @@ def main() -> None:
         schema = Schema.load(arguments.schema)
         logger.info("%s", schema.describe())
 
-        directory = generate(arguments.out or "parity", schema, config.h1, config.hidden, config.h3, config.obs_clip)
+        directory = generate(arguments.out or "parity", schema, config.h1, config.hidden, config.h3, config.obs_clip,
+                             slot_enc=config.slot_enc)
         logger.info("wrote the parity fixture to %s", directory.resolve())
         return
 
