@@ -16,6 +16,11 @@ scripts\parity.ps1               Java forward pass against PyTorch's, after touc
 | `test.ps1 -Play` | `All 18 required tests passed`, and `Loaded the mod's jar, modular_mob_ai/models/vs-copy.mbw from iteration 650` | what [playing.md](playing.md) promises: the bundled networks load and drive an agent, the commands, saving, sides and friendly fire, the Infinity loadouts |
 | `parity.ps1` | `parity ok` once per body, logits agreeing to about 1e-6, and `the plain ones agree to the bit at batches 1 to 64` | the game runs exactly the network PyTorch trained, **for every body this build has**, and the forward pass's explicit vector loops give the same bits as its plain ones |
 
+The play suite's three jar-network tests — `networksInTheJarLoadByName`, `worldAgentFightsOnTheBundledNetwork` and
+`brainCommandRefusesWhatLeadsNowhere` — fail until a network is published for the layout this build has. Everything in
+`models\` was trained on the old 634-float observation and the game refuses a weight file it cannot drive, which is the
+schema id doing its job; see [models.md](models.md).
+
 Each boots a headless server in seconds, and all of them need only Java (parity also needs the trainer's Python).
 `test.ps1 -Loader neoforge` runs a suite on NeoForge instead of Fabric.
 
