@@ -64,6 +64,16 @@ class SteerRateTest(unittest.TestCase):
         one.iteration = 30
         self.assertAlmostEqual(one.steer_rate(0.0), 5e-5 * 1.5, places=12)
 
+    def test_a_fall_to_the_cpu_keeps_the_steered_rate(self):
+        """The fallback rebuilds the optimizer, and rebuilt it at the configured rate: a change of device is not a reason
+        to forget what the KL has said about the step size."""
+
+        one = trainer(learning_rate=5e-5, target_kl=0.01, kl_adapt=1.5)
+        one.steer_rate(1.0)
+        one._fall_back_to_cpu()
+
+        self.assertAlmostEqual(one.optimizer.param_groups[0]["lr"], 5e-5 / 1.5, places=12)
+
     def test_off_leaves_the_rate_alone(self):
         one = trainer(learning_rate=5e-5, target_kl=0.01, kl_adapt=0.0)
 

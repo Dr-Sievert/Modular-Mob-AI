@@ -1034,9 +1034,11 @@ class Trainer:
 
         self.actor.to(self.device)
         self.critic.to(self.device)
+        # At the rate the run has steered to, not the one it was configured with: a fall to the CPU is a change of device,
+        # not a reason to forget what the KL has said about the step size.
         self.optimizer = torch.optim.Adam(
             list(self.actor.parameters()) + list(self.critic.parameters()),
-            lr=self.config.learning_rate,
+            lr=self.rate,
             eps=1e-5,
         )
 
