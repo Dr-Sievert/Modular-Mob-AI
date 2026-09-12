@@ -307,3 +307,15 @@ class Evaluator:
 
         if self.best is not None:
             self.since_best = sum(1 for i in self.judged if i > self.best)
+
+            # A best with no opponents written down is about to be replaced by the first checkpoint that has some, so the
+            # checkpoints that failed to beat it are not evidence of anything: see _better.
+            if not self.judged[self.best].against:
+                self.since_best = 0
+
+            # And whatever the count says, a resumed run gets one more checkpoint before it may call itself done. The count
+            # was reached under whatever rule was in force when those checkpoints were judged, and this one ended a run the
+            # moment it started: it resumed holding a best that could not be compared, read 47 against a patience of 40, and
+            # said so, while the very next checkpoint went on to beat it. Delaying a true verdict by one checkpoint costs a
+            # few minutes; a false one costs the run.
+            self.since_best = min(self.since_best, max(self.patience - 1, 0))
