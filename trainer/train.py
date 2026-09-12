@@ -283,6 +283,15 @@ def loop(run: RunDirectory, trainer: Trainer, config: Config, schema: Schema, ke
             logger.info("done: %s; the best weights are in %s", reason, evaluator.best_file)
             run.finish(reason)
 
+        elif done and not reason:
+            # Taken back rather than left standing. A verdict was once said on a count reached under an older rule and the
+            # very next checkpoint beat the best it was about, and because done was said once and never withdrawn the run
+            # ended anyway, fifty minutes of a six worker machine running on two. The build reads the file at the top of
+            # every round, so deleting it starts rounds again.
+            done = False
+            run.unfinish()
+            logger.info("not done after all: iteration %s is the best now, so the run carries on", evaluator.best)
+
         # A round whose workers have all left will never send another step, so whatever is still held for its agents is
         # only taking up memory. Over a run of thousands of rounds that adds up.
         if workers.rounds_done() > forgotten and not carried:
