@@ -130,7 +130,13 @@ chunks the generator needs around every site was most of the worker's heap. So t
 - Sites go in blocks of 128, each block placed on land of its own, on the same lattice the fights use. Every site is
   checked for somewhere a fight can start; the ones that are water or cliff are listed as unusable and never handed out.
 - The build puts the builders' worlds together into `runs/terrain/<minecraft version>/library`, with an index saying where
-  the blocks are, how the lattice is laid out, and which points are unusable. 2,048 sites are about 1.6 GB.
+  the blocks are, how the lattice is laid out, which points are unusable, and anything else known about a point (`kinds`,
+  for the league to draw hazardous ground deliberately; nothing fills them in yet). 2,048 sites are about 1.6 GB.
+- **The library grows.** `scripts\terrain.ps1 -Add 1024` generates only the new sites, in blocks placed well clear of every
+  block already in it, and appends them: points are numbered block by block, so the ones that existed keep their numbers.
+  The new ground is moved in whole, and only then is a new index moved over the old one, so nothing half finished is ever
+  readable and a worker already running never notices. 1,024 sites appended to a 4,096-site library took 9 minutes on two
+  builders, against about 38 to generate all 5,120 afresh.
 - Every terrain worker hard-links the library's region files into its own world, so it is on disk once however many
   workers run, and walks the library from a place of its own. Vanilla loads a finished chunk whose neighbours are on disk
   rather than generating it, and reads nothing further out, so no ground is generated in a worker again.

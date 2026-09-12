@@ -43,6 +43,7 @@ scripts\test.ps1 -Mechanics            the item and block rules against a player
 scripts\test.ps1 -Play                 the agent in a real game (jar networks, /mmai, sides, Infinity loadouts): expect 17 passed
 scripts\play.ps1                       the dev client, agents on the best network in models\; -Model, -Weights, -Loader
 scripts\terrain.ps1                    once per machine before any training: the terrain library a run fights on
+scripts\terrain.ps1 -Add 2048          more ground appended to it, without regenerating what is already there
 scripts\train.ps1 -Run <name>          train (resumes); see docs/training.md for -FromCopy, -Workers and the rest
 scripts\dagger.ps1 -Run <name>         record a round of the teacher's answers to that run's own best network
 scripts\watch.ps1                      live dashboard of every run, one line each

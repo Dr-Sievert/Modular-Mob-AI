@@ -9,8 +9,10 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.BitSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Properties;
 
 import org.jetbrains.annotations.Nullable;
@@ -42,12 +44,19 @@ import net.sievert.modularmobai.gametest.GameTestTuning;
  *
  * <pre>
  *   runs/terrain/1.21.1/library/region/r.X.Z.mca    the chunks, never written by a worker
- *   runs/terrain/1.21.1/library/library.properties  x, z, spacing, columns, points, unusable
+ *   runs/terrain/1.21.1/library/library.properties  spacing, columns, rows, block.N, unusable, kinds
  * </pre>
  *
  * <p>Workers link the region files rather than copy them, so they share one copy on disk, and nothing a worker does ever
  * writes to them: nothing is saved while fights run, and a worker on the library throws its world away at the end
  * rather than saving it, see {@link net.sievert.modularmobai.gametest.mixin.RegionFileStorageMixin} for the last guard.
+ *
+ * <p>A library <b>grows</b> rather than being rebuilt. {@code scripts\terrain.ps1 -Add 2048} generates that many sites in
+ * blocks of their own, well clear of every block already in the library, and appends them: the new blocks' region files are
+ * moved into the library whole, and only then is a new index moved over the old one. Points are numbered block by block, so
+ * appending blocks at the end leaves every point that already existed with the number it had. Nothing half finished is ever
+ * readable: until the index is swapped, the new region files are simply files no point refers to, and a worker already
+ * reading the library holds its own links to the files it was given and never looks at the index again.
  */
 public final class TerrainLibrary {
 
@@ -73,10 +82,33 @@ public final class TerrainLibrary {
     static final int ROWS = 16;
 
     /**
-     * What a worker reads: where each block of the lattice is, how the lattice is laid out, and which points no fight can
-     * start on. Points are numbered block by block, row by row within a block, the way a worker walks them.
+     * How far apart two blocks' origins have to be, in blocks of the world, for their region files never to touch. A block
+     * of the lattice covers {@code COLUMNS * SPACING} by {@code ROWS * SPACING}, under two thousand blocks, plus the ring
+     * of part generated ground the generator reaches out to; a region file is 512. Four thousand blocks is eight region
+     * files of clearance in the narrow direction and is not worth shaving, since the world is four million wide and land is
+     * not scarce.
      */
-    public record Index(List<BlockPos> blocks, int spacing, int columns, int rows, BitSet unusable) {
+    static final int BLOCKS_APART = 4096;
+
+    /**
+     * What a worker reads: where each block of the lattice is, how the lattice is laid out, which points no fight can start
+     * on, and whatever else has been found out about a point. Points are numbered block by block, row by row within a block,
+     * the way a worker walks them, so appending blocks never renumbers a point that already existed.
+     *
+     * @param kinds anything known about a point beyond whether a fight can start on it, as a named set of points each:
+     *              {@code kinds=lava,ravine} and then {@code kind.lava=3,17,42}, read and written and merged on append
+     *              exactly as {@code unusable} is. Nothing fills these in yet; the league wants to draw hazardous ground
+     *              deliberately rather than by luck, and this is where the sites it should draw from will be named. A
+     *              reader that does not know a kind ignores it, and a library written before a kind existed simply has none
+     *              of it, so adding one costs no rebuild.
+     */
+    public record Index(List<BlockPos> blocks, int spacing, int columns, int rows, BitSet unusable,
+                        Map<String, BitSet> kinds) {
+
+        public Index(List<BlockPos> blocks, int spacing, int columns, int rows, BitSet unusable) {
+
+            this(blocks, spacing, columns, rows, unusable, Map.of());
+        }
 
         public int points() {
 
@@ -91,6 +123,14 @@ public final class TerrainLibrary {
         public int usableCount() {
 
             return this.points() - this.unusable.cardinality();
+        }
+
+        /** Whether a point is known to be of a kind; false for every point of a kind nothing has named. */
+        public boolean of(String kind, int point) {
+
+            BitSet named = this.kinds.get(kind);
+
+            return named != null && named.get(Math.floorMod(point, this.points()));
         }
 
         /** The centre of a point, which wraps around the end of the library. */
@@ -120,23 +160,52 @@ public final class TerrainLibrary {
                 blocks.add(new BlockPos(Integer.parseInt(parts[0].trim()), 64, Integer.parseInt(parts[1].trim())));
             }
 
-            BitSet unusable = new BitSet();
-            String list = properties.getProperty("unusable", "").trim();
+            Map<String, BitSet> kinds = new LinkedHashMap<>();
 
-            if (!list.isEmpty()) {
+            for (String kind : properties.getProperty("kinds", "").trim().split(",")) {
 
-                for (String part : list.split(",")) {
+                if (!kind.trim().isEmpty()) {
 
-                    unusable.set(Integer.parseInt(part.trim()));
+                    kinds.put(kind.trim(), points(properties.getProperty("kind." + kind.trim(), "")));
                 }
             }
 
             return new Index(List.copyOf(blocks), Integer.parseInt(properties.getProperty("spacing").trim()),
                     Integer.parseInt(properties.getProperty("columns").trim()), Integer.parseInt(properties.getProperty("rows").trim()),
-                    unusable);
+                    points(properties.getProperty("unusable", "")), Map.copyOf(kinds));
         }
 
-        void write(Path file) throws IOException {
+        /** A comma separated list of point numbers, as written by {@link #list}. */
+        private static BitSet points(String list) {
+
+            BitSet points = new BitSet();
+
+            for (String part : list.trim().split(",")) {
+
+                if (!part.trim().isEmpty()) {
+
+                    points.set(Integer.parseInt(part.trim()));
+                }
+            }
+
+            return points;
+        }
+
+        /** Every point in a set, comma separated, which is how both unusable and the kinds are written. */
+        private static String list(BitSet points) {
+
+            List<String> numbers = new ArrayList<>();
+
+            for (int point = points.nextSetBit(0); point >= 0; point = points.nextSetBit(point + 1)) {
+
+                numbers.add(Integer.toString(point));
+            }
+
+            return String.join(",", numbers);
+        }
+
+        /** The index as the file holds it, which the build writes too when it puts several builders' work together. */
+        public String text() {
 
             StringBuilder text = new StringBuilder();
 
@@ -147,20 +216,24 @@ public final class TerrainLibrary {
                 text.append(String.format(Locale.ROOT, "block.%d=%d,%d%n", block, this.blocks.get(block).getX(), this.blocks.get(block).getZ()));
             }
 
-            List<String> unusableList = new ArrayList<>();
+            text.append("unusable=").append(list(this.unusable)).append(System.lineSeparator());
+            text.append("kinds=").append(String.join(",", this.kinds.keySet())).append(System.lineSeparator());
 
-            for (int point = this.unusable.nextSetBit(0); point >= 0; point = this.unusable.nextSetBit(point + 1)) {
+            this.kinds.forEach((kind, points) ->
+                    text.append("kind.").append(kind).append('=').append(list(points)).append(System.lineSeparator()));
 
-                unusableList.add(Integer.toString(point));
-            }
+            return text.toString();
+        }
 
-            text.append("unusable=").append(String.join(",", unusableList)).append(System.lineSeparator());
+        void write(Path file) throws IOException {
 
+            // Written beside the real one and moved over it, so that nobody ever reads half an index: a worker starting
+            // while a library grows gets either the whole of the old one or the whole of the new one.
             Path temporary = file.resolveSibling(file.getFileName() + ".tmp");
 
             try (Writer writer = Files.newBufferedWriter(temporary, StandardCharsets.UTF_8)) {
 
-                writer.write(text.toString());
+                writer.write(this.text());
             }
 
             Files.move(temporary, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
@@ -203,18 +276,28 @@ public final class TerrainLibrary {
                     ? RandomSource.create(GameTestTuning.terrainSeed() * 31L + GameTestTuning.shardIndex())
                     : RandomSource.create();
 
+            // Ground that is already in the library, when this build is adding to one rather than making a new one: no new
+            // block may land near any of it, because two blocks close together would share region files and the second one
+            // written would be the first one's chunks. Each origin this builder picks joins the list, so its own blocks
+            // keep clear of each other too. Builders cannot see each other's choices, so the build checks every pair
+            // afterwards and refuses to commit an addition where any two are too close, which is the last guard.
+            List<BlockPos> taken = new ArrayList<>(taken());
+
             List<BlockPos> origins = new ArrayList<>();
 
             for (int block = 0; block < blocks; block++) {
 
-                origins.add(TerrainSites.chooseOrigin(level, random, perBlock));
+                BlockPos origin = TerrainSites.chooseOrigin(level, random, perBlock, taken);
+                origins.add(origin);
+                taken.add(origin);
             }
 
             building = new Index(List.copyOf(origins), TerrainSites.SPACING, TerrainSites.COLUMNS, ROWS, unusable);
             total = building.points();
             startedAt = System.nanoTime();
 
-            Constants.LOG.info("Terrain library: generating {} sites in {} blocks of {}", total, blocks, perBlock);
+            Constants.LOG.info("Terrain library: generating {} sites in {} blocks of {}, keeping clear of {} blocks already "
+                    + "in the library", total, blocks, perBlock, taken.size() - blocks);
         }
 
         return TerrainSites.plots(level);
@@ -310,5 +393,36 @@ public final class TerrainLibrary {
     private static BlockPos point(int point) {
 
         return building.centre(point);
+    }
+
+    /**
+     * Where the blocks of the library this build is adding to already are, or nothing when it is making a new library. The
+     * build names the existing index; it is read here rather than passed as a list of coordinates so that a library of any
+     * size costs the same one path on a command line.
+     */
+    private static List<BlockPos> taken() {
+
+        String path = GameTestTuning.libraryAdding();
+
+        if (path == null) {
+
+            return List.of();
+        }
+
+        try {
+
+            List<BlockPos> blocks = Index.read(Path.of(path)).blocks();
+
+            Constants.LOG.info("Terrain library: adding to the {} blocks already in {}", blocks.size(), path);
+
+            return blocks;
+        }
+
+        catch (IOException | RuntimeException exception) {
+
+            // Refusing outright: generating blocks that might land on top of the library's would quietly replace ground
+            // that thousands of fights have been drawn from.
+            throw new IllegalStateException("Could not read the terrain library being added to at " + path, exception);
+        }
     }
 }

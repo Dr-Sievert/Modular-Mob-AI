@@ -82,7 +82,8 @@ Results so far (evaluated on the most likely action):
 
 ```
 scripts\terrain.ps1                       4,096 fight sites, on as much of the machine as fits
-scripts\terrain.ps1 -Sites 8192           more ground; about 0.8 MB and 1.5 s of one builder per site
+scripts\terrain.ps1 -Add 2048             2,048 more, appended to the library that is already there
+scripts\terrain.ps1 -Sites 8192           a new library of that size; about 0.8 MB and 1.5 s of one builder per site
 ```
 
 Training on natural ground reads its sites from the library and generates nothing, so a run stops and says to build one
@@ -91,8 +92,19 @@ Generating cost two to three cores and a third more memory per worker, and memor
 
 - It lives in `runs\terrain\<minecraft version>\library` and is not in git: about 0.8 MB a site, and machine-local.
 - Workers hard-link its region files, so it is on disk once however many run, and nothing can write back to it.
-- Building a new one while training runs is safe: it replaces the old one only once it is whole.
-- Run it once per machine, and again whenever you want fresh ground.
+- **`-Add` grows it instead of rebuilding it.** Only the new sites are generated, in blocks of ground well clear of every
+  block already in the library, and the points that existed keep the numbers they had. Measured: 1,024 sites appended to
+  the 4,096-site library took 9 minutes on two builders and added 797 MB, against about 38 minutes to generate all 5,120
+  again. A worker then reads all 5,120 and fights normally.
+- Building a new one, or adding to one, while training runs is safe: a new library replaces the old one only once it is
+  whole, and an addition's ground is moved in whole before a new index is moved over the old one, so nothing half finished
+  is ever readable. A worker already running keeps its own links and never rereads the index.
+- Run it once per machine, and again whenever you want fresh ground. Build a new one rather than adding when the layout of
+  a block changes, since a point's number is worked out from it; the build refuses to mix two layouts in one index.
+- The index can carry facts about a point beyond whether a fight can start on it, as `kinds=lava,ravine` and then
+  `kind.lava=3,17,42`, read, written and merged on append exactly as the unusable points are. Nothing fills them in yet;
+  that is where sites the league should draw hazardous ground from will be named. A reader that does not know a kind ignores
+  it, so adding one needs no rebuild.
 ## Scripts
 
 ### `scripts\train.ps1`: one run
