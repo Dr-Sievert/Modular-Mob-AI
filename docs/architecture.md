@@ -42,17 +42,17 @@ those rules from the echo:
 There is no aim assist. The agent turns with its yaw and pitch controls, and a swing hits whatever is under its
 crosshair within reach, as for a player.
 
-## What the agent sees: 744 floats
+## What the agent sees: 770 floats
 
 This is the **humanoid**'s observation, the player-shaped body every trained network drives. A layout belongs to a body
 rather than to the game: a body with no hands has no hotbar to see, no slot to choose and no use buttons to press, and no
 amount of masking makes those inputs mean anything. `brain/schema/Species.java` is what the rest of the game asks how wide
-an observation is, and the humanoid's answer is the table below. The second body, the **beast**, has no hands: 612 floats,
+an observation is, and the humanoid's answer is the table below. The second body, the **beast**, has no hands: 747 floats,
 seven controls and no categorical head at all. See [species.md](species.md) for how to write a third.
 
 | Block | Size | Contents |
 | --- | --- | --- |
-| self | 20 | health, velocity (forward/up/right), on ground, in water, attack strength, use cooldown, using (main/off hand), sprinting, crouching, fall distance, body offset (sin/cos), pitch, aim (sin/cos), hurt time, enemies in range |
+| self | 22 | health, velocity (forward/up/right), on ground, in water, attack strength, use cooldown, using (main/off hand), sprinting, crouching, fall distance, body offset (sin/cos), pitch, aim (sin/cos), hurt time, enemies in range, **the clock**, **arrows left** |
 | hotbar | 9 | what each hotbar slot holds |
 | echo | 20 | what the body actually did last tick: moved (forward/strafe), jumped, sprinted, sneaked, turned (yaw/pitch), attacked, hit, attack strength and damage, crit, sweep, sprint knockback, used (main/off hand/on a block), selected slot, swapped weapon, **how far the use has charged** |
 | enemies | 10 × 29 | every hostile within 32 blocks, and anything shot at the agent, in ten stable slots, in its own frame. Where it is and what it is doing: present, position (forward/up/right), distance, velocity, health as a fraction, facing (sin/cos), pitch, **kind**, main and off hand item, swinging, using, sprinting. **What it is**: max health and health left in hearts, attack damage, speed, width, height, knockback resistance, a creeper's fuse, and whether it explodes, shoots or flies |
@@ -80,6 +80,24 @@ gives the power its arrow would leave at, a crossbow the fraction of its wind th
 use duration has run. Both weapons read 1 at the moment letting go is worth it, so one number says "loose now" for
 either. Nothing else in the observation says a bow is nearly drawn, and a bow needs twenty ticks of held use before an
 arrow ever flies.
+
+**The clock** (the self block, `SELF_CLOCK`) is how much of this fight's own time limit has run: nought on the first tick,
+one once the time is up, read straight off the reward's count (`AgentReward#elapsedFraction`) so the agent sees the clock it
+is being paid by. The reward is a function of the clock and nothing in the observation was: a fight is capped at 1,200
+ticks, running the clock out is scored as a loss, and a win pays a speed bonus that scales with how much clock is left, so
+the same position on the same ground is worth about +3 at tick 100 and -2 at tick 1,150. The critic could not price that
+difference, which put the noisiest advantages in exactly the fights that drag on, and the policy could only learn urgency
+by counting to 1,200 inside the GRU. It is a fraction of **this** fight's limit rather than of a constant, because a league
+matchup sets its own clock and a longer one has to read as more time left. An agent out in a world has no episode and reads
+nought for the whole of its life, which is the honest reading of a clock that will never expire.
+
+**Arrows left** (`SELF_ARROWS`) is what is in the quiver, over the 64 a bow or crossbow loadout carries, and nought for a
+body carrying nothing that shoots. A quiver that can empty was invisible: an agent on its last arrow read exactly like one
+on its first, and the only thing that knew better was the teacher, which infers an empty quiver from a use press that
+produced nothing — an inference a network sampling a button afresh each tick cannot make. An Infinity weapon reads full
+whatever it carries, since vanilla spends nothing from it and the real-game loadouts carry a single arrow for that reason
+(`arena/Loadouts`). The beast gets the clock as well, for the same reward and the same timed fights, and not the arrows:
+it has no hands, so there is no quiver to be out of.
 
 ### The two places the hands are not a player's
 
@@ -131,8 +149,8 @@ The continuous controls add a learned spread while training (`logStd`, per contr
 
 ## The network
 
-`744 -> 256 -> GRU 128 -> 128 -> 19`: an encoder, a recurrent layer that carries 128 numbers of memory from tick to tick
-for the whole fight (blank at the start of each fight), and one head per kind of control. That's 359,399 parameters.
+`770 -> 256 -> GRU 128 -> 128 -> 19`: an encoder, a recurrent layer that carries 128 numbers of memory from tick to tick
+for the whole fight (blank at the start of each fight), and one head per kind of control. That's 366,107 parameters.
 Training runs the GRU through chunks of 32 ticks. The widths are trainer options (`--h1 --hidden --h3`); the game reads
 them from the weight file, so a wider network needs no Java change. `scripts\parity.ps1` checks that the Java forward
 pass matches PyTorch's to within about 1e-6.
@@ -149,7 +167,8 @@ pass matches PyTorch's to within about 1e-6.
 
 A win pays 2 plus up to 1 for speed. A loss, or running out the minute, costs 2. Damage is paid by the health it actually
 removed, dealt at 1.5 and taken at 1.0. Nothing is paid for lasting longer: that taught agents to run. Damage is paid in
-one place, where it lands (`LivingEntityMixin`), so arrows count the same as swings.
+one place, where it lands (`LivingEntityMixin`), so arrows count the same as swings. The agent sees the clock this table
+turns on: the self block's `SELF_CLOCK` is the same fraction `AgentReward` charges by.
 
 ## The fights
 

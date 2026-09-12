@@ -12,7 +12,7 @@ scripts\parity.ps1               Java forward pass against PyTorch's, after touc
 | Check | Pass looks like | Proves |
 | --- | --- | --- |
 | `test.ps1` | `All 20 required tests passed`; every fight 54 ticks | the observation, the body and the scripted fighter still work; the 54 ticks are deterministic, so any change in them is a behaviour change |
-| `test.ps1 -Mechanics` | `All 30 required tests passed` | bows, crossbows, shields, axes, mining, placing, use slowdown and damage payment follow a player's rules, what a press of attack costs and what holding it down costs, what the observation says about a use and about what is shot at the agent, and the teacher getting itself out of powder snow |
+| `test.ps1 -Mechanics` | `All 31 required tests passed` | bows, crossbows, shields, axes, mining, placing, use slowdown and damage payment follow a player's rules, what a press of attack costs and what holding it down costs, what the observation says about a use, about the clock and the quiver, and about what is shot at the agent, and the teacher getting itself out of powder snow |
 | `test.ps1 -Play` | `All 18 required tests passed`, and `Loaded the mod's jar, modular_mob_ai/models/vs-copy.mbw from iteration 650` | what [playing.md](playing.md) promises: the bundled networks load and drive an agent, the commands, saving, sides and friendly fire, the Infinity loadouts |
 | `parity.ps1` | `parity ok` once per body, logits agreeing to about 1e-6, and `the plain ones agree to the bit at batches 1 to 64` | the game runs exactly the network PyTorch trained, **for every body this build has**, and the forward pass's explicit vector loops give the same bits as its plain ones |
 
@@ -83,6 +83,7 @@ Each test sets up one situation and checks the numbers a player would get:
 | `swordBlowIsPaidOnceAndOnlyOnTheOpponent` | damage payment |
 | `useProgressIsTheItemsOwnCharge` | the echo's use charge: a bow's power curve, a crossbow's wind, nothing with the hands free |
 | `onlyShotsComingAtTheAgentTakeASlot` | an arrow on its way takes a slot with a kind of its own; one crossing, one lying still and the agent's own take none, and the mob keeps slot zero |
+| `theClockRunsUpAndTheQuiverRunsDown` | the self block's clock is this fight's own ticks over this fight's own limit, never going backwards and reading 1 once the time is up; arrows left follow the hotbar and fall as a bow is fired; a body with nothing that shoots and no fight reads nought for both |
 | `theTeacherGetsOutOfPowderSnow`, `theTeacherBreaksOutOfPowderSnow` | the scripted fighter, with a zombie to fight, walks out of one block of powder snow and breaks its way out of a patch three wide |
 
 Ammo: the agent's bow and crossbow loadouts carry 64 finite arrows, one used per shot, and arrows aren't picked back up.

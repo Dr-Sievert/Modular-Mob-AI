@@ -10,8 +10,8 @@ import net.sievert.modularmobai.entity.agent.MobControls;
  * A body with no hands: it moves, turns, jumps, sprints and bites.
  *
  * <p>The second body, and it exists to be as unlike the humanoid as a body can be while still being a fighter. It has no
- * hotbar block, no use buttons, no slot to choose and so no categorical head at all; its observation is 612 wide against
- * 634 and its action vector seven wide against eleven. Nothing about the machinery is special-cased for it, which is the
+ * hotbar block, no use buttons, no slot to choose and so no categorical head at all; its observation is 747 wide against
+ * 770 and its action vector seven wide against eleven. Nothing about the machinery is special-cased for it, which is the
  * claim being made: a body brings a layout, an encoder and a descriptor, and everything else already works.
  *
  * <p>Its layout is {@link BeastSchema} and its encoder {@link BeastObservation}. See {@code docs/species.md}, which was
