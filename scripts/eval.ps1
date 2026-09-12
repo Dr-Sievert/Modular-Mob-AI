@@ -11,15 +11,23 @@
 #   scripts\eval.ps1 -Suite league -Opponents ravager -ReplayEvery 1   one matchup, every fight of it written down: what
 #                                                           the league page offers when a row has no recorded fight to show
 #
-# Two evaluations of the same weights already fight the same sites in the same order, so two builds compared this way are
-# compared on the same ground without being asked to be. -Ground asks for a different sample of the library instead, which
-# is how to check that a difference is the change and not the ground it was measured on:
+# Two evaluations do NOT fight the same sites: without -Ground a worker starts somewhere random in the terrain library
+# (TerrainSites.startLibrary, "anywhere otherwise"), so the ground under a comparison is a fresh sample every time. It is
+# enough fights that makes the answer repeat, not repeated ground. Measured on the scripted fighter, 600 league fights, one
+# worker, back to back: 79.00% and then 78.97%, on ground that was nothing like the same (236 flat sites against 91, 174
+# lava against 70, none of the water in one run and 159 in the other). -Ground fixes where each worker starts, for asking
+# the same question of a named sample rather than an arbitrary one:
 #
 #   scripts\eval.ps1 -Weights models\league2\best.mbw -Suite league -Ground 7
 #
+# **A comparison wants -Workers 1, and the same count either way.** On the league the fights are spread evenly over the
+# opponents *per worker*, and workers get through uneven shares of the total, so several workers leave the opponent mix
+# skewed by whichever of them happened to run fastest -- and an opponent is worth anything from 0% (a warden) to 100% (a
+# wolf), which is a far bigger lever than terrain. Three workers measured the same fighter at 77.8% and then 83.0%, where
+# one worker repeated to three hundredths of a point. scripts\bench.ps1 uses one worker for exactly this reason.
+#
 # Starting the workers costs the same however many fights follow, and 2,000 fights put the win rate within about a
-# point either way, where 400 leave it within two and a half. What is left over when the ground repeats is the mobs and the
-# dice: four runs of one network over 300 fights measured 44.7, 44.7, 45.7 and 46.3 per cent.
+# point either way, where 400 leave it within two and a half.
 #   scripts\eval.ps1 -ReplayEvery 10          replays of one fight in ten per worker, in runs\eval-<run>-<iteration>\replays
 
 param(

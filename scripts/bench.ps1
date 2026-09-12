@@ -11,12 +11,15 @@
 #
 # Three rules, all learned the hard way:
 #   - **Bench everything being compared in one call.** Back to back, one network over 600 fights measures within half a
-#     point of itself; across an evening the same file measured 66.7% and then 60.5%, with every network in the sitting
-#     moving together. The worker sizing is measured from the machine's own throughput at startup, so a machine with four
+#     point of itself -- the scripted fighter repeated to three hundredths of a point -- while across an evening the same
+#     file measured 66.7% and then 60.5%, with every network in the sitting moving together. The worker sizing is measured from the machine's own throughput at startup, so a machine with four
 #     training workers on it sizes differently from one with two, and different sizing means different fights. A number from
 #     one sitting cannot be subtracted from a number in another, and a whole night's conclusions nearly were.
-#   - **Keep -Workers the same** in every comparison. Each worker takes its own slice of the arenas, so 600 fights over one
-#     worker are not the 600 over three. One worker is the default because it also fits beside a training run.
+#   - **Keep -Workers the same** in every comparison, and one is not only for fitting beside a training run. On the league
+#     the fights are spread evenly over the opponents *per worker*, and workers get through uneven shares of the total, so
+#     several workers leave the opponent mix skewed by whichever of them ran fastest -- and an opponent is worth anything
+#     from 0% (a warden) to 100% (a wolf). Measured on the scripted fighter over 600 league fights: three workers gave
+#     77.8% and then 83.0%, one worker gave 79.00% and then 78.97%.
 #   - 600 fights is about half a point of repeatability within a sitting, so three points mean something and one does not.
 #     Use -Arenas 2000 to halve it, at four times the wall clock.
 #

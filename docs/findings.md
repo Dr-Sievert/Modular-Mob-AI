@@ -584,10 +584,22 @@ are deliberate.
   - What follows for anything being compared: **put every candidate in one `bench.ps1` call**, which is why that script
     takes a list, and never subtract a number from one sitting from a number in another. It also means a published model's
     recorded win rate is a statement about the sitting it was measured in, to a few points.
-  - Keep `-Workers` the same too. Each worker takes its own slice of the arenas, so 600 fights over one worker are not the
-    600 over three.
+  - **Keep `-Workers` at one, and the same either way, because several workers are worth several points on their own.** This
+    was recorded as "each worker takes its own slice of the arenas" without a number on it. The number is large. The scripted
+    fighter, 600 league fights, back to back: **three workers gave 77.8% and then 83.0%; one worker gave 79.00% and then
+    78.97%.** Five points of slop against three hundredths.
+    - The mechanism is the opponents, not the ground. A league evaluation spreads its fights evenly over the opponents *per
+      worker*, and workers get through uneven shares of the total, so the aggregate opponent mix is skewed by whichever of
+      them ran fastest. An opponent is worth anything from 0% (a warden) to 100% (a wolf), so a skew of a few dozen fights
+      between a warden and a wolf moves the whole number. Ground cannot do that: the four kinds sit within a few points of
+      each other over 600 fights.
   - `-Ground` is for asking the same question of a different sample of the library, not for steadying the answer — it went
     in believing the opposite and the measurement said otherwise.
+    - And the ground is **not** the same from one evaluation to the next, whatever `eval.ps1` used to say at the top of it.
+      Without a seed `TerrainSites.startLibrary` starts each worker somewhere random in the library — its own comment says
+      "anywhere otherwise" — so every evaluation is a fresh sample of ground. What makes the answer repeat is the number of
+      fights, not repeated ground: the two one-worker runs above agreed to three hundredths of a point on ground that was
+      nothing like the same, 236 flat sites against 91, 174 lava against 70, no water at all in one and 159 in the other.
 - **An experiment on one worker, judged on the league rating, cannot be judged.** league-pull05 forked league2 at
   iteration 6,000 to try a teacher pull of 0.05 against 0.2, and over 500 iterations on its single worker it produced three
   evaluations: 1610 against league2's 1600 to 1604 at the same iterations. But league2's own rating wanders between 1567
