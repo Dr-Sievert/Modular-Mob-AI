@@ -19,6 +19,7 @@ import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
@@ -57,6 +58,7 @@ import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 import net.sievert.modularmobai.entity.agent.MobControls;
 import net.sievert.modularmobai.gametest.GameTestGroup;
+import net.sievert.modularmobai.gametest.league.Pairings;
 import net.sievert.modularmobai.gametest.terrain.PouredHazards;
 
 /**
@@ -70,7 +72,9 @@ import net.sievert.modularmobai.gametest.terrain.PouredHazards;
  * up a tick at a time in floats.
  *
  * <p>Each test is a script, a step for every tick, that runs in the arena's closed box: a bedrock floor at height one,
- * room from two to eight, and walls round an inside seven blocks across, from one to seven.
+ * room from two to eight, and walls round an inside seven blocks across, from one to seven. One test is not about the body
+ * at all — how a league training fight is drawn from the trainer's shares — and is here because this is the suite that
+ * checks a rule against the number it is supposed to give, and because it boots in seconds.
  *
  * <p>Run with {@code -Psuite=mechanics}, see {@link net.sievert.modularmobai.gametest.GameTestTuning#suite()}.
  */
@@ -1561,6 +1565,84 @@ public class AgentMechanicsGameTest {
 
         return helper.getLevel().getBlockState(feet).is(Blocks.POWDER_SNOW)
                 || helper.getLevel().getBlockState(feet.above()).is(Blocks.POWDER_SNOW);
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // How a league training fight is drawn
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * The pairing draw against the shares the trainer wrote: a loadout and an opponent come out together, in proportion, the
+     * same way twice from one seed, and nothing the table names is ever starved.
+     *
+     * <p>Here rather than in the league suite because it is arithmetic and not a fight, and this is the suite that checks a
+     * rule against the number it is supposed to give. What it is guarding is the thing a wrong draw would hide: the shares
+     * are what send a bow to the opponents a bow can learn from, so a draw that quietly ignored them, or that starved the
+     * pairings on the floor, would cost a run its curriculum and nothing would fail. The shares themselves are the trainer's,
+     * and tested over there; see trainer/tests/test_league.py.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 100)
+    public static void theLeagueDrawsAPairingByItsShare(GameTestHelper helper) {
+
+        // A table shaped like the trainer's: the even fights carry most of it, the hopeless ones are held down to the floor,
+        // and two rows name things this build does not field.
+        Pairings pairings = Pairings.parse(List.of(
+                "loadout,opponent,share,chance,fights,wins",
+                "sword,creeper,0.300000,0.5100,120.0,61.0",
+                "bow,creeper,0.250000,0.4700,90.0,42.0",
+                "sword,zombie,0.200000,0.5500,110.0,60.0",
+                "bow,zombie,0.240000,0.4500,80.0,36.0",
+                "sword,ghast,0.005000,0.0200,40.0,1.0",
+                "bow,ghast,0.005000,0.0300,30.0,1.0",
+                "bow,warden,0.900000,0.0000,10.0,0.0",
+                "netherite_sword,creeper,0.900000,0.5000,10.0,5.0",
+                ""), List.of("creeper", "zombie", "ghast")::contains, List.of("sword", "bow")::contains);
+
+        helper.assertValueEqual(pairings.pairings().size(), 6, "pairings this build can field");
+        helper.assertTrue(Math.abs(pairings.total() - 1.0D) < 1.0E-9D, "The shares add up to " + pairings.total() + ", not one");
+
+        Map<Pairings.Pairing, Integer> drawn = draws(pairings, 20_000L, 20_000);
+        Map<Pairings.Pairing, Integer> again = draws(pairings, 20_000L, 20_000);
+
+        helper.assertTrue(drawn.equals(again), "The same seed drew a different set of fights the second time");
+
+        for (int index = 0; index < pairings.pairings().size(); index++) {
+
+            Pairings.Pairing pairing = pairings.pairings().get(index);
+            int count = drawn.getOrDefault(pairing, 0);
+            double expected = 20_000 * pairings.share(index);
+
+            // Four standard deviations of a binomial draw either way, and never none: the floor is only worth having if a
+            // pairing on it keeps coming round.
+            double spread = 4.0D * Math.sqrt(expected * (1.0D - pairings.share(index)));
+
+            helper.assertTrue(count > 0, "Nothing was ever drawn for " + pairing.loadout() + " against " + pairing.opponent());
+            helper.assertTrue(Math.abs(count - expected) <= spread, pairing.loadout() + " against " + pairing.opponent()
+                    + " came up " + count + " times, not the " + Math.round(expected) + " its share asks for");
+        }
+
+        // The point of the whole thing: the fights go to the pairings where the result is close, not evenly over the table.
+        int even = drawn.get(new Pairings.Pairing("sword", "creeper")) + drawn.get(new Pairings.Pairing("bow", "creeper"));
+        int hopeless = drawn.get(new Pairings.Pairing("sword", "ghast")) + drawn.get(new Pairings.Pairing("bow", "ghast"));
+
+        helper.assertTrue(even > 20 * hopeless, "The even pairings took " + even + " fights against the hopeless ones' " + hopeless);
+
+        helper.assertTrue(Pairings.NONE.draw(RandomSource.create(1L)) == null, "An empty table drew something");
+        helper.succeed();
+    }
+
+    /** How often each pairing came up in so many draws from one seed. */
+    private static Map<Pairings.Pairing, Integer> draws(Pairings pairings, long seed, int draws) {
+
+        RandomSource random = RandomSource.create(seed);
+        Map<Pairings.Pairing, Integer> counts = new HashMap<>();
+
+        for (int draw = 0; draw < draws; draw++) {
+
+            counts.merge(pairings.draw(random), 1, Integer::sum);
+        }
+
+        return counts;
     }
 
     /** An arrow in the air from wherever, with whatever velocity, as if somebody had loosed it. */

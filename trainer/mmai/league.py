@@ -9,6 +9,7 @@ all of it down:
     runs/RUN/league/roster.csv          written by the workers: the mobs, the scripted fighter and the models they field, and the cap on each
     runs/RUN/league/results/wNN.csv     appended by each worker, a line a fight; the columns are in the game's league/League#write
     runs/RUN/league/matchmaking.csv     written here: each opponent's share of the training fights, and why
+    runs/RUN/league/pairs.csv           written here: each loadout against each opponent, its share and the record behind it
     runs/RUN/league/ratings.csv         written here: every player's rating, best first
     runs/RUN/league/opponents.csv       written here: the agent's recent record against each opponent
     runs/RUN/league/loadouts.csv        written here: the agent's recent record with each loadout
@@ -46,17 +47,44 @@ distance between the two of them instead of measuring it. That is the whole tric
 list — both runs rate the same fixed network against the same anchor, and comparing what each says it is worth is also the
 check that the two scales have not drifted apart.
 
-Matchmaking. The training fights go where there is the most to learn: to opponents the agent beats about half the time.
-Its chance against each is estimated from its recent training fights against it, which fade an iteration at a time, and
-filled in from the ratings while there are few; an opponent's weight is that chance times its complement, which peaks
-at an even fight. A floor of the fights is spread evenly, so an opponent the agent always beats, or never does, still
-comes round. Self play gets a share of its own, weighed the same way over a pool of checkpoints: the newest few, and the
-rest spaced out over the run so far, so the agent has to keep beating what it used to be as well as what it is.
+Matchmaking. The training fights go where there is the most to learn: to fights the agent wins about half the time. What
+is drawn is a **pairing** — one loadout against one opponent — and not an opponent to be handed a loadout afterwards; see
+`pairs` below for why that matters and what it costs. Its chance in each pairing is estimated from its recent training
+fights, which fade an iteration at a time, and filled in from the opponent's chance and the ratings while there are few; a
+pairing's weight is that chance times its complement, which peaks at an even fight. A floor of the fights is spread evenly,
+so a pairing the agent always wins, or never does, still comes round. Self play gets a share of its own, weighed the same
+way over a pool of checkpoints: the newest few, and the rest spaced out over the run so far, so the agent has to keep
+beating what it used to be as well as what it is.
+
+Pairs. The loadout and the opponent used to be drawn independently, the trainer weighing the opponent and the worker
+handing the agent whichever loadout came up. That spends a run's fights in the wrong places. A bow was drawn against a
+creeper it should kite exactly as often as against a ghast it cannot reach, so the gradient that reaches the drawing of a
+bow was an average over the matchups where a bow is the answer and the matchups where it is hopeless: measured on a league
+run, the ranged loadouts won about 40% of their fights and the melee ones far more. Drawing the pairing puts the fights
+where a loadout can still learn something, and hands a loadout that is losing more of the matchups it is losing.
+
+The pair table is loadouts times opponents, and both are small: ten loadouts against 48 mobs and squads plus the scripted
+fighter is 490 pairings at the start of a run, 1,450 once every rung of the difficulty ladder is open, and 80 more for the
+self-play pool. That is thin ground for a per-pair win rate. The faded record holds about 1/(1 - league_decay) = 50
+iterations of fights, which at rollout_steps and a few hundred ticks a fight is a couple of thousand fights all told, so a
+pairing has single figures of them and plenty have none at all. **So a pairing's chance is never asked to stand on its
+own**: it is the pairing's own record over a prior worth league_prior fights, and that prior is the opponent's chance moved
+by how the loadout does over all of its fights, which is a tenth of the run's and dense enough to mean something (see
+`pair_guess`). With nothing recorded anywhere the prior is exactly the opponent's chance, so the draw starts out as what it
+always was — the loadout even within the opponent — and only separates as the fights say it should.
+
+None of this costs coverage. The floor is spread over the pairings rather than over the opponents, which comes to the same
+share per pairing as before: an opponent's even floor was already being split ten ways by the even loadout draw.
+
+Only the training fights are paired. An evaluation fight still draws its opponent evenly and its loadout evenly, because
+every rating in the league is measured on those: pairing them would move the scale under a run that is already going.
 
 An opponent may also come with a cap on its share, which the workers write into roster.csv beside it, since the game is
 what knows: the warden cannot be beaten at all, the reward has no way to pay for getting away alive from one, and the
 floor alone would still hand it its even share of the fights. A cap holds it down to a fraction of that and gives what it
-gave up to the opponents there is something to learn from. Nothing caps the evaluation draw, so a capped opponent is
+gave up to the opponents there is something to learn from. A cap belongs to the opponent and not to one pairing with it, so
+it holds down everything the agent might carry against it at once: what is capped at two thousandths is two thousandths of
+the fights over all ten loadouts, not two thousandths each. Nothing caps the evaluation draw, so a capped opponent is
 rated on as many fights as any other.
 
 When a league run is done is not decided here. A checkpoint's fights against the mobs and the scripted fighter also go
@@ -83,6 +111,14 @@ logger = log.get("league")
 
 CHECKPOINT = "iteration-"
 SCRIPTED = "scripted"
+
+# The kind a row of roster.csv carries when it is one of the loadouts the agent is armed with rather than an opponent; the
+# game writes both in the one file, see the game's league/League#writeRoster.
+LOADOUT = "loadout"
+
+# The faded fights below which a training record is forgotten: a thousandth of a fight, which league_decay reaches about 340
+# iterations after the last one, and which the prior outweighs ten thousand to one.
+FADED = 1.0e-3
 
 # The rungs of the difficulty ladder either side of normal, as the game writes them on the end of an opponent's name; see
 # the gametest's league/Opposition. Normal has no suffix, so every name the league had before the ladder means what it did.
@@ -240,18 +276,52 @@ def win_chance(wins: float, fights: float, guess: float, guess_weight: float) ->
     return (wins + guess_weight * guess) / (fights + guess_weight)
 
 
-def shares(chances: dict[str, float], floor: float, caps: dict[str, float] | None = None,
-           frontier: float = 0.0, probe: float = 1.0) -> dict[str, float]:
-    """Each opponent's share of a group's fights, adding up to one.
+# How far from certain a chance is held before it is turned into odds; see pair_guess.
+MARGIN = 0.01
+
+
+def odds(chance: float) -> float:
+    """A chance as odds, held a hundredth away from either end: odds of nothing and of a certainty divide by zero."""
+
+    held = min(max(chance, MARGIN), 1.0 - MARGIN)
+
+    return held / (1.0 - held)
+
+
+def pair_guess(opponent: float, loadout: float, average: float) -> float:
+    """What one loadout is expected to do against one opponent before the pairing's own fights can say.
+
+    The opponent's chance, moved by how that loadout does over all its fights against how the loadouts do on average, in
+    odds: a loadout whose odds are half the average's has half the average's odds here too. It is the simplest guess that
+    carries the one thing about a loadout that is measured densely enough to trust — a loadout is in one fight in ten, a
+    pairing in one in five hundred — and with nothing recorded it gives back the opponent's chance unchanged, which is the
+    draw as it was before pairings.
+
+    Holding the odds away from certainty also keeps the guess from claiming more than it knows: a loadout that has won every
+    fight it has had so far does not thereby beat the warden.
+    """
+
+    combined = odds(opponent) * odds(loadout) / odds(average)
+
+    return combined / (1.0 + combined)
+
+
+def shares(chances: dict, floor: float, caps: dict[str, float] | None = None,
+           frontier: float = 0.0, probe: float = 1.0, groups: dict | None = None) -> dict:
+    """Each opponent's, or each pairing's, share of a group's fights, adding up to one.
 
     Weighed by chance times its complement, which is largest for an even fight and nothing for a certain one, and a
-    floor so every opponent keeps coming round however the fights against it go. Caps, where the workers named any, hold
-    an opponent down to at most its own share of the fights.
+    floor so every one of them keeps coming round however the fights go. Caps, where the workers named any, hold an
+    opponent down to at most its own share of the fights.
+
+    The keys are opponents, or pairings of a loadout and an opponent; nothing here cares which, since the rule is the same
+    either way. `groups` says what a key's cap belongs to when that is not the key itself: a cap is the opponent's, so every
+    pairing with it is held under one cap between them rather than each under a cap of its own.
 
     The floor is where a run's fights quietly go. Spread evenly it is the same share for an even fight and for one the
     agent has never once won, and with a hundred opponents on the roster and sixteen of them hopeless that was **nine per
     cent of a run's fights spent losing every time**: a fight lost every time carries almost nothing to learn from, since
-    there is no version of it the agent got further in. So an opponent below `frontier` chance keeps only `probe` of the
+    there is no version of it the agent got further in. So anything below `frontier` chance keeps only `probe` of the
     floor — enough to be tried again as the agent gets better, since one that was hopeless in the first thousand
     iterations may not be in the ten thousandth — and what it gives up goes to the fights that are close.
     """
@@ -264,7 +334,7 @@ def shares(chances: dict[str, float], floor: float, caps: dict[str, float] | Non
     even = 1.0 / len(chances)
 
     if total <= 0.0:
-        return capped({name: even for name in chances}, caps or {})
+        return capped({name: even for name in chances}, caps or {}, groups)
 
     # The floor, as much of it as each opponent has earned, put back to adding up to one so that holding the hopeless down
     # hands their share to the rest rather than losing it.
@@ -273,22 +343,31 @@ def shares(chances: dict[str, float], floor: float, caps: dict[str, float] | Non
     held = {name: share / standing for name, share in held.items()} if standing > 0.0 else held
 
     return capped({name: (1.0 - floor) * weight / total + floor * held[name]
-                   for name, weight in weights.items()}, caps or {})
+                   for name, weight in weights.items()}, caps or {}, groups)
 
 
-def capped(group: dict[str, float], caps: dict[str, float]) -> dict[str, float]:
+def capped(group: dict, caps: dict[str, float], groups: dict | None = None) -> dict:
     """The same shares with every cap honoured, what the capped ones gave up going to the rest in proportion.
 
-    Spreading what one gave up can push another over its own cap, so this goes round again until nothing is over, which
-    takes at most one pass per opponent. If every one of them ends up capped the shares add up to less than one, which
-    costs nothing: the workers draw from the shares in proportion, whatever they come to.
+    A cap is on everything under one key of `groups` together — every pairing with the warden, not each of them — so a
+    group over its cap is scaled down to it and keeps the balance between its own members. Spreading what one gave up can
+    push another over its own cap, so this goes round again until nothing is over, which takes at most one pass per group.
+    If every one of them ends up capped the shares add up to less than one, which costs nothing: the workers draw from the
+    shares in proportion, whatever they come to.
     """
 
     result = dict(group)
-    held: set[str] = set()
+    held: set = set()
+    key = (lambda name: name) if groups is None else (lambda name: groups.get(name, name))
 
     for _ in range(len(result)):
-        over = [name for name, share in result.items() if name not in held and share > caps.get(name, 1.0)]
+        totals: dict[str, float] = {}
+
+        for name, share in result.items():
+            if name not in held:
+                totals[key(name)] = totals.get(key(name), 0.0) + share
+
+        over = [name for name, share in totals.items() if share > caps.get(name, 1.0)]
 
         if not over:
             return result
@@ -296,9 +375,12 @@ def capped(group: dict[str, float], caps: dict[str, float]) -> dict[str, float]:
         spare = 0.0
 
         for name in over:
-            spare += result[name] - caps[name]
-            result[name] = caps[name]
-            held.add(name)
+            spare += totals[name] - caps[name]
+            shrink = caps[name] / totals[name] if totals[name] > 0.0 else 0.0
+
+            for member in [one for one in result if key(one) == name and one not in held]:
+                result[member] *= shrink
+                held.add(member)
 
         free = {name: share for name, share in result.items() if name not in held}
         loose = sum(free.values())
@@ -437,6 +519,12 @@ class League:
         # The agent's training record against each opponent, [wins, fights], both fading an iteration at a time.
         self.training: dict[str, list[float]] = {}
 
+        # The same record with each loadout, and the same in each pairing of a loadout and an opponent, which is the unit
+        # the training fights are drawn in; all three fade together. A pairing's own record is thin by construction, so the
+        # other two are what fills it in: see pair_guess and the `pairs` paragraph above.
+        self.training_loadouts: dict[str, list[float]] = {}
+        self.training_pairs: dict[tuple[str, str], list[float]] = {}
+
         self.eval_windows = Windows(config.league_window)
         self.train_windows = Windows(config.league_window)
         self.eval_loadouts = Windows(config.league_window)
@@ -450,10 +538,18 @@ class League:
         self.shares: dict[str, float] = {}
         self.chances: dict[str, float] = {}
 
+        # What the workers actually draw from: each pairing's share of the training fights, and the chance behind it. Empty
+        # until the workers have said which loadouts they field, and then the shares above are these added up per opponent,
+        # which is what the tier list and the tables read.
+        self.pair_shares: dict[tuple[str, str], float] = {}
+        self.pair_chances: dict[tuple[str, str], float] = {}
+
         # What the workers say about each opponent they field: what kind of thing it is, and the largest share of the
-        # training fights it may take. Read afresh from roster.csv every iteration, so nothing of it is saved.
+        # training fights it may take, and which loadouts the agent is armed with. Read afresh from roster.csv every
+        # iteration, so nothing of it is saved.
         self.kinds: dict[str, str] = {}
         self.caps: dict[str, float] = {}
+        self.loadouts: list[str] = []
 
         # The rungs of the difficulty ladder opened so far, by full name: zombie(hard), 2x_zombie(easy). A ratchet, so it
         # is saved with the rest and a resumed run does not have to earn them again.
@@ -469,9 +565,16 @@ class League:
     def update(self, iteration: int) -> None:
         """Once per training iteration: takes in what the workers wrote, and writes everything that follows from it."""
 
-        for record in self.training.values():
-            record[0] *= self.config.league_decay
-            record[1] *= self.config.league_decay
+        for records in (self.training, self.training_loadouts, self.training_pairs):
+            for record in records.values():
+                record[0] *= self.config.league_decay
+                record[1] *= self.config.league_decay
+
+            # What has faded to nothing is dropped rather than carried for the rest of the run. A record this small says
+            # exactly what no record says, since the prior swamps it, and without this the saved state would keep a row for
+            # every checkpoint the run ever met times every loadout it ever carried.
+            for name in [name for name, record in records.items() if record[1] < FADED]:
+                del records[name]
 
         # Read before the results, so a fight against an opponent nobody has rated yet is filed under the kind the workers
         # say it is rather than the fallback: a player keeps the kind it was first entered under.
@@ -535,9 +638,14 @@ class League:
         self.ground.setdefault(site, Ground()).add(outcome, finish)
 
         if kind == "train":
-            record = self.training.setdefault(opponent, [0.0, 0.0])
-            record[0] += outcome == "win"
-            record[1] += 1.0
+            # The pairing is the unit the fight was drawn in, so it is the unit the record is kept in; the opponent's and the
+            # loadout's own records are the same fights added up the two other ways, and are what a thin pairing leans on.
+            for record in (self.training.setdefault(opponent, [0.0, 0.0]),
+                           self.training_loadouts.setdefault(loadout, [0.0, 0.0]),
+                           self.training_pairs.setdefault((loadout, opponent), [0.0, 0.0])):
+                record[0] += outcome == "win"
+                record[1] += 1.0
+
             self.train_windows.add(opponent, outcome)
             self.train_loadouts.add(loadout, outcome)
             return
@@ -562,7 +670,12 @@ class League:
     def _roster(self) -> list[str]:
         """The mobs and the scripted fighter the workers field, as they last said, with what kind each is and the largest
         share of the training fights it may take. A build that says neither leaves both at what they always were: a mob,
-        with no cap on it."""
+        with no cap on it.
+
+        The loadouts the agent is armed with come in the same file, under the kind `loadout`, because the game is what knows
+        which of them a run fields (`-PleagueLoadouts`) and a pairing cannot be drawn without both halves. A build too old to
+        say leaves the list empty, and then the shares stay what they always were, one per opponent.
+        """
 
         file = self.folder / "roster.csv"
 
@@ -573,20 +686,29 @@ class League:
             return []
 
         names = []
+        loadouts = []
 
         for line in lines:
             if not line.strip():
                 continue
 
             parts = [part.strip() for part in line.split(",")]
+            kind = parts[1] if len(parts) > 1 and parts[1] else "mob"
+
+            if kind == LOADOUT:
+                loadouts.append(parts[0])
+                continue
+
             names.append(parts[0])
-            self.kinds[parts[0]] = parts[1] if len(parts) > 1 and parts[1] else "mob"
+            self.kinds[parts[0]] = kind
 
             try:
                 self.caps[parts[0]] = float(parts[2]) if len(parts) > 2 and parts[2] else 1.0
 
             except ValueError:
                 self.caps[parts[0]] = 1.0
+
+        self.loadouts = loadouts
 
         return names
 
@@ -654,7 +776,12 @@ class League:
         return [checkpoint_name(number) for number in pool(checkpoints, self.config.league_pool, self.config.league_recent)]
 
     def _matchmake(self, roster: list[str], checkpoints: list[str]) -> None:
-        """Each opponent's chance, from its record and its rating, and from those its share of the training fights."""
+        """Each pairing's chance, from its own record, the opponent's and the loadout's, and from those its share of the
+        training fights; and the same added up per opponent, which is what the tables show.
+
+        A build that has not said which loadouts it fields gets what the league always did, a share per opponent: the
+        workers draw the loadout themselves then, so there is nothing here to say about it.
+        """
 
         learner = self.ratings.newest_checkpoint()
         learner_rating = learner.rating if learner is not None else self.config.league_initial
@@ -673,16 +800,74 @@ class League:
         # training against than a normal one.
         caps = {name: self.caps.get(base(name), 1.0) for name in roster}
 
-        fixed = shares({name: chances[name] for name in roster}, self.config.league_floor, caps,
-                       self.config.league_frontier, self.config.league_probe)
-
-        # The pool of its own past selves is left alone: every one of those is a fight worth having by construction, since it
-        # was the agent not long ago.
-        frozen = shares({name: chances[name] for name in checkpoints}, self.config.league_floor)
-
+        pairs = self._pairs(chances)
         self.chances = chances
-        self.shares = {name: (1.0 - self_play) * share for name, share in fixed.items()}
-        self.shares.update({name: self_play * share for name, share in frozen.items()})
+        self.pair_chances = pairs
+
+        if not pairs:
+            fixed = shares({name: chances[name] for name in roster}, self.config.league_floor, caps,
+                           self.config.league_frontier, self.config.league_probe)
+
+            # The pool of its own past selves is left alone: every one of those is a fight worth having by construction,
+            # since it was the agent not long ago.
+            frozen = shares({name: chances[name] for name in checkpoints}, self.config.league_floor)
+
+            self.pair_shares = {}
+            self.shares = {name: (1.0 - self_play) * share for name, share in fixed.items()}
+            self.shares.update({name: self_play * share for name, share in frozen.items()})
+            return
+
+        against = set(roster)
+
+        fixed = shares({pair: chance for pair, chance in pairs.items() if pair[1] in against},
+                       self.config.league_floor, caps, self.config.league_frontier, self.config.league_probe,
+                       groups={pair: pair[1] for pair in pairs})
+
+        frozen = shares({pair: chance for pair, chance in pairs.items() if pair[1] not in against},
+                        self.config.league_floor)
+
+        self.pair_shares = {pair: (1.0 - self_play) * share for pair, share in fixed.items()}
+        self.pair_shares.update({pair: self_play * share for pair, share in frozen.items()})
+
+        # What every table and the tier list read, and what a worker too old to draw pairings falls back on: the pairings
+        # with one opponent, added up.
+        self.shares = {}
+
+        for (_, opponent), share in self.pair_shares.items():
+            self.shares[opponent] = self.shares.get(opponent, 0.0) + share
+
+    def _pairs(self, chances: dict[str, float]) -> dict[tuple[str, str], float]:
+        """The agent's chance in every pairing of a loadout it carries and an opponent it meets, or nothing at all until the
+        workers have said which loadouts they field.
+
+        A pairing's own record is thin — a few thousand fights spread over hundreds of pairings — so it is counted against a
+        prior of `league_prior` fights of the guess, and the guess is the opponent's chance moved by how this loadout does
+        over all of its fights (`pair_guess`). The loadout's own chance is shrunk towards the average the same way, so a
+        loadout with a handful of fights does not drag a whole column of the table about.
+        """
+
+        if not self.loadouts:
+            return {}
+
+        wins = sum(record[0] for record in self.training_loadouts.values())
+        fights = sum(record[1] for record in self.training_loadouts.values())
+        average = win_chance(wins, fights, 0.5, self.config.league_prior)
+
+        loadouts = {}
+
+        for loadout in self.loadouts:
+            carried = self.training_loadouts.get(loadout, [0.0, 0.0])
+            loadouts[loadout] = win_chance(carried[0], carried[1], average, self.config.league_prior)
+
+        pairs = {}
+
+        for loadout in self.loadouts:
+            for opponent, chance in chances.items():
+                record = self.training_pairs.get((loadout, opponent), [0.0, 0.0])
+                guess = pair_guess(chance, loadouts[loadout], average)
+                pairs[(loadout, opponent)] = win_chance(record[0], record[1], guess, self.config.league_prior)
+
+        return pairs
 
     # -------------------------------------------------------------------------------------------------------------
 
@@ -712,6 +897,8 @@ class League:
             for name in opponents
         ])
 
+        self._pair_table()
+
         loadouts = sorted(set(self.eval_loadouts.recent) | set(self.train_loadouts.recent))
 
         self._table("loadouts.csv", "loadout," + ",".join(
@@ -728,6 +915,31 @@ class League:
         self._table("evaluations.csv", "iteration,opponent,fights,wins,losses,timeouts,draws", [
             f"{iteration},{opponent}," + ",".join(str(value) for value in tally.values())
             for (iteration, opponent), tally in sorted(self.evaluations.items())
+        ])
+
+    def _pair_table(self) -> None:
+        """pairs.csv: the pairing the workers draw a training fight in, largest share first, with the chance behind it and
+        the faded record that chance leans on. The record is of the training fights only, since an evaluation draws evenly
+        and a pairing gets about one of its fights per checkpoint, which would say nothing.
+
+        A run whose workers do not report their loadouts has no pair table, and the file is taken away rather than left to
+        go stale: the workers read it if it is there, and a table from another build's loadouts is worse than none.
+        """
+
+        target = self.folder / "pairs.csv"
+
+        if not self.pair_shares:
+            target.unlink(missing_ok=True)
+            return
+
+        ordered = sorted(self.pair_shares, key=lambda pair: (-self.pair_shares[pair], pair))
+
+        self._table("pairs.csv", "loadout,opponent,share,chance,fights,wins", [
+            f"{loadout},{opponent},{self.pair_shares[(loadout, opponent)]:.6f},"
+            f"{self.pair_chances[(loadout, opponent)]:.4f},"
+            f"{self.training_pairs.get((loadout, opponent), [0.0, 0.0])[1]:.1f},"
+            f"{self.training_pairs.get((loadout, opponent), [0.0, 0.0])[0]:.1f}"
+            for loadout, opponent in ordered
         ])
 
     def _table(self, name: str, header: str, lines: list[str]) -> None:
@@ -752,6 +964,13 @@ class League:
             ", ".join(f"{name} {100 * self.shares[name]:.0f}%" for name in most),
         )
 
+        if self.pair_shares:
+            pairs = sorted(self.pair_shares, key=lambda pair: -self.pair_shares[pair])[:3]
+
+            logger.info("the pairings with the most: %s", "; ".join(
+                f"{loadout} against {opponent} {100 * self.pair_shares[(loadout, opponent)]:.1f}%"
+                for loadout, opponent in pairs))
+
         # What the hazard sites are for: the ground finishing the fight, and only on the ground that has any.
         using = [
             f"{site} {100.0 * tally.by_terrain / max(1, tally.wins):.0f}% of {tally.wins} wins"
@@ -774,6 +993,10 @@ class League:
                 for player in self.ratings.players.values()
             },
             "training": self.training,
+            "training_loadouts": self.training_loadouts,
+
+            # A pairing keyed as loadout|opponent, since json has string keys only and no name on either side has a bar in it.
+            "training_pairs": {f"{loadout}|{opponent}": record for (loadout, opponent), record in self.training_pairs.items()},
             "windows": {
                 "eval": self.eval_windows.save(),
                 "train": self.train_windows.save(),
@@ -805,6 +1028,15 @@ class League:
             self.ratings.players[name] = Player(name, kind, float(rating), int(games), int(wins), int(losses), int(draws))
 
         self.training = {name: [float(wins), float(fights)] for name, (wins, fights) in state.get("training", {}).items()}
+
+        # A run saved before the fights were drawn in pairings has neither of these, and starts its pairings from the
+        # opponents' records it does have, which is where a pairing with nothing behind it starts anyway.
+        self.training_loadouts = {name: [float(wins), float(fights)]
+                                  for name, (wins, fights) in state.get("training_loadouts", {}).items()}
+
+        for key, (wins, fights) in state.get("training_pairs", {}).items():
+            loadout, opponent = key.split("|", 1)
+            self.training_pairs[(loadout, opponent)] = [float(wins), float(fights)]
 
         windows = state.get("windows", {})
         self.eval_windows.load(windows.get("eval", {}))

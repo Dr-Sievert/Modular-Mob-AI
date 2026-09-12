@@ -211,7 +211,9 @@ Every field of `Config` in `trainer/mmai/ppo.py` is an option, as `--field-name 
 A league run fights 37 mobs, 11 squads of several mobs at once, the scripted fighter, any published networks it was told
 to field, and frozen checkpoints of itself, with a loadout drawn every fight; see
 [architecture.md](architecture.md#the-league). Matchmaking sends training fights where the agent wins about half the
-time; evaluation fights are drawn evenly and rated. A checkpoint is judged on 1,000 evaluation fights over the mobs and
+time, and what it draws is a **pairing** of one loadout with one opponent rather than the opponent alone, so a bow is handed
+out against the opponents a bow can learn from; see the pair table below. Evaluation fights are drawn evenly, loadout
+included, and rated. A checkpoint is judged on 1,000 evaluation fights over the mobs and
 the scripted fighter, and the run is done after ten judged checkpoints in a row without a new best. An opponent the
 workers cap, which today is only the warden, takes no more than its cap of the training fights however even the fight
 looks, and is rated on as many evaluation fights as any other.
@@ -229,10 +231,35 @@ rather than by the agent. The log says `the ground finished the opponent in lava
 scripts\train.ps1 -Run league -Suite league -Seed vs-copy     start one from vs-copy's best, run until done
 scripts\league.ps1 -Run league                                the tier list, the record against each opponent and loadout
 scripts\league.ps1 -Run league -All                           every rated checkpoint in the tier list
-scripts\league.ps1 -Test                                      the unit tests of the Elo, matchmaking and pool arithmetic
+scripts\league.ps1 -Test                                      the unit tests of the Elo, the pairings and the pool arithmetic
 scripts\eval.ps1 -Run league -Suite league                    a network round every opponent, with a table at the end
 scripts\viewer.ps1 -League                                    all of it in the browser, and the per-model stats besides
 ```
+
+#### What a training fight is drawn as: `league/pairs.csv`
+
+The unit of matchmaking is a pairing of one loadout with one opponent, because the two used to be drawn independently and that
+spent a run's fights in the wrong places. A bow went to a creeper it should kite exactly as often as to a ghast it cannot
+reach, so the gradient reaching the drawing of a bow was an average over the matchups where a bow is the answer and the
+matchups where it is hopeless; measured on a league run, the ranged loadouts won about 40% of their fights and the melee ones
+far more. Pairing them puts the fights where a loadout can still learn something, and hands a loadout that is losing more of
+the matchups it is losing. A pairing near an even result gets the most fights, a floor keeps every one of them coming round,
+and a cap is the opponent's: the warden's two thousandths cover every loadout against it between them.
+
+The table is loadouts times opponents: 490 pairings at the start of a run (10 loadouts against 48 mobs and squads plus the
+scripted fighter), 1,450 once every rung of the ladder is open, and 80 more for the self-play pool. A pairing's own record is
+thin at that size — a couple of thousand fights fade through the whole table, so single figures each and plenty with none — so
+**a pairing's chance is never asked to stand on its own**: it is the pairing's own record over a prior worth `--league-prior`
+fights, and that prior is the opponent's chance moved by how the loadout does over all of its fights, which is a tenth of the
+run's and dense enough to mean something. With nothing recorded anywhere the prior is exactly the opponent's chance, so a
+fresh run draws as it always did and only separates as the fights say it should. Evaluation fights are not paired: they draw
+the opponent evenly and the loadout evenly, since every rating is measured on them.
+
+`pairs.csv` is `loadout,opponent,share,chance,fights,wins`, largest share first, and `matchmaking.csv` is the same shares
+added up per opponent. Both are rewritten every iteration, and the log says `the pairings with the most: bow against ghast
+1.4%; sword against ravager 1.3%; axe against ravager 1.2%`. The workers say which loadouts they field in `roster.csv`, under
+the kind `loadout`; a worker that finds no pair table draws from `matchmaking.csv` with the loadout even, which is what a run
+whose trainer is older than the pairings does.
 
 #### Published networks in the league: `-LeagueModels`
 

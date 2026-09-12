@@ -12,7 +12,7 @@ scripts\parity.ps1               Java forward pass against PyTorch's, after touc
 | Check | Pass looks like | Proves |
 | --- | --- | --- |
 | `test.ps1` | `All 20 required tests passed`; every fight 54 ticks | the observation, the body and the scripted fighter still work; the 54 ticks are deterministic, so any change in them is a behaviour change |
-| `test.ps1 -Mechanics` | `All 30 required tests passed` | bows, crossbows, shields, axes, mining, placing, use slowdown and damage payment follow a player's rules, what a press of attack costs and what holding it down costs, what the observation says about a use and about what is shot at the agent, and the teacher getting itself out of powder snow |
+| `test.ps1 -Mechanics` | `All 31 required tests passed` | bows, crossbows, shields, axes, mining, placing, use slowdown and damage payment follow a player's rules, what a press of attack costs and what holding it down costs, what the observation says about a use and about what is shot at the agent, the teacher getting itself out of powder snow, and how a league training fight is drawn from the trainer's shares |
 | `test.ps1 -Play` | `All 18 required tests passed`, and `Loaded the mod's jar, modular_mob_ai/models/vs-copy.mbw from iteration 650` | what [playing.md](playing.md) promises: the bundled networks load and drive an agent, the commands, saving, sides and friendly fire, the Infinity loadouts |
 | `parity.ps1` | `parity ok` once per body, logits agreeing to about 1e-6, and `the plain ones agree to the bit at batches 1 to 64` | the game runs exactly the network PyTorch trained, **for every body this build has**, and the forward pass's explicit vector loops give the same bits as its plain ones |
 
@@ -28,7 +28,7 @@ scripts\test.ps1 -Terrain -Replays        record every fight for the viewer, in 
 scripts\test.ps1 -League                  194 fights, twice round every league opponent and squad on normal and on hard; a table of each
 scripts\test.ps1 -League -Weights models\vs-copy\best.mbw   the same with a network, which also fights a frozen copy of itself
 scripts\test.ps1 -League -LeagueModels vs-copy              published networks in the league too, each a player of its own; two more fights
-scripts\league.ps1 -Test                  the league's unit tests: Elo, matchmaking, the pool, reading and resuming results
+scripts\league.ps1 -Test                  the league's unit tests: Elo, the pairings and their shares, the pool, reading and resuming results
 scripts\eval.ps1 -Weights models\vs-copy\best.mbw          a network's win rate, 2,000 fights, most likely action
 scripts\eval.ps1 -Run vs-copy -Iteration 650 -Arenas 400   a checkpoint of a local run
 scripts\bench.ps1 -Run league-sharp -Last 4                several networks on one bench, best first
@@ -84,6 +84,7 @@ Each test sets up one situation and checks the numbers a player would get:
 | `useProgressIsTheItemsOwnCharge` | the echo's use charge: a bow's power curve, a crossbow's wind, nothing with the hands free |
 | `onlyShotsComingAtTheAgentTakeASlot` | an arrow on its way takes a slot with a kind of its own; one crossing, one lying still and the agent's own take none, and the mob keeps slot zero |
 | `theTeacherGetsOutOfPowderSnow`, `theTeacherBreaksOutOfPowderSnow` | the scripted fighter, with a zombie to fight, walks out of one block of powder snow and breaks its way out of a patch three wide |
+| `theLeagueDrawsAPairingByItsShare` | the one test here that is not about the body: a league training fight comes out of `league/pairs.csv` as a loadout and an opponent together, in proportion to the shares, the same way twice from one seed, nothing the table names ever starved, and a pairing the build cannot field dropped. The shares themselves are the trainer's, tested by `scripts\league.ps1 -Test` |
 
 Ammo: the agent's bow and crossbow loadouts carry 64 finite arrows, one used per shot, and arrows aren't picked back up.
 That covers a 60-second fight, since a full-draw shot takes 20 ticks. Vanilla skeletons and pillagers never run out.

@@ -38,14 +38,19 @@ import net.sievert.modularmobai.gametest.util.DeathCauses;
  *
  * <p>A league run's agent fights every hostile mob there is, squads of several of them at once, the scripted fighter,
  * published networks a run names, and frozen copies of itself, with a different loadout from one fight to the next. What it
- * meets in its training fights is the trainer's call: it weighs every opponent by how close the agent is to an even fight
- * against it, keeps a share for each so none is forgotten, and writes the shares down here; see trainer/mmai/league.py.
- * This side only draws from them, fights, and writes down how each fight went. The ratings, the tier list and when the run
- * is done are worked out over there.
+ * meets in its training fights is the trainer's call: it weighs every <b>pairing</b> of a loadout and an opponent by how
+ * close the agent is to an even fight in it, keeps a share for each so none is forgotten, and writes the shares down here;
+ * see trainer/mmai/league.py and {@link Pairings}, which says why the pairing and not the opponent alone. This side only
+ * draws from them, fights, and writes down how each fight went. The ratings, the tier list and when the run is done are
+ * worked out over there.
  *
  * <pre>
- *   runs/RUN/league/roster.csv        written here: opponent,kind,cap for every opponent this build fields that is not a checkpoint
- *   runs/RUN/league/matchmaking.csv   written by the trainer: opponent,share and more, read here whenever it changes
+ *   runs/RUN/league/roster.csv        written here: opponent,kind,cap for every opponent this build fields that is not a
+ *                                     checkpoint, and every loadout it arms the agent with
+ *   runs/RUN/league/pairs.csv         written by the trainer: loadout,opponent,share and more, what a training fight is drawn from
+ *   runs/RUN/league/matchmaking.csv   written by the trainer: opponent,share and more, which is the same table added up per
+ *                                     opponent; what the checkpoints in the pool are read from, and what a run whose trainer
+ *                                     writes no pairings falls back to
  *   runs/RUN/league/results/wNN.csv   appended here, a line a fight, see {@link #write}
  * </pre>
  *
@@ -152,6 +157,10 @@ public final class League {
     private static List<String> drawn = List.of();
     private static double[] cumulative = new double[0];
 
+    /** The pairings a training fight is drawn from, and when their file last changed; empty until the trainer writes any. */
+    private static long pairsModified = Long.MIN_VALUE;
+    private static Pairings pairings = Pairings.NONE;
+
     /**
      * Frozen checkpoints by iteration, kept only while the matchmaking names them: the ones that take their most likely
      * action, for the rated fights, and the ones that sample as the learner does, for the training fights. Two of each
@@ -250,6 +259,10 @@ public final class League {
 
         String name;
 
+        // What the pairing drawn says the agent carries, or null wherever the loadout is not the draw's to say: outside a
+        // training run, in an evaluation fight, and in a run whose trainer writes no pairings.
+        Loadout loadout = null;
+
         if (directory == null) {
 
             // Every worker starts on a different opponent and all of them go round in step, and round the loadouts at the
@@ -260,13 +273,28 @@ public final class League {
         else {
 
             refresh();
-            name = evaluation != null ? evenly(evaluation.iteration(), random) : draw(random);
+
+            // An evaluation is drawn evenly over the opponents and evenly over the loadouts, because every rating in the
+            // league is measured on those fights: weighing them would move the scale under a run that is already going.
+            Pairings.Pairing pairing = evaluation != null ? null : pairings.draw(random);
+
+            if (pairing != null) {
+
+                name = pairing.opponent();
+                loadout = Loadouts.named(pairing.loadout());
+            }
+
+            else {
+
+                name = evaluation != null ? evenly(evaluation.iteration(), random) : draw(random);
+            }
         }
 
-        Matchup matchup = matchup(name, evaluation, random, fight);
+        Matchup matchup = matchup(name, loadout, evaluation, random, fight);
 
-        // A checkpoint whose weights will not load is not worth stopping a fight over; a mob always can be fielded.
-        return matchup != null ? matchup : matchup(fixed.get(random.nextInt(fixed.size())), evaluation, random, fight);
+        // A checkpoint whose weights will not load is not worth stopping a fight over; a mob always can be fielded. The
+        // loadout the pairing asked for is kept, since it is the agent's own half of the draw and nothing about it failed.
+        return matchup != null ? matchup : matchup(fixed.get(random.nextInt(fixed.size())), loadout, evaluation, random, fight);
     }
 
     /**
@@ -368,16 +396,25 @@ public final class League {
         return everyone.get(random.nextInt(everyone.size()));
     }
 
+    /**
+     * The fight against that opponent, with what the draw said the agent carries, or null for a loadout of this side's own
+     * choosing: the next in the rotation outside a training run, and an even draw in one.
+     */
     @Nullable
-    private static Matchup matchup(String name, @Nullable Evaluation.Assignment evaluation, RandomSource random, long fight) {
+    private static Matchup matchup(String name, @Nullable Loadout carried, @Nullable Evaluation.Assignment evaluation,
+                                   RandomSource random, long fight) {
 
         List<Loadout> loadouts = Loadouts.enabled();
 
         // Whatever drives the agent gets every loadout there is. The scripted fighter draws a bow and raises a shield now,
         // so a run of it that left those out would not be a measurement of the teacher the network copies.
-        Loadout loadout = directory == null
-                ? loadouts.get((int) (fight % loadouts.size()))
-                : loadouts.get(random.nextInt(loadouts.size()));
+        Loadout loadout = carried;
+
+        if (loadout == null) {
+
+            loadout = directory == null ? loadouts.get((int) (fight % loadouts.size()))
+                    : loadouts.get(random.nextInt(loadouts.size()));
+        }
 
         Opposition opposition = Opposition.named(name);
 
@@ -546,6 +583,11 @@ public final class League {
      * <p>A published network goes in with the mobs and the scripted fighter rather than with the checkpoints, because it
      * never learns: the trainer weighs the fixed group by how even each fight is, and keeps the self play share for the
      * run's own moving pool. Its kind is what tells the tier list what it is, see {@link Published}.
+     *
+     * <p>The loadouts the agent is armed with go in the same file, under the kind {@code loadout}, because a fight is drawn
+     * as a pairing of one of them with an opponent and the trainer has no other way of knowing which this build fields: a run
+     * told {@code -PleagueLoadouts=bow,crossbow} draws from two. They carry no cap: a cap is on an opponent, and holds down
+     * everything the agent might carry against it at once.
      */
     private static void writeRoster() throws IOException {
 
@@ -562,6 +604,11 @@ public final class League {
         for (String name : Published.fielded()) {
 
             out.append(String.format(Locale.ROOT, "%s,%s,1.00000\n", name, Published.KIND));
+        }
+
+        for (Loadout loadout : Loadouts.enabled()) {
+
+            out.append(String.format(Locale.ROOT, "%s,%s,1.00000\n", loadout.name(), Loadouts.KIND));
         }
 
         Path target = directory.resolve("roster.csv");
@@ -581,8 +628,59 @@ public final class League {
         }
     }
 
-    /** Reads the matchmaking again when its file has changed, and lets go of any checkpoint it no longer names. */
+    /** Reads the matchmaking and the pairings again when their files have changed. */
     private static void refresh() {
+
+        refreshMatchmaking();
+        refreshPairings();
+    }
+
+    /**
+     * Reads the pairings again when their file has changed. A trainer that writes none, or takes the file away, leaves the
+     * table empty and the loadout to the even draw it always was; see {@link Pairings}.
+     */
+    private static void refreshPairings() {
+
+        Path file = directory.resolve("pairs.csv");
+
+        try {
+
+            if (!Files.isRegularFile(file)) {
+
+                pairings = Pairings.NONE;
+                pairsModified = Long.MIN_VALUE;
+                return;
+            }
+
+            long modified = Files.getLastModifiedTime(file).toMillis();
+
+            if (modified == pairsModified) {
+
+                return;
+            }
+
+            pairings = Pairings.parse(Files.readAllLines(file, StandardCharsets.UTF_8), League::fieldsOpponent,
+                    name -> Loadouts.named(name) != null);
+
+            pairsModified = modified;
+        }
+
+        catch (IOException | RuntimeException exception) {
+
+            // Caught mid write, most likely; the next fight looks again.
+            Constants.LOG.debug("Could not read the league's pairings yet: {}", exception.toString());
+        }
+    }
+
+    /** Whether this process can field an opponent of that name, whatever kind of thing it is. */
+    private static boolean fieldsOpponent(String name) {
+
+        return Opposition.named(name) != null || name.equals(SCRIPTED) || Published.fields(name)
+                || name.matches(CHECKPOINT + "\\d+");
+    }
+
+    /** Reads the matchmaking again when its file has changed, and lets go of any checkpoint it no longer names. */
+    private static void refreshMatchmaking() {
 
         Path file = directory.resolve("matchmaking.csv");
 
@@ -616,10 +714,7 @@ public final class League {
                 String name = parts[0].trim();
                 double share = Double.parseDouble(parts[1].trim());
 
-                boolean known = Opposition.named(name) != null || name.equals(SCRIPTED) || Published.fields(name)
-                        || name.matches(CHECKPOINT + "\\d+");
-
-                if (!known || !(share > 0.0D)) {
+                if (!fieldsOpponent(name) || !(share > 0.0D)) {
 
                     continue;
                 }
