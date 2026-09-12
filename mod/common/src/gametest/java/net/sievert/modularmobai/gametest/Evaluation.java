@@ -26,7 +26,7 @@ import net.sievert.modularmobai.brain.Brains;
  *
  * <pre>
  *   runs/RUN/eval/target      written by the trainer: the iteration whose weights are being evaluated
- *   runs/RUN/eval/wNN.csv     appended by each worker: iteration,outcome,ticks for every evaluation fight
+ *   runs/RUN/eval/wNN.csv     appended by each worker: iteration,outcome,ticks,opponent for every evaluation fight
  * </pre>
  *
  * Only a training run evaluates, and only once the trainer has named something to evaluate.
@@ -73,15 +73,22 @@ public final class Evaluation {
         return targetBrain == null ? null : new Assignment(targetIteration, targetBrain);
     }
 
-    /** Writes down how an evaluation fight ended: "win", "loss" or "timeout", and how long it took. */
-    public static synchronized void record(Assignment assignment, String outcome, long ticks) {
+    /**
+     * Writes down how an evaluation fight ended: "win", "loss" or "timeout", how long it took, and who it was against.
+     *
+     * <p>The opponent is there so that two checkpoints can be compared on the opponents they both met. A league's roster
+     * grows while the run goes on — a rung of harder opponents opens once the agent is good enough for it — so the plain
+     * win rate over everything a checkpoint happened to be drawn against is not the same question from one checkpoint to
+     * the next. See the trainer's Evaluator.
+     */
+    public static synchronized void record(Assignment assignment, String outcome, long ticks, String opponent) {
 
         if (directory == null) {
 
             return;
         }
 
-        String line = String.format(Locale.ROOT, "%d,%s,%d%n", assignment.iteration(), outcome, ticks);
+        String line = String.format(Locale.ROOT, "%d,%s,%d,%s%n", assignment.iteration(), outcome, ticks, opponent);
 
         try {
 

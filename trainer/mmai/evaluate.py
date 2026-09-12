@@ -14,7 +14,7 @@ those up per checkpoint, keeps the best weights, and says when the run has stopp
 from __future__ import annotations
 
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import files, log
@@ -30,18 +30,35 @@ class Result:
     timeouts: int = 0
 
     # What the checkpoint was worth when it was judged, when something better than its win rate can say: a league run's
-    # Elo rating. None for a run whose opponent never changes, where the win rate is the whole story.
+    # Elo rating. None for a run whose opponent never changes, where the win rate is the whole story. Kept for the table
+    # and for reading a run by eye; it is no longer what decides the best, see Evaluator.
     rating: float | None = None
+
+    # Fights and wins against each opponent by name, which is what lets two checkpoints be compared on the opponents they
+    # both met. Empty for a record written before the opponent was in the file.
+    against: dict[str, list[int]] = field(default_factory=dict)
 
     @property
     def rate(self) -> float:
         return self.wins / self.fights if self.fights else 0.0
 
-    @property
-    def score(self) -> float:
-        """What checkpoints are compared on. See {@link Evaluator} for why a league needs the rating."""
+    def paired(self, other: "Result") -> tuple[float, float, int]:
+        """
+        This result's win rate and another's over the opponents they both faced, and how many opponents that was.
 
-        return self.rate if self.rating is None else self.rating
+        Every opponent counts once, whatever number of fights it was drawn for, so that a roster growing by a rung of
+        twenty cannot outvote the twenty that were there before. Zero opponents means there is nothing to compare.
+        """
+
+        shared = sorted(set(self.against) & set(other.against))
+
+        if not shared:
+            return 0.0, 0.0, 0
+
+        def mean(result: "Result") -> float:
+            return sum(result.against[name][1] / result.against[name][0] for name in shared) / len(shared)
+
+        return mean(self), mean(other), len(shared)
 
 
 class Evaluator:
@@ -53,12 +70,25 @@ class Evaluator:
     :param target: a win rate at which the run is done at once, ignored when a rating decides instead
     :param rating: what a checkpoint's iteration is worth, when a win rate cannot be compared across time
 
-    A win rate only says which checkpoint is better while every checkpoint met the same opponents. A league run's
-    opponents do not stay the same: a rung of hard opponents opens as the agent gets good enough for it, squads and new
-    mobs join, and the pool of its own past selves grows. Then a later, better fighter can win a smaller share of a
-    harder set, and judging on the win rate would keep an early checkpoint as the best for ever, which is what it did:
-    iteration 1175 stayed best while every rating said the newest checkpoints had passed it. So a league run judges on
-    the checkpoint's Elo rating, which is what accounts for who it beat, and nothing else changes.
+    A win rate only says which checkpoint is better while every checkpoint met the same opponents, and a league run's
+    opponents do not stay the same: a rung of hard opponents opens once the agent is good enough for it, and squads and
+    new mobs join. A later, better fighter can win a smaller share of a harder set, and judging on the plain win rate kept
+    an early checkpoint as the best for ever: iteration 1175 stood while every rating said the newest had passed it.
+
+    The Elo rating was the next attempt and is not good enough either. It is relative to a field that moves with the
+    agent, and measured over one run it wandered between 1540 and 1708 with no trend while a fixed benchmark said the run
+    had gained three points in eleven thousand iterations. Picking the maximum of thirty draws from a distribution that
+    wide picks the luckiest draw, not the best network, which is what it did: the checkpoint it called best, rated 1708,
+    benched the same as the one rated 1624.
+
+    So the comparison is **paired**: two checkpoints are compared on the opponents they both met, each opponent counting
+    once whatever number of fights it was drawn for. A rung opening adds opponents to the newer record and changes nothing
+    about the older one, so the question asked of both is the same question, which is the whole problem the rating was
+    brought in to solve. The rating is still written to the table, because it says something the win rate cannot — who the
+    agent beat — but it no longer decides anything.
+
+    Records written before the opponent was in the evaluation file have no names to pair on. Those fall back to the plain
+    win rate, so an older run resumes and carries on rather than losing its best.
     """
 
     def __init__(self, run: RunDirectory, every: int, fights: int, patience: int, target: float,
@@ -145,13 +175,29 @@ class Evaluator:
         files.replace(temporary, target)
         logger.info("evaluating iteration %d", iteration)
 
+    def _better(self, candidate: Result, best: Result) -> bool:
+        """
+        Whether a checkpoint has beaten the one standing, on the opponents the two of them share.
+
+        A margin of one point is asked for, because a mean over the shared opponents is still a few hundred fights and
+        worth about a point: without it a run swaps its best on noise every other checkpoint, and whichever it happens to
+        be holding when someone publishes is what ships.
+        """
+
+        mine, theirs, shared = candidate.paired(best)
+
+        if shared == 0:
+            return candidate.rate > best.rate
+
+        return mine > theirs + 0.01
+
     def _judge(self, iteration: int) -> None:
         live = self.results[iteration]
         rating = self.rating(iteration) if self.rating is not None else None
-        result = Result(live.fights, live.wins, live.timeouts, rating)
+        result = Result(live.fights, live.wins, live.timeouts, rating, dict(live.against))
         self.judged[iteration] = result
 
-        if self.best is None or result.score > self.judged[self.best].score:
+        if self.best is None or self._better(result, self.judged[self.best]):
             self.best = iteration
             self.since_best = 0
             # Swapped in whole like everything else here: scripts\publish.ps1 copies it out while the run goes on.
@@ -162,8 +208,10 @@ class Evaluator:
         else:
             self.since_best += 1
             best = self.judged[self.best]
-            stood = f"{best.rating:.0f}" if best.rating is not None else f"{100 * best.rate:.1f}%"
-            verdict = f"best is still iteration {self.best} at {stood}"
+            mine, theirs, shared = result.paired(best)
+            stood = (f"{100 * theirs:.1f}% against this one's {100 * mine:.1f}% over the {shared} opponents they both met"
+                     if shared else f"{100 * best.rate:.1f}%")
+            verdict = f"best is still iteration {self.best}, {stood}"
 
         fights = max(1, result.fights)
         lost = result.fights - result.wins - result.timeouts
@@ -193,13 +241,20 @@ class Evaluator:
             for line in data[:end].decode("utf-8").splitlines():
                 parts = line.split(",")
 
-                if len(parts) != 3:
+                if len(parts) < 3:
                     continue
 
                 result = self.results.setdefault(int(parts[0]), Result())
                 result.fights += 1
                 result.wins += parts[1] == "win"
                 result.timeouts += parts[1] == "timeout"
+
+                # The fourth column, the opponent, is what the paired comparison needs. A line from before it existed has
+                # three and pairs on nothing, which _better falls back for.
+                if len(parts) >= 4:
+                    against = result.against.setdefault(parts[3], [0, 0])
+                    against[0] += 1
+                    against[1] += parts[1] == "win"
 
     def _write_table(self) -> None:
         lines = ["iteration,fights,wins,timeouts,win_rate,best,rating"]
@@ -230,7 +285,13 @@ class Evaluator:
 
             iteration = int(parts[0])
             rating = float(parts[6]) if len(parts) > 6 and parts[6] else None
-            self.judged[iteration] = Result(int(parts[1]), int(parts[2]), int(parts[3]), rating)
+
+            # Who each judged checkpoint met comes back from the workers' own files, which are appended to and never
+            # rewritten, rather than from this table, which does not carry it. Without this a resumed run would compare its
+            # next checkpoint against a best it knows no opponents for, and fall back to the plain win rate for good.
+            live = self.results.get(iteration)
+            self.judged[iteration] = Result(int(parts[1]), int(parts[2]), int(parts[3]), rating,
+                                            dict(live.against) if live else {})
 
             if parts[5] == "1":
                 self.best = iteration

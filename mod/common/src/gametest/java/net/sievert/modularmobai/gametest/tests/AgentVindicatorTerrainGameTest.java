@@ -252,7 +252,9 @@ public class AgentVindicatorTerrainGameTest {
 
             if (this.evaluation != null) {
 
-                Evaluation.record(this.evaluation, won ? "win" : this.timedOut ? "timeout" : "loss", this.helper.getTick() - this.started);
+                // One opponent all run, so naming it changes nothing here; the column is for a league, whose roster grows.
+                Evaluation.record(this.evaluation, won ? "win" : this.timedOut ? "timeout" : "loss",
+                        this.helper.getTick() - this.started, "vindicator");
                 this.evaluation = null;
             }
 
