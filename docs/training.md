@@ -465,6 +465,40 @@ something in the league already answers to it (a mob, a squad, a rung, `scripted
 in), or when the network was trained for **another body** — the message names both bodies, since a beast's network cannot
 drive a humanoid at all; see [species.md](species.md).
 
+### A crowded view
+
+**Proposed, not built.** Every league fight is the agent against one opponent or a squad of two or three, and every one of
+them is on the other team and coming for it. A real game is not like that: the view is 32 blocks of distance and nothing
+else, so a night puts monsters in the agent's slots that are through a wall, across a valley or in the caves below and take
+no interest in it at all. Measured on the published network, with an engaged zombie two blocks off and monsters standing
+about out of reach, 200 ticks each: none in view and it kills the zombie in 45 ticks on full health; three and it lands
+nothing and dies; nine and it never presses attack once. The numbers and what was ruled out first are in
+[findings.md](findings.md#perception); the play suite's `theCrowdedViewOfARealWorldIsTheWorldsOwn` holds the perception to
+being right, so what is left is the curriculum.
+
+What to add, in the shape the league already has:
+
+- **A bystander share.** For some share of league fights — a quarter is what the hazard ground was given, for the same
+  reason — place 1 to 9 extra mobs drawn from the roster 8 to 30 blocks from the fight, on **no** team, that do not come for
+  the agent until struck. They are not part of the win condition and `Episode#pays` must not pay for them, so the reward and
+  the fight are exactly what they were: the only thing that changes is what is in the view.
+- **A player of its own, not a modifier on the old one.** `zombie+3_idle` rated separately, the way a squad is, so the plain
+  `zombie` rating stays a number that can be compared with every run before this one. The league files squads this way
+  already, so this costs a row in the table and nothing in the machinery.
+- **What it would cost.** Extra mobs with no AI are cheap to tick — the probe ran fourteen of them in a box with no
+  measurable slowdown — but they are still entities in the fight's chunks, and the honest answer is that the throughput cost
+  has to be measured on one worker over a few hundred fights before a run is given it. The real cost is the quarter of the
+  fights: a run that spends it here spends it away from the plain fight, which is the fight the agent still has to win.
+- **What it would change beside the policy.** `SELF_ENEMIES_IN_RANGE` and the critic's count of the other side would start
+  seeing what a real world shows them, which is the point, and both are already one rule in one place. Nothing in the layout
+  moves, so no published network is invalidated: this is fights, not fields.
+
+Separately, and the owner's call rather than a run's: **the view could be narrowed instead of the curriculum widened** — a
+line of sight or reachability test in `EnemySlots`, so that a mob behind rock never takes a slot. That is the other half of
+why a real night crowds the view, and it is cheap to say and expensive to do: a clip per candidate per tick on top of the
+terrain grid, an opponent that flickers out of the view behind a tree, and a change to what every network sees, so it wants
+a retrain rather than a patch. Neither has been done; both are written down here so the next person starts from the numbers.
+
 ### `scripts\compare.ps1`: seeded from a copy and from nothing, side by side
 
 ```
