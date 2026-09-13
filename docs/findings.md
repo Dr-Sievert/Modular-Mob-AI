@@ -369,6 +369,28 @@ are deliberate.
 
 ## The league's curriculum
 
+- **A crowd of bystanders costs a fifth of a worker, not nothing, and the reason is their wits.** The share that stands 1 to 9
+  idle monsters about a quarter of the league's fights was written down as probably free: a probe had run fourteen of them in
+  a box with no measurable slowdown. Measured properly — 200 league fights on one worker, share off and on — it is **7,330
+  arena ticks a second against 5,475** on one pinned terrain seed and 6,809 against 6,216 on a freely drawn pair, so 10 to 25%
+  of a worker for a quarter of the fights, which puts a crowded fight at one and a half to two times a plain one. The probe's
+  fourteen had **no AI**; a bystander on real ground has its wits, and a mob with its wits pathfinds every tick. The share is
+  a property (`-PleagueBystanders`) so a run that cannot afford it can turn it down, and the number is here so nobody guesses
+  again.
+  - Keeping them motionless would buy all of it back and was rejected: a crowd that never moves hands the network a tell that
+    a real world does not give it. The discriminator that has to be learned is `ENEMY_TARGETS_ME`, which is the same one out
+    in a world, and an agent that learned "it is harmless if it is standing still" would fail in exactly the place this was
+    built for.
+- **A vanilla mob does go after an agent on its own, and the docs said it does not.** Three plain zombies, on no team, with
+  nothing having touched them and no provocation of any kind, all took a nearby training agent as their target on tick seven at
+  six blocks. Vanilla's zombie looks for a target among players, villagers, iron golems and turtles, and an agent is none of
+  those; `OtherTeamTargetGoal` is asleep while a mob has no team; nothing had hurt them. **What does it was not found**, and it
+  is written down here rather than chased because the fix does not depend on the cause: a bystander is handed its target back
+  on every tick until something hits it (`Bystanders#leaveAlone`), which is the exact opposite of the provocation an opponent
+  gets and is asked just as often. Without it a quarter of the league's fights would quietly have gained extra opponents that
+  the reward does not pay for and the ratings know nothing about — a fault that would never have shown up in a result.
+  `leagueBystandersStandAsideUntilStruck` holds both halves: unstruck they stay off the agent, struck one fights back.
+  The line in playing.md has been corrected to what was measured.
 - **The loadout and the opponent have to be drawn together.** Drawn independently, a bow was handed out against a creeper it
   should kite exactly as often as against a ghast it cannot reach, so the gradient reaching the drawing of a bow was an
   average over the matchups where a bow is the answer and the matchups where it is hopeless: measured over a league run's

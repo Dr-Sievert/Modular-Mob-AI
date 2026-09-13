@@ -8,6 +8,7 @@ import java.util.function.IntPredicate;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
@@ -26,6 +27,7 @@ import net.sievert.modularmobai.brain.schema.Species;
 import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 import net.sievert.modularmobai.gametest.GameTestGroup;
+import net.sievert.modularmobai.gametest.league.Bystanders;
 import net.sievert.modularmobai.gametest.util.TestTicks;
 
 /**
@@ -37,6 +39,10 @@ import net.sievert.modularmobai.gametest.util.TestTicks;
  * no sight test in it hands the slots to the monsters through the wall and in the caves below, and the published network,
  * fed a view of ten bodies that mostly ignored it, stopped fighting the zombie beside it. The whole story and the numbers are
  * in findings.md; {@code PlayGameTest.theCrowdedViewOfARealWorldIsTheWorldsOwn} is the same thing proved on a real fight.
+ *
+ * <p>The two after that are the curriculum's half of the same problem: the bystanders a share of league fights now stands
+ * about it, which are the crowd the league never had, and which have to stay out of the fight's own arithmetic while filling
+ * its view. See {@link Bystanders}.
  *
  * <p>Everything happens inside the plot's own bedrock box, and the walls that take sight away are built by the test rather
  * than borrowed from the arena's, so nothing moves between the two readings but the block in the way. An agent that could
@@ -179,6 +185,134 @@ public class AgentCrowdGameTest {
         });
     }
 
+    /**
+     * The bystanders a share of league fights stands about it: on no team, off the agent until something hits them, holding
+     * slots in its view all the same, and nothing the fight is paid for.
+     *
+     * <p>Here rather than in the league suite because what is worth pinning is the arrangement and not the fight. A bystander
+     * that ended up on the opponent's team would come for the agent and be an extra opponent nobody rated; one the episode
+     * paid for would turn a crowd into a reward for farming it; and one that took no slot would make the number in a crowded
+     * fight's name a number about nothing. All three would be invisible in a run's results.
+     *
+     * <p>The last claim is the one that had to be built rather than assumed, and this is where it is held. Three plain zombies
+     * on no team, with nothing having touched them, all take the agent as their target on tick seven at six blocks — vanilla
+     * looks for players and an agent is none, so that should not happen and it does. So the crowd is unprovoked every tick,
+     * {@link Bystanders#leaveAlone}, and the last third of this test strikes one of them and shows that it is then free to
+     * fight back, which is what passive <b>until struck</b> means.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 120)
+    public static void leagueBystandersStandAsideUntilStruck(GameTestHelper helper) {
+
+        AgentMob agent = still(helper, new BlockPos(4, 2, 1));
+        Mob opponent = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new BlockPos(4, 2, 3));
+
+        agent.startEpisode(new Episode(FIGHT_TICKS, bounds(helper), List.of(opponent)));
+
+        // Three of them with all their free will, stood in this box rather than on a fight site: what is tested is the
+        // arrangement, which is the part a fight could get wrong, and not the ground.
+        List<Mob> idle = new ArrayList<>();
+
+        for (int index = 0; index < 3; index++) {
+
+            idle.add(helper.spawn(EntityType.ZOMBIE, new BlockPos(1 + index * 3, 2, 7)));
+        }
+
+        EnemySlots view = agent.brain().enemySlots();
+        Mob struck = idle.get(0);
+        boolean[] hit = {false};
+
+        run(helper, tick -> {
+
+            // Every tick, as the league does it, and before anything is asked: a mob's own mind is not still.
+            for (Mob standing : idle) {
+
+                Bystanders.leaveAlone(standing, agent);
+            }
+
+            if (tick < 5) {
+
+                return false;
+            }
+
+            for (Mob standing : idle) {
+
+                helper.assertTrue(standing.getTeam() == null, "A bystander is on a team, so it is somebody's side");
+                helper.assertFalse(agent.episode().pays(standing), "The fight pays for hurting a bystander");
+                helper.assertFalse(agent.episode().opponents().contains(standing),
+                        "A bystander counts as the other side of the fight");
+
+                // And the thing they are there for: a monster is an enemy on sight whoever it is coming for, so it fills a
+                // slot, which is the crowd the league had never shown the agent.
+                helper.assertTrue(occupies(view, standing), "A bystander in plain sight holds no slot, so it crowds nothing");
+
+                if (!hit[0] || standing != struck) {
+
+                    helper.assertTrue(standing.getTarget() == null, "A bystander came for the agent unprovoked");
+                    helper.assertValueEqual(targetsMe(agent, slotOf(view, standing)), 0.0F, "a bystander's targets-me flag");
+                }
+            }
+
+            helper.assertValueEqual(view.inRangeCount(), 1 + idle.size(), "bodies in sight");
+
+            // The opponent is still the opponent: a fight with bystanders in it is the fight it was.
+            helper.assertTrue(agent.episode().pays(opponent), "The fight stopped paying for its own opponent");
+            helper.assertValueEqual(agent.episode().opponents().size(), 1, "who the other side is");
+
+            // Struck by the agent, and from then on it is allowed to fight back: nothing hands its target away again.
+            if (tick == 40) {
+
+                hit[0] = struck.hurt(helper.getLevel().damageSources().mobAttack(agent), 2.0F);
+                helper.assertTrue(hit[0], "The bystander took no damage from the agent");
+            }
+
+            if (tick == 60) {
+
+                helper.assertTrue(struck.getLastHurtByMob() == agent, "The agent's blow did not land on the bystander");
+                helper.assertTrue(struck.getTarget() == agent, "A struck bystander is still being kept off the agent");
+                return true;
+            }
+
+            return false;
+        });
+    }
+
+    /**
+     * A crowd is drawn from the monsters that walk, and the name a crowded fight goes into the results under says which
+     * opponent it was against and how many stood about it.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 40)
+    public static void aCrowdedFightIsNamedForItsOpponentAndItsCrowd(GameTestHelper helper) {
+
+        helper.assertValueEqual(Bystanders.name("zombie", 3), "zombie+3_idle", "a crowded fight's name");
+        helper.assertValueEqual(Bystanders.name("2x_zombie(hard)", 9), "2x_zombie(hard)+9_idle", "a crowded squad's name");
+        helper.assertValueEqual(Bystanders.name("zombie", 0), "zombie", "a fight with no crowd");
+
+        // Every draw asks for 1 to 9 of them or for none at all, and the fights that get a crowd come out at the share this
+        // build was told, which is what a run turns the curriculum up and down by.
+        RandomSource random = RandomSource.create(7L);
+        int draws = 4_000;
+        int crowded = 0;
+
+        for (int draw = 0; draw < draws; draw++) {
+
+            int wanted = Bystanders.wanted(random);
+
+            helper.assertTrue(wanted >= 0 && wanted <= 9, "A draw asked for " + wanted + " bystanders");
+            crowded += wanted > 0 ? 1 : 0;
+        }
+
+        // Asked of the share this process is running with rather than of a quarter, so a run told -PleagueBystanders=0.1 does
+        // not fail a suite for doing as it was told. Four standard deviations of a binomial draw either way.
+        double share = Bystanders.share();
+        double expected = draws * share;
+        double spread = 4.0D * Math.sqrt(Math.max(1.0D, expected * (1.0D - share)));
+
+        helper.assertTrue(Math.abs(crowded - expected) <= spread, crowded + " of " + draws + " fights were given a crowd, "
+                + "where a share of " + share + " asks for about " + Math.round(expected));
+
+        helper.succeed();
+    }
+
     // ---------------------------------------------------------------------------------------------------------------
 
     /** A wall of bedrock across the middle of the room, or the air it was built out of. */
@@ -196,10 +330,21 @@ public class AgentCrowdGameTest {
     /** The present flag of one slot, read out of the observation the network is handed rather than off the slots. */
     private static float present(AgentMob agent, int slot) {
 
+        return field(agent, slot, ObservationSchema.ENEMY_PRESENT);
+    }
+
+    /** Whether the slot's occupant has come for the agent, as the observation says it. */
+    private static float targetsMe(AgentMob agent, int slot) {
+
+        return field(agent, slot, ObservationSchema.ENEMY_TARGETS_ME);
+    }
+
+    private static float field(AgentMob agent, int slot, int offset) {
+
         float[] observation = new float[ObservationSchema.OBS_DIM];
         AgentObservation.write(agent, agent.brain().enemySlots(), observation, 0);
 
-        return observation[ObservationSchema.enemyOffset(slot) + ObservationSchema.ENEMY_PRESENT];
+        return observation[ObservationSchema.enemyOffset(slot) + offset];
     }
 
     private static boolean occupies(EnemySlots view, LivingEntity entity) {

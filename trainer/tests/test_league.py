@@ -274,6 +274,37 @@ class LadderTest(unittest.TestCase):
         self.assertEqual(base("zombie"), "zombie")
         self.assertEqual(base("iteration-000050"), "iteration-000050")
 
+    def test_the_name_of_a_crowded_fight_says_which_opponent_it_was_against(self):
+        # A crowd of bystanders is written outside the rung, so both come off and in that order. What this buys is that a
+        # crowded fight inherits the opponent's kind and the opponent's cap instead of falling back to "mob" and to no cap.
+        self.assertEqual(base("zombie+3_idle"), "zombie")
+        self.assertEqual(base("zombie(hard)+9_idle"), "zombie")
+        self.assertEqual(base("2x_zombie+1_idle"), "2x_zombie")
+
+        # A squad's own name is plus signs all the way through, and none of it is a digit followed by _idle, so a squad
+        # cannot be mistaken for a crowd however it is spelled.
+        self.assertEqual(base("zombie+skeleton"), "zombie+skeleton")
+        self.assertEqual(base("zombie+skeleton+2_idle"), "zombie+skeleton")
+        self.assertEqual(base("witch+zombie(easy)"), "witch+zombie")
+
+    def test_a_crowded_fight_is_a_player_of_its_own_and_is_never_matchmade_over(self):
+        # Every fight against the plain zombie and against the same zombie with three monsters standing about it. Both are
+        # rated; only the one the workers said they field is matchmade over, since the crowd is the game's own coin flip.
+        self.evaluations("zombie", wins=6, losses=4)
+        self.evaluations("zombie+3_idle", wins=1, losses=9)
+
+        league = League(self.run, self.config)
+        league.update(0)
+
+        self.assertIn("zombie+3_idle", league.ratings.players)
+        self.assertEqual(league.ratings.players["zombie+3_idle"].kind, "mob")
+        self.assertIn("zombie", self.matchmaking())
+        self.assertNotIn("zombie+3_idle", self.matchmaking())
+
+        # And the plain rating is untouched by it: the agent lost nine of ten in the crowd and won six of ten without one, so
+        # the crowd has to be the higher rated of the two players.
+        self.assertGreater(league.ratings.rating("zombie+3_idle"), league.ratings.rating("zombie"))
+
     def test_hard_opens_once_the_agent_wins_most_and_easy_while_it_wins_almost_none(self):
         self.evaluations("zombie", wins=9, losses=1)
         self.evaluations("ravager", wins=1, losses=9)

@@ -450,31 +450,47 @@ drive a humanoid at all; see [species.md](species.md).
 
 ### A crowded view
 
-**Proposed, not built.** Every league fight is the agent against one opponent or a squad of two or three, and every one of
-them is on the other team and coming for it. A real game is not like that: the view is 32 blocks of distance and nothing
-else, so a night puts monsters in the agent's slots that are through a wall, across a valley or in the caves below and take
-no interest in it at all. Measured on the published network, with an engaged zombie two blocks off and monsters standing
-about out of reach, 200 ticks each: none in view and it kills the zombie in 45 ticks on full health; three and it lands
-nothing and dies; nine and it never presses attack once. The numbers and what was ruled out first are in
-[findings.md](findings.md#perception); the play suite's `theCrowdedViewOfARealWorldIsTheWorldsOwn` holds the perception to
-being right, so what is left is the curriculum.
+Every league fight used to be the agent against one opponent or a squad of two or three, and every one of them on the other
+team and coming for it. A real game is not like that, and the published network showed it: with an engaged zombie two blocks
+off and idle monsters standing about, 200 ticks each, none in view and it kills the zombie in 45 ticks on full health; three
+and it lands nothing and dies; nine and it never presses attack once. The numbers and what was ruled out first are in
+[findings.md](findings.md#perception).
 
-What to add, in the shape the league already has:
+Half of that was the view, and the view has been narrowed: a slot now goes only to what the agent could see, so the monsters
+through the wall and in the caves below take none. The other half is the crowd that really is in sight, and that is a
+curriculum hole. It is filled by `gametest/league/Bystanders`:
 
-- **A bystander share.** For some share of league fights — a quarter is what the hazard ground was given, for the same
-  reason — place 1 to 9 extra mobs drawn from the roster 8 to 30 blocks from the fight, on **no** team, that do not come for
-  the agent until struck. They are not part of the win condition and `Episode#pays` must not pay for them, so the reward and
-  the fight are exactly what they were: the only thing that changes is what is in the view.
-- **A player of its own, not a modifier on the old one.** `zombie+3_idle` rated separately, the way a squad is, so the plain
-  `zombie` rating stays a number that can be compared with every run before this one. The league files squads this way
-  already, so this costs a row in the table and nothing in the machinery.
-- **What it would cost.** Extra mobs with no AI are cheap to tick — the probe ran fourteen of them in a box with no
-  measurable slowdown — but they are still entities in the fight's chunks, and the honest answer is that the throughput cost
-  has to be measured on one worker over a few hundred fights before a run is given it. The real cost is the quarter of the
-  fights: a run that spends it here spends it away from the plain fight, which is the fight the agent still has to win.
-- **What it would change beside the policy.** `SELF_ENEMIES_IN_RANGE` and the critic's count of the other side would start
-  seeing what a real world shows them, which is the point, and both are already one rule in one place. Nothing in the layout
-  moves, so no published network is invalidated: this is fights, not fields.
+```
+-PleagueBystanders=0.25      the share of fights against a mob or a squad with a crowd standing about; 0 for none
+```
+
+- **A quarter of the fights**, which is what the hazard ground was given and for the same reason: the plain fight on plain
+  ground is still the fight the agent has to be able to win. 1 to 9 monsters, 8 to 30 blocks from the middle of the fight, on
+  **no** team, and handed their target back on every tick until something hits them — the exact opposite of the provocation a
+  league opponent gets, and needed rather than assumed; see findings.md. They are not part of the win condition and
+  `Episode#pays` never pays for one, so the reward and the fight are exactly what they were: the only thing that changes is
+  what is in the view.
+- **A player of its own, not a modifier on the old one.** `zombie+3_idle`, rated separately the way a squad is, so the plain
+  `zombie` rating stays a number that can be compared with every run before this one. The trainer never matchmakes over those
+  names — they are not in the roster the workers hand it — so they cost a row in the tier list and nothing in the machinery.
+  What they do move is a checkpoint's **evaluated win rate**, which is what the best weights are picked by, and deliberately:
+  a network that cannot fight in a crowd should not be a run's best. That number is therefore not comparable with a run from
+  before this.
+- **Drawn from the monsters that walk.** Narrower than the roster, and both halves are about the crowd being a crowd: an iron
+  golem or a wolf is not an enemy on sight and would take no slot, so the count in the name would stop being the count in the
+  view; and a flyer starts in the air, which a site guarantees is clear over the fighters and not over a spot twenty blocks
+  away. The warden is left out by name — it picks what to fight by anger rather than by sight, so it would not stay a
+  bystander.
+- **What it costs, measured.** 200 league fights on one worker, with the share off and on: **7,330 arena ticks a second
+  against 5,475** on the same pinned terrain seed, and 6,809 against 6,216 on a second pair with the sites drawn freely. So
+  **10 to 25% of a worker's throughput** for a quarter of the fights crowded, which puts a crowded fight itself at something
+  like one and a half to two times the cost of a plain one — far more than the guess that extra mobs would be free, because a
+  bystander with its wits about it pathfinds every tick where the probe's fourteen in a box had no AI at all. Lower the share
+  if a run cannot afford it; that is what the property is for. The other cost is the one that was expected: a run that spends
+  a quarter of its fights here spends it away from the plain fight.
+- **What it changes beside the policy.** `SELF_ENEMIES_IN_RANGE` and the critic's count of the other side start seeing what a
+  real world shows them, which is the point, and both are already one rule in one place. Nothing in the layout moves, so no
+  published network is invalidated: this is fights, not fields.
 
 **The view has since been narrowed as well**, which was the other half: a slot now wants a line of sight from the agent's
 eyes and not only thirty two blocks, so a mob behind rock never takes one. That is what actually fixed the reported game —

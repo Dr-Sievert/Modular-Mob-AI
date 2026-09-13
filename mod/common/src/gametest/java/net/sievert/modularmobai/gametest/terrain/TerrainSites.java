@@ -1052,9 +1052,13 @@ public final class TerrainSites {
         return List.copyOf(side);
     }
 
-    /** The closest place within the radius where something can stand on dry, solid ground with its head clear. */
+    /**
+     * The closest place within the radius where something can stand on dry, solid ground with its head clear. The one rule
+     * a fight's own ground is laid out by, and the one anything else a fight puts on its site asks as well; see
+     * {@link net.sievert.modularmobai.gametest.league.Bystanders}.
+     */
     @Nullable
-    private static BlockPos nearestStanding(ServerLevel level, int x, int z, int radius) {
+    public static BlockPos nearestStanding(ServerLevel level, int x, int z, int radius) {
 
         for (int ring = 0; ring <= radius; ring++) {
 
