@@ -15,17 +15,21 @@ models\<run>\
 
 | Model | What | Evaluated |
 | --- | --- | --- |
-| `blast` | PPO on the league, from the teacher | 76.3% won, 20.1% lost, 3.6% timed out (iteration 2150, 1021 league fights) |
+| `blast4` | PPO on the league, from the teacher, carried on across three runs | 86.2% won (iteration 8825, 1012 league fights); benched in one sitting at 83.3% against the scripted fighter's 78.2% |
 
-That is one number on one bench: `blast` fights the whole league roster, wardens and evokers included, where the retired
+That is one number on one bench: `blast4` fights the whole league roster, wardens and evokers included, where the retired
 networks below fought a vindicator. The two are not comparable, and nothing in `models\` is comparable to anything
 measured in another sitting; see the win rate section below, and `scripts\bench.ps1` in
 [testing.md](testing.md) for the only way to put two networks on one scale.
 
 ## What was retired, and why
 
+`blast` (iteration 2150, 76.3%) and `blast2` (3100, 79.5%) were the first two networks published on this layout and were
+removed once `blast4` had been benched above both in one sitting (83.3% against 75.2%): every published network is bundled
+into the jar, and two weaker copies of the same lineage bought nothing but size. Git history keeps them.
+
 `league-pull05`, `league-scratch`, `league-sharp`, `league2`, `vindicator4`, `vs-copy` and `vs-scratch` were removed once
-`blast` was published, which is the first network trained on the layout this build has. All seven were trained against the
+`blast` was published, which was the first network trained on the layout this build has. All seven were trained against the
 humanoid's old 634-float observation, schema `f818e282`, and this build's humanoid is 792 floats, schema `9f7a1358`: the
 enemy slots now say what an opponent *is* (hearts, damage, speed, size, knockback resistance, armour, a creeper's fuse,
 explodes, shoots, flies, and whether it has the agent as its target), because before that a zombie and a warden filled a
