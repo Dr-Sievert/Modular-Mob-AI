@@ -723,6 +723,11 @@ are deliberate.
     → 80.5 for the teacher), which is the cross-sitting drift above: one ran on an idle machine, the other beside eight
     training workers. Only the numbers inside a sitting are comparable, and "level with the teacher" reads as "within a
     few points of" once both sittings are counted.
+  - And the third sitting says the run has stopped: `blast3` carried on to 8312 (judged best 6275), and one bench of its
+    last, its best and the published 3100 read **80.8, 79.0 and 79.7%** against the teacher's 81.5% — 5,200 iterations of
+    pure RL inside 1.8 points of each other. That is a plateau one to two points under the teacher, not a run still
+    climbing, and it is where the lava leak below and the harder opponents (warden 0%, evoker 1%, 2× creeper 6%, ghast 22%)
+    are the levers left, not more iterations of the same.
 - **An experiment on one worker, judged on the league rating, cannot be judged.** league-pull05 forked league2 at
   iteration 6,000 to try a teacher pull of 0.05 against 0.2, and over 500 iterations on its single worker it produced three
   evaluations: 1610 against league2's 1600 to 1604 at the same iterations. But league2's own rating wanders between 1567
