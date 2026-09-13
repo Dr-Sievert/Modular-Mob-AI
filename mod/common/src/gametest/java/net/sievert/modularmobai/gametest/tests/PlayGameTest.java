@@ -44,7 +44,6 @@ import net.sievert.modularmobai.brain.schema.EnemySlots;
 import net.sievert.modularmobai.brain.schema.Species;
 import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.entity.agent.AgentMob;
-import net.sievert.modularmobai.entity.agent.BeastMob;
 import net.sievert.modularmobai.gametest.GameTestGroup;
 import net.sievert.modularmobai.gametest.util.TestTicks;
 
@@ -220,7 +219,7 @@ public class PlayGameTest {
     @GameTest(template = ARENA)
     public static void aSecondBodyIsDrivenAndARefusedBrainIsNamed(GameTestHelper helper) {
 
-        BeastMob beast = helper.spawn(ModEntities.beastAgent(), new BlockPos(4, 2, 1));
+        AgentMob beast = helper.spawn(ModEntities.training(Species.BEAST), new BlockPos(4, 2, 1));
         face(beast, 0.0F);
 
         helper.assertTrue(beast.species() == Species.BEAST, "The beast is not of its own species");

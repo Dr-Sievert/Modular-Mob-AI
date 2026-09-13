@@ -43,6 +43,24 @@ final class Beast implements Species {
         return "beast";
     }
 
+    /**
+     * One mob, the arenas' kind: nothing trains it yet, so it has no business being met in a survival world or saved into
+     * one. It is the humanoid's box and the humanoid's renderer because nothing about the proof is its silhouette; giving it
+     * a shape of its own is a change to these five numbers and a renderer, and to nothing else.
+     */
+    @Override
+    public List<Species.Mob> mobs() {
+
+        return List.of(Species.Mob.playerShaped("beast_agent", Species.Mob.Role.TRAINING));
+    }
+
+    /** No hands: what arms a fighter refuses it by name, rather than filling a hotbar it has no control to reach. */
+    @Override
+    public boolean holdsItems() {
+
+        return false;
+    }
+
     @Override
     public int obsDim() {
 

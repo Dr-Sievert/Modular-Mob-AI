@@ -23,13 +23,15 @@ import net.neoforged.neoforge.event.tick.LevelTickEvent;
 import net.neoforged.neoforge.registries.DeferredRegister;
 import net.sievert.modularmobai.brain.AgentDriver;
 import net.sievert.modularmobai.brain.Brains;
+import net.sievert.modularmobai.brain.schema.Species;
 import net.sievert.modularmobai.command.AgentCommands;
 import net.sievert.modularmobai.entity.agent.AgentMobRenderer;
-import net.sievert.modularmobai.entity.agent.BeastMob;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.item.ModItems;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.function.Supplier;
 
 @Mod(Constants.MOD_ID)
@@ -39,21 +41,33 @@ public class ModularMobAiMod {
 
     private static final DeferredRegister<Item> ITEMS = DeferredRegister.create(Registries.ITEM, Constants.MOD_ID);
 
-    private static final Supplier<EntityType<AgentMob>> AGENT_MOB = ENTITY_TYPES.register(
-            ModEntities.AGENT_MOB_ID.getPath(),
-            () -> ModEntities.AGENT_MOB_BUILDER.build(ModEntities.AGENT_MOB_ID.toString())
-    );
+    /**
+     * Every mob every body declares, and nothing named here: see ModEntities and docs/species.md. Deferred, as NeoForge
+     * wants, so the types are not built until the registry is open.
+     */
+    private static final Map<ModEntities.Registration, Supplier<EntityType<AgentMob>>> AGENTS = agents();
 
-    private static final Supplier<EntityType<AgentMob>> TRAINING_AGENT = ENTITY_TYPES.register(
-            ModEntities.TRAINING_AGENT_ID.getPath(),
-            () -> ModEntities.TRAINING_AGENT_BUILDER.build(ModEntities.TRAINING_AGENT_ID.toString())
-    );
+    private static Map<ModEntities.Registration, Supplier<EntityType<AgentMob>>> agents() {
 
-    // The second body, which borrows the humanoid's shape and renderer: see ModEntities.
-    private static final Supplier<EntityType<BeastMob>> BEAST_AGENT = ENTITY_TYPES.register(
-            ModEntities.BEAST_AGENT_ID.getPath(),
-            () -> ModEntities.BEAST_AGENT_BUILDER.build(ModEntities.BEAST_AGENT_ID.toString())
-    );
+        Map<ModEntities.Registration, Supplier<EntityType<AgentMob>>> found = new LinkedHashMap<>();
+
+        for (ModEntities.Registration registration : ModEntities.registrations()) {
+
+            found.put(registration, ENTITY_TYPES.register(registration.path(),
+                    () -> registration.builder().build(registration.id().toString())));
+        }
+
+        return found;
+    }
+
+    /** The humanoid's shipped mob, which is the one the spawn egg is for. */
+    private static final Supplier<EntityType<AgentMob>> AGENT_MOB = AGENTS.entrySet().stream()
+            .filter(entry -> entry.getKey().species() == Species.HUMANOID
+                    && entry.getKey().mob().role() == Species.Mob.Role.WORLD)
+            .map(Map.Entry::getValue)
+            .findFirst()
+            .orElseThrow(() -> new IllegalStateException("The humanoid declares no mob a player meets, and the spawn egg is "
+                    + "for that one"));
 
     // Only the shipped one gets an egg. The training one is spawned by arenas and nothing else.
     private static final Supplier<Item> AGENT_MOB_SPAWN_EGG = ITEMS.register(
@@ -101,19 +115,15 @@ public class ModularMobAiMod {
 
     private static void handOver(FMLCommonSetupEvent event) {
 
-        ModEntities.setAgentMob(AGENT_MOB.get());
-        ModEntities.setTrainingAgent(TRAINING_AGENT.get());
-        ModEntities.setBeastAgent(BEAST_AGENT.get());
+        AGENTS.forEach((registration, type) -> ModEntities.accept(registration, type.get()));
         ModItems.setAgentMobSpawnEgg(AGENT_MOB_SPAWN_EGG.get());
     }
 
     private static void registerAttributes(EntityAttributeCreationEvent event) {
 
-        // The same attributes for all of them: a network trained against one humanoid has to find the same body in the
-        // other, and the beast differs in what it may be asked to do rather than in what its body is.
-        event.put(AGENT_MOB.get(), AgentMob.createAttributes().build());
-        event.put(TRAINING_AGENT.get(), AgentMob.createAttributes().build());
-        event.put(BEAST_AGENT.get(), AgentMob.createAttributes().build());
+        // The same attributes for every body: a body differs in what it may be asked to do rather than in what its body is,
+        // and a network trained against one has to find the same body in the next.
+        AGENTS.values().forEach(type -> event.put(type.get(), AgentMob.createAttributes().build()));
     }
 
     private static void addToCreativeTab(BuildCreativeModeTabContentsEvent event) {
@@ -130,9 +140,9 @@ public class ModularMobAiMod {
         @SubscribeEvent
         public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
 
-            event.registerEntityRenderer(AGENT_MOB.get(), AgentMobRenderer::new);
-            event.registerEntityRenderer(TRAINING_AGENT.get(), AgentMobRenderer::new);
-            event.registerEntityRenderer(BEAST_AGENT.get(), AgentMobRenderer::new);
+            // Every body's mob, on the player model. A renderer is a client class and so cannot be named in a body's own
+            // declaration; see the Fabric client, which says the same.
+            AGENTS.values().forEach(type -> event.registerEntityRenderer(type.get(), AgentMobRenderer::new));
         }
     }
 }

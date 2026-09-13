@@ -25,6 +25,21 @@ import net.sievert.modularmobai.entity.agent.MobControls;
  * what the body actually did are written by helpers any species can use, and a species picks the ones its body has. See
  * {@code docs/species.md} for the steps.
  *
+ * <h2>The one place a body is declared</h2>
+ *
+ * <p>{@link #ALL} is the whole register of bodies, and a body is declared by adding it there and nowhere else. What each
+ * declaration carries is everything the rest of the mod would otherwise have to know by heart: the layout, the encoder, the
+ * controls, {@link #holdsItems()} and {@link #mobs()}. The loaders register the mobs {@link #mobs()} names, the parity
+ * check goes round {@link #ALL}, the build asks this for the bodies there are, and what arms a fighter asks
+ * {@link #holdsItems()} rather than assuming a hotbar. A body that lacks what something needs is refused by name, which is
+ * the whole of why these are declared rather than inferred: a body with no hands cannot be handed a sword by accident, and
+ * a body with no mob cannot be spawned into an arena by accident, because both stop with a message saying which body and
+ * what it has not got.
+ *
+ * <p>Nothing here may touch a class of the game's. The build reads a layout by running the schema tool as a plain Java
+ * program with no Minecraft on its class path, so a mob is declared by its id and its dimensions and turned into an
+ * {@code EntityType} by {@code ModEntities}, which is the first place allowed to mention one.
+ *
  * <h2>The identity of a schema</h2>
  *
  * <p>{@link #describeJson()} is the one written copy of a layout: the training side builds its network from it and never
@@ -41,10 +56,85 @@ public interface Species {
     /** A body with no hands: the second one, and the proof that a body is a thing this can have more than one of. */
     Species BEAST = new Beast();
 
-    List<Species> ALL = List.of(HUMANOID, BEAST);
+    /**
+     * Every body there is, and the one place a body is declared. Everything that goes round the bodies goes round this:
+     * the loaders' registrations, the parity check, the build's list, and every message that says what bodies there are.
+     */
+    List<Species> ALL = checked(List.of(HUMANOID, BEAST));
 
     /** As it appears in a schema, a weight file and a log. Lower case, no spaces, and never changed once published. */
     String name();
+
+    /**
+     * Whether this body can hold anything: a hotbar to see, a slot to choose, hands to swing what is in them.
+     *
+     * <p>Asked rather than assumed by everything that arms a fighter, so that a body with no hands is refused a loadout by
+     * name instead of being handed a sword it has no control that could swing. A mob's inventory is the game's and takes
+     * whatever is put in it whatever the body is, which is exactly why this cannot be read off the entity: the sword would
+     * go in, the fight would be lost, and nothing would say why.
+     */
+    boolean holdsItems();
+
+    /**
+     * The mobs the game registers for this body, in the order they are registered. Two for the humanoid — the one a player
+     * meets and the one the arenas fight in — one for the beast, and none at all for a body that is a layout and nothing
+     * else.
+     *
+     * <p>Declared here rather than in the loaders because a mob per loader per body is three edits that can each be
+     * forgotten separately, and forgetting one leaves a body that trains on Fabric and cannot be spawned on NeoForge. See
+     * {@code ModEntities}, which is what turns these into entity types.
+     */
+    List<Mob> mobs();
+
+    /**
+     * One mob of one body: the path of its id, what the world is to do with it, and the box it stands in.
+     *
+     * <p>No class of the game's, on purpose: see the note on {@link Species} about the schema tool's class path.
+     *
+     * @param path      the path of the id, {@code agent_mob}, which is also what its lang key and its egg are named after
+     * @param role      whether a player meets this one or an arena fights in it
+     * @param width     the bounding box, in blocks
+     * @param height    the bounding box, in blocks
+     * @param eyeHeight where this body looks from, which is where its aim ray starts and what its enemy slots measure to
+     */
+    record Mob(String path, Role role, float width, float height, float eyeHeight) {
+
+        /**
+         * What the world is to do with a mob. The two differ in nothing a network can see: same body, same controls, same
+         * observation, so a network trained against one drives the other.
+         */
+        public enum Role {
+
+            /** A mob a player meets: saved with the world, summonable, and given a spawn egg. */
+            WORLD,
+
+            /**
+             * What the arenas spawn. Never saved, because a suite of fifty thousand arenas would otherwise serialise every
+             * agent on every world save for no reason, and never summonable, because it has no business in a survival world.
+             */
+            TRAINING
+        }
+
+        /** A player's box and eye height, which is what both of the humanoid's use and what a proof of a second body borrows. */
+        public static Mob playerShaped(String path, Role role) {
+
+            return new Mob(path, role, 0.6F, 1.8F, 1.62F);
+        }
+    }
+
+    /** This body's mob of that role, or null where it has none: what says whether it can be met, or fought in an arena. */
+    default Mob mob(Mob.Role role) {
+
+        for (Mob mob : this.mobs()) {
+
+            if (mob.role() == role) {
+
+                return mob;
+            }
+        }
+
+        return null;
+    }
 
     /** How many floats one agent's observation takes. */
     int obsDim();
@@ -99,6 +189,63 @@ public interface Species {
 
         throw new IllegalArgumentException("No such species as " + name + "; there is "
                 + String.join(", ", ALL.stream().map(Species::name).toList()));
+    }
+
+    /**
+     * Which body this process's agents are: the one a training run trains, an evaluation evaluates and a league fields.
+     *
+     * <p>The build passes the answer it wrote the run's {@code schema.json} for ({@code -Pspecies}) on to the game as
+     * {@code modular_mob_ai.species}, so that the two halves of a run cannot be about different bodies. A process started
+     * with neither gets the humanoid, which is what the arenas have always fought in.
+     */
+    static Species trained() {
+
+        String named = System.getProperty("modular_mob_ai.species", "").trim();
+
+        return named.isEmpty() ? HUMANOID : byName(named);
+    }
+
+    /**
+     * The register, with the mistakes a declaration can make caught as it loads rather than whenever the thing it broke is
+     * next used. Two bodies sharing an id would have one silently overwrite the other's registration, and two sharing a
+     * schema id would each load the other's weights, which is the one failure that does not look like one.
+     */
+    static List<Species> checked(List<Species> all) {
+
+        Map<String, String> paths = new LinkedHashMap<>();
+        Map<Integer, String> ids = new LinkedHashMap<>();
+
+        for (Species species : all) {
+
+            String clash = ids.put(species.schemaId(), species.name());
+
+            if (clash != null) {
+
+                throw new IllegalStateException(String.format(Locale.ROOT, "%s and %s both have schema %08x, so either "
+                        + "one's weights would drive the other; a schema id carries the species name, so two bodies can "
+                        + "only collide by being declared twice", clash, species.name(), species.schemaId()));
+            }
+
+            for (Mob mob : species.mobs()) {
+
+                String owner = paths.put(mob.path(), species.name());
+
+                if (owner != null) {
+
+                    throw new IllegalStateException("The mob " + mob.path() + " is declared by both " + owner + " and "
+                            + species.name() + ", and one id is one mob");
+                }
+            }
+
+            if (species.mobs().stream().filter(mob -> mob.role() == Mob.Role.WORLD).count() > 1
+                    || species.mobs().stream().filter(mob -> mob.role() == Mob.Role.TRAINING).count() > 1) {
+
+                throw new IllegalStateException(species.name() + " declares two mobs of one role, and everything that asks "
+                        + "for a body's mob asks for one of each");
+            }
+        }
+
+        return all;
     }
 
     /** The species whose layout has that id, or null: what says whether a weight file can drive anything here at all. */
