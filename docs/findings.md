@@ -762,6 +762,12 @@ are deliberate.
     pure RL inside 1.8 points of each other. That is a plateau one to two points under the teacher, not a run still
     climbing, and it is where the lava leak below and the harder opponents (warden 0%, evoker 1%, 2× creeper 6%, ghast 22%)
     are the levers left, not more iterations of the same.
+  - **The lava leak was the lever, and it took the network past the teacher.** `blast4` resumed on the fixed ground at
+    8669: its own lava deaths went from 33.6 to 0.07 per 1,000 flat-and-water fights, its judged best from 82.3% to
+    **86.2% at 8825**, and one sitting on an idle machine read **8825 at 83.3%, 10761 at 83.7%, the published 3100 at
+    75.2%, and the teacher at 78.2%**. Five points over the fighter it was copied from, on the same bench in the same
+    sitting — the first time a network has measured above it. The teacher's own reads span 78.2 to 81.5 across sittings
+    and the network's 83.3 to 83.7, so the order holds even at the teacher's best.
 - **An experiment on one worker, judged on the league rating, cannot be judged.** league-pull05 forked league2 at
   iteration 6,000 to try a teacher pull of 0.05 against 0.2, and over 500 iterations on its single worker it produced three
   evaluations: 1610 against league2's 1600 to 1604 at the same iterations. But league2's own rating wanders between 1567

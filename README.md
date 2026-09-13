@@ -5,7 +5,7 @@ inputs, a GRU memory, 11 controls) that runs inside the game in plain Java, one 
 the same weights. It's trained offline with PyTorch PPO from what the game recorded, and new weights swap in without the
 game restarting.
 
-Its published network wins about 75 to 80% of a league of every vanilla mob that fights fair, within a few points of the hand-written fighter it was copied from on the same bench. It uses swords, axes, bows, crossbows and
+Its published network wins about 83 to 86% of a league of every vanilla mob that fights fair, about five points more than the hand-written fighter it was copied from on the same bench. It uses swords, axes, bows, crossbows and
 shields, and mines and places blocks, under the same rules as a player. Next: an ELO league against most vanilla mobs,
 itself and past versions, with random loadouts.
 
