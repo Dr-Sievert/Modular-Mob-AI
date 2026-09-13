@@ -98,7 +98,6 @@ from __future__ import annotations
 import json
 from collections import deque
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from . import files, log
@@ -128,7 +127,8 @@ RUNGS = ("(hard)", "(easy)")
 # them have one. The scripted fighter and a published network are fixed policies with nothing to turn up.
 RUNGED = ("mob", "squad")
 
-OUTCOMES = ("win", "loss", "timeout", "draw")
+# What a fight is worth to the side it is scored from, and the only list of the outcomes: the game writes these four words
+# into its results and nothing here is keyed by anything else.
 SCORES = {"win": 1.0, "loss": 0.0, "timeout": 0.5, "draw": 0.5}
 
 # One letter per outcome in the saved windows, which keeps a state of a few thousand fights small.

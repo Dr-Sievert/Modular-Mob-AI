@@ -41,8 +41,9 @@ The words, smallest first:
   restarting.
 - An **epoch** is one pass of PPO over one iteration's data, in minibatches of 2,048 steps. Each iteration runs up to
   four, stopping early once the policy has moved as far as `target_kl` allows.
-- A **round** is how many battles one set of worker processes fights before being replaced, 2,000 by default. It only
-  exists so that a worker that crashes costs at most the rest of its round.
+- A **round** is how many battles one set of worker processes fights before being replaced, 250,000 by default
+  (`scripts\train.ps1 -RoundSize`). It only exists so that a worker that crashes costs at most the rest of its round;
+  starting workers takes about half a minute, so a round is large enough to make that a small share of it.
 
 The loss is PPO's: the clipped policy objective, plus half the critic's clipped squared error, minus a hundredth of the
 entropy of the three heads, so the policy keeps exploring.
@@ -90,7 +91,7 @@ two sides disagree about the network, which makes every ratio in the update wron
 | `mmai/parity.py` | The fixture the game checks its own forward pass against. |
 | `tests/` | Unit tests, `python -m unittest discover -s tests` from here, or `scripts\league.ps1 -Test`. |
 
-The file formats themselves are written down once, in [`../docs/README.md`](../docs/README.md).
+The file formats themselves are written down once, in [`../docs/architecture.md`](../docs/architecture.md#files).
 
 ## How the training works
 
@@ -100,8 +101,10 @@ which recovers the memory at every step without the game storing it; then the cr
 advantage estimation runs over each segment, and PPO trains on fixed length chunks that each start from the replayed
 memory.
 
-The critic is its own network, reading the observation and the actor's memory of the fight so far. No gradient of the
-value loss reaches the actor, and the game never has to carry weights it will not use.
+The critic is its own network, with a memory of its own and fourteen privileged inputs the actor never sees: what only
+this side knows about the episode, and what only the game knows about the other side, which it writes into every rollout
+row. No gradient of the value loss reaches the actor, and the game never has to carry weights it will not use. See
+[`../docs/training.md`](../docs/training.md#the-critic) for every column and why each one is there.
 
 Three things keep it stable, all standard: rewards are divided by the running spread of the return so the value loss stays
 comparable to the policy loss whatever the reward is measured in; the value estimate is clipped the same way the policy

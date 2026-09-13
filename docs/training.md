@@ -471,7 +471,7 @@ scripts\dagger.ps1 -Run vindicator -Suite terrain one vindicator instead, as imi
 This is `imitate.ps1`'s correction round on its own, for a run past imitation: the run's own best network drives, the
 scripted fighter says what it would have done on every tick, and the answers go into the run's `demos`. What is new is
 the suite. On the league the student meets every mob and every loadout in turn, so the record covers a bow, a crossbow, a
-shield and all 26 opponents, which is what a league run can usefully be pulled back towards; a record of one fight
+shield and every opponent on the roster, which is what a league run can usefully be pulled back towards; a record of one fight
 against one vindicator is not.
 
 | Parameter | Default | Meaning |
@@ -631,4 +631,4 @@ cache, and on an efficiency core at 24.8 us. See [findings.md](findings.md).
 | iterations suddenly take many times longer | one worker is slow and every worker waits for it; check its garbage collection with `jstat -gcutil <pid>` |
 | `PermissionError` on a rename | fixed in `mmai/files.py`; a reader held the file open |
 | win rate jumps around | training explores; judge by the evaluation columns |
-| "was trained against schema X and the game is running Y" | the layout's checksum changed under a stopped run. If nothing an input *means* moved, `scripts\restamp.ps1 -Run runs\<name>` brings the run's files up to the new id and it carries on; if something did move, the run has to start again. `-WhatIf` first. **One-off:** delete the script and `trainer\restamp_schema.py` once every run has been through it |
+| "was trained against schema X and the game is running Y" | the layout's checksum changed under a stopped run, so the run's weights and shards name a layout this build no longer has. The run has to start again: there is no re-stamping tool any more, and nothing here reads a file whose id does not match. See [species.md](species.md), "If you change a layout that already has trained networks", for what a layout change costs |

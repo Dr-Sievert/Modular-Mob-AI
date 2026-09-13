@@ -12,8 +12,8 @@
 #   scripts\train.ps1 -Run league -Suite league -TeacherWeight 0.5
 #                                               the same, pulled back towards the teacher's recorded answers every update,
 #                                               which scripts\dagger.ps1 records for a league run
-#   scripts\train.ps1 -Run league -Suite league -LeagueModels blast
-#                                               the same, with two published networks in the league as rated players, so its
+#   scripts\train.ps1 -Run league -Suite league -LeagueModels blast,blast4
+#                                               the same, with published networks in the league as rated players, so its
 #                                               tier list can be read beside another run's that fields them too
 #   scripts\compare.ps1                         two runs side by side instead, see there
 #
@@ -245,19 +245,13 @@ $record = ''
 
 if ($Demos) {
 
-    $fromName = Get-RunDirectory $Demos
-
-    $record = @((Join-Path $fromName 'demos'), $fromName, (Join-Path $Demos 'demos'), $Demos |
-            Where-Object { Test-Path $_ -PathType Container } |
-            Where-Object { @(Get-ChildItem $_ -Filter '*.mbr' -Recurse -ErrorAction SilentlyContinue).Count -gt 0 } |
-            Select-Object -First 1)
+    $record = Find-TeacherRecord $Demos
 
     if (-not $record) {
 
         throw "No record of the teacher in '$Demos'"
     }
 
-    $record = (Resolve-Path $record).Path
     $Extra = "--demos `"$record`" $Extra".Trim()
 }
 

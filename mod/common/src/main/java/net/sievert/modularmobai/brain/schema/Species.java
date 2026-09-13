@@ -154,8 +154,8 @@ public interface Species {
      * The JSON every species describes itself with, so that the training side has one parser rather than one per body.
      *
      * <pre>
-     *   {"species":"humanoid","obsDim":634,"actDim":11,
-     *    "blocks":[{"name":"self","offset":0,"size":20}, ...],
+     *   {"species":"humanoid","obsDim":792,"actDim":11,
+     *    "blocks":[{"name":"self","offset":0,"size":24}, ...],
      *    "actions":["moveForward", ...],"logits":19,"heads":[...]}
      * </pre>
      *

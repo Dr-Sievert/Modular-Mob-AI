@@ -63,6 +63,7 @@ import net.sievert.modularmobai.gametest.GameTestGroup;
 import net.sievert.modularmobai.gametest.league.Loadouts;
 import net.sievert.modularmobai.gametest.league.Pairings;
 import net.sievert.modularmobai.gametest.terrain.PouredHazards;
+import net.sievert.modularmobai.gametest.util.TestTicks;
 
 /**
  * The agent's body against a player's rules, a rule or two to a test: bows, crossbows, shields and axes, what an item in
@@ -2317,23 +2318,10 @@ public class AgentMechanicsGameTest {
         return helper.getLevel().registryAccess().registryOrThrow(Registries.ENCHANTMENT).getHolderOrThrow(key);
     }
 
-    /**
-     * Runs a test a tick at a time. The step is called on the tick the test is set up, with zero, and after every tick
-     * the world takes from then on, with how many that makes, until it returns true. Controls pressed in a step are what
-     * the agents act on in the next tick, so a step's checks see the tick that step's number counts. A failed assertion
-     * fails the test there and then.
-     */
+    /** See {@link TestTicks#run}, which the play suite runs its own tests through too. */
     private static void run(GameTestHelper helper, IntPredicate step) {
 
-        int[] tick = {0};
-
-        helper.onEachTick(() -> {
-
-            if (step.test(tick[0]++)) {
-
-                helper.succeed();
-            }
-        });
+        TestTicks.run(helper, step);
     }
 
     /**

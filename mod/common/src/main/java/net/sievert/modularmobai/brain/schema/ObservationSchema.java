@@ -264,11 +264,7 @@ public final class ObservationSchema {
     public static final int ECHO_SIZE = 20;
 
     // -----------------------------------------------------------------------------------------------------------
-    // Where each block starts
-    // -----------------------------------------------------------------------------------------------------------
-
-    // -----------------------------------------------------------------------------------------------------------
-    // How far it can see, past the four blocks of the grid
+    // Rays: how far it can see, past the four blocks of the grid
     //
     // The grid is a block a cell and nine cells across, so it reaches four blocks. Everything the agent does about ground
     // beyond that it does blind: where the lava is, which way the cliff runs, whether there is a wall at its back. The
@@ -309,6 +305,10 @@ public final class ObservationSchema {
     /** How far below the feet counts as a drop worth reporting, which is what a body takes real damage falling. */
     public static final int RAY_DROP_DEPTH = 4;
 
+    // -----------------------------------------------------------------------------------------------------------
+    // Where each block starts
+    // -----------------------------------------------------------------------------------------------------------
+
     public static final int SELF_OFFSET = 0;
     public static final int HOTBAR_OFFSET = SELF_OFFSET + SELF_SIZE;
     public static final int ECHO_OFFSET = HOTBAR_OFFSET + HOTBAR_SIZE;
@@ -317,12 +317,6 @@ public final class ObservationSchema {
     public static final int RAY_OFFSET = TERRAIN_OFFSET + TERRAIN_SIZE;
 
     public static final int OBS_DIM = RAY_OFFSET + RAY_SIZE;
-
-    /** Where one ray's three numbers start, counting from the start of the rays. */
-    public static int rayOffset(int ray) {
-
-        return RAY_OFFSET + ray * RAY_STRIDE;
-    }
 
     public static int enemyOffset(int slot) {
 
@@ -344,5 +338,4 @@ public final class ObservationSchema {
 
         return TERRAIN_OFFSET + gridOffset(x, y, z);
     }
-
 }

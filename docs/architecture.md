@@ -457,24 +457,34 @@ sides. `-Pspecies=<name>` says which body a run is for; it is `humanoid` unless 
 
 ### `.mbw`: weights
 
-Written by the trainer, read by the mod. A 52-byte header, then every parameter as one float array.
+Written by the trainer, read by the mod. A 68-byte header, then every parameter as one float array.
 
 ```
 0   'MBW1'
-4   u32 format version (1)
+4   u32 format version (2)
 8   u32 schema id          which body's layout these weights were trained against
-12  u32 topology hash      CRC32 of the six dimensions below
+12  u32 topology hash      CRC32 of the dimensions below
 16  u32 obsDim, h1, hidden, h3, outDim, stdDim
-40  f32 observation clip
-44  u32 iteration
-48  u32 parameter count
-52  f32 parameters
+40  u32 slotAt, slots, slotStride, slotEnc     the shared encoder over the enemy slots; all zero for a network without one
+56  f32 observation clip
+60  u32 iteration
+64  u32 parameter count
+68  f32 parameters
 ```
 
 Parameters are in this order, matrices row major `[out][in]` exactly as PyTorch stores them:
-`normMean[obs] normStd[obs] fc1W fc1B gruWih[3H x h1] gruBih gruWhh[3H x H] gruBhh fc2W fc2B outW outB logStd[std]`.
+`normMean[obs] normStd[obs]` then, where there is a slot encoder, `slotW[slotEnc x slotStride] slotB[slotEnc]`, then
+`fc1W fc1B gruWih[3H x h1] gruBih gruWhh[3H x H] gruBhh fc2W fc2B outW outB logStd[std]`.
 The GRU gates are in PyTorch's order: reset, update, new. The observation normaliser travels in the file because the
 network is meaningless behind any other one.
+
+**Version 2 added the slot encoder**, which is four numbers in the header and one matrix in the parameters; `--slot-enc N`
+asks for it. Version 1 is still read, as a network without one, because the shapes it can describe are a subset of what 2
+can, and a network with no encoder hashes over the original six dimensions alone, so adding the four retired nothing.
+`slotEnc` is the width of a matrix run over each of the ten enemy slots in turn, with the largest answer per feature kept,
+so an opponent in slot three and the same opponent in slot seven are one thing rather than two sets of weights; the first
+layer then takes `obsDim - slots * slotStride + slotEnc` numbers instead of the whole row. `scripts\parity.ps1` checks both
+passes, because the pooled one is different arithmetic and not merely a different size.
 
 Anything that doesn't add up is refused and never coerced: wrong magic, version or schema id, a hash that disagrees with
 the dimensions, a parameter count or file length that disagrees with the topology, a non-finite parameter.

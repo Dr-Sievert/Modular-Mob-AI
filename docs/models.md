@@ -13,13 +13,16 @@ models\<run>\
   state.pt      the trainer's whole state (optional), to carry the training on elsewhere
 ```
 
+One lineage, each carried on from the one before it: `blast` → `blast2` → `blast3` (not published) → `blast4`.
+
 | Model | What | Evaluated |
 | --- | --- | --- |
-| `blast4` | PPO on the league, from the teacher, carried on across three runs | 86.2% won (iteration 8825, 1012 league fights); benched in one sitting at 83.3% against the scripted fighter's 78.2% |
+| `blast4` | PPO on the league, from the teacher, carried on across three runs, on the fixed ground the lava leak had spoiled | 86.2 / 11.2 / 2.7 (iteration 8825, 1012 league fights); benched in one sitting at 83.3% against the scripted fighter's 78.2% |
 
 That is one number on one bench: `blast4` fights the whole league roster, wardens and evokers included, where the retired
-networks below fought a vindicator. The two are not comparable, and nothing in `models\` is comparable to anything
-measured in another sitting; see the win rate section below, and `scripts\bench.ps1` in
+networks below fought a vindicator. The two are not comparable, and **nothing in `models\` is comparable to anything
+measured in another sitting**, since each run judges against the opponents its own matchmaking drew. See the win rate
+section below, and `scripts\bench.ps1` in
 [testing.md](testing.md) for the only way to put two networks on one scale.
 
 ## What was retired, and why

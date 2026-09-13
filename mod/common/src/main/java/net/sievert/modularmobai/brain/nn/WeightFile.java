@@ -14,13 +14,18 @@ import java.nio.file.Path;
  *   0       4     magic 'M','B','W','1'
  *   4       4     u32 format version
  *   8       4     u32 schema id        which body's observation and action layout these weights were trained against
- *   12      4     u32 topology hash    CRC32 of the six dimensions below
+ *   12      4     u32 topology hash    CRC32 of the dimensions below
  *   16      24    u32 obsDim, h1, hidden, h3, outDim, stdDim
- *   40      4     f32 observation clip
- *   44      4     u32 training iteration
- *   48      4     u32 parameter count
- *   52      N*4   f32 parameters, in {@link Topology}'s segment order
+ *   40      16    u32 slotAt, slots, slotStride, slotEnc     version 2 only; all zero for a network with no slot encoder
+ *   56      4     f32 observation clip
+ *   60      4     u32 training iteration
+ *   64      4     u32 parameter count
+ *   68      N*4   f32 parameters, in {@link Topology}'s segment order
  * </pre>
+ *
+ * <p>A version 1 file has no slot encoder, so its header stops after the six dimensions: the clip, the iteration and the
+ * count sit at 40, 44 and 48, and the parameters begin at 52. It reads as a version 2 file whose four slot numbers are
+ * zero, which is exactly the shape it describes.
  *
  * <p>Anything that does not add up is refused, loudly, and never coerced: no padding, no truncating, no guessing which
  * slot was meant. A network loaded against a layout it was not trained on does not crash, it reads health out of the

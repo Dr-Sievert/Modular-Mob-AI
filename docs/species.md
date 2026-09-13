@@ -156,14 +156,18 @@ be the same weights on both sides. So you get a real check on a brand new body b
 ```
 scripts\parity.ps1
   humanoid: schema 9f7a1358, observation 792 wide, 11 actions from 19 logits
-  parity over 67 rows of 792 -> 256 -> GRU 128 -> 128 -> 19, a humanoid
-    logits 1.550e-06   hidden state 4.768e-06   log probability 1.907e-06
+  parity over 67 rows of 792 -> 792 -> 256 -> GRU 128 -> 128 -> 19 (371,783 parameters), a humanoid
+    logits 1.550e-06   hidden state 7.659e-06   log probability 6.676e-06
   parity ok
   beast: schema 36f36b69, observation 769 wide, 7 actions from 7 logits
-  parity over 67 rows of 769 -> 256 -> GRU 128 -> 128 -> 7, a beast
-    logits 2.623e-06   hidden state 4.888e-06   log probability 1.907e-06
+  parity over 67 rows of 769 -> 769 -> 256 -> GRU 128 -> 128 -> 7 (364,301 parameters), a beast
+    logits 2.623e-06   hidden state 8.285e-06   log probability 1.621e-05
   parity ok
 ```
+
+The second width is what the first layer actually takes, which is the whole observation unless the network pools its enemy
+slots; see [architecture.md](architecture.md#mbw-weights). A plain run also goes round both bodies a second time with the
+pooled pass, since that is different arithmetic and not merely a different size.
 
 If your body's figures come out at a tenth rather than a millionth, the two sides disagree about the layout: nearly always
 a block offset, a head that reads the wrong outputs, or an encoder writing a field at the wrong index.
@@ -192,7 +196,7 @@ happen to be the same width. It is stamped into every weight file and every roll
 5. Register the entity in `ModEntities` and both loaders.
 6. `scripts\parity.ps1` — it checks your body without being told to. It must say `parity ok`.
 7. `scripts\test.ps1` and `scripts\test.ps1 -Mechanics` — the humanoid must be untouched: 20 of 20 arena fights at
-   **exactly 54 ticks**, 39 of 39 mechanics. The 54 is deterministic, so any change in it is a change in behaviour.
+   **exactly 54 ticks**, 40 of 40 mechanics. The 54 is deterministic, so any change in it is a change in behaviour.
 8. A game test that spawns your body and drives it. `PlayGameTest.aSecondBodyIsDrivenAndARefusedBrainIsNamed` is the
    pattern: spawn it, check the refusal is named both ways, then drive it with a brain of its own and watch it move. An
    agent out in the world stands still with nobody in view whatever its brain says, so give it something to see.
@@ -202,8 +206,10 @@ happen to be the same width. It is stamped into every weight file and every roll
 The schema id changes with any change to the layout, including one that only moves a field. Then:
 
 - If nothing an input **means** has moved — the same inputs in the same blocks at the same offsets — the networks are still
-  the networks they were, and only the four bytes that name the layout are out of date. `scripts\restamp.ps1` brings a
-  stopped run up to date; `models\` was re-stamped the same way when bodies were given names. The evidence that nothing
-  moved is the parity check's own figures staying the same to four places, and the arena's 54 ticks holding.
+  the networks they were, and only the four bytes that name the layout are out of date. There is no tool for that any more:
+  the one that re-stamped `models\` when bodies were given names was written for that one change and deleted after it, and
+  nothing here will load a file whose id does not match. The evidence that nothing moved would be the parity check's own
+  figures staying the same to four places, and the arena's 54 ticks holding; write the re-stamp again if a change ever
+  earns it.
 - If an input's meaning **has** moved, the old weights do not fit and no amount of re-stamping makes them. Retrain, and say
   so rather than carrying a file that quietly means something else.

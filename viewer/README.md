@@ -141,7 +141,7 @@ CommonJS build, `build/three.cjs` from the npm package, kept unmodified as `vend
 The game writes one JSON file per recorded fight to `runs/<name>/replays/w<worker>-f<fight>.json`. Each file has:
 
 - **Metadata:** `version` (2), `run`, `iteration`, `brain`, `worker`, `fight`, `biome`, `outcome`
-  (`win` | `loss` | `timeout`), `ticks` (T) and `tickRate`.
+  (`win` | `loss` | `timeout` | `draw`), `ticks` (T) and `tickRate`.
 - **Blocks:** `blocks`, every block of the site from under its lowest ground to its highest block: an origin and a
   size, a `palette` of block states with a map `color` and `flags` for each, and the cells as `runs` of palette
   indices. See [docs/replay-format.md](../docs/replay-format.md).

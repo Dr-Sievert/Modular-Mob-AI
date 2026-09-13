@@ -83,15 +83,6 @@ public final class Brains {
         return fallback;
     }
 
-    /**
-     * Swaps what drives agents that have not been handed a brain of their own. Called before a run starts, never during
-     * one: agents already driven keep the brain they have.
-     */
-    public static synchronized void setDefault(Brain replacement) {
-
-        fallback = replacement;
-    }
-
     /** A network loaded from a weight file, most likely action, shared by everything that asks for the same file. */
     public static synchronized NeuralBrain network(Path weights) {
 

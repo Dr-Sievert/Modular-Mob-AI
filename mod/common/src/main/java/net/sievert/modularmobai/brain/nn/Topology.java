@@ -8,9 +8,13 @@ import java.util.zip.CRC32;
  * The shape of the network, and where every parameter sits in the one flat array that holds them all.
  *
  * <pre>
- *   obs[obsDim] -> normalise -> Linear obsDim to h1, ReLU -> GRU cell h1 to hidden -> Linear hidden to h3, ReLU
+ *   obs[obsDim] -> normalise -> [the slot encoder, when there is one] -> Linear fc1In to h1, ReLU
+ *               -> GRU cell h1 to hidden -> Linear hidden to h3, ReLU
  *               -> Linear h3 to outDim, the raw logits the heads squash
  * </pre>
+ *
+ * <p>{@link #fc1In()} is the whole observation for an ordinary network, and for a {@link #pooled()} one it is everything
+ * outside the enemy slots plus the {@code slotEnc} features that replace them.
  *
  * <p>The runtime reads its dimensions from here rather than from constants, so a wider or narrower network is a new
  * weight file and not a code change. Only one topology is live at a time, by policy; nothing in the code needs that.
@@ -22,12 +26,16 @@ import java.util.zip.CRC32;
  *
  * <pre>
  *   normMean[obsDim]  normStd[obsDim]                  the observation normaliser the network was trained behind
- *   fc1W[h1 x obsDim]  fc1B[h1]
+ *   slotW[slotEnc x slotStride]  slotB[slotEnc]        only when pooled(); the shared encoder over the enemy slots
+ *   fc1W[h1 x fc1In]  fc1B[h1]
  *   gruWih[3H x h1]  gruBih[3H]  gruWhh[3H x H]  gruBhh[3H]   gates in PyTorch's order: reset, update, new
  *   fc2W[h3 x H]  fc2B[h3]
  *   outW[outDim x h3]  outB[outDim]
  *   logStd[stdDim]                                     the spread of the continuous heads while training
  * </pre>
+ *
+ * <p>The slot encoder comes before the first layer here because that is the order the pass applies it in, so the file is
+ * read straight through without seeking.
  *
  * <p>The normaliser lives in here on purpose. A network trained on normalised inputs and run on raw ones does not fail,
  * it just plays badly, so the statistics travel with the weights they belong to and cannot be forgotten.

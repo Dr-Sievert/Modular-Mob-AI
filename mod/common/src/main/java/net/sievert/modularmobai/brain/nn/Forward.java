@@ -136,7 +136,8 @@ public final class Forward {
      *
      * <p>Worth carrying because a pass timed on its own measures something else. Running it in a loop keeps the 1.3 MB of
      * weights in the second level cache, where the arithmetic is what is left to save; in a real tick the server thread
-     * has ticked chunks and entities and written 634 floats an agent in between, and the weights are cold every time. The
+     * has ticked chunks and entities and written a whole observation an agent in between — 792 floats for a humanoid — and
+     * the weights are cold every time. The
      * two numbers came out a fifth apart, and this is the one a run is paid in. See findings.md.
      *
      * <p>Plain longs, read and written from the one server thread that does the passes. A client with several levels could

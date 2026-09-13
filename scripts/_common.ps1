@@ -135,11 +135,30 @@ function Test-MachineStability {
     if ($revision -lt 0x12B) {
 
         Write-Warning ("{0} is running microcode 0x{1:X}. Intel's stability fix needs 0x12B or newer, which comes with a " +
-                "BIOS update. Until then heavy load can blue screen this machine; see docs\README.md, 'Machine stability'." -f $cpu.Trim(), $revision)
+                "BIOS update. Until then heavy load can blue screen this machine; see docs\findings.md." -f $cpu.Trim(), $revision)
     }
 }
 
 function Get-RunDirectory([string] $Name) {
 
     return Join-Path $Runs $Name
+}
+
+# The folder of recorded teacher answers that -Demos names, or nothing when none of the four places holds any.
+#
+# A record can be named four ways and every caller accepts all four: a run's name, that run's demos folder, or either of
+# those given as a path. Whichever of them is a folder with shards under it wins, nearest first, so a run called the same
+# as a folder in the working directory cannot be taken for it. Resolved here so that both scripts that take -Demos agree
+# about what a name means; each says its own thing about a name that leads nowhere, since one can offer to record the
+# record and the other cannot.
+function Find-TeacherRecord([string] $Named) {
+
+    $fromName = Get-RunDirectory $Named
+
+    $found = @((Join-Path $fromName 'demos'), $fromName, (Join-Path $Named 'demos'), $Named |
+            Where-Object { Test-Path $_ -PathType Container } |
+            Where-Object { @(Get-ChildItem $_ -Filter '*.mbr' -Recurse -ErrorAction SilentlyContinue).Count -gt 0 } |
+            Select-Object -First 1)
+
+    return $(if ($found) { (Resolve-Path $found).Path } else { '' })
 }
