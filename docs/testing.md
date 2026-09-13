@@ -37,8 +37,9 @@ scripts\test.ps1 -League -LeagueModels blast                published networks i
 scripts\league.ps1 -Test                  the trainer's whole unit suite, where the league's own tests live: Elo, the pairings and their shares, the pool, reading and resuming results, and beside them the shard reader, the critic, the auxiliary heads and the teacher pull
 scripts\eval.ps1 -Weights models\blast\best.mbw            a network's win rate, 2,000 fights, most likely action
 scripts\eval.ps1 -Run blast -Iteration 2150 -Arenas 400    a checkpoint of a local run
-scripts\eval.ps1 -Teacher -Suite league -Arenas 600        the scripted fighter on the same bench, which is the reference
+scripts\eval.ps1 -Teacher -Suite league -Arenas 600        the scripted fighter alone, when nothing is being compared to it
 scripts\bench.ps1 -Run blast -Last 4                       several networks on one bench, best first
+scripts\bench.ps1 -Run blast -Last 4 -Teacher              and the scripted fighter as one more row of it
 scripts\bench.ps1 -Weights models\blast\best.mbw,runs\blast\weights\002000.mbw
 ```
 
@@ -51,13 +52,18 @@ reference a league number is meaningless without. A fresh copy winning 27% of th
 roster holds wardens and evokers, and the question is always how much of what is missing is the copy and how much is the
 fight. Ask the teacher the same question and the answer has a scale.
 
+`bench.ps1` takes the same switch, and that is where to reach for it: **the reference has to be measured in the same sitting
+as what it is the reference for.** Its own reads span 78.2 to 81.5% over an evening, which is larger than most of the
+differences it is being used to judge, so a teacher number from an earlier invocation cannot be subtracted from a network's.
+`eval.ps1 -Teacher` is for asking about the fighter itself, not for putting a scale under something else.
+
 `-Opponents` narrows a league evaluation to those players by the names the league writes in its results, `ravager`,
 `2x_zombie`, `zombie(hard)`. With `-ReplayEvery 1` that is how to get a replay of a matchup training never wrote one of:
 `scripts\eval.ps1 -Weights runs\<run>\best.mbw -Suite league -Arenas 40 -ReplayEvery 1 -Opponents ravager` leaves forty
 fights in `runs\eval-<run>-best\replays`. The league page offers that command itself; see [viewer.md](viewer.md).
 
 `bench.ps1` is `eval.ps1` over several networks with the answers side by side, and it is what to reach for whenever the
-question is which of two networks is better. Four things it does that doing it by hand does not:
+question is which of two networks is better. Five things it does that doing it by hand does not:
 
 - **every network in one sitting**, which is the whole point. Back to back a network measures within half a point of
   itself, but the same file measured 66.7% early one evening and 60.5% later, with every network in the sitting moving
@@ -68,6 +74,9 @@ question is which of two networks is better. Four things it does that doing it b
   one worker are not the 600 over three. One worker by default, which also leaves room for a training run beside it;
 - **a copy of each network taken first**, because a run keeps only its last few weight files and prunes the rest while the
   bench is running;
+- **the reference in the same sitting**, `-Teacher`, as one more row measured first. Everything above applies to the
+  scripted fighter as much as to a network, and a reference fetched from a second invocation is the very mistake the first
+  bullet is about;
 - **it says when the spread is inside what the fights can tell apart** — about half a point at 600 fights within a sitting,
   so three points mean something and one does not.
 
