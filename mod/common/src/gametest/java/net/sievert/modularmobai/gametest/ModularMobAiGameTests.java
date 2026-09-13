@@ -3,10 +3,15 @@ package net.sievert.modularmobai.gametest;
 import java.util.Collection;
 
 import net.minecraft.gametest.framework.TestFunction;
+import net.sievert.modularmobai.gametest.tests.AgentBlockGameTest;
+import net.sievert.modularmobai.gametest.tests.AgentDrawnWeaponGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentLeagueGameTest;
-import net.sievert.modularmobai.gametest.tests.AgentMechanicsGameTest;
+import net.sievert.modularmobai.gametest.tests.AgentMeleeGameTest;
+import net.sievert.modularmobai.gametest.tests.AgentPerceptionGameTest;
+import net.sievert.modularmobai.gametest.tests.AgentTeacherGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentVindicatorGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentVindicatorTerrainGameTest;
+import net.sievert.modularmobai.gametest.tests.FightSetupGameTest;
 import net.sievert.modularmobai.gametest.tests.PlayGameTest;
 import net.sievert.modularmobai.gametest.tests.TerrainLibraryGameTest;
 import net.sievert.modularmobai.gametest.tests.VillagerVindicatorGameTest;
@@ -31,8 +36,12 @@ public class ModularMobAiGameTests {
             // The fifty thousand arena baseline, with no agent in it.
             case "baseline" -> new Class<?>[] {VillagerVindicatorGameTest.class};
 
-            // The agent's body against a player's rules, one rule at a time: no fights, a minute or so all told.
-            case "mechanics" -> new Class<?>[] {AgentMechanicsGameTest.class};
+            // The agent's body against a player's rules, one rule at a time: no fights, a minute or so all told. One class
+            // per concern, all of them sharing tests/Mechanics; every one of them has to be named here or its tests are
+            // silently not run, which is why the suite prints how many it found.
+            case "mechanics" -> new Class<?>[] {AgentDrawnWeaponGameTest.class, AgentMeleeGameTest.class,
+                    AgentBlockGameTest.class, AgentPerceptionGameTest.class, AgentTeacherGameTest.class,
+                    FightSetupGameTest.class};
 
             // The agent in a real game: networks by name, /mmai, sides and the loadouts that keep a bow firing.
             case "play" -> new Class<?>[] {PlayGameTest.class};

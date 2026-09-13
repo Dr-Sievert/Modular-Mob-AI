@@ -85,33 +85,74 @@ keeps changing, and the rating wanders by thirty between checkpoints. The bench 
 of its numbers can be subtracted. It is what showed that a run flat for 11,500 iterations gained five points in a thousand
 once its entropy came down; see [findings.md](findings.md#learning).
 
-## The mechanics suite (`gametest/tests/AgentMechanicsGameTest`)
+## The mechanics suite (`gametest/tests`)
 
-Each test sets up one situation and checks the numbers a player would get:
+Each test sets up one situation and checks the numbers a player would get. Six classes, one per concern, all of them
+sharing `tests/Mechanics` — the arena, the agent, the brain that hands back what the test pressed, and the readings more
+than one of them takes. Every class has to be named in `ModularMobAiGameTests` or its tests simply do not run, which is why
+the count below is worth knowing: **40**.
+
+`AgentDrawnWeaponGameTest` (9) — a bow and a crossbow, and the slot the hand keeps while one is drawn:
 
 | Test | Checks |
 | --- | --- |
 | `bowShotFliesHitsAndIsPaid` | 20-tick draw, full-draw crit arrow at 3.0 blocks/tick, owned by the agent, one arrow used, hit, paid once |
+| `onePressDrawsToFullAndLooses` | one press, the button up for every tick after it, and the same critical arrow twenty ticks later: the draw that runs to full on its own, which is what makes a drawn weapon learnable |
 | `bowWithoutArrowsDoesNotDraw`, `bowTakesTheArrowAPlayersWould` | ammo rules; an off-hand spectral arrow goes first |
 | `crossbowChargesHoldsItsLoadAndFires`, `crossbowMultishotLoadsThreeForOneArrow` | crossbow loading and firing at a player's speed |
 | `aSlotFlipMidDrawWaitsForTheArrow`, `aSlotFlipMidWindWaitsForTheLoad` | the hand keeps the slot it started a draw in: the sword asked for eight ticks into a draw waits, the arrow leaves at full power and the bolt is loaded, and the sword comes up on the tick behind; with the hands free a slot moves on the next tick, and a loaded crossbow is free to be put away |
 | `aDrawThatSendsNothingStillHandsTheSlotBack` | what hands the slot back is the use ending and not the arrow going, so an empty quiver cannot strand a hand on the bow |
+
+`AgentMeleeGameTest` (8) — a blow and a block, what a press costs and what it is paid:
+
+| Test | Checks |
+| --- | --- |
 | `shieldBlocksWhatComesFromTheFront` | blocks blows and arrows from the front, not from behind |
 | `axeKnocksTheAgentsShieldAside`, `agentsAxeKnocksAShieldAside` | the axe disables a shield for 100 ticks, both ways |
 | `usingAnItemSlowsToAFifth`, `noAttackingWhileAnItemIsInUse` | use slowdown and no attacking while using |
-| mining tests | the player's break formula: iron shovel on dirt 3 ticks, hand on stone 151 ticks, iron pickaxe on stone 8 |
-| `placingUsesABlockUpAndNeverBuildsIntoAnything`, `placedBlocksFaceAsForAPlayer` | placing |
 | `aSwingAtAirCostsTheCooldownAndOneAtABlockDoesNot` | what a press costs: a swing at nothing restarts the cooldown, one that meets a block leaves it standing |
 | `holdingAttackTakesLessHealthThanWaitingForTheCooldown` | two blows a cooldown apart take more health off than fourteen presses in a row, which is the damage curve and the hurt immunity together |
 | `swordBlowIsPaidOnceAndOnlyOnTheOpponent` | damage payment |
+
+`AgentBlockGameTest` (9) — breaking a block and placing one:
+
+| Test | Checks |
+| --- | --- |
+| `shovelDigsDirtInAPlayersTime`, `handBreaksStoneSlowlyForNothing`, `pickaxeBreaksStoneForCobblestone` | the player's break formula: iron shovel on dirt 3 ticks, hand on stone 151 ticks, iron pickaxe on stone 8 |
+| `miningInTheAirIsFiveTimesSlower` | off the ground a block takes five times the work |
+| `lettingGoKeepsTheBlocksProgress`, `lookingAwayStartsTheBlockOver` | the crack waits where it got to while the aim stays on the block, and is lost the moment the aim moves off it |
+| `bedrockNeverBreaks` | it never gives, and hitting it costs nothing |
+| `placingUsesABlockUpAndNeverBuildsIntoAnything`, `placedBlocksFaceAsForAPlayer` | placing |
+
+`AgentPerceptionGameTest` (7) — what the agent sees of all of it. Four of these readings are held against the same numbers
+the critic's privileged facts carry:
+
+| Test | Checks |
+| --- | --- |
 | `useProgressIsTheItemsOwnCharge` | the echo's use charge: a bow's power curve, a crossbow's wind, nothing with the hands free |
 | `onlyShotsComingAtTheAgentTakeASlot` | an arrow on its way takes a slot with a kind of its own; one crossing, one lying still and the agent's own take none, and the mob keeps slot zero |
 | `theClockRunsUpAndTheQuiverRunsDown` | the self block's clock is this fight's own ticks over this fight's own limit, never going backwards and reading 1 once the time is up; arrows left follow the hotbar and fall as a bow is fired; a body with nothing that shoots and no fight reads nought for both |
-| `pouredLavaIsLavaAndLeavesNothingBehind`, `pouredLavaSweepsUpWhatItFedOutsideItself` | the lava poured beside a hazard fight is nine blocks of it, every block of ground it touched is exactly as it was once drained, and lava it fed three blocks away — as far as lava spreads on land, and outside the box the drain used to sweep — is swept up too and reported, which is what makes the site forget a label the spill has made untrue. Where a pool may go needs open ground with a heightmap, so the live run is what exercises that; see [findings.md](findings.md) |
+| `aSlotSaysWhatTheOpponentCanDo` | a slot says what the mob in it can do rather than which mob it is, which is what tells a warden from a zombie |
+| `aCreeperSaysItExplodesAndHowCloseItIs` | it says it explodes, and how far along its fuse is |
+| `aSlotSaysWhatItWearsAndWhoItIsAfter` | armour, and whether that mob has the agent as its target: set and let go inside one tick, so the facing it used to be inferred from cannot have moved |
+| `theAgentSeesItsArmourAndWhatItIsHolding` | its own armour and what its weapon takes off, the weapon from the item's own modifiers so it is right on the first row and follows a swap at once |
+
+`AgentTeacherGameTest` (4) — the scripted fighter's own rules, which matter because it is the league's 1500-rated anchor and
+every network was copied from it:
+
+| Test | Checks |
+| --- | --- |
 | `theTeacherGetsOutOfPowderSnow`, `theTeacherBreaksOutOfPowderSnow` | the scripted fighter, with a zombie to fight, walks out of one block of powder snow and breaks its way out of a patch three wide |
 | `theTeacherStartsNoDrawItCannotFinish` | with a sword and a bow against a vindicator six blocks off, every draw begun sends an arrow — none is begun and given up — and it still lands blows |
 | `theTeacherDrawsAtWhatShootsBack` | the same loadout against a skeleton six blocks off looses an arrow inside 60 ticks, which is what stops the rule above being satisfied by never drawing |
-| `theLeagueDrawsAPairingByItsShare` | the one test here that is not about the body: a league training fight comes out of `league/pairs.csv` as a loadout and an opponent together, in proportion to the shares, the same way twice from one seed, nothing the table names ever starved, and a pairing the build cannot field dropped. The shares themselves are the trainer's, tested by `scripts\league.ps1 -Test` |
+
+`FightSetupGameTest` (3) — the three that are not about the body at all, here because this is the suite that holds a rule to
+a number and boots in seconds:
+
+| Test | Checks |
+| --- | --- |
+| `pouredLavaIsLavaAndLeavesNothingBehind`, `pouredLavaSweepsUpWhatItFedOutsideItself` | the lava poured beside a hazard fight is nine blocks of it, every block of ground it touched is exactly as it was once drained, and lava it fed three blocks away — as far as lava spreads on land, and outside the box the drain used to sweep — is swept up too and reported, which is what makes the site forget a label the spill has made untrue. Where a pool may go needs open ground with a heightmap, so the live run is what exercises that; see [findings.md](findings.md) |
+| `theLeagueDrawsAPairingByItsShare` | a league training fight comes out of `league/pairs.csv` as a loadout and an opponent together, in proportion to the shares, the same way twice from one seed, nothing the table names ever starved, and a pairing the build cannot field dropped. The shares themselves are the trainer's, tested by `scripts\league.ps1 -Test` |
 
 Ammo: the agent's bow and crossbow loadouts carry 64 finite arrows, one used per shot, and arrows aren't picked back up.
 That covers a 60-second fight, since a full-draw shot takes 20 ticks. Vanilla skeletons and pillagers never run out.
