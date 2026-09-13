@@ -66,10 +66,9 @@ import net.sievert.modularmobai.entity.agent.MobControls;
  *
  * <h2>Everything else it carries</h2>
  *
- * <p>A drawn weapon, a shield and a lit creeper each need something the observation does not carry: whether the weapon
- * drawing is a bow or a crossbow, whether there is a shield in the off hand at all, whether the thing in front of it has
- * ever swung. So this brain keeps a little state per agent, keyed by the agent id the step carries, and works the rest out
- * from what the body reports back:
+ * <p>A drawn weapon and a shield each need something the observation does not carry: whether the weapon drawing is a bow or
+ * a crossbow, and whether there is a shield in the off hand at all. So this brain keeps a little state per agent, keyed by
+ * the agent id the step carries, and works the rest out from what the body reports back:
  *
  * <ul>
  *   <li><b>Bow or crossbow.</b> Both read as one item category, because the layout has one for a drawn weapon, and how far
@@ -86,6 +85,10 @@ import net.sievert.modularmobai.entity.agent.MobControls;
  *       to raise, unless one has come up before, in which case an axe has just knocked it aside and it will be back in
  *       five seconds.</li>
  * </ul>
+ *
+ * <p>A lit creeper used to be on that list and is not any more: every slot now says whether what holds it explodes and how
+ * far along its fuse has burned, so the fighter reads it rather than guessing it from empty hands and a mob that stopped
+ * coming, and it reads every slot rather than only its target. See {@link #flees}.
  *
  * <p>Both of those last two read an answer out of a press, and a press this brain asks for does not always happen: as a
  * teacher it labels a student's fight, and there the body is doing what the student said. So neither concludes anything
@@ -318,9 +321,10 @@ public final class ScriptedBrain implements Brain {
     // ---------------------------------------------------------------------------------------------------------------
 
     /**
-     * A creeper lights its fuse within three blocks of its target and stands still while it burns, for thirty ticks, and
-     * it is the one thing in the league that fights with nothing in its hands and never swings. So an empty handed
-     * opponent that has never swung and has stopped coming this close is one about to go off.
+     * The fallback's range, for a body whose slots say nothing about exploding; see {@link #flees}. A creeper lights its
+     * fuse within three blocks of its target and stands still while it burns, for thirty ticks, and it is the one thing in
+     * the league that fights with nothing in its hands and never swings. So an empty handed opponent that has never swung
+     * and has stopped coming this close is one about to go off.
      *
      * <p>Three blocks and not one more, because it is the creeper's own figure. Everything else with empty hands stops at
      * its own reach and swings from there, and a ravager's reach is four blocks: read any wider and a ravager waiting out
@@ -330,9 +334,9 @@ public final class ScriptedBrain implements Brain {
     private static final float FUSE_RANGE = 3.05F;
 
     /**
-     * How many ticks it has to have spent not coming any closer. Whether it is coming, rather than whether it is moving
-     * at all: a creeper that has just been hit slides backwards from the blow for a dozen ticks, and waiting for that to
-     * settle would spend half the fuse standing in the blast.
+     * The fallback's patience. How many ticks it has to have spent not coming any closer, and whether it is coming rather
+     * than whether it is moving at all: a creeper that has just been hit slides backwards from the blow for a dozen ticks,
+     * and waiting for that to settle would spend half the fuse standing in the blast.
      */
     private static final int FUSE_STILL_TICKS = 3;
 
@@ -397,8 +401,8 @@ public final class ScriptedBrain implements Brain {
         /** How long the occupant of each slot has gone without coming any closer. */
         private final byte[] holdingBack = new byte[ObservationSchema.ENEMY_SLOTS];
 
-        /** Whether it is walking away from something it takes for a lit creeper, which it does until it is well clear. */
-        private boolean fleeing;
+        /** The slot holding the lit thing it is walking away from, or -1: it keeps going until that one is well clear. */
+        private int fleeingFrom = -1;
 
         /** The attack cooldown last tick, and how much of it comes back in a tick, which is one over the weapon's delay. */
         private float lastStrength;
@@ -424,7 +428,7 @@ public final class ScriptedBrain implements Brain {
             this.swung = 0;
             this.longReach = 0;
             Arrays.fill(this.holdingBack, (byte) 0);
-            this.fleeing = false;
+            this.fleeingFrom = -1;
             this.lastStrength = 0.0F;
             this.strengthRate = 0.0F;
             this.sinceJump = CRIT_JUMP_COOLDOWN;
@@ -436,7 +440,7 @@ public final class ScriptedBrain implements Brain {
             this.draw = this.draw == DRAW_LOADED ? DRAW_LOADED : DRAW_IDLE;
             this.asked = false;
             this.askedShield = false;
-            this.fleeing = false;
+            this.fleeingFrom = -1;
         }
 
         private boolean hasSwung(int slot) {
@@ -577,8 +581,8 @@ public final class ScriptedBrain implements Brain {
         // Back from the agent's frame to the world's, in blocks: forward runs along minus sine, cosine and right along
         // minus cosine, minus sine. The grid puts the agent in the middle of its own column.
         double view = ObservationSchema.VIEW_DISTANCE;
-        double targetX = CENTRE + 0.5D + (-sin * forward - cos * right) * view;
-        double targetZ = CENTRE + 0.5D + (cos * forward - sin * right) * view;
+        double targetX = gridX(o, target, sin, cos);
+        double targetZ = gridZ(o, target, sin, cos);
         double targetEye = FEET + EYE_HEIGHT + up * view;
 
         // The game says more than the grid does. A swing last tick that hit nothing yet left the cooldown standing met a
@@ -598,7 +602,11 @@ public final class ScriptedBrain implements Brain {
         int ranged = me.spent ? -1 : slotHolding(o, obs, AgentObservation.ITEM_RANGED);
 
         boolean shooting = shoots(me, o, target, ranged, melee, distance, clear);
-        boolean fleeing = !shooting && this.flees(me, slot, o, target, distance);
+
+        // Which slot is about to go off, which need not be the one being fought: two creepers, and the fighter walks away
+        // from the lit one while the other is still its target.
+        int lit = shooting ? -1 : this.flees(me, slot, o, obs, target, distance);
+        boolean fleeing = lit >= 0;
 
         // Anything with empty hands that has not swung yet might be a creeper, so while the swing is still cooling it is
         // held at the three blocks a creeper needs to light its fuse, rather than let inside the usual band. It costs
@@ -663,7 +671,11 @@ public final class ScriptedBrain implements Brain {
 
         if (retreating) {
 
-            next = this.retreat(o, obs, targetX, targetZ);
+            // Away from the lit one where there is one, and away from the target otherwise. The two are the same slot in
+            // every single-creeper fight and different in the one that used to be lost.
+            int from = fleeing ? obs + ObservationSchema.enemyOffset(lit) : target;
+
+            next = this.retreat(o, obs, gridX(o, from, sin, cos), gridZ(o, from, sin, cos));
         }
 
         else if (shove >= 0) {
@@ -1165,23 +1177,121 @@ public final class ScriptedBrain implements Brain {
     }
 
     /**
-     * Whether to walk away from something about to explode. Only a creeper in the league fights with empty hands and
-     * never swings, and only a creeper stands still once it is next to its target: everything else that comes that close
-     * is swinging, hopping or charging. Once it starts walking away it keeps going until it is well clear, since the fuse
-     * only winds back down past seven blocks.
+     * Where whatever holds an enemy slot stands in the terrain grid, along x and along z. Positions arrive in the agent's
+     * own frame, already divided by the view distance: forward runs along minus sine, cosine and right along minus cosine,
+     * minus sine, and the grid puts the agent in the middle of its own column.
      */
-    private boolean flees(Fighter me, int slot, float[] o, int target, float distance) {
+    private static double gridX(float[] o, int at, float sin, float cos) {
 
-        if (me.fleeing) {
+        return CENTRE + 0.5D
+                + (-sin * o[at + ObservationSchema.ENEMY_FORWARD] - cos * o[at + ObservationSchema.ENEMY_RIGHT])
+                        * ObservationSchema.VIEW_DISTANCE;
+    }
 
-            me.fleeing = distance < FUSE_SAFE_RANGE;
-            return me.fleeing;
+    private static double gridZ(float[] o, int at, float sin, float cos) {
+
+        return CENTRE + 0.5D
+                + (cos * o[at + ObservationSchema.ENEMY_FORWARD] - sin * o[at + ObservationSchema.ENEMY_RIGHT])
+                        * ObservationSchema.VIEW_DISTANCE;
+    }
+
+    /**
+     * Which slot holds something about to go off and worth walking away from, or -1 for nothing. Two fields say it
+     * outright: {@code ENEMY_EXPLODES}, and {@code ENEMY_FUSE}, which is how far along the fuse has burned. So this asks
+     * them, and it asks <b>every occupied slot</b> rather than only the one being fought: the lit one is walked away from
+     * whether or not it is the target, which is the fight this used to lose outright — a second creeper coming up behind
+     * while the first was being swung at was never reasoned about at all.
+     *
+     * <p>Once it starts walking away it keeps going until that one is well clear, since a fuse only winds back down past
+     * seven blocks, and it stops if the thing leaves the view.
+     *
+     * <p>The guess underneath is kept only for a body whose slots say nothing about exploding whatever: only a creeper in
+     * the league fights with empty hands and never swings, and only a creeper stops coming once it is next to its target.
+     * <b>It was written before those two fields existed and it is strictly worse than they are.</b> It reasons about one
+     * slot; it cannot tell a lit creeper from an unlit one standing still; and it waits for three blocks, which is 0.8
+     * blocks inside a creeper's own fuse range, so the fighter was still in the blast when it went off. Over 81 recorded
+     * single-creeper fights that was 41 draws, ending on 9.2 health of 20 where a win ended on 19.9. The fields are the
+     * truth; this is what is left when there are none.
+     *
+     * @return the slot to walk away from, or -1
+     */
+    private int flees(Fighter me, int slot, float[] o, int obs, int target, float distance) {
+
+        // Already walking away from one, and it is neither clear nor gone: keep going.
+        if (me.fleeingFrom >= 0 && explodes(o, obs, me.fleeingFrom)
+                && slotDistance(o, obs, me.fleeingFrom) < FUSE_SAFE_RANGE) {
+
+            return me.fleeingFrom;
         }
 
-        me.fleeing = distance < FUSE_RANGE && emptyHanded(o, target) && !me.hasSwung(slot)
-                && me.holdingBack[slot] >= FUSE_STILL_TICKS;
+        me.fleeingFrom = nearestLit(o, obs);
 
-        return me.fleeing;
+        // A slot that says it explodes has said everything there is to say, lit or not, so the guess is never reached
+        // where the fields speak.
+        if (me.fleeingFrom >= 0 || anyExplodes(o, obs)) {
+
+            return me.fleeingFrom;
+        }
+
+        me.fleeingFrom = distance < FUSE_RANGE && emptyHanded(o, target) && !me.hasSwung(slot)
+                && me.holdingBack[slot] >= FUSE_STILL_TICKS ? slot : -1;
+
+        return me.fleeingFrom;
+    }
+
+    /** The nearest slot whose occupant goes off and has its fuse burning, near enough to be worth leaving, or -1. */
+    private static int nearestLit(float[] o, int obs) {
+
+        int best = -1;
+        float bestDistance = FUSE_SAFE_RANGE;
+
+        for (int slot = 0; slot < ObservationSchema.ENEMY_SLOTS; slot++) {
+
+            if (!explodes(o, obs, slot)
+                    || o[obs + ObservationSchema.enemyOffset(slot) + ObservationSchema.ENEMY_FUSE] <= 0.0F) {
+
+                continue;
+            }
+
+            float distance = slotDistance(o, obs, slot);
+
+            if (distance < bestDistance) {
+
+                bestDistance = distance;
+                best = slot;
+            }
+        }
+
+        return best;
+    }
+
+    /** Whether a slot is occupied by something that goes off, whether or not its fuse is burning yet. */
+    private static boolean explodes(float[] o, int obs, int slot) {
+
+        int at = obs + ObservationSchema.enemyOffset(slot);
+
+        return o[at + ObservationSchema.ENEMY_PRESENT] > 0.5F && o[at + ObservationSchema.ENEMY_EXPLODES] > 0.5F;
+    }
+
+    /** Whether anything in view says it goes off, which is what tells a silent slot from an unlit creeper. */
+    private static boolean anyExplodes(float[] o, int obs) {
+
+        for (int slot = 0; slot < ObservationSchema.ENEMY_SLOTS; slot++) {
+
+            if (explodes(o, obs, slot)) {
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** How far off whatever holds a slot is, in blocks. */
+    private static float slotDistance(float[] o, int obs, int slot) {
+
+        return o[obs + ObservationSchema.enemyOffset(slot) + ObservationSchema.ENEMY_DISTANCE]
+                * (float) ObservationSchema.VIEW_DISTANCE;
     }
 
     // ---------------------------------------------------------------------------------------------------------------
