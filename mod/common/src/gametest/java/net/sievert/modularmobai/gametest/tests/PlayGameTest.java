@@ -101,14 +101,25 @@ public class PlayGameTest {
 
         // best is a name of its own for one of them, picked by the win rate each model.json records, the same pick
         // scripts\play.ps1 makes; naming it either way has to reach the one brain, so both share a forward pass.
-        String bestName = Models.best();
+        //
+        // Per body, because a network only fits the body its layout was written for. The humanoid's is the one asked for
+        // here, since it is the body every network published so far drives; a body nothing is published for has no best, and
+        // asking for one says so by name rather than handing over another body's.
+        String bestName = Models.best(Species.HUMANOID.name());
 
-        helper.assertTrue(bestName != null && bundled.contains(bestName), "The jar names no best network");
+        helper.assertTrue(bestName != null && bundled.contains(bestName), "The jar names no best humanoid network");
+        helper.assertValueEqual(Models.speciesOf(bestName), Species.HUMANOID.name(), "the body " + bestName + " drives");
 
         Brain best = loads(helper, "best");
 
         helper.assertTrue(best instanceof NeuralBrain, "best is not a network");
         helper.assertTrue(best == Brains.named(bestName), "best and " + bestName + " load two copies of one network");
+        helper.assertTrue(((NeuralBrain) best).species() == Species.HUMANOID, "best is not a humanoid's network");
+
+        // And a body nothing is published for: refused by name, saying what the jar has instead, rather than handing over
+        // the network of whichever body happened to evaluate highest and leaving the driver to notice mid fight.
+        helper.assertTrue(Models.best(Species.BEAST.name()) == null, "A beast network is published, so this proves nothing");
+        refused(helper, () -> Brains.named("best", Species.BEAST), "best for a body nothing is published for");
 
         helper.assertTrue(Brains.named("scripted") instanceof ScriptedBrain, "scripted is not the scripted fighter");
         helper.assertTrue(Brains.known().containsAll(List.of("scripted", "best")) && Brains.known().containsAll(bundled),

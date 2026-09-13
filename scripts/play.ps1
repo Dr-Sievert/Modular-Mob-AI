@@ -11,7 +11,7 @@
 # can be named in the game as well, /mmai brain @e blast, including ones published after the last build. The log
 # says which network is driving as soon as a world opens:
 #   Loaded ...\models\blast4\best.mbw from iteration 8825: 792 -> 792 -> 256 -> GRU 128 -> 128 -> 19 (371,783 parameters)
-#   Agents with no brain of their own run on best.mbw from ...\models\blast4, iteration 8825
+#   humanoid agents with no brain of their own run on best.mbw from ...\models\blast4, iteration 8825
 #
 # In the world: /mmai spawn, /mmai loadout, /mmai brain, /mmai ally, /mmai enemy, /mmai info. See docs\playing.md.
 # The client wants about 3 GB of memory.

@@ -42,7 +42,7 @@ def bundleModels = tasks.register('bundleModels') {
     def source = new File(rootProject.projectDir.parentFile, 'models')
     def output = project.layout.buildDirectory.dir('generated/bundledModels')
 
-    inputs.files(project.fileTree(source) { include '*/best.mbw', '*/model.json' }).withPropertyName('models')
+    inputs.files(project.fileTree(source) { include '*/best.mbw', '*/model.json', '*/schema.json' }).withPropertyName('models')
     outputs.dir(output).withPropertyName('bundledModels')
 
     doLast {
@@ -68,23 +68,47 @@ def bundleModels = tasks.register('bundleModels') {
             def info = json.isFile() ? new groovy.json.JsonSlurper().parse(json) : [:]
             def summary = info.won != null ? "iteration ${info.iteration}, won ${info.won}% of ${info.fights} fights" : (info.weights ?: 'not evaluated')
 
-            found << [name: dir.name, won: info.won != null ? (info.won as double) : null, fights: (info.fights ?: 0) as int, summary: summary]
-        }
+            // Which body it drives, out of the layout published beside it. A network belongs to one body, so `best` does
+            // too: one global best would hand a beast's network to a humanoid on any day a beast evaluated higher, and the
+            // only thing that would say so is the driver, mid fight. A folder published before this carries no schema.json,
+            // and then nothing here knows its body: it stays loadable by name, where its own schema id decides, and is no
+            // body's best.
+            def layout = new File(dir, 'schema.json')
+            def body = layout.isFile() ? (new groovy.json.JsonSlurper().parse(layout) as Map).species : null
 
-        // The highest win rate, and of equal ones the one judged on more fights.
-        def evaluated = found.findAll { it.won != null }
-        def best = evaluated ? evaluated.max { a, b -> a.won <=> b.won ?: a.fights <=> b.fights } : (found ? found.first() : null)
+            found << [name: dir.name, species: body, won: info.won != null ? (info.won as double) : null,
+                      fights: (info.fights ?: 0) as int, summary: summary]
+        }
 
         def index = new Properties()
         index.setProperty('models', found.collect { it.name }.join(','))
-        index.setProperty('best', best ? best.name : '')
-        found.each { index.setProperty("${it.name}.summary".toString(), it.summary as String) }
+        found.each {
+            index.setProperty("${it.name}.summary".toString(), it.summary as String)
+
+            if (it.species) {
+
+                index.setProperty("${it.name}.species".toString(), it.species as String)
+            }
+        }
+
+        // The highest win rate of that body, and of equal ones the one judged on more fights.
+        def bests = [:]
+
+        found.findAll { it.species }.groupBy { it.species }.each { body, ofBody ->
+
+            def evaluated = ofBody.findAll { it.won != null }
+            def best = evaluated ? evaluated.max { a, b -> a.won <=> b.won ?: a.fights <=> b.fights } : ofBody.first()
+
+            bests[body] = best.name
+            index.setProperty("best.${body}".toString(), best.name as String)
+        }
 
         new File(folder, 'models.properties').withWriter('UTF-8') { writer ->
             index.store(writer, 'The trained networks this jar carries, from the repository\'s models folder')
         }
 
-        logger.lifecycle("Bundled ${found.size()} networks into the jar${best ? ", best ${best.name}" : ''}")
+        logger.lifecycle("Bundled ${found.size()} networks into the jar"
+                + (bests ? ", best " + bests.collect { body, name -> "${name} (${body})" }.join(', ') : ''))
     }
 }
 

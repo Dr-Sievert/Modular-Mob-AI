@@ -13,6 +13,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.stream.Collectors;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -22,6 +23,7 @@ import net.sievert.modularmobai.Config;
 import net.sievert.modularmobai.Constants;
 import net.sievert.modularmobai.brain.nn.WeightFile;
 import net.sievert.modularmobai.brain.nn.WeightSet;
+import net.sievert.modularmobai.brain.schema.Species;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 
 /**
@@ -55,9 +57,11 @@ public final class Brains {
      */
     private static Brain fallback;
 
-    /** What an agent in a real game runs on when it has no brain of its own and the game was started without one. */
-    @Nullable
-    private static Brain worldDefault;
+    /**
+     * What an agent in a real game runs on when it has no brain of its own and the game was started without one, per body:
+     * the config's brain is very often {@code best}, and {@code best} is a different network for every body.
+     */
+    private static final Map<Species, Brain> worldDefaults = new HashMap<>();
 
     @Nullable
     private static ScriptedBrain scripted;
@@ -149,11 +153,20 @@ public final class Brains {
     }
 
     /**
+     * A brain by the name a command, a save, the config or a system property gives it, for the body this process is for.
+     * See {@link #named(String, Species)}.
+     */
+    public static synchronized Brain named(String name) {
+
+        return named(name, Species.trained());
+    }
+
+    /**
      * A brain by the name a command, a save, the config or a system property gives it:
      *
      * <pre>
      *   scripted      the hand written fighter
-     *   best          the best network the mod's jar carries, by the win rate the repository recorded for it
+     *   best          the best network the mod's jar carries for that body, by the win rate the repository recorded for it
      *   NAME          a network by name, from a models folder if one has it and otherwise from the jar, see {@link Models}
      *   FILE.mbw      a weight file, absolute or relative to the game directory
      * </pre>
@@ -161,10 +174,14 @@ public final class Brains {
      * Everything that names the same network gets the same brain, so every agent on it shares one forward pass however
      * it was named: {@code best}, the network's own name, and the path of the file all three lead to end up in one batch.
      *
+     * <p>The body matters for {@code best} alone, which is a different network for every body: a network only fits the body
+     * its layout was written for, so the best one is the best of that body's. Every other name reaches whatever it names,
+     * and a set of weights for the wrong body is then refused where every such mistake is, by its schema id.
+     *
      * @throws IllegalArgumentException for a name that leads nowhere, saying what there is instead
      * @throws UncheckedIOException     for weights that are there but cannot be read, or were trained on another layout
      */
-    public static synchronized Brain named(String name) {
+    public static synchronized Brain named(String name, Species body) {
 
         String spec = name.trim();
         String lower = spec.toLowerCase(Locale.ROOT);
@@ -176,11 +193,13 @@ public final class Brains {
 
         if (lower.equals("best")) {
 
-            String best = Models.best();
+            String best = Models.best(body.name());
 
             if (best == null) {
 
-                throw new IllegalArgumentException("The mod's jar carries no trained network, so there is no best one");
+                throw new IllegalArgumentException("The mod's jar carries no trained network for a " + body.name()
+                        + ", so there is no best one for it" + (Models.bundled().isEmpty() ? "" : "; it carries "
+                        + describeBundled()));
             }
 
             spec = best;
@@ -227,13 +246,23 @@ public final class Brains {
 
         List<String> names = new ArrayList<>(List.of("scripted"));
 
-        if (Models.best() != null) {
+        // best is offered while any body has one, since a command may be aimed at an agent of any of them.
+        if (Species.ALL.stream().anyMatch(body -> Models.best(body.name()) != null)) {
 
             names.add("best");
         }
 
         names.addAll(networks);
         return names;
+    }
+
+    /** What the jar carries and which body each one drives, for a refusal that has to say what there is instead. */
+    private static String describeBundled() {
+
+        return Models.bundled().stream()
+                .map(name -> Models.speciesOf(name) == null ? name + " (of no body it recorded)"
+                        : name + " (a " + Models.speciesOf(name) + "'s)")
+                .collect(Collectors.joining(", "));
     }
 
     /**
@@ -270,39 +299,47 @@ public final class Brains {
             }
         }
 
-        return agent.isTraining() ? defaultBrain() : worldDefault();
+        return agent.isTraining() ? defaultBrain() : worldDefault(agent.species());
     }
 
     /**
      * What drives an agent in a real game that has no brain of its own: whatever the game was started with, when that
      * was anything, and otherwise the config's brain. A config naming something that cannot be loaded is reported and
      * leaves the agents to the scripted fighter, rather than leaving them standing still or the game refusing to start.
+     *
+     * <p>One answer per body, because the config's brain is very often {@code best} and {@code best} is a different network
+     * for every body. One answer for all of them would have handed every agent in the world whichever body's network
+     * evaluated highest, and the driver would have refused the rest one at a time, mid tick.
      */
-    public static synchronized Brain worldDefault() {
+    public static synchronized Brain worldDefault(Species body) {
 
         if (!property("modular_mob_ai.brain", "").isEmpty()) {
 
             return defaultBrain();
         }
 
-        if (worldDefault == null) {
+        Brain known = worldDefaults.get(body);
+
+        if (known == null) {
 
             String configured = Config.brain();
 
             try {
 
-                worldDefault = named(configured);
+                known = named(configured, body);
             }
 
             catch (RuntimeException exception) {
 
-                Constants.LOG.error("The config's brain '{}' cannot be loaded, so agents get the scripted fighter: {}",
-                        configured, exception.getMessage());
-                worldDefault = scripted();
+                Constants.LOG.error("The config's brain '{}' cannot be loaded for a {}, so its agents get the scripted "
+                        + "fighter: {}", configured, body.name(), exception.getMessage());
+                known = scripted();
             }
+
+            worldDefaults.put(body, known);
         }
 
-        return worldDefault;
+        return known;
     }
 
     /**
@@ -319,14 +356,26 @@ public final class Brains {
             return;
         }
 
-        try {
+        // One line per body a player can actually meet in a world. Every other body is spawned by an arena and never meets
+        // this, so saying anything about it here would be noise about something no agent in this world will ever be.
+        for (Species body : Species.ALL) {
 
-            Constants.LOG.info("Agents with no brain of their own run on {}", describe(worldDefault()));
-        }
+            if (body.mob(Species.Mob.Role.WORLD) == null) {
 
-        catch (RuntimeException exception) {
+                continue;
+            }
 
-            Constants.LOG.error("Agents with no brain of their own have nothing they can run on", exception);
+            try {
+
+                Constants.LOG.info("{} agents with no brain of their own run on {}", body.name(),
+                        describe(worldDefault(body)));
+            }
+
+            catch (RuntimeException exception) {
+
+                Constants.LOG.error("{} agents with no brain of their own have nothing they can run on", body.name(),
+                        exception);
+            }
         }
     }
 
@@ -435,7 +484,7 @@ public final class Brains {
         LABELS.clear();
         REPORTED.clear();
         fallback = null;
-        worldDefault = null;
+        worldDefaults.clear();
         scripted = null;
     }
 

@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
+import java.util.stream.Collectors;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -35,6 +36,7 @@ import net.sievert.modularmobai.arena.Loadouts;
 import net.sievert.modularmobai.brain.Brain;
 import net.sievert.modularmobai.brain.Brains;
 import net.sievert.modularmobai.brain.Models;
+import net.sievert.modularmobai.brain.schema.Species;
 import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 
@@ -313,29 +315,54 @@ public final class AgentCommands {
 
     private static int models(CommandSourceStack source) {
 
-        String best = Models.best();
-
         source.sendSuccess(() -> Component.literal("Brains: " + String.join(", ", Brains.known())), false);
+
+        // Which body each one drives, and one best per body: a network only fits the body its layout was written for, so
+        // "best" is a different network for a humanoid and for anything else. A network published before the layout was
+        // recorded beside the weights says no body, and is no body's best.
         source.sendSuccess(() -> Component.literal("In the mod's jar: " + (Models.bundled().isEmpty() ? "none"
-                : String.join(", ", Models.bundled())) + (best == null ? "" : "; best is " + best
-                + (Models.summary(best) == null ? "" : ", " + Models.summary(best)))), false);
+                : Models.bundled().stream().map(name -> name + " (" + (Models.speciesOf(name) == null ? "body unrecorded"
+                        : "a " + Models.speciesOf(name) + "'s") + ")").collect(Collectors.joining(", ")))), false);
+
+        for (Species body : Species.ALL) {
+
+            String best = Models.best(body.name());
+
+            if (best != null) {
+
+                source.sendSuccess(() -> Component.literal("The best " + body.name() + " is " + best
+                        + (Models.summary(best) == null ? "" : ", " + Models.summary(best))), false);
+            }
+        }
+
         source.sendSuccess(() -> Component.literal("In folders: " + (Models.onDiskNames().isEmpty() ? "none"
                 : String.join(", ", Models.onDiskNames())) + ", from " + Config.modelFolders()), false);
 
-        String fallback;
+        // One line per body a player can meet, since what drives an agent with no brain of its own is that body's default.
+        for (Species body : Species.ALL) {
 
-        try {
+            if (body.mob(Species.Mob.Role.WORLD) == null) {
 
-            fallback = Brains.describe(Brains.worldDefault());
+                continue;
+            }
+
+            String fallback;
+
+            try {
+
+                fallback = Brains.describe(Brains.worldDefault(body));
+            }
+
+            catch (RuntimeException exception) {
+
+                fallback = "nothing it can load: " + exception.getMessage();
+            }
+
+            String described = fallback;
+            source.sendSuccess(() -> Component.literal(body.name() + " agents with no brain of their own run on "
+                    + described), false);
         }
 
-        catch (RuntimeException exception) {
-
-            fallback = "nothing it can load: " + exception.getMessage();
-        }
-
-        String described = fallback;
-        source.sendSuccess(() -> Component.literal("Agents with no brain of their own run on " + described), false);
         return 1;
     }
 

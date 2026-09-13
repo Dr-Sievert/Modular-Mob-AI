@@ -31,7 +31,7 @@ scripts\play.ps1 -World arena             straight into the saved world 'arena' 
 
 ```
 Loaded C:\...\models\blast4\best.mbw from iteration 8825: 792 -> 792 -> 256 -> GRU 128 -> 128 -> 19 (371,783 parameters)
-Agents with no brain of their own run on best.mbw from C:\...\models\blast4, iteration 8825
+humanoid agents with no brain of their own run on best.mbw from C:\...\models\blast4, iteration 8825
 ```
 
 In the game, `/mmai info` shows what each agent runs on, and `/mmai models` shows every network the game can find.
