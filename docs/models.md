@@ -4,16 +4,6 @@
 copied into `models\<run>\` and committed, so anyone with the repository can fight them, evaluate them or train on from
 them.
 
-> **Every network below is retired.** They were trained against the humanoid's old 634-float observation, schema
-> `f818e282`, and this build's humanoid is 792 floats, schema `9f7a1358`: the enemy slots now say what an opponent *is* —
-> hearts, damage, speed, size, knockback resistance, armour, a creeper's fuse, explodes, shoots, flies, and whether it has
-> the agent as its target — because before that a zombie and a warden filled a slot identically and the league cost of that
-> was 0% against the warden; and the self block now carries the clock the reward is paid by, what is left in the quiver, the
-> agent's own armour and what its weapon takes off. A weight file
-> carries the schema it was trained on and the game refuses one it cannot drive, so these load nowhere and are kept only as
-> a record of what was measured. The chain is being rebuilt from the teacher: record, imitate, DAgger, league. See
-> [architecture.md](architecture.md) for the layout and [findings.md](findings.md) for why it changed.
-
 ```
 models\<run>\
   best.mbw      the network the game loads (the run's best evaluated checkpoint)
@@ -25,39 +15,69 @@ models\<run>\
 
 | Model | What | Evaluated |
 | --- | --- | --- |
-| `vs-copy` | PPO from a copy of the scripted fighter, with the teacher pull | 99.8% won, 0.2% lost (iteration 650, 553 fights) |
-| `vs-scratch` | PPO from nothing | 78.6% won (iteration 650) |
-| `vindicator4` | the copy itself: imitation plus 3 DAgger rounds | 97.9% |
+| `blast` | PPO on the league, from the teacher | 76.3% won, 20.1% lost, 3.6% timed out (iteration 2150, 1021 league fights) |
+
+That is one number on one bench: `blast` fights the whole league roster, wardens and evokers included, where the retired
+networks below fought a vindicator. The two are not comparable, and nothing in `models\` is comparable to anything
+measured in another sitting; see the win rate section below, and `scripts\bench.ps1` in
+[testing.md](testing.md) for the only way to put two networks on one scale.
+
+## What was retired, and why
+
+`league-pull05`, `league-scratch`, `league-sharp`, `league2`, `vindicator4`, `vs-copy` and `vs-scratch` were removed once
+`blast` was published, which is the first network trained on the layout this build has. All seven were trained against the
+humanoid's old 634-float observation, schema `f818e282`, and this build's humanoid is 792 floats, schema `9f7a1358`: the
+enemy slots now say what an opponent *is* (hearts, damage, speed, size, knockback resistance, armour, a creeper's fuse,
+explodes, shoots, flies, and whether it has the agent as its target), because before that a zombie and a warden filled a
+slot identically and the league cost of that was 0% against the warden; and the self block now carries the clock the
+reward is paid by, what is left in the quiver, the agent's own armour and what its weapon takes off.
+
+A weight file carries the schema it was trained on and the game refuses one it cannot drive, so those seven loaded
+nowhere. **There is no legacy and no backward compatibility here:** a network the build cannot load has no business in
+`models\` or in the jar it is bundled into, where it costs 1.3 MB and makes `best` name something every agent will be
+refused. Keeping them was not free — `best` was `vs-copy`, the highest win rate published, and it took three play-suite
+tests and every agent in a real game down with it.
+
+**Git history keeps them.** `git log --diff-filter=D -- models` finds the commit that removed them, and
+`git show <commit>^:models/vs-copy/best.mbw > best.mbw` gets a file back if a measurement ever has to be re-read. What
+they were measured at is recorded in [findings.md](findings.md) and [training.md](training.md), which is the part worth
+keeping. See [architecture.md](architecture.md) for the layout and findings.md for why it changed.
 
 ## Publishing
 
 ```
-scripts\publish.ps1 -Run vs-copy                 copy best.mbw, eval.csv, schema.json, and write model.json
-scripts\publish.ps1 -Run vs-copy -State          and state.pt
-scripts\publish.ps1 -Run vs-copy -State -Push    and commit and push
+scripts\publish.ps1 -Run blast                 copy best.mbw, eval.csv, schema.json, and write model.json
+scripts\publish.ps1 -Run blast -State          and state.pt
+scripts\publish.ps1 -Run blast -State -Push    and commit and push
 ```
 
 A run with no evaluation yet publishes its newest weights. While supervision runs, every improved best is republished
 automatically.
 
-**What the win rate in `model.json` is, and is not.** It is the run's own evaluation, on the ground that run fought: the
-fights its workers played, in the biomes their sites happened to be on. It is not a claim about any other ground. The
-same vs-copy weights that the table above credits with 99.8% over 553 fights of freshly generated terrain measure 98.4
-to 99.0% over thousands of fights on the 5,120-site terrain library, because the library's ground is harder, not because
-the fighter changed. Compare two models on the same ground with `scripts\eval.ps1 -Weights` before believing a gap.
+**What the win rate in `model.json` is, and is not.** It is the run's own evaluation, on the ground that run fought and
+against the opponents that run drew: the fights its workers played, in the biomes their sites happened to be on. It is not
+a claim about any other ground, and two runs' numbers are not a comparison. One retired network measured 99.8% over 553
+fights of freshly generated terrain and 98.4 to 99.0% over thousands of fights on the 5,120-site terrain library, because
+the library's ground is harder, not because the fighter changed — and that was the same roster. Across rosters the gap is
+far wider than that. Compare two models on the same ground in one sitting with `scripts\bench.ps1` before believing a gap.
+
+The win rate is still what `best` is picked by, in the jar and in `scripts\play.ps1` alike, because `models\` holds one
+lineage's networks at a time and the number is the only thing every `model.json` has. It is a tie-break among networks
+that are all publishable, not a measurement.
 
 Networks and trainer states are binary. `.gitattributes` lists `*.mbw`, `*.mbr`, `*.pt` and `*.nbt` as binary; without
 that, the repository's `* text eol=lf` default rewrites their bytes and they no longer load.
 
 ## Using a published network
 
-- **Evaluate it:** `scripts\eval.ps1 -Weights models\vs-copy\best.mbw`
-- **Put it in a league:** `scripts\train.ps1 -Run league -Suite league -LeagueModels vs-copy`. It is fielded as another
+- **Evaluate it:** `scripts\eval.ps1 -Weights models\blast\best.mbw`
+- **Put it in a league:** `scripts\train.ps1 -Run league -Suite league -LeagueModels blast`. It is fielded as another
   agent and rated under its own name, so a run that fields it can be read beside any other run that does; see
   [training.md](training.md#published-networks-in-the-league--leaguemodels).
-- **In a game:** `scripts\play.ps1 -Model vs-copy`; see [playing.md](playing.md). Underneath, the game takes
+- **In a game:** `scripts\play.ps1` takes the best published network, `scripts\play.ps1 -Model blast` a named one; see
+  [playing.md](playing.md). Underneath, the game takes
   `-Dmodular_mob_ai.brain=neural -Dmodular_mob_ai.brain.weights=<path to .mbw>`. The mod's jar carries every network
-  under `models\` from the moment it's built, by name (`/mmai brain @e vs-copy`), and `best` is the one with the highest
+  under `models\` from the moment it's built, by name (`/mmai brain @e blast`), and `best` is the one with the highest
   win rate in its `model.json`.
 - **Train on from it:**
   1. Make `runs\<new>\`.

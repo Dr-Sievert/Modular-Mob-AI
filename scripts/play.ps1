@@ -1,17 +1,17 @@
 # Starts Minecraft with the mod, every agent driven by a trained network from the moment a world opens.
 #
 #   scripts\play.ps1                          the Fabric client, on the best network in models\ (the highest win rate)
-#   scripts\play.ps1 -Model vs-scratch        another published network, by its folder under models\
-#   scripts\play.ps1 -Weights runs\vs-copy\weights\000700.mbw    any weight file, such as a checkpoint of a local run
+#   scripts\play.ps1 -Model blast             a published network by name, by its folder under models\
+#   scripts\play.ps1 -Weights runs\blast\weights\002000.mbw      any weight file, such as a checkpoint of a local run
 #   scripts\play.ps1 -Scripted                the hand written fighter instead
 #   scripts\play.ps1 -Loader neoforge         the NeoForge client rather than Fabric's
 #   scripts\play.ps1 -World arena             straight into the saved world 'arena', skipping the menus
 #
 # It is the development client, so the mod is the one in this checkout, built on the way. Every network under models\
-# can be named in the game as well, /mmai brain @e vs-scratch, including ones published after the last build. The log
+# can be named in the game as well, /mmai brain @e blast, including ones published after the last build. The log
 # says which network is driving as soon as a world opens:
-#   Loaded ...\models\vs-copy\best.mbw from iteration 650: 634 -> 256 -> GRU 128 -> 128 -> 19 (331,019 parameters)
-#   Agents with no brain of their own run on best.mbw from ...\models\vs-copy, iteration 650
+#   Loaded ...\models\blast\best.mbw from iteration 2150: 792 -> 792 -> 256 -> GRU 128 -> 128 -> 19 (371,783 parameters)
+#   Agents with no brain of their own run on best.mbw from ...\models\blast, iteration 2150
 #
 # In the world: /mmai spawn, /mmai loadout, /mmai brain, /mmai ally, /mmai enemy, /mmai info. See docs\playing.md.
 # The client wants about 3 GB of memory.

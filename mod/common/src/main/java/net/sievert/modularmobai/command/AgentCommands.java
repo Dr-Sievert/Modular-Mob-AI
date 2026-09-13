@@ -52,9 +52,9 @@ import net.sievert.modularmobai.entity.agent.AgentMob;
  *   /mmai loadouts                          every loadout by name
  * </pre>
  *
- * A brain is anything Brains#named takes: scripted, best, a network's name such as vs-copy, or a quoted path to a weight
- * file. Sides are vanilla teams, see {@link Allegiance}; {@code /team} works on them as well, and this only saves making
- * and joining them by hand. Everything here needs the permission a {@code /summon} does.
+ * A brain is anything Brains#named takes: scripted, best, a network's name as published under models\, or a quoted path
+ * to a weight file. Sides are vanilla teams, see {@link Allegiance}; {@code /team} works on them as well, and this only
+ * saves making and joining them by hand. Everything here needs the permission a {@code /summon} does.
  */
 public final class AgentCommands {
 

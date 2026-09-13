@@ -7,12 +7,12 @@
 #   scripts\train.ps1 -Run wide -Extra '--entropy-coef 0.003'
 #   scripts\train.ps1 -ReplayEvery 50           replays of more fights in runs\<run>\replays, 0 for none
 #   scripts\train.ps1 -Run vindicator -FromCopy a run that starts from scripts\imitate.ps1's copy, see -FromCopy
-#   scripts\train.ps1 -Run league -Suite league -Seed vs-copy
-#                                               the league, starting from the best of runs\vs-copy, see -Suite and -Seed
+#   scripts\train.ps1 -Run league -Suite league -Seed blast
+#                                               the league, starting from the best of runs\blast, see -Suite and -Seed
 #   scripts\train.ps1 -Run league -Suite league -TeacherWeight 0.5
 #                                               the same, pulled back towards the teacher's recorded answers every update,
 #                                               which scripts\dagger.ps1 records for a league run
-#   scripts\train.ps1 -Run league -Suite league -LeagueModels vs-copy,vs-scratch
+#   scripts\train.ps1 -Run league -Suite league -LeagueModels blast
 #                                               the same, with two published networks in the league as rated players, so its
 #                                               tier list can be read beside another run's that fields them too
 #   scripts\compare.ps1                         two runs side by side instead, see there
@@ -60,7 +60,7 @@ param(
     [ValidateSet('cuda', 'cpu')] [string] $Device = 'cuda',
     [ValidateSet('terrain', 'arena', 'league')] [string] $Suite = 'terrain',
 
-    # League only: published networks in models\ to field as rated players, by name, 'vs-copy,vs-scratch'. Each becomes a
+    # League only: published networks in models\ to field as rated players, by name, 'blast' or 'blast,other'. Each becomes a
     # player of the league like any mob, rated under its own name, so two runs that field the same network have tier lists
     # that can be read side by side. They never learn, so they share the mobs' matchmaking rather than the self-play share;
     # the scripted fighter stays the only anchor. A name of another body, or one an opponent already answers to, is refused

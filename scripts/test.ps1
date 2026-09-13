@@ -9,7 +9,7 @@
 #   scripts\test.ps1 -League            194 fights on terrain, twice round every league opponent, then how each went
 #   scripts\test.ps1 -League -Weights runs\x\best.mbw
 #                                       a network drives the agents instead, and fights a frozen copy of itself as well
-#   scripts\test.ps1 -League -LeagueModels vs-copy
+#   scripts\test.ps1 -League -LeagueModels blast
 #                                       published networks in the league as well, each a player of its own
 #   scripts\test.ps1 -Play              the agent in a real game: networks in the jar, /mmai, sides, Infinity loadouts
 #   scripts\test.ps1 -Play -Loader neoforge   any suite on NeoForge rather than Fabric
@@ -46,8 +46,8 @@ if ($League -and -not $PSBoundParameters.ContainsKey('Arenas')) {
 $brain = if ($Weights) { @('-Pbrain=neural', "-PbrainWeights=$((Resolve-Path $Weights).Path)") } else { @() }
 
 # A run that names no published networks fields none, so the property is left off the command line altogether.
-# A comma is PowerShell's array operator, so -LeagueModels vs-copy,vs-scratch arrives as two words: joined back here,
-# since a string parameter would have handed Gradle "vs-copy vs-scratch" and the build would have failed on the second.
+# A comma is PowerShell's array operator, so -LeagueModels blast,other arrives as two words: joined back here,
+# since a string parameter would have handed Gradle "blast other" and the build would have failed on the second.
 $models = if ($LeagueModels.Count -gt 0) { @("-PleagueModels=$($LeagueModels -join ',')") } else { @() }
 
 # The two loaders name their headless test run differently.

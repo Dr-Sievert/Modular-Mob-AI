@@ -4,7 +4,7 @@
 #
 #   scripts\dagger.ps1 -Run league                       one round for runs\league on the league, from its best weights
 #   scripts\dagger.ps1 -Run league -Fights 8000          more of it
-#   scripts\dagger.ps1 -Run league -Weights models\vs-copy\best.mbw    another network's answers to correct
+#   scripts\dagger.ps1 -Run league -Weights models\blast\best.mbw     another network's answers to correct
 #   scripts\dagger.ps1 -Run vindicator -Suite terrain    the same against one vindicator, as scripts\imitate.ps1's rounds are
 #
 # This is scripts\imitate.ps1's correction round on its own, for a run past imitation. The point of it is the same: the

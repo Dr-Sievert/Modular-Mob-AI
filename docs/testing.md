@@ -13,13 +13,14 @@ scripts\parity.ps1               Java forward pass against PyTorch's, after touc
 | --- | --- | --- |
 | `test.ps1` | `All 20 required tests passed`; every fight 54 ticks | the observation, the body and the scripted fighter still work; the 54 ticks are deterministic, so any change in them is a behaviour change |
 | `test.ps1 -Mechanics` | `All 39 required tests passed` | bows, crossbows, shields, axes, mining, placing, use slowdown and damage payment follow a player's rules, what a press of attack costs and what holding it down costs, that a hand keeps the slot it started a draw in, what the observation says about a use, about the clock and the quiver, about what is shot at the agent, about the armour on either side of the fight, about whether the other side has engaged and about what the weapon in the agent's hand takes off — the last three against the same numbers the critic's privileged facts carry — the teacher getting itself out of powder snow and starting no draw it cannot finish, and how a league training fight is drawn from the trainer's shares |
-| `test.ps1 -Play` | `All 18 required tests passed`, and `Loaded the mod's jar, modular_mob_ai/models/vs-copy.mbw from iteration 650` | what [playing.md](playing.md) promises: the bundled networks load and drive an agent, the commands, saving, sides and friendly fire, the Infinity loadouts |
+| `test.ps1 -Play` | `All 18 required tests passed`, and `Loaded the mod's jar, modular_mob_ai/models/blast.mbw from iteration 2150` | what [playing.md](playing.md) promises: the bundled networks load and drive an agent, the commands, saving, sides and friendly fire, the Infinity loadouts |
 | `parity.ps1` | `parity ok` once per body, logits agreeing to about 1e-6, and `the plain ones agree to the bit at batches 1 to 64` | the game runs exactly the network PyTorch trained, **for every body this build has**, and the forward pass's explicit vector loops give the same bits as its plain ones |
 
-The play suite's three jar-network tests — `networksInTheJarLoadByName`, `worldAgentFightsOnTheBundledNetwork` and
-`brainCommandRefusesWhatLeadsNowhere` — fail until a network is published for the layout this build has. Everything in
-`models\` was trained on the old 634-float observation, this build's humanoid is 792 floats, and the game refuses a weight
-file it cannot drive, which is the schema id doing its job; see [models.md](models.md).
+The network the `-Play` line names is whatever is published: the suite asks the jar what it carries and holds every network
+in it to the rule, rather than naming one, so publishing or retiring a network changes the log line and nothing else. The
+one thing it will not tolerate is a network in `models\` that this build cannot drive —
+`networksInTheJarLoadByName` then fails with that network's name and the schema it carries, which is what to retire; see
+[models.md](models.md).
 
 Each boots a headless server in seconds, and all of them need only Java (parity also needs the trainer's Python).
 `test.ps1 -Loader neoforge` runs a suite on NeoForge instead of Fabric.
@@ -31,14 +32,14 @@ scripts\test.ps1 -Terrain                 the fights on natural terrain; generat
 scripts\test.ps1 -Arenas 200              more fights
 scripts\test.ps1 -Terrain -Replays        record every fight for the viewer, in runs\gametest\replays
 scripts\test.ps1 -League                  194 fights, twice round every league opponent and squad on normal and on hard; a table of each
-scripts\test.ps1 -League -Weights models\vs-copy\best.mbw   the same with a network, which also fights a frozen copy of itself
-scripts\test.ps1 -League -LeagueModels vs-copy              published networks in the league too, each a player of its own; two more fights
+scripts\test.ps1 -League -Weights models\blast\best.mbw     the same with a network, which also fights a frozen copy of itself
+scripts\test.ps1 -League -LeagueModels blast                published networks in the league too, each a player of its own; two more fights
 scripts\league.ps1 -Test                  the league's unit tests: Elo, the pairings and their shares, the pool, reading and resuming results
-scripts\eval.ps1 -Weights models\vs-copy\best.mbw          a network's win rate, 2,000 fights, most likely action
-scripts\eval.ps1 -Run vs-copy -Iteration 650 -Arenas 400   a checkpoint of a local run
+scripts\eval.ps1 -Weights models\blast\best.mbw            a network's win rate, 2,000 fights, most likely action
+scripts\eval.ps1 -Run blast -Iteration 2150 -Arenas 400    a checkpoint of a local run
 scripts\eval.ps1 -Teacher -Suite league -Arenas 600        the scripted fighter on the same bench, which is the reference
-scripts\bench.ps1 -Run league-sharp -Last 4                several networks on one bench, best first
-scripts\bench.ps1 -Weights models\league-sharp\best.mbw,models\league2\best.mbw
+scripts\bench.ps1 -Run blast -Last 4                       several networks on one bench, best first
+scripts\bench.ps1 -Weights models\blast\best.mbw,runs\blast\weights\002000.mbw
 ```
 
 `eval.ps1` fights with no exploration and records nothing for training. With 2,000 fights the win rate is within about
@@ -116,7 +117,7 @@ into the tests either side, so the suite runs its tests one after another on one
 | Test | Checks |
 | --- | --- |
 | `networksInTheJarLoadByName` | the build put the networks in the jar; `best`, a name and `scripted` load; bad names and paths are refused |
-| `worldAgentFightsOnTheBundledNetwork` | a playable agent on `best` goes for a zombie and hurts it |
+| `worldAgentFightsOnTheBundledNetwork` | a playable agent on `best` goes for a zombie and hurts it, inside a fight's length. The zombie keeps its free will, unlike every other fight here: against a dummy the network closes and swings and lands nothing, because the enemy slots now say whether an opponent has the agent as its target and a league network has never met one that ignores it |
 | `aloneAnAgentStandsStill` | with nobody in view an agent stands still whatever its brain says, and moves once a zombie turns up |
 | `spawnCommandMakesAnArmedAgentOnItsBrain`, `bareSpawnArmsWithTheConfigsLoadout` | `/mmai spawn`: loadout, brain, position, never despawning; `default` |
 | `spawnCommandWorksFromAFunction` | the same from a data pack's function or a command block: a function's permission, relative coordinates |
@@ -147,7 +148,7 @@ mod\gradlew.bat -p mod :fabric:runGametestParallel -Psuite=terrain -Parenas=2000
 | `terrainLibrary`, `librarySites` | `false` makes terrain workers generate their own ground even when a library exists; how many sites a library build generates |
 | `addSites` | how many sites to append to the library that is already there, instead of building a new one; only the new ones are generated |
 | `leagueOpponents`, `leagueLoadouts`, `leagueDifficulties` | league only: fewer opponents (`zombie,2x_zombie`), fewer loadouts, which rungs of the ladder a run with no trainer goes round (`easy,normal,hard`) |
-| `leagueModels` | league only: published networks in `models\` to field as rated players (`vs-copy,vs-scratch`); nobody unless named, and a name that is another player's, or a network of another body, is refused by name |
+| `leagueModels` | league only: published networks in `models\` to field as rated players (`blast`, or several separated by commas); nobody unless named, and a name that is another player's, or a network of another body, is refused by name |
 | `leagueHazards` | league only: the share of fights drawn onto ground with lava or an edge on it, 0.25 by default |
 | `arenas`, `workers`, `batchSize` | fights, worker processes, fights at once per worker |
 | `sites`, `siteRadius` | fight sites laid out, and chunks either side of each one's centre (2 = 80 blocks across) |

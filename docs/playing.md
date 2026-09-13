@@ -12,15 +12,15 @@ Everything below runs from the repository root in Windows PowerShell once `scrip
 
 ```
 scripts\play.ps1                          Fabric dev client, agents on the best network in models\
-scripts\play.ps1 -Model vs-scratch        another published network, by its folder under models\
-scripts\play.ps1 -Weights runs\vs-copy\weights\000700.mbw    any weight file, such as a local checkpoint
+scripts\play.ps1 -Model blast             a published network by name, by its folder under models\
+scripts\play.ps1 -Weights runs\blast\weights\002000.mbw       any weight file, such as a local checkpoint
 scripts\play.ps1 -Scripted                the hand-written fighter instead
 scripts\play.ps1 -Loader neoforge         the NeoForge client
 scripts\play.ps1 -World arena             straight into the saved world 'arena' (its folder under saves\), no menus
 ```
 
 - **The best network** is the one whose `models\<name>\model.json` records the highest win rate (more fights breaks a
-  tie). Today that's `vs-copy`, 99.8% against a vindicator.
+  tie). Today `models\` holds one, `blast`, so that is what it picks; see [models.md](models.md).
 - It builds the mod in this checkout and starts `:<loader>:runClient` with
   `-Pbrain=neural -PbrainWeights=<file> -Pmodels=<repo>\models`. Those become `-Dmodular_mob_ai.brain`,
   `-Dmodular_mob_ai.brain.weights` and `-Dmodular_mob_ai.models` in the game.
@@ -30,8 +30,8 @@ scripts\play.ps1 -World arena             straight into the saved world 'arena' 
 **Check the network loaded.** As soon as a world opens, `logs\latest.log` in the game directory says:
 
 ```
-Loaded C:\...\models\vs-copy\best.mbw from iteration 650: 634 -> 256 -> GRU 128 -> 128 -> 19 (331,019 parameters)
-Agents with no brain of their own run on best.mbw from C:\...\models\vs-copy, iteration 650
+Loaded C:\...\models\blast\best.mbw from iteration 2150: 792 -> 792 -> 256 -> GRU 128 -> 128 -> 19 (371,783 parameters)
+Agents with no brain of their own run on best.mbw from C:\...\models\blast, iteration 2150
 ```
 
 In the game, `/mmai info` shows what each agent runs on, and `/mmai models` shows every network the game can find.
@@ -70,12 +70,12 @@ mod\gradlew.bat -p mod :neoforge:build     mod\neoforge\build\libs\modular_mob_a
 | `/mmai spawn [loadout] [brain] [pos]` | the loadout named, else the config's | the brain named, else the default |
 | Agent Spawn Egg (Spawn Eggs creative tab) | the config's loadout | the default |
 | `/summon modular_mob_ai:agent_mob ~ ~ ~` | the config's loadout | the default |
-| `/summon modular_mob_ai:agent_mob ~ ~ ~ {Loadout:"bow_infinity",BrainName:"vs-copy"}` | the loadout named | the brain named |
+| `/summon modular_mob_ai:agent_mob ~ ~ ~ {Loadout:"bow_infinity",BrainName:"blast"}` | the loadout named | the brain named |
 
 ```
 /mmai spawn                                  a sword, the default brain, where you stand, facing where you face
 /mmai spawn bow_infinity                     an archer that never runs out
-/mmai spawn sword_and_shield vs-scratch      a network by name
+/mmai spawn sword_and_shield blast           a network by name
 /mmai spawn axe_and_shield scripted 10 64 -5     the hand-written fighter, at a position
 /mmai spawn sword "C:/nets/test.mbw"         a weight file; quote anything with a slash or colon
 ```
@@ -143,7 +143,7 @@ An agent with no brain of its own runs on:
 The training agent never reads the config: it follows `-Dmodular_mob_ai.brain`, scripted when unset, as it always has.
 
 ```
-/mmai brain @e[type=modular_mob_ai:agent_mob] vs-scratch
+/mmai brain @e[type=modular_mob_ai:agent_mob] blast
 /mmai brain @e[type=modular_mob_ai:agent_mob,limit=1,sort=nearest] scripted
 /mmai brain @e[type=modular_mob_ai:agent_mob] default
 /mmai models
@@ -214,7 +214,7 @@ For game tests and the arenas (the league's 2v1s), everything above is plain Jav
 ```java
 AgentMob agent = ModEntities.agentMob().create(level);        // or trainingAgent() in an arena
 agent.equip(Loadout.SWORD);                                    // Loadouts.byName("bow_infinity", level.registryAccess())
-agent.setBrainName("vs-copy");                                 // null for the default; throws for a name that leads nowhere
+agent.setBrainName("blast");                                   // null for the default; throws for a name that leads nowhere
 
 PlayerTeam red = Allegiance.side(agentA, agentB);             // a new team with just these on it
 PlayerTeam blue = Allegiance.side(vindicator);

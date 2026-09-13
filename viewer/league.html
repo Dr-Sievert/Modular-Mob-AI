@@ -197,7 +197,7 @@ tr.sep td { border-top: 1px solid var(--line2); }
 //
 // What a "model" is here is what the league rates: an evaluated checkpoint, iteration-006750, playing its most likely
 // action. A training fight belongs to a policy that samples and is gone an iteration later, so those are counted for the
-// run as a whole and never per model. A published network the run fields, vs-copy, is a player of the league like a mob
+// run as a whole and never per model. A published network the run fields is a player of the league like a mob
 // is; see docs\training.md.
 // ---------------------------------------------------------------------------------------------------------------------
 
@@ -1180,7 +1180,7 @@ function compare(data, other) {
                    text: fixed(Math.abs(one.one - one.two), 0) })))
         : [el('tr', {}, el('td', { colspan: 6, class: 'faint',
             text: 'Only the scripted fighter so far. Field the same published network in both runs '
-                  + '(scripts\\train.ps1 -LeagueModels vs-copy) and it becomes a second bridge.' }))]))));
+                  + '(scripts\\train.ps1 -LeagueModels blast) and it becomes a second bridge.' }))]))));
 
   const curves = el('div', { class: 'card' },
     el('h2', {}, 'Rating over the checkpoints'),
@@ -1285,7 +1285,7 @@ function draw() {
     main.append(el('div', { class: 'card' }, el('div', { class: 'empty' },
       el('div', { html: '<b>No run has a league yet.</b>' }),
       el('div', { style: 'margin-top:8px',
-        html: 'Start one with <code>scripts\\train.ps1 -Run league -Suite league -Seed vs-copy</code>, '
+        html: 'Start one with <code>scripts\\train.ps1 -Run league -Suite league -Seed blast</code>, '
           + 'and this lists it as soon as the trainer has rated a fight.' }))));
     return;
   }

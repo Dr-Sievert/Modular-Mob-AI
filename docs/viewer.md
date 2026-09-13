@@ -4,9 +4,9 @@ Two pages served by one small local server: the fight replays, and the league st
 
 ```
 scripts\viewer.ps1                         open the newest replay of any run in the browser
-scripts\viewer.ps1 -Run vs-copy            the newest replay of that run
+scripts\viewer.ps1 -Run blast              the newest replay of that run
 scripts\viewer.ps1 -League                 the league standings instead: the tier list, the tables, the per-model stats
-scripts\viewer.ps1 -League -Run league2    that run's league
+scripts\viewer.ps1 -League -Run blast      that run's league
 scripts\viewer.ps1 -Port 8800              try that port first
 scripts\viewer.ps1 -MinecraftJar <jar>     take textures from that jar instead of the Gradle cache
 ```

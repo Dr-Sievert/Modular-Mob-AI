@@ -64,52 +64,108 @@ public class PlayGameTest {
 
     private static final String ARENA = "arena";
 
+    /** A brain name nothing answers to, for the refusals. Asserted absent where it is used, never assumed. */
+    private static final String ABSENT = "no_such_network";
+
     // ---------------------------------------------------------------------------------------------------------------
     // Networks by name
     // ---------------------------------------------------------------------------------------------------------------
 
     /**
-     * The build put the repository's networks into the jar, and they load by name: best is the one that won the most,
-     * scripted is the hand written fighter, and a name that leads nowhere is refused, saying what there is instead.
+     * The build put the repository's networks into the jar, and every one of them loads by its own name: best is the one
+     * that won the most, scripted is the hand written fighter, and a name that leads nowhere is refused, saying what there
+     * is instead.
+     *
+     * <p>Nothing here names a network, because which ones are published changes with every run: it asks the jar what it
+     * carries and holds all of it to the rule. That matters for the one mistake this catches — a network left in
+     * {@code models\} after the layout it was trained against changed. The game refuses such a file by its schema id, which
+     * is the id doing its job, and a suite that named its network instead would fail here, in the two tests below, and
+     * anywhere else {@code best} is asked for, with three messages and no statement of what is actually wrong. Iterating
+     * fails once, and names the network to retire.
      */
     @GameTest(template = ARENA)
     public static void networksInTheJarLoadByName(GameTestHelper helper) {
 
-        helper.assertFalse(Models.bundled().isEmpty(), "The jar carries no networks");
-        helper.assertTrue(Models.best() != null && Models.bundled().contains(Models.best()), "The jar names no best network");
+        List<String> bundled = Models.bundled();
 
-        Brain best = Brains.named("best");
+        helper.assertFalse(bundled.isEmpty(), "The jar carries no networks");
+
+        for (String name : bundled) {
+
+            Brain network = loads(helper, name);
+            helper.assertTrue(network instanceof NeuralBrain, name + " in the jar is not a network");
+            helper.assertTrue(((NeuralBrain) network).weights().iteration() > 0, name + " in the jar is untrained");
+        }
+
+        // best is a name of its own for one of them, picked by the win rate each model.json records, the same pick
+        // scripts\play.ps1 makes; naming it either way has to reach the one brain, so both share a forward pass.
+        String bestName = Models.best();
+
+        helper.assertTrue(bestName != null && bundled.contains(bestName), "The jar names no best network");
+
+        Brain best = loads(helper, "best");
+
         helper.assertTrue(best instanceof NeuralBrain, "best is not a network");
-        helper.assertTrue(best == Brains.named(Models.best()), "best and its own name load two copies of one network");
-        helper.assertTrue(((NeuralBrain) best).weights().iteration() > 0, "best is an untrained network");
+        helper.assertTrue(best == Brains.named(bestName), "best and " + bestName + " load two copies of one network");
 
         helper.assertTrue(Brains.named("scripted") instanceof ScriptedBrain, "scripted is not the scripted fighter");
-        helper.assertTrue(Brains.known().containsAll(List.of("scripted", "best", Models.best())), "known() leaves names out");
+        helper.assertTrue(Brains.known().containsAll(List.of("scripted", "best")) && Brains.known().containsAll(bundled),
+                "known() leaves names out: " + String.join(", ", Brains.known()));
 
-        refused(helper, () -> Brains.named("no_such_network"), "a network nobody has");
-        refused(helper, () -> Brains.named("../models/vs-copy"), "a name that climbs out of its folder");
+        // A name nothing answers to, asserted absent rather than assumed: a published network could be called anything,
+        // and a refusal test that named a real one, or one that might be published later, would pass for the wrong reason.
+        // The two below it hold whatever is published: a network's name can hold no slash, so neither can ever be one.
+        helper.assertFalse(Brains.known().contains(ABSENT), "'" + ABSENT + "' is a network here, so it refuses nothing");
+
+        refused(helper, () -> Brains.named(ABSENT), "a network nobody has");
+        refused(helper, () -> Brains.named("../models/" + bestName), "a name that climbs out of its folder");
         refused(helper, () -> Brains.named("nowhere/at/all.mbw"), "a weight file that is not there");
 
         helper.succeed();
     }
 
     /**
-     * An agent out in the world acts on the network the jar carries: armed with a sword and given best, it goes for a
-     * zombie standing across the box and hurts it.
+     * An agent out in the world acts on the network the jar carries: armed with a sword and given best, which is the
+     * network scripts\play.ps1 would have started the game on, it goes for a zombie across the box and hurts it.
+     *
+     * <p>Two things here are the way they are because of what the network is, and both were measured rather than guessed.
+     * <b>The zombie has its free will</b>, where every other fight in this suite uses a dummy: the enemy slots now carry
+     * whether an opponent has the agent as its target, and a network trained on the league has never met something that
+     * stands there ignoring it. Against a dummy this one closes to a block, swings twenty times in two hundred ticks and
+     * lands none of them — it presses attack, so the body is doing its part, and the aim is simply not on a thing that is
+     * not fighting back. <b>It is given a fight's length to land one</b>, the 1,200 ticks every training fight was given,
+     * because the first blow takes two to four hundred of them in a bedrock box seven across, which is nothing like the
+     * open ground it was judged on. What this proves is that the jar's network drives a playable agent and does damage; how
+     * well it fights is what {@code scripts\bench.ps1} is for.
      */
-    @GameTest(template = ARENA, timeoutTicks = 400)
+    @GameTest(template = ARENA, timeoutTicks = 1200)
     public static void worldAgentFightsOnTheBundledNetwork(GameTestHelper helper) {
 
         AgentMob agent = worldAgent(helper, new BlockPos(4, 2, 1), 0.0F);
         agent.equip(Loadout.SWORD);
         agent.setBrainName("best");
 
-        Zombie zombie = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new BlockPos(4, 2, 5));
+        Zombie zombie = helper.spawn(EntityType.ZOMBIE, new BlockPos(4, 2, 5));
+
+        // Counted for the failure message only. "The zombie is unhurt" cannot tell a network that never moved from one
+        // that closed and swung and missed, and those two want opposite answers; the numbers above came out of this.
+        int[] swings = {0};
+        int[] ticks = {0};
 
         helper.succeedWhen(() -> {
 
-            helper.assertTrue(agent.brain().brain() instanceof NeuralBrain, "The agent is not on a network");
-            helper.assertTrue(zombie.getHealth() < zombie.getMaxHealth(), "The zombie is unhurt");
+            ticks[0]++;
+
+            if (agent.executed().attacked) {
+
+                swings[0]++;
+            }
+
+            helper.assertTrue(agent.brain().brain() == Brains.named("best"),
+                    "The agent is not on best, which is " + Brains.describe(Brains.named("best")));
+            helper.assertTrue(zombie.getHealth() < zombie.getMaxHealth(), "The zombie is unhurt after " + ticks[0]
+                    + " ticks: " + swings[0] + " swings, " + String.format(java.util.Locale.ROOT, "%.2f",
+                    agent.distanceTo(zombie)) + " blocks away, slots " + agent.brain().enemySlots().inRangeCount());
         });
     }
 
@@ -312,7 +368,11 @@ public class PlayGameTest {
         helper.succeed();
     }
 
-    /** /mmai brain gives an agent a network by name, and refuses a name that leads nowhere without changing anything. */
+    /**
+     * /mmai brain gives an agent a network by name, and refuses a name that leads nowhere without changing anything. The
+     * network it hands over is whichever one the jar calls best, and the one it refuses is a name nothing is published
+     * under, so neither half of this depends on what {@code models\} happens to hold.
+     */
     @GameTest(template = ARENA)
     public static void brainCommandRefusesWhatLeadsNowhere(GameTestHelper helper) {
 
@@ -322,7 +382,7 @@ public class PlayGameTest {
         helper.assertValueEqual(agent.brainName(), "best", "brain name");
         helper.assertTrue(agent.brain().brain() instanceof NeuralBrain, "best did not put the agent on a network");
 
-        commandFails(helper, "mmai brain " + agent.getStringUUID() + " no_such_network", "a network nobody has");
+        commandFails(helper, "mmai brain " + agent.getStringUUID() + " " + ABSENT, "a network nobody has");
         helper.assertValueEqual(agent.brainName(), "best", "brain name after a refused one");
 
         commandFails(helper, "mmai brain " + agent.getStringUUID() + " \"nowhere/at/all.mbw\"", "a weight file that is not there");
@@ -559,7 +619,12 @@ public class PlayGameTest {
             if (tick == 21) {
 
                 helper.assertTrue(agent.executed().attacked, "The agent never swung");
-                helper.assertTrue(unhurt(zombie), "The agent hurt its own side with friendly fire off");
+
+                // What took the health is in the message because this test has failed once, one run in seven, and the
+                // message said only that the zombie was hurt: a swing that was not spared and something else in a lit box
+                // taking health off a zombie read identically, so there was nothing to go on. Its sibling above says why.
+                helper.assertTrue(unhurt(zombie), "The agent hurt its own side with friendly fire off: the zombie at "
+                        + zombie.getHealth() + " of " + zombie.getMaxHealth() + " from " + zombie.getLastDamageSource());
                 side.setAllowFriendlyFire(true);
             }
 
@@ -816,6 +881,24 @@ public class PlayGameTest {
                 .withSuppressedOutput();
 
         return server.getCommands().getDispatcher().execute(command, source);
+    }
+
+    /**
+     * A brain by name, failing the test with the reason it could not be had. Which network was asked for is in the
+     * message, because the one failure worth reading here is a published network the layout has left behind, and the
+     * reason the game gives for that names the schema and not the file.
+     */
+    private static Brain loads(GameTestHelper helper, String name) {
+
+        try {
+
+            return Brains.named(name);
+        }
+
+        catch (RuntimeException exception) {
+
+            throw new GameTestAssertException("The brain '" + name + "' cannot be loaded: " + exception.getMessage());
+        }
     }
 
     private static void refused(GameTestHelper helper, Runnable attempt, String what) {

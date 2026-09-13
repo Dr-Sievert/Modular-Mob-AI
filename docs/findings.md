@@ -266,6 +266,14 @@ are deliberate.
     row of a fight, the weapon swapped out of on the row after a slot change. A critic may be priced off a row it reads
     late; a policy choosing whether to swing may not.
 
+- **A network will not reliably attack something that is not fighting back, and a test must not ask it to.** The play
+  suite's `worldAgentFightsOnTheBundledNetwork` put a `spawnWithNoFreeWill` zombie four blocks from an agent on the
+  bundled network. The agent saw it, closed to a block, pressed attack twenty times in two hundred ticks — so the body was
+  doing its part — and landed none of them: the aim never came onto it. Give the same zombie its free will and the blow
+  lands inside a few hundred ticks. That is the engaged reading above doing exactly what it was added for, from the other
+  side: a mob that has never taken the agent as its target is not a fight, and a league network was never trained on one.
+  Fights in a test want a live opponent; a dummy is for the body's own rules, which is what the mechanics suite uses one for.
+
 ## The league's curriculum
 
 - **The loadout and the opponent have to be drawn together.** Drawn independently, a bow was handed out against a creeper it

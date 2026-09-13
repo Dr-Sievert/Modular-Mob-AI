@@ -16,7 +16,7 @@ Windows 10 or 11 and a clone of this repository; nothing else has to be installe
 ```
 scripts\setup.ps1                                   once: Java 21, Python + PyTorch, compile, parity check
 scripts\test.ps1                                    20 fights with the scripted fighter: expect 20/20
-scripts\eval.ps1 -Weights models\vs-copy\best.mbw   the trained network's win rate
+scripts\eval.ps1 -Weights models\blast\best.mbw     the published network's win rate
 scripts\play.ps1                                    Minecraft with the trained network; /mmai spawn in a world, see docs\playing.md
 scripts\train.ps1 -Run mine                         train a run of your own; see docs\training.md
 scripts\watch.ps1                                   live progress of every run

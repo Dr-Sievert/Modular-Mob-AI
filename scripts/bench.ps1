@@ -1,9 +1,9 @@
 # Puts networks on the same bench and prints what each won, which is the only way to compare two of them.
 #
-#   scripts\bench.ps1 -Run league-sharp -Last 4          the newest four checkpoints of a run, newest first
-#   scripts\bench.ps1 -Run league-sharp -Iterations 6900,7100,8100
-#   scripts\bench.ps1 -Weights models\league-sharp\best.mbw,models\vs-copy\best.mbw
-#   scripts\bench.ps1 -Run league-sharp -Last 3 -Arenas 2000     tighter, four times as long
+#   scripts\bench.ps1 -Run blast -Last 4                 the newest four checkpoints of a run, newest first
+#   scripts\bench.ps1 -Run blast -Iterations 1900,2050,2150
+#   scripts\bench.ps1 -Weights models\blast\best.mbw,runs\blast\weights\002000.mbw
+#   scripts\bench.ps1 -Run blast -Last 3 -Arenas 2000    tighter, four times as long
 #
 # Why this exists rather than reading a run's own eval.csv: a league run's win rate and rating are measured against
 # opponents the matchmaking keeps changing, so the same network scores differently as the run goes on, and a rating wanders
@@ -56,7 +56,7 @@ try {
             throw "No weights at $path"
         }
 
-        # Named after the folder it came from: models\vs-copy\best.mbw is "vs-copy". A run's own weights all sit in a folder
+        # Named after the folder it came from: models\blast\best.mbw is "blast". A run's own weights all sit in a folder
         # called weights under files all called by their iteration, so three copies benched together all read "weights"
         # until this named them by the run and the iteration instead: "copy770 000000".
         $parent = Split-Path (Split-Path $file -Parent) -Leaf

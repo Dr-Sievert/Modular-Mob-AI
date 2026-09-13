@@ -35,7 +35,7 @@ import net.sievert.modularmobai.entity.agent.AgentMob;
  *   -Dmodular_mob_ai.brain=neural -Dmodular_mob_ai.brain.weights=X    a trained network, most likely action
  *   ... and -Dmodular_mob_ai.demonstrations=DIR                       the same, the scripted fighter labelling each tick
  *   -Dmodular_mob_ai.brain=neural -Dmodular_mob_ai.training.run=DIR   a network being trained; see {@link TrainingRun}
- *   -Dmodular_mob_ai.brain=NAME                                       anything {@link #named} takes, such as vs-copy
+ *   -Dmodular_mob_ai.brain=NAME                                       anything {@link #named} takes, such as a network's name
  * </pre>
  *
  * A run with nothing set falls back to the scripted fighter, which is what keeps the game tests runnable on their own.
@@ -168,7 +168,7 @@ public final class Brains {
      * </pre>
      *
      * Everything that names the same network gets the same brain, so every agent on it shares one forward pass however
-     * it was named: {@code best}, {@code vs-copy} and the path of the file both of them lead to all end up in one batch.
+     * it was named: {@code best}, the network's own name, and the path of the file all three lead to end up in one batch.
      *
      * @throws IllegalArgumentException for a name that leads nowhere, saying what there is instead
      * @throws UncheckedIOException     for weights that are there but cannot be read, or were trained on another layout
@@ -404,7 +404,7 @@ public final class Brains {
             }
 
             // Anything else names a brain the way a command does, a network by name or a weight file, so a game can be
-            // started with -Dmodular_mob_ai.brain=vs-copy. What names nothing is still a mistake worth stopping for.
+            // started with -Dmodular_mob_ai.brain=blast. What names nothing is still a mistake worth stopping for.
             default -> {
 
                 try {

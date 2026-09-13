@@ -1,9 +1,9 @@
 # Puts a run's best network into git, so anyone with the repository can fight it, evaluate it or carry the training on,
 # without the run folder. runs\ itself is never committed: rollouts, demonstrations and checkpoints run to gigabytes.
 #
-#   scripts\publish.ps1 -Run vs-copy            models\vs-copy: best.mbw, eval.csv, schema.json and model.json
-#   scripts\publish.ps1 -Run vs-copy -State     and state.pt, the trainer's own state, to train on from it elsewhere
-#   scripts\publish.ps1 -Run vs-copy -Push      and commit and push it
+#   scripts\publish.ps1 -Run blast              models\blast: best.mbw, eval.csv, schema.json and model.json
+#   scripts\publish.ps1 -Run blast -State       and state.pt, the trainer's own state, to train on from it elsewhere
+#   scripts\publish.ps1 -Run blast -Push        and commit and push it
 #
 # models\<run>\best.mbw is what the game loads, e.g. scripts\eval.ps1 -Weights models\<run>\best.mbw, or any game with
 #   -Dmodular_mob_ai.brain=neural -Dmodular_mob_ai.brain.weights=models\<run>\best.mbw

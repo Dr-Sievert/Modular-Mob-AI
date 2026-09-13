@@ -104,7 +104,9 @@ to copy a hand-written fighter first, then improve the copy with reinforcement l
 5. **Publishing.** `scripts\publish.ps1 -Run <run> -State -Push` copies the best network into `models\<run>\` and pushes
    it; see [models.md](models.md).
 
-Results so far (evaluated on the most likely action):
+Results of that route (evaluated on the most likely action, against a vindicator). All three networks were trained against
+the humanoid's old 634-float observation and have been retired from `models\`; the numbers stand, the weight files load
+nowhere. See [models.md](models.md).
 
 | Run | Started from | Best | Won / lost / timed out |
 | --- | --- | --- | --- |
@@ -258,7 +260,7 @@ scripts\train.ps1 -Run name -FromCopy              the safeguarded PPO above, fo
 scripts\train.ps1 -Run name -Workers 4             4 workers; 0 (default) means as many as cores and memory allow
 scripts\train.ps1 -Run name -Extra '--eval-target 0.999 --eval-fights 2000'    any trainer option, see below
 scripts\train.ps1 -Run name -Full                  everything the build prints, instead of the half-minute feed
-scripts\train.ps1 -Run league -Suite league -Seed vs-copy     the league, from vs-copy's best (see the league below)
+scripts\train.ps1 -Run league -Suite league -Seed blast       the league, from runs\blast's best (see the league below)
 ```
 
 | Parameter | Default | Meaning |
@@ -273,7 +275,7 @@ scripts\train.ps1 -Run league -Suite league -Seed vs-copy     the league, from v
 | `-RolloutSteps` | 16384 (65536 with `-FromCopy`) | steps of experience per update (an iteration) |
 | `-Device` | cuda | `cpu` keeps the GPU out of it |
 | `-Suite` | terrain | `arena` is a closed 9-block box, for quick checks; `league` is every mob, the scripted fighter and the run's own checkpoints |
-| `-LeagueModels` | | league only: published networks in `models\` to field as rated players, `vs-copy,vs-scratch`; see the league below |
+| `-LeagueModels` | | league only: published networks in `models\` to field as rated players, `blast`, or several separated by commas; see the league below |
 | `-ReplayEvery` | 200 | record one fight in this many per worker, for the viewer; 0 for none |
 | `-FromCopy` | off | the safeguarded settings for a run that starts from a copy |
 | `-Seed` | | start a new run from another's best checkpoint state: `runs\<seed>`, else `models\<seed>\state.pt`, else a folder by path; gentle settings as `-FromCopy` but no teacher pull, the critic alone for 30 iterations, 65536 steps and no battle limit by default. A seed whose critic never learned anything gets the critic this run configured rather than that one, see [the critic](#the-critic) |
@@ -374,7 +376,7 @@ A quarter of the fights are drawn onto ground with something on it worth knockin
 rather than by the agent. The log says `the ground finished the opponent in lava 8% of 240 wins; drop 3% of 510 wins`.
 
 ```
-scripts\train.ps1 -Run league -Suite league -Seed vs-copy     start one from vs-copy's best, run until done
+scripts\train.ps1 -Run league -Suite league -Seed blast       start one from runs\blast's best, run until done
 scripts\league.ps1 -Run league                                the tier list, the record against each opponent and loadout
 scripts\league.ps1 -Run league -All                           every rated checkpoint in the tier list
 scripts\league.ps1 -Test                                      the unit tests of the Elo, the pairings and the pool arithmetic
@@ -414,12 +416,12 @@ nothing each have a tier list, and the only player they share is the scripted fi
 them on one list.
 
 ```
-scripts\train.ps1 -Run league -Suite league -LeagueModels vs-copy,vs-scratch
-scripts\test.ps1 -League -LeagueModels vs-copy                a quick look with one in it
+scripts\train.ps1 -Run league -Suite league -LeagueModels blast
+scripts\test.ps1 -League -LeagueModels blast                  a quick look with one in it
 ```
 
 Each name is a folder under `models\`. It is fielded as another agent on its most likely action, exactly as a frozen
-checkpoint is, and **rated under its own name**, so `vs-copy` appears in the tier list, in `ratings.csv`, in
+checkpoint is, and **rated under its own name**, so `blast` appears in the tier list, in `ratings.csv`, in
 `opponents.csv` and in the viewer beside the mobs. What it takes to read two runs together is that both field the same
 network: each rates it on its own fights, and the two answers should agree to within a tier. Where they do not, one run
 has met it far too seldom or the scales have drifted, and the tier lists should not be read against each other — the
@@ -462,7 +464,7 @@ the run from nothing only stops at `-ScratchBattles` (3,000,000).
 ```
 scripts\dagger.ps1 -Run league                    one round for runs\league on the league, from its best weights
 scripts\dagger.ps1 -Run league -Fights 8000       more of it
-scripts\dagger.ps1 -Run league -Weights models\vs-copy\best.mbw     another network's mistakes to correct
+scripts\dagger.ps1 -Run league -Weights models\blast\best.mbw       another network's mistakes to correct
 scripts\dagger.ps1 -Run vindicator -Suite terrain one vindicator instead, as imitate.ps1's rounds are
 ```
 

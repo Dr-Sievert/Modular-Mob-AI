@@ -324,10 +324,10 @@ different opponent every time, with a different loadout:
   (`-PleagueDifficulties`, normal and hard by default).
 - The scripted fighter and frozen checkpoints of the run, as another agent with a brain of its own on its most likely
   action, so only the agent's steps are recorded.
-- **Published networks a run names** (`gametest/league/Published`, `scripts\train.ps1 -LeagueModels vs-copy,vs-scratch`).
+- **Published networks a run names** (`gametest/league/Published`, `scripts\train.ps1 -LeagueModels blast`).
   A network under `models\` is a fixed policy anyone can load, so it plays as another agent exactly as a checkpoint does
   and is rated under its own name. That is what puts two lineages on one tier list: a run that trained from the teacher
-  and one that trained from nothing never meet, but both can rate `vs-copy`, and each run's own checkpoints are then a
+  and one that trained from nothing never meet, but both can rate the same published network, and each run's own checkpoints are then a
   known distance from a player the other run fought too. A model is **not** a second anchor — the scripted fighter alone
   is held still, so a model's rating is measured rather than asserted, and two runs disagreeing about what it is worth is
   the sign that their scales have drifted apart. It never learns, so it is weighed with the mobs rather than in the self

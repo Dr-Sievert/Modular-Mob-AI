@@ -2,7 +2,7 @@
 # it can be started and stopped at any time without touching a run.
 #
 #   scripts\watch.ps1                          every run that is training now, and any that stopped in the last hours
-#   scripts\watch.ps1 -Run vs-copy             just that run; -Run vs-copy,vs-scratch for several
+#   scripts\watch.ps1 -Run blast               just that run; -Run blast,other for several
 #   scripts\watch.ps1 -Once                    print once and exit
 #
 # Per run: what the trainer is doing and with how many workers, the iteration, fights and game ticks a second over the

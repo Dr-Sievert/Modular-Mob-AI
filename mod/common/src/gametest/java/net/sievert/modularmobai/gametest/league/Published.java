@@ -20,7 +20,7 @@ import net.sievert.modularmobai.brain.schema.Species;
  * likely action and rated under its own name.
  *
  * <pre>
- *   -Dmodular_mob_ai.league.models=vs-copy,vs-scratch   nobody unless given (scripts\train.ps1 -LeagueModels)
+ *   -Dmodular_mob_ai.league.models=blast,other   nobody unless given (scripts\train.ps1 -LeagueModels)
  * </pre>
  *
  * <h2>Why</h2>
@@ -29,7 +29,7 @@ import net.sievert.modularmobai.brain.schema.Species;
  * trained from different starts therefore never meet: each has a tier list of its own, and the only player the two have in
  * common is the scripted fighter. A published network is a fixed policy that anyone can load, and the league already drives
  * frozen checkpoints as opponents, so naming one here is all it takes to put both lineages on one tier list — every run
- * that fields {@code vs-copy} rates it, and a run's own checkpoints are then a known distance from a player the other run
+ * that fields the same published network rates it, and a run's own checkpoints are then a known distance from a player the other run
  * also fought.
  *
  * <h2>A player like any other, and not an anchor</h2>
@@ -39,7 +39,7 @@ import net.sievert.modularmobai.brain.schema.Species;
  * from run to run; a second fixed point would say what the distance between the two of them is instead of measuring it, and
  * every rating between them would be pulled towards whatever that assumption was wrong by. Left to move, a model's rating
  * is an estimate of its strength on the same scale, earned the same way — and two runs that each rate the same model are
- * then comparable <i>and</i> checkable: if a run has {@code vs-copy} at 1900 and another at 1600, the two tier lists have
+ * then comparable <i>and</i> checkable: if one run has the shared network at 1900 and another at 1600, the two tier lists have
  * drifted apart and should not be read side by side.
  *
  * <p>Nothing about the scale itself moves by adding players. Every rated fight is zero sum except against the anchor, whose

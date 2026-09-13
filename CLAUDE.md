@@ -55,7 +55,6 @@ scripts\setup.ps1                      once per machine: Java 21, Python + PyTor
 scripts\test.ps1                       20 arena fights with the scripted fighter: expect 20/20, 54 ticks each
 scripts\test.ps1 -Mechanics            the item and block rules against a player's numbers: expect 39 passed
 scripts\test.ps1 -Play                 the agent in a real game (jar networks, /mmai, sides, Infinity loadouts): expect 18 passed
-                                       (15 until a network on the current layout is published: see docs/testing.md)
 scripts\play.ps1                       the dev client, agents on the best network in models\; -Model, -Weights, -Loader
 scripts\terrain.ps1                    once per machine before any training: the terrain library a run fights on
 scripts\terrain.ps1 -Add 2048          more ground appended to it, without regenerating what is already there
@@ -63,8 +62,8 @@ scripts\train.ps1 -Run <name>          train (resumes); see docs/training.md for
 scripts\dagger.ps1 -Run <name>         record a round of the teacher's answers to that run's own best network
 scripts\watch.ps1                      live dashboard of every run, one line each
 scripts\stop.ps1 -Run <name>           stop one run (bare stop.ps1 stops every run on the machine)
-scripts\eval.ps1 -Weights models\vs-copy\best.mbw     win rate of a network, 2,000 fights
-scripts\bench.ps1 -Run league-sharp -Last 4           several networks on one bench, best first: the way to compare two
+scripts\eval.ps1 -Weights models\blast\best.mbw        win rate of a network, 2,000 fights
+scripts\bench.ps1 -Run blast -Last 4                  several networks on one bench, best first: the way to compare two
 scripts\publish.ps1 -Run <name> -State -Push          put a run's best network into models\ and push it
 scripts\viewer.ps1                     watch recorded fights in the browser, 2D or 3D
 scripts\viewer.ps1 -League             the league standings beside them: tier list, tables, per-model stats

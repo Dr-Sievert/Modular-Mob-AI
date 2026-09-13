@@ -256,7 +256,7 @@ afterEvaluate {
     runTask.systemProperty('modular_mob_ai.league.difficulties', providers.gradleProperty('leagueDifficulties').getOrElse(''))
 
     // Published networks the league fields as rated players, by the name they are published under in models\:
-    // -PleagueModels=vs-copy,vs-scratch. Nobody unless named. Each is a player like any other, so two runs that field the
+    // -PleagueModels=blast, or several separated by commas. Nobody unless named. Each is a player like any other, so two runs that field the
     // same network have a tier list that can be read beside the other's; see gametest/league/Published.
     runTask.systemProperty('modular_mob_ai.league.models', providers.gradleProperty('leagueModels').getOrElse(''))
 

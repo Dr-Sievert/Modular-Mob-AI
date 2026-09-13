@@ -3,7 +3,7 @@
 #   scripts\eval.ps1                          the newest weights of run 'default', 2,000 fights on natural terrain
 #   scripts\eval.ps1 -Run wide -Iteration 400
 #   scripts\eval.ps1 -Arenas 400 -Suite arena
-#   scripts\eval.ps1 -Weights models\vs-copy\best.mbw   a network from anywhere, such as one scripts\publish.ps1 put in git
+#   scripts\eval.ps1 -Weights models\blast\best.mbw     a network from anywhere, such as one scripts\publish.ps1 put in git
 #   scripts\eval.ps1 -Run league -Suite league   round every league opponent in turn, a frozen copy of itself included,
 #                                               and a table of how it went against each at the end
 #   scripts\eval.ps1 -Suite league -Loadouts bow,crossbow   those loadouts alone, to measure one weapon rather than wait
@@ -18,7 +18,7 @@
 # lava against 70, none of the water in one run and 159 in the other). -Ground fixes where each worker starts, for asking
 # the same question of a named sample rather than an arbitrary one:
 #
-#   scripts\eval.ps1 -Weights models\league2\best.mbw -Suite league -Ground 7
+#   scripts\eval.ps1 -Weights models\blast\best.mbw -Suite league -Ground 7
 #
 # **A comparison wants -Workers 1, and the same count either way.** On the league the fights are spread evenly over the
 # opponents *per worker*, and workers get through uneven shares of the total, so several workers leave the opponent mix
@@ -93,7 +93,7 @@ elseif ($Weights) {
         throw "No weights at $Weights. A run keeps only its most recent few, so copy one aside before evaluating it."
     }
 
-    # Named after the folder it came from, so models\vs-copy\best.mbw gives replays in runs\eval-vs-copy-best.
+    # Named after the folder it came from, so models\blast\best.mbw gives replays in runs\eval-blast-best.
     $Run = Split-Path (Split-Path $file -Parent) -Leaf
 }
 
