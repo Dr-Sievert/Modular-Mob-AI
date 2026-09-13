@@ -63,6 +63,10 @@ import net.sievert.modularmobai.gametest.util.TestDurationStats;
  *
  * <p>The pairing is drawn before any ground is asked for, since what the agent is up against is what decides how many
  * places to stand the site has to have.
+ *
+ * <p>Every one of these fights can be recorded, whatever is in it. A squad fight and a crowded one used to record nothing at
+ * all, because a replay held exactly one body besides the agent; a replay now holds as many as it is handed, so the one place
+ * a run's trouble was hiding can be watched. See {@link FightRecorder}.
  */
 @GameTestGroup
 public class AgentLeagueGameTest {
@@ -375,11 +379,11 @@ public class AgentLeagueGameTest {
             this.bystanders = opposition == null ? List.of()
                     : Bystanders.stand(this.level, this.site, opposition, this.matchup.bystanders(), this.level.getRandom());
 
-            // A replay holds one agent and one opponent, so a squad fight is not one, and neither is one with a crowd
-            // standing about it: a recording with the rest of what the agent could see missing would show it losing to
-            // nothing at all. See docs/replay-format.md.
-            this.replay = this.opponents.size() > 1 || !this.bystanders.isEmpty() ? null
-                    : FightRecorder.start(this.agent, this.opponents.get(0));
+            // Every fight is recordable, squads and crowds included: a replay holds the agent and then whatever it was handed,
+            // each with its own frames and its own role. It used to hold exactly one body besides the agent, so a squad fight
+            // and a crowded one were recorded as nothing — which cost a run its two thousand crowded fights with nobody able
+            // to look at one, and the crowd was where the trouble was. See docs/replay-format.md and replay/FightRecorder.
+            this.replay = FightRecorder.start(this.agent, this.opponents, this.bystanders, Integer.MAX_VALUE);
 
             return Phase.FIGHTING;
         }

@@ -366,6 +366,70 @@ are deliberate.
     rule, and sight already removes the great majority of what a cave holds, because rock is what a cave is made of. Left
     undone deliberately; if it is ever wanted it belongs beside the sight test in `EnemySlots`, which is the one place who
     takes a slot is decided.
+- **The other half of that crowd was the slot the opponent sat in, and it wiped out a whole curriculum.** With the sight rule
+  in and a quarter of its fights standing 1 to 9 idle monsters about them, `blast7` trained **2,200 iterations** and its
+  crowded win rate never moved: 32.1 / 29.8 / 31.8 / 30.7 / 32.4% over five buckets of 500 iterations, against 79.7% plain
+  over the same fights (36,487 plain and 11,126 crowded evaluation fights). The curriculum was in the fights and nothing was
+  being learned from it.
+  - **What the results said, before anything was watched.** It is **dying, not stalling**: crowded fights are 59.1% losses
+    against 14.2% plain, with timeouts only 7.0% against 3.7%. What kills it is its **own opponent** — `opponent` is 77.0% of
+    crowded losses and 77.2% of plain ones, and `mob`, which is what a bystander killing it would read, rises only from 11.9
+    to 13.5%. So the crowd is not killing the agent; the agent is losing the fight it was in. It is **not frozen** either, which
+    is the one thing the real-world report had shown: presses per tick are identical, 5.12 uses over 443 ticks crowded against
+    2.69 over 230 plain. And it is **graded, not a cliff** — one bystander already costs 15.6 points (64.1%) and every one
+    after it costs more: 44.1 / 38.6 / 30.2 / 25.4 / 23.3 / 19.7 / 17.0 / 16.7%. The drop is flat across all ten loadouts
+    (42 to 53 points) and across every opponent it can normally beat, and nil against the ones it never beats anyway — warden,
+    evoker, two creepers — which says it is a flat loss of ability and not a matchup.
+  - **What the ticks said.** Crowded fights record no replay, so a suite was built to watch one: `scripts\test.ps1 -Crowd`,
+    the same zombie-with-a-sword fight on natural ground with nobody standing about it and with 1, 3 and 9, logging every
+    tick. Three fights each, `blast6` driving:
+
+    | Standing about | Won | Opponent in slot 0 | Its mean slot | `SELF_ENEMIES_IN_RANGE` | Aim off it | Blows on it | On a bystander | Into thin air |
+    | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+    | none | 100% | 100% | 0.00 | 0.10 | 13.5° | 9 | 0 | 0 |
+    | one | 100% | 18% | 0.82 | 0.17 | 44.7° | 10 | 0 | 12 |
+    | three | 0% | **0%** | 2.07 | 0.36 | 65.0° | 3 | 0 | 193 |
+    | nine | 0% | **0%** | 5.52 | 0.78 | 86.6° | 1 | 0 | 206 |
+
+    **A slot went out in the order the level's own walk over its entity sections returned bodies** — section x ascending, then
+    z, then y, and insertion order inside a section, which is `EntitySectionStorage#forEachAccessibleNonEmptySection`. Against
+    one opponent that is no order at all: there is one body, it takes slot 0, and so **every fight any network had ever been
+    trained on put its opponent in slot 0**. Stand nine bystanders round it and the opponent holds slot 0 only when it happens
+    to be the westernmost of the ten. Within a fight the lease then freezes whatever the first tick decided, so the whole fight
+    is fought with the opponent in slot 2, or slot 5, and the network's one reliable habit is being contradicted at random in a
+    quarter of its fights.
+  - **Three things the ticks ruled out, all of which had been guessed.** It is **not swinging at the nearest body**: blows on a
+    bystander are **0** in every row, and thin-air presses are what rise — so the reward paying only the opponent was never the
+    problem. It is **not that the nearest body is a bystander**: one is nearer than the opponent on only 14 to 30% of ticks, so
+    even a nearest-first order would have left the opponent out of slot 0 a third of the time. And `SELF_ENEMIES_IN_RANGE` is
+    **not saturating**: it reads 0.78 with nine standing about, well inside the 0 to 1.2 the league itself produces, where the
+    real-world report's 1.5 came from the sight bug that is already fixed. The clamp was considered and left out: it would cost
+    the network the difference between ten bodies and twelve for no measured gain.
+  - **The fix is the order, and it is the same order twice.** Whoever has come for the agent or is on a team set against the
+    agent's first, then the nearest; and eviction ranks by that same order, so it cannot undo what the order decided. The first
+    draft got that wrong and was caught by a test: the fight took a bystander's slot and the evicted bystander took it straight
+    back on the same tick, because the rung underneath still knew only about distance. Measured again on the same twelve fights,
+    the opponent holds slot 0 on **100%** of ticks at three and at nine standing about, mean slot 0.00, and the aim comes in
+    from 86.6° to 74.2°; eleven of the twelve fights hold it for every tick, and the twelfth is a crowd of one where the
+    zombie's own target lapsed on the tick before the bystander was first seen and the lease then froze the order. It does
+    **not** win those fights yet, and could not: `blast6` was trained with the old order, so it has never seen a crowd it could
+    learn from. What the fix buys is a curriculum that is no longer noise.
+  - **What was left alone, and why.** A **curriculum ramp**, drawing the idle count from 1 upward rather than 1 to 9 from the
+    start, was the other candidate. The flatness is explained by the order, not by the difficulty, and a ramp changes which
+    `+N_idle` players a checkpoint's evaluated win rate is averaged over — which is what the best weights are picked by, under
+    a run already going. Worth trying if the crowded rate still does not move after a retrain on the fixed order. A **bystander
+    that fights back** turned out to need nothing: `Bystanders#leaveAlone` only takes a target away while nothing has hurt it,
+    so a struck one already keeps the agent, and `leagueBystandersStandAsideUntilStruck` already held it.
+  - **Crowded fights now record a replay, which is why nobody had seen one.** A replay held exactly one body besides the
+    agent, so a squad fight and a crowded one recorded nothing at all — two thousand fights a run in the one place the trouble
+    was. The recorder now follows as many bodies as it is handed, each with its own frames and a role: `opponent` for the other
+    side, `idle` for a monster standing about, which the viewer draws grey. The format had always said more entries might
+    follow; see [replay-format.md](replay-format.md).
+  - **A test of the crowd made an older test flaky, and the older test was overstating its case.**
+    `leagueBystandersStandAsideUntilStruck` asserted that an unstruck bystander has **no target at all**. `leaveAlone` only
+    promises that it has not taken *this* agent, and the mechanics suite's plots sit a few blocks apart, so three more plots
+    with agents on them was enough for a bystander with its wits about it to pick a neighbour's and fail the suite about one run
+    in three. The assertion now says what the rule says.
 
 ## The league's curriculum
 

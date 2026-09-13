@@ -49,6 +49,14 @@ import net.sievert.modularmobai.gametest.GameTestTuning;
  * <p>A fight is kept in memory while it runs, a few hundred kilobytes at most, and written whole when it ends, under a
  * temporary name first and renamed into place, so nothing reading the folder ever sees half a replay.
  *
+ * <p><b>A fight may hold any number of bodies besides the agent</b>, and the format has always said so: index 0 is the agent,
+ * the rest follow in the order they were handed over. It used to hold exactly one, which is why a squad fight and a fight
+ * with a crowd standing about it were recorded as nothing at all — a recording missing most of what the agent could see would
+ * show it losing to an empty field. That cost two thousand crowded training fights a run with nobody ever able to look at
+ * one, and the crowd is precisely where the trouble was. Everything besides the agent is written the same way: its own frames,
+ * its own health, its own swings, and a role — {@code opponent} for the other side and {@code idle} for a monster standing
+ * about taking no interest, which the viewer draws in a colour of its own.
+ *
  * <p>Recording only ever watches. Nothing here throws into the tick that calls it: the first thing that goes wrong is
  * logged, recording stops for the rest of the process, and the fights carry on as if it had never been asked for.
  */
@@ -106,8 +114,11 @@ public final class FightRecorder {
     @Nullable
     private final Episode episode;
 
-    private final Track agentTrack;
-    private final Track opponentTrack;
+    /**
+     * Every body the replay follows, the agent first and then whatever was handed over in the order it was handed over,
+     * which is the order the format gives {@code entities} and {@code frames}.
+     */
+    private final List<Track> tracks = new ArrayList<>();
 
     /** The blocks of the site and the fighters as they were at the start, already written out, to be written whole at the end. */
     private final String blocks;
@@ -141,13 +152,12 @@ public final class FightRecorder {
     /** The id of every projectile already picked up, so none is ever followed twice. */
     private final IntOpenHashSet seen = new IntOpenHashSet();
 
-    private FightRecorder(int fight, AgentMob agent, LivingEntity opponent, int ceiling) {
+    private FightRecorder(int fight, AgentMob agent, List<? extends LivingEntity> opponents,
+                          List<? extends LivingEntity> idle, int ceiling) {
 
         this.fight = fight;
         this.agent = agent;
         this.episode = agent.episode();
-        this.agentTrack = new Track(agent);
-        this.opponentTrack = new Track(opponent);
 
         ServerLevel level = (ServerLevel) agent.level();
 
@@ -160,10 +170,22 @@ public final class FightRecorder {
         this.airspace = area.inflate(0.0D, AIRSPACE_PADDING, 0.0D);
         this.blocks = SiteBlocks.write(level, area, ceiling);
 
+        // The agent first and then everything else in the order it was handed over, which is the order of both "entities" and
+        // "frames": the other side, and then the monsters standing about taking no interest, which are drawn apart from it.
         StringBuilder described = new StringBuilder();
-        describe(described, "agent", agent);
-        described.append(',');
-        describe(described, "opponent", opponent);
+
+        this.follow(described, "agent", agent);
+
+        for (LivingEntity opponent : opponents) {
+
+            this.follow(described, "opponent", opponent);
+        }
+
+        for (LivingEntity standing : idle) {
+
+            this.follow(described, "idle", standing);
+        }
+
         this.entities = described.toString();
 
         Vec3 centre = area.getCenter();
@@ -171,6 +193,18 @@ public final class FightRecorder {
 
         this.biome = level.getBiome(top.atY(level.getHeight(Heightmap.Types.WORLD_SURFACE, top.getX(), top.getZ())))
                 .unwrapKey().map(key -> key.location().toString()).orElse(null);
+    }
+
+    /** Adds one body to what the replay follows and describes it in the same breath, so the two lists cannot fall apart. */
+    private void follow(StringBuilder described, String role, LivingEntity body) {
+
+        if (!this.tracks.isEmpty()) {
+
+            described.append(',');
+        }
+
+        this.tracks.add(new Track(body));
+        describe(described, role, body);
     }
 
     /**
@@ -182,7 +216,7 @@ public final class FightRecorder {
     @Nullable
     public static FightRecorder start(AgentMob agent, LivingEntity opponent) {
 
-        return start(agent, opponent, Integer.MAX_VALUE);
+        return start(agent, List.of(opponent), List.of(), Integer.MAX_VALUE);
     }
 
     /**
@@ -192,7 +226,22 @@ public final class FightRecorder {
      * @param ceiling the height of the roof; only the blocks below it are written down
      */
     @Nullable
-    public static synchronized FightRecorder start(AgentMob agent, LivingEntity opponent, int ceiling) {
+    public static FightRecorder start(AgentMob agent, LivingEntity opponent, int ceiling) {
+
+        return start(agent, List.of(opponent), List.of(), ceiling);
+    }
+
+    /**
+     * The whole of it: a fight against a side of any size, with any number of monsters standing about it taking no interest.
+     * A squad fight and a crowded one are recorded like any other, which they were not until now; see the class comment.
+     *
+     * @param opponents the other side, in the order the fight set them up, which the replay keeps
+     * @param idle      the monsters standing about it, which are no part of the fight and are drawn apart from it
+     * @param ceiling   the height of a roof over the fight; {@link Integer#MAX_VALUE} for open sky
+     */
+    @Nullable
+    public static synchronized FightRecorder start(AgentMob agent, List<? extends LivingEntity> opponents,
+                                                   List<? extends LivingEntity> idle, int ceiling) {
 
         if (failed) {
 
@@ -208,7 +257,8 @@ public final class FightRecorder {
 
             int fight = nextFight++;
 
-            return directory != null && fight % every == 0 ? new FightRecorder(fight, agent, opponent, ceiling) : null;
+            return directory != null && fight % every == 0
+                    ? new FightRecorder(fight, agent, opponents, idle, ceiling) : null;
         }
 
         catch (RuntimeException exception) {
@@ -240,8 +290,10 @@ public final class FightRecorder {
                 this.iteration = driving instanceof NeuralBrain neural ? neural.weights().iteration() : -1;
             }
 
-            this.agentTrack.frame();
-            this.opponentTrack.frame();
+            for (Track track : this.tracks) {
+
+                track.frame();
+            }
 
             // After the fighters, who by then know whether they were hurt, which is what tells a projectile that went into
             // one of them from one that just vanished.
@@ -362,12 +414,15 @@ public final class FightRecorder {
     @Nullable
     private Track struck(Projectile projectile) {
 
-        if (this.agentTrack.hurtBy(projectile)) {
+        for (Track track : this.tracks) {
 
-            return this.agentTrack;
+            if (track.hurtBy(projectile)) {
+
+                return track;
+            }
         }
 
-        return this.opponentTrack.hurtBy(projectile) ? this.opponentTrack : null;
+        return null;
     }
 
     /**
@@ -383,10 +438,18 @@ public final class FightRecorder {
                 Mth.clamp(from.y, body.minY, body.maxY), Mth.clamp(from.z, body.minZ, body.maxZ)));
     }
 
-    /** Where an entity is in the replay's list of them: the agent first, its opponent second, and anything else -1. */
+    /** Where an entity is in the replay's list of them: the agent first, then the rest as handed over, and -1 for anything else. */
     private int indexOf(@Nullable Entity entity) {
 
-        return entity == this.agentTrack.fighter ? 0 : entity == this.opponentTrack.fighter ? 1 : -1;
+        for (int index = 0; index < this.tracks.size(); index++) {
+
+            if (this.tracks.get(index).fighter == entity) {
+
+                return index;
+            }
+        }
+
+        return -1;
     }
 
     /**
@@ -454,9 +517,17 @@ public final class FightRecorder {
         out.append(",\n\"entities\":[").append(this.entities).append(']');
 
         out.append(",\n\"frames\":[\n");
-        this.agentTrack.write(out);
-        out.append(",\n");
-        this.opponentTrack.write(out);
+
+        for (int index = 0; index < this.tracks.size(); index++) {
+
+            if (index > 0) {
+
+                out.append(",\n");
+            }
+
+            this.tracks.get(index).write(out);
+        }
+
         out.append(']');
 
         out.append(",\n\"actions\":{\"names\":[");

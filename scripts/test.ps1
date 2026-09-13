@@ -11,6 +11,9 @@
 #                                       a network drives the agents instead, and fights a frozen copy of itself as well
 #   scripts\test.ps1 -League -LeagueModels blast
 #                                       published networks in the league as well, each a player of its own
+#   scripts\test.ps1 -Crowd -Weights models\blast6\best.mbw
+#                                       the same fight with nobody standing about it and with 1, 3 and 9, tick by tick:
+#                                       which slot the opponent is in, where the aim is, who a press lands on
 #   scripts\test.ps1 -Play              the agent in a real game: networks in the jar, /mmai, sides, Infinity loadouts
 #   scripts\test.ps1 -Play -Loader neoforge   any suite on NeoForge rather than Fabric
 
@@ -19,6 +22,9 @@ param(
     [switch] $Terrain,
     [switch] $Mechanics,
     [switch] $League,
+
+    # The crowd diagnosis: one fight, fought with 0, 1, 3 and 9 monsters standing about it, watched tick by tick.
+    [switch] $Crowd,
     [switch] $Play,
     [string] $Weights = '',
 
@@ -30,7 +36,7 @@ param(
 
 . "$PSScriptRoot\_common.ps1"
 
-$suite = if ($Play) { 'play' } elseif ($Mechanics) { 'mechanics' } elseif ($League) { 'league' } elseif ($Terrain) { 'terrain' } else { 'arena' }
+$suite = if ($Play) { 'play' } elseif ($Mechanics) { 'mechanics' } elseif ($League) { 'league' } elseif ($Crowd) { 'crowd' } elseif ($Terrain) { 'terrain' } else { 'arena' }
 $replayEvery = if ($Replays) { 1 } else { 0 }
 
 # Twice round the league's thirty seven mobs and eleven squads, each on normal and on hard, and the scripted fighter,
@@ -40,6 +46,13 @@ $replayEvery = if ($Replays) { 1 } else { 0 }
 if ($League -and -not $PSBoundParameters.ContainsKey('Arenas')) {
 
     $Arenas = 194
+}
+
+# Four crowds, three fights each: enough for the four numbers to mean something and few enough to read every tick of one
+# fight per crowd. The crowds go round in turn, so a count that is not a multiple of four is uneven.
+if ($Crowd -and -not $PSBoundParameters.ContainsKey('Arenas')) {
+
+    $Arenas = 12
 }
 
 # The game runs in a folder of its own under mod\, so a path relative to here would not be found from there.

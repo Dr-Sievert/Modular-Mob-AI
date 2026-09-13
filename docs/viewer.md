@@ -80,6 +80,10 @@ on screen finishes.
   - plants are crossed sprites; slabs, stairs and snow are shaped;
   - fighters stay visible through blocks as silhouettes.
 - Mobs are drawn in their own shape and their own texture; see [Mob shapes](#mob-shapes) below.
+- A replay holds the agent, then the other side, then anything standing about the fight taking no interest in it. The agent
+  is green and the opponents red, orange and pink; a monster standing about — a league fight's `+3_idle` crowd — is grey, so a
+  crowd never reads as nine opponents. Squad fights and crowded fights record like any other, which they did not until
+  recently; see [replay-format.md](replay-format.md).
 - Textures are read at runtime from the local Minecraft jar in the Gradle cache. Nothing from the game is written to
   disk or into exports; without the jar, blocks keep their shapes in map colours.
 - The page asks the server what the jar holds — `/api/blocks` and `/api/entities` — and then asks only for those, so it

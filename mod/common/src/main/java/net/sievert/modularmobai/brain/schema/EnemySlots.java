@@ -1,6 +1,7 @@
 package net.sievert.modularmobai.brain.schema;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 import org.jetbrains.annotations.Nullable;
@@ -23,6 +24,35 @@ import net.sievert.modularmobai.allegiance.Allegiance;
  * <p>Leases survive an opponent briefly leaving the view, expire when it dies or stays away, and the nearest opponents
  * win the slots when there are more opponents than slots. Anything that could not be given a slot still shows up in the
  * count, so the agent knows it is outnumbered even when it cannot see by whom.
+ *
+ * <h2>Which slot: the fight first, then the nearest</h2>
+ *
+ * <p>Slots used to be handed out in the order the level's own walk over its entity sections returned bodies, which is
+ * section x ascending, then z, then y. Against one opponent that is no order at all — there is one body and it takes slot 0 —
+ * so <b>every fight a network has ever been trained on put its opponent in slot 0</b>, and a network learns from that. Stand
+ * a crowd of idle monsters round the same fight and the opponent holds slot 0 only when it happens to be the westernmost of
+ * them, which is where a whole curriculum went: measured over the fight the trouble was reported on, one opponent and nine
+ * bystanders 8 to 30 blocks off, the opponent held slot 0 on <b>none</b> of the ticks and sat in slot 5.5 on average, the aim
+ * was 87 degrees off it against 14 with nobody about, and of 207 presses of attack 206 went into thin air. {@code blast7}
+ * trained 2,200 iterations on a quarter of its fights crowded and its crowded win rate never moved off 31% against 80%
+ * plain, because a quarter of its fights were contradicting the other three quarters at random.
+ *
+ * <p>So a slot goes by what the body is to this fight and not by where the world keeps it:
+ *
+ * <ol>
+ *   <li><b>Whoever is fighting the agent</b>, which is one rule in one place, {@link #engaged}: it has taken the agent as its
+ *       target ({@link Allegiance#goesFor}, the same reading the slot's own {@code ENEMY_TARGETS_ME} is written from) or it is
+ *       on a team set against the agent's, which is how a squad fights. A league opponent is both from its first tick; a
+ *       bystander is neither, being handed its target back on every tick until something hits it.
+ *   <li><b>Then the nearest</b>, which is what the doc above always claimed and only eviction ever did.
+ * </ol>
+ *
+ * <p>What this does not move is anything hand written. The scripted fighter never read slot 0: it walks all ten slots and
+ * works out the nearest occupant from the distance in each, so the teacher's answers, the arena suite and every label a
+ * demonstration carries are untouched. A fight against one opponent has one body to order, so the sort is skipped outright
+ * and the plain fight costs exactly what it cost. What does change is a squad's slots, which are now nearest first among the
+ * side rather than westernmost first — a change to what a network trained on the old order sees, and the reason the crowd
+ * suite measures the plain case beside the crowded one.
  *
  * <h2>What the agent could see</h2>
  *
@@ -101,6 +131,31 @@ public final class EnemySlots {
     private int inRangeCount;
 
     /**
+     * Whose view the order below is sorting, for the length of one call to {@link #tick}. A field, and the comparator with
+     * it, because a lambda closing over the owner would be an allocation for every agent on every tick of a training run,
+     * and a comparator has to know whose fight it is ranking. Never read outside that call.
+     */
+    @Nullable
+    private LivingEntity ordering;
+
+    /**
+     * The fight first, then the nearest; see the class comment for what it is worth. Stable, which {@link List#sort} is, so
+     * bodies that rank the same keep the order the walk found them in rather than swapping about from tick to tick.
+     */
+    private final Comparator<LivingEntity> order = (first, second) -> {
+
+        LivingEntity owner = this.ordering;
+        boolean fighting = engaged(owner, first);
+
+        if (fighting != engaged(owner, second)) {
+
+            return fighting ? -1 : 1;
+        }
+
+        return Double.compare(owner.distanceToSqr(first), owner.distanceToSqr(second));
+    };
+
+    /**
      * @param owner  the agent doing the looking
      * @param bounds the region the agent is allowed to see into, or null for no limit. Arenas in a suite sit close
      *               enough together that an unbounded view would see straight into its neighbours.
@@ -146,6 +201,17 @@ public final class EnemySlots {
         // a network trained on it that it was outnumbered whenever a skeleton opened fire.
         this.inRangeCount = this.bodies.size();
 
+        // Whose view the order is ranking, for the rest of this call: the sort below and the eviction further down both read
+        // it, and both have to rank by the same rule or eviction would undo what the sort decided.
+        this.ordering = owner;
+
+        // Who gets a slot first is the fight's business and not the world's; see the class comment. Skipped where there is
+        // nothing to order, which is the fight against one opponent and so most ticks of most runs.
+        if (this.bodies.size() > 1) {
+
+            this.bodies.sort(this.order);
+        }
+
         this.expireLeases(owner);
 
         for (LivingEntity candidate : this.bodies) {
@@ -171,6 +237,8 @@ public final class EnemySlots {
         }
 
         this.leaseProjectiles(owner);
+
+        this.ordering = null;
     }
 
     /**
@@ -186,6 +254,25 @@ public final class EnemySlots {
     static boolean hostile(LivingEntity owner, LivingEntity other) {
 
         return Allegiance.isEnemy(owner, other);
+    }
+
+    /**
+     * Whether that body is in this fight rather than merely in the view: it has come for the agent, or it is on a team set
+     * against the agent's. This is what decides which slot it gets, see the class comment, and both halves are read off
+     * {@link Allegiance} so that the order and the slot's own {@code ENEMY_TARGETS_ME} cannot come to different answers.
+     *
+     * <p>The team half is not redundant. A squad member whose path is blocked, or one whose own mind has just let the agent
+     * go for a tick, still belongs to the side the fight is against; and an agent opponent holds no target at all, which is
+     * why {@code goesFor} answers true for one. The team half is also the only thing that separates an ally's enemy from the
+     * agent's on ground where somebody has set sides deliberately.
+     *
+     * <p>A bystander is neither: it is on no team and is handed its target back on every tick until something hits it. One
+     * that has been hit fights back and so becomes engaged, which is the honest answer — it is an opponent in fact by then,
+     * whatever the results call the fight.
+     */
+    static boolean engaged(LivingEntity owner, LivingEntity other) {
+
+        return Allegiance.goesFor(other, owner) || Allegiance.opposed(owner, other);
     }
 
     /**
@@ -324,12 +411,20 @@ public final class EnemySlots {
 
     /**
      * The slot to take for a newcomer that found none free: one whose occupant cannot be seen before anything that can, a
-     * projectile's before anything alive, and otherwise the one held by whichever body is furthest away, but only if the
-     * newcomer is actually closer. Evicting a body for one further off would just churn the slots for nothing.
+     * projectile's before anything alive, and then the slot of whichever body the newcomer outranks by the most — by the very
+     * order the slots are handed out in, so that eviction can never undo what the order decided. A body the newcomer does not
+     * outrank keeps its slot, which is what stops the slots churning for nothing.
      *
      * <p>An unsighted lease goes first because it is reading empty anyway, so the network loses nothing by it and gains a
      * body it can see. That is also the answer to the one cost of holding a lease through cover: a crowd that ducked behind
      * rock cannot sit on ten slots while the fight walks up.
+     *
+     * <p>Ranking by the order rather than by distance alone is what the crowd needs, and it is the same rule read twice
+     * instead of two rules that can disagree. With more bodies in sight than slots — a squad of three with nine standing
+     * about it is twelve for ten, and a real world's night is worse — a fight walking up to a crowd that got there first used
+     * to be shut out of the view altogether, however near it came, because every occupant was nearer. Worse, the first draft
+     * of the fix gave the fight a bystander's slot and then watched the evicted bystander take it straight back on the same
+     * tick, because the rung underneath still knew only about distance. One order, asked in both places.
      */
     private int slotToEvictFor(LivingEntity owner, LivingEntity candidate) {
 
@@ -338,8 +433,8 @@ public final class EnemySlots {
         int furthestShot = -1;
         double furthestShotSq = -1.0D;
 
-        int furthest = -1;
-        double furthestSq = owner.distanceToSqr(candidate);
+        int ranksLast = -1;
+        LivingEntity lastOfThem = null;
 
         for (int slot = 0; slot < this.occupants.length; slot++) {
 
@@ -356,9 +451,9 @@ public final class EnemySlots {
                 continue;
             }
 
-            double distanceSq = owner.distanceToSqr(occupant);
-
             if (occupant instanceof Projectile) {
+
+                double distanceSq = owner.distanceToSqr(occupant);
 
                 if (distanceSq > furthestShotSq) {
 
@@ -369,14 +464,16 @@ public final class EnemySlots {
                 continue;
             }
 
-            if (distanceSq > furthestSq) {
+            LivingEntity body = (LivingEntity) occupant;
 
-                furthestSq = distanceSq;
-                furthest = slot;
+            if (this.order.compare(candidate, body) < 0 && (lastOfThem == null || this.order.compare(body, lastOfThem) > 0)) {
+
+                lastOfThem = body;
+                ranksLast = slot;
             }
         }
 
-        return unsighted >= 0 ? unsighted : furthestShot >= 0 ? furthestShot : furthest;
+        return unsighted >= 0 ? unsighted : furthestShot >= 0 ? furthestShot : ranksLast;
     }
 
     private int firstFreeSlot() {

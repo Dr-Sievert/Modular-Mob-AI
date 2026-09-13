@@ -12,7 +12,7 @@ scripts\parity.ps1               Java forward pass against PyTorch's, after touc
 | Check | Pass looks like | Proves |
 | --- | --- | --- |
 | `test.ps1` | `All 20 required tests passed`; every fight 54 ticks | the observation, the body and the scripted fighter still work; the 54 ticks are deterministic, so any change in them is a behaviour change |
-| `test.ps1 -Mechanics` | `All 50 required tests passed` | bows, crossbows, shields, axes, mining, placing, use slowdown and damage payment follow a player's rules, what a press of attack costs and what holding it down costs, that a swing sends a ghast's fireball back and nothing else, that a hand keeps the slot it started a draw in, what the observation says about a use, about the clock and the quiver, about what is shot at the agent, about the armour on either side of the fight, about whether the other side has engaged and about what the weapon in the agent's hand takes off — the last three against the same numbers the critic's privileged facts carry — the teacher getting itself out of powder snow and starting no draw it cannot finish, what an enemy slot goes to and what a wall between takes away from it, that the league's bystanders stand aside unpaid until struck, and how a league training fight is drawn from the trainer's shares |
+| `test.ps1 -Mechanics` | `All 53 required tests passed` | bows, crossbows, shields, axes, mining, placing, use slowdown and damage payment follow a player's rules, what a press of attack costs and what holding it down costs, that a swing sends a ghast's fireball back and nothing else, that a hand keeps the slot it started a draw in, what the observation says about a use, about the clock and the quiver, about what is shot at the agent, about the armour on either side of the fight, about whether the other side has engaged and about what the weapon in the agent's hand takes off — the last three against the same numbers the critic's privileged facts carry — the teacher getting itself out of powder snow and starting no draw it cannot finish, what an enemy slot goes to and what a wall between takes away from it, **which slot each body gets — the fight first, then the nearest** — that the league's bystanders stand aside unpaid until struck, and how a league training fight is drawn from the trainer's shares |
 | `test.ps1 -Play` | `All 19 required tests passed`, and a `Loaded the mod's jar, modular_mob_ai/models/<name>.mbw from iteration N` line per network the jar carries | what [playing.md](playing.md) promises: the bundled networks load and drive an agent, the commands, saving, sides and friendly fire, the Infinity loadouts |
 | `parity.ps1` | `parity ok` once per body, logits agreeing to about 1e-6, and `the plain ones agree to the bit at batches 1 to 64` | the game runs exactly the network PyTorch trained, **for every body this build has**, and the forward pass's explicit vector loops give the same bits as its plain ones |
 
@@ -34,6 +34,7 @@ scripts\test.ps1 -Terrain -Replays        record every fight for the viewer, in 
 scripts\test.ps1 -League                  194 fights, twice round every league opponent and squad on normal and on hard; a table of each
 scripts\test.ps1 -League -Weights models\blast\best.mbw     the same with a network, which also fights a frozen copy of itself
 scripts\test.ps1 -League -LeagueModels blast                published networks in the league too, each a player of its own; two more fights
+scripts\test.ps1 -Crowd -Weights models\blast6\best.mbw     one league fight fought with 0, 1, 3 and 9 monsters standing about it, watched tick by tick
 scripts\league.ps1 -Test                  the trainer's whole unit suite, where the league's own tests live: Elo, the pairings and their shares, the pool, reading and resuming results, and beside them the shard reader, the critic, the auxiliary heads and the teacher pull
 scripts\eval.ps1 -Weights models\blast\best.mbw            a network's win rate, 2,000 fights, most likely action
 scripts\eval.ps1 -Run blast -Iteration 2150 -Arenas 400    a checkpoint of a local run
@@ -87,10 +88,10 @@ once its entropy came down; see [findings.md](findings.md#learning).
 
 ## The mechanics suite (`gametest/tests`)
 
-Each test sets up one situation and checks the numbers a player would get. Six classes, one per concern, all of them
+Each test sets up one situation and checks the numbers a player would get. Seven classes, one per concern, all of them
 sharing `tests/Mechanics` — the arena, the agent, the brain that hands back what the test pressed, and the readings more
 than one of them takes. Every class has to be named in `ModularMobAiGameTests` or its tests simply do not run, which is why
-the count below is worth knowing: **46**.
+the count below is worth knowing: **53**.
 
 `AgentDrawnWeaponGameTest` (9) — a bow and a crossbow, and the slot the hand keeps while one is drawn:
 
@@ -170,10 +171,41 @@ a number and boots in seconds:
 | `leagueBystandersStandAsideUntilStruck` | the league's crowd is a crowd: on no team, never the other side of the fight, never paid for by `Episode#pays`, holding slots in the view all the same, kept off the agent every tick — and free to fight back once the agent has hit one |
 | `aCrowdedFightIsNamedForItsOpponentAndItsCrowd` | `zombie+3_idle`, the share drawn 1 to 9 and at the rate this build was told |
 
+`AgentEnemyOrderGameTest` (3) — **which** slot each body gets, which is the rule a whole curriculum turned on. A slot used to
+go out in the order the level's own walk over its entity sections returned bodies, so against one opponent it always landed in
+slot 0 and in a crowd it landed anywhere; see [findings.md](findings.md#perception). Every case here is arranged so the body
+that should win is the one the old order returned last:
+
+| Test | Checks |
+| --- | --- |
+| `theOneFightingTheAgentTakesTheFirstSlot` | one opponent that has come for the agent, furthest of four, takes slot 0, and three idle bodies nearer than it take the slots behind it in order of their distance |
+| `aWholeSideComesBeforeTheCrowdAndTheNearestOfItFirst` | a squad's own half of the rule: two on a team set against the agent's, with their targets taken away every tick so the team is the only thing making them the fight, take slots 0 and 1 nearest first, and the crowd takes nothing in front of them |
+| `aFightTakesAnIdleSlotWhenThereAreNoneLeft` | with ten idle bodies holding every slot, one that then comes for the agent gets in — eviction ranks by the same order the slots are handed out in, so it cannot undo what the order decided |
+
 Ammo: the agent's bow and crossbow loadouts carry 64 finite arrows, one used per shot, and arrows aren't picked back up.
 That covers a 60-second fight, since a full-draw shot takes 20 ticks. Vanilla skeletons and pillagers never run out.
 Real play gets `bow_infinity` and `crossbow_infinity` instead, one arrow that Infinity never uses up; see
 [playing.md](playing.md) for why.
+
+## The crowd suite (`gametest/tests/AgentCrowdedFightGameTest`, `-Psuite=crowd`)
+
+One league fight — a zombie, a sword, natural ground — fought with nobody standing about it and with 1, 3 and 9, and watched
+tick by tick. It answers four questions and nothing else: **which slot the engaged opponent is in**, what
+`SELF_ENEMIES_IN_RANGE` reads, how far off the opponent the aim is, and **who a press of attack lands on**. It prints a line
+per fight and a table per crowd, which is how the slot-order fault was found; the numbers are in
+[findings.md](findings.md#perception).
+
+```
+scripts\test.ps1 -Crowd -Weights models\blast6\best.mbw     twelve fights, three per crowd
+scripts\test.ps1 -Crowd -Weights <w> -Arenas 40             more of them; the crowds go round in turn, so use a multiple of four
+```
+
+**Nothing in it is asserted, deliberately.** A slot fights one fight after another out of a shared queue, which is
+`succeedWhen` and not `onEachTick`, and the framework treats a failed assertion in a `succeedWhen` as "not finished yet" and
+runs the whole thing again next tick rather than failing the test — so an assertion here would be a silent retry loop. The
+rule the suite measured is held as a rule by `AgentEnemyOrderGameTest` in the mechanics suite, where an assertion fails a test.
+It is a suite of its own rather than a class in the league's because it fields a fixed schedule of crowds where the league
+draws them, and because the league suite is what a training run runs.
 
 ## The play suite (`gametest/tests/PlayGameTest`)
 
@@ -212,7 +244,7 @@ mod\gradlew.bat -p mod :fabric:runGametestParallel -Psuite=terrain -Parenas=2000
 
 | Property | What it does |
 | --- | --- |
-| `suite` | `arena` (closed box), `terrain` (natural ground, what training uses), `league` (terrain, a new opponent every fight), `mechanics`, `play`, `baseline` (villager against vindicator, no agent), `library` (no fights: builds the terrain library, see `scripts\terrain.ps1`) |
+| `suite` | `arena` (closed box), `terrain` (natural ground, what training uses), `league` (terrain, a new opponent every fight), `crowd` (the same fight with 0, 1, 3 and 9 standing about it, watched tick by tick), `mechanics`, `play`, `baseline` (villager against vindicator, no agent), `library` (no fights: builds the terrain library, see `scripts\terrain.ps1`) |
 | `terrainLibrary`, `librarySites` | `false` makes terrain workers generate their own ground even when a library exists; how many sites a library build generates |
 | `addSites` | how many sites to append to the library that is already there, instead of building a new one; only the new ones are generated |
 | `leagueOpponents`, `leagueLoadouts`, `leagueDifficulties` | league only: fewer opponents (`zombie,2x_zombie`), fewer loadouts, which rungs of the ladder a run with no trainer goes round (`easy,normal,hard`) |

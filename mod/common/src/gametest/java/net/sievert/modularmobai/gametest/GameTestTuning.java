@@ -203,7 +203,7 @@ public final class GameTestTuning {
     /** Whether the world has to be generated as a normal one rather than flat, which the terrain and league suites need. */
     public static boolean naturalTerrain() {
 
-        return "terrain".equals(suite()) || "league".equals(suite()) || buildingLibrary();
+        return "terrain".equals(suite()) || "league".equals(suite()) || "crowd".equals(suite()) || buildingLibrary();
     }
 
     /** Whether this process builds the terrain library rather than fighting. */

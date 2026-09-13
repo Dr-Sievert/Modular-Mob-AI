@@ -42,10 +42,14 @@ System properties on the game process:
   "blocks": { "x": -1040, "y": 58, "z": 2080, "width": 80, "height": 41, "depth": 80,
               "palette": [], "color": [], "flags": [], "runs": [] },
 
-  // Index 0 is always the agent, index 1 its opponent. More entries may follow later (more opponents).
+  // Index 0 is always the agent. After it come the other side, role "opponent", one entry each — a squad fight has two or
+  // three — and then the monsters standing about the fight taking no interest in it, role "idle", which are no part of who
+  // wins it and which the viewer draws in a grey of their own. A reader that only knows about one opponent still works: it
+  // is index 1, as it always was.
   "entities": [
     { "role": "agent",    "type": "modular_mob_ai:training_agent", "width": 0.6, "height": 1.8,  "maxHealth": 20.0 },
-    { "role": "opponent", "type": "minecraft:vindicator",          "width": 0.6, "height": 1.95, "maxHealth": 24.0 }
+    { "role": "opponent", "type": "minecraft:vindicator",          "width": 0.6, "height": 1.95, "maxHealth": 24.0 },
+    { "role": "idle",     "type": "minecraft:zombie",              "width": 0.6, "height": 1.95, "maxHealth": 20.0 }
   ],
 
   // One entry per entity, same order as "entities". Every array has exactly T values.
@@ -157,6 +161,6 @@ Rules:
 ## Viewer conventions
 
 - North up (-z), east right (+x), like a Minecraft map. Screen x = world x, screen y = world z.
-- Agent green, opponent red.
+- Agent green, opponents red and then orange and pink, monsters standing about it (`idle`) grey.
 - Continuous actions run from -1 to 1. Buttons count as held at >= 0.5. `aimYaw`/`aimPitch` are the turn this tick as a fraction of 60 degrees.
 - Readers ignore unknown fields and handle a missing `reward`, `biome`, `iteration` or `projectiles`.

@@ -540,6 +540,10 @@ const SWING_TICKS = 6;                  // how long a swing flash lasts
 const HURT_TICKS = 10;                  // how long a hurt pulse lasts (the game's own invulnerability window)
 const REACH = 3;                        // blocks; only used to shade "in reach" on the distance chart and panel
 const FIGHTER_COLORS = ['#37e07a', '#ff4d61', '#ff9f43', '#f472b6', '#a78bfa', '#4cc9f0'];
+
+// The monsters standing about a fight taking no interest in it: role "idle", and the whole point of drawing them is that they
+// are not the other side. A muted grey, so a crowd never reads as nine opponents.
+const IDLE_COLOR = '#8a93a5';
 const WATER = 0x4040FF, PLANT = 0x007C00;
 const OLD_FORMAT = 'the old replay format, without blocks, which this viewer no longer draws';
 
@@ -645,7 +649,7 @@ function prepareReplay(raw, name) {
     return {
       role, type: e.type || '', index: k,
       name: role === 'agent' ? 'Agent' : prettyId(e.type) || 'Opponent',
-      color: FIGHTER_COLORS[Math.min(k, FIGHTER_COLORS.length - 1)],
+      color: role === 'idle' ? IDLE_COLOR : FIGHTER_COLORS[Math.min(k, FIGHTER_COLORS.length - 1)],
       width: +e.width || 0.6, height: +e.height || 1.8,
       eye: +e.eyeHeight || (+e.height || 1.8) * 0.9,
       maxHealth: +e.maxHealth || Math.max(...health) || 20,

@@ -509,6 +509,18 @@ curriculum hole. It is filled by `gametest/league/Bystanders`:
   real world shows them, which is the point, and both are already one rule in one place. Nothing in the layout moves, so no
   published network is invalidated: this is fights, not fields.
 
+**The crowd did nothing for 2,200 iterations, and the reason was which slot the opponent sat in.** `blast7` ran the share
+above for 2,200 iterations and its crowded win rate never moved off about 31%, against 80% on the plain fights beside them,
+flat over every bucket of 500. A slot used to go out in the order the level's own walk over its entity sections returned
+bodies, so in a plain fight — one body — the opponent always took slot 0, and in a crowd it took whatever its position in the
+world happened to give it: measured, slot 0 on **none** of the ticks with nine standing about, and slot 5.5 on average. So a
+quarter of the fights were contradicting the other three quarters, and there was nothing in them to learn. The order is now
+the fight's own — whoever has come for the agent or is on a team set against the agent's first, then the nearest — and the
+opponent holds slot 0 in a crowd exactly as it does on its own. **A network trained before this is not fixed by it**: it never
+saw a crowd it could learn from, so the crowded rate is a thing to watch on the next run rather than a thing already better.
+The numbers, what was ruled out, and what was deliberately left alone are in [findings.md](findings.md#perception); the harness
+that took them is `scripts\test.ps1 -Crowd`, and crowded fights now record a replay like any other.
+
 **The view has since been narrowed as well**, which was the other half: a slot now wants a line of sight from the agent's
 eyes and not only thirty two blocks, so a mob behind rock never takes one. That is what actually fixed the reported game —
 the agent kills the zombie beside it where it used to die to it — and it cost the arena suite nothing, since a league fight

@@ -247,7 +247,11 @@ public class AgentCrowdGameTest {
 
                 if (!hit[0] || standing != struck) {
 
-                    helper.assertTrue(standing.getTarget() == null, "A bystander came for the agent unprovoked");
+                    // Not coming for this agent, which is the whole of what leaveAlone promises: it takes away a target that
+                    // is this agent and leaves anything else alone. Asking for no target at all was stronger than the rule
+                    // and made this test flaky — the mechanics suite's plots sit a few blocks apart, so a bystander with its
+                    // wits about it can pick a neighbouring test's agent, which says nothing about the rule held here.
+                    helper.assertTrue(standing.getTarget() != agent, "A bystander came for the agent unprovoked");
                     helper.assertValueEqual(targetsMe(agent, slotOf(view, standing)), 0.0F, "a bystander's targets-me flag");
                 }
             }

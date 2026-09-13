@@ -96,6 +96,20 @@ it left, but while it cannot be seen the slot reads plainly empty rather than ei
 and remembering is the GRU's job. `EnemySlots` is the one place all of that lives; the numbers this cost and bought are in
 [findings.md](findings.md#perception).
 
+**Which slot it goes to is the fight's business, not the world's: whoever is fighting the agent first, then the nearest.**
+Fighting the agent means it has taken the agent as its target or it is on a team set against the agent's, which is a squad;
+`EnemySlots#engaged`, reading the same `Allegiance` calls the slot's own `ENEMY_TARGETS_ME` is written from. Until this, a
+slot went out in the order the level's own walk over its entity sections returned bodies — section x ascending, then z, then
+y. Against one opponent that is no order at all, so **every fight any network was ever trained on put its opponent in slot
+0**, and a network learns that; stand a crowd of idle monsters round the same fight and the opponent held slot 0 only when it
+happened to be the westernmost body there. Measured on the fight the trouble was reported on, nine bystanders standing about:
+the opponent held slot 0 on *none* of the ticks and sat in slot 5.5 on average, the aim was 87 degrees off it against 14 with
+nobody about, and 206 of 207 presses of attack went into thin air — so a run that spent a quarter of its fights in a crowd
+spent them contradicting the other three quarters. Eviction ranks by the same order, so it cannot undo what the order decided.
+Nothing hand written reads slot 0: the scripted fighter walks all ten and works out the nearest from the distance in each, so
+the teacher, the arena suite and every demonstration label are untouched. The numbers are in
+[findings.md](findings.md#perception) and the harness that took them is `scripts\test.ps1 -Crowd`.
+
 **What the opponent is, not just where.** `kind` has five values and every hostile mob in the game is the one value
 "monster", so for a long time a creeper, a zombie, a ravager and a warden filled a slot identically: same kind, health as
 a *fraction* so all of them read 1 when whole, and empty hands for all four. The league showed the bill — every ordinary

@@ -5,7 +5,9 @@ import java.util.Collection;
 import net.minecraft.gametest.framework.TestFunction;
 import net.sievert.modularmobai.gametest.tests.AgentBlockGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentCrowdGameTest;
+import net.sievert.modularmobai.gametest.tests.AgentCrowdedFightGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentDrawnWeaponGameTest;
+import net.sievert.modularmobai.gametest.tests.AgentEnemyOrderGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentLeagueGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentMeleeGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentPerceptionGameTest;
@@ -34,6 +36,10 @@ public class ModularMobAiGameTests {
             // The same ground, against a different opponent in every fight.
             case "league" -> new Class<?>[] {AgentLeagueGameTest.class};
 
+            // The same ground and the same fight, fought with nobody standing about it and with one, three and nine, and
+            // watched tick by tick. A suite of its own and not a class in the league's, which is what a run runs.
+            case "crowd" -> new Class<?>[] {AgentCrowdedFightGameTest.class};
+
             // The fifty thousand arena baseline, with no agent in it.
             case "baseline" -> new Class<?>[] {VillagerVindicatorGameTest.class};
 
@@ -43,7 +49,7 @@ public class ModularMobAiGameTests {
             // which is why the suite prints how many it found.
             case "mechanics" -> new Class<?>[] {AgentDrawnWeaponGameTest.class, AgentMeleeGameTest.class,
                     AgentBlockGameTest.class, AgentPerceptionGameTest.class, AgentTeacherGameTest.class,
-                    AgentCrowdGameTest.class, FightSetupGameTest.class};
+                    AgentCrowdGameTest.class, AgentEnemyOrderGameTest.class, FightSetupGameTest.class};
 
             // The agent in a real game: networks by name, /mmai, sides and the loadouts that keep a bow firing.
             case "play" -> new Class<?>[] {PlayGameTest.class};
