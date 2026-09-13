@@ -1,0 +1,14 @@
+{
+  "mob": "slime",
+  "layer": "minecraft:slime#main",
+  "texture": [64, 32],
+  "entity": [0.52, 0.52],
+  "bounds": [-3.25, 17, -3.5, 3.25, 23, 3],
+  "otherLayers": ["outer"],
+  "parts": {
+    "cube": {"boxes": [[0, 16, -3, 17, -3, 6, 6, 6, 0, false]]},
+    "left_eye": {"boxes": [[32, 4, 1.25, 18, -3.5, 2, 2, 2, 0, false]]},
+    "mouth": {"boxes": [[32, 8, 0, 21, -3.5, 1, 1, 1, 0, false]]},
+    "right_eye": {"boxes": [[32, 0, -3.25, 18, -3.5, 2, 2, 2, 0, false]]}
+  }
+}

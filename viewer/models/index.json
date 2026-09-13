@@ -1,0 +1,5 @@
+{
+  "note": "Cuboid shapes read out of Minecraft's own model classes by gradlew :fabric:exportMobModels (gametest/tools/MobModelTool). Generated data, not a Mojang asset: no texture or image is here. Regenerate rather than edit.",
+  "minecraft": "1.21.1",
+  "mobs": ["bee", "blaze", "bogged", "breeze", "cave_spider", "creeper", "drowned", "enderman", "endermite", "evoker", "ghast", "hoglin", "husk", "iron_golem", "magma_cube", "phantom", "piglin", "piglin_brute", "pillager", "player", "polar_bear", "ravager", "silverfish", "skeleton", "slime", "snow_golem", "spider", "stray", "vex", "vindicator", "warden", "witch", "wither_skeleton", "wolf", "zoglin", "zombie", "zombie_villager", "zombified_piglin"]
+}

@@ -19,6 +19,10 @@ does not allow handing those textures on, so they are read from the jar while se
 written to disk, never put into an export. The agent's skin is the mod's own. Without a jar the 3D view draws boxes
 for the mobs and the blocks in their map colours.
 
+Each mob's shape is a different thing from its texture: viewer/models/<mob>.json holds the tree of cuboids its model is
+made of, written out of the game by `gradlew :fabric:exportMobModels` and committed, since it is generated data derived
+from the game rather than an asset of Mojang's. Those files are served straight off disk at /models/.
+
 The page can also delete replays, through POST /api/delete. Like everything else here it answers only to the page on
 this machine, and it only ever deletes finished replays, *.json files straight inside runs/<name>/replays/.
 
@@ -60,14 +64,16 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 APP = 'mmai-replay-viewer'
-VERSION = 7     # what this server can serve; an older one still running is not reused (1: no 3D, 2: no textures,
+VERSION = 8     # what this server can serve; an older one still running is not reused (1: no 3D, 2: no textures,
                 # 3: no block textures and no deleting, 4: no league page, 5: no matchups for the replay list,
-                # 6: no pair table, so the league page's matrix cannot say where the fights are being sent)
+                # 6: no pair table, so the league page's matrix cannot say where the fights are being sent,
+                # 7: no mob shapes, so every mob in 3D is a humanoid box in its own skin)
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 PAGE = HERE / 'replay.html'
 LEAGUE_PAGE = HERE / 'league.html'
 VENDOR = HERE / 'vendor'
+MOB_MODELS = HERE / 'models'
 AGENT_SKIN = ROOT / 'mod' / 'common' / 'src' / 'main' / 'resources' / 'assets' / 'modular_mob_ai' / 'textures' / 'entity' / 'agent.png'
 MINECRAFT = '1.21.1'    # the version the mod is built against, whose jar is preferred
 TEXTURE_PATH = re.compile(r'^textures/[a-z0-9_/.-]+\.png$')
@@ -762,6 +768,18 @@ def vendor_path(name):
     return path if path.is_file() and same_path(path.parent, VENDOR) else None
 
 
+def mob_model_path(name):
+    """
+    One mob's shape, straight inside viewer/models, or None. The name is a mob id or 'index', so nothing but a plain
+    lower-case name and .json is even looked for; these are checked-in files the page asks for by name, and the
+    restriction is what keeps a path out of the request.
+    """
+    if not re.fullmatch(r'[a-z0-9_]+\.json', name or ''):
+        return None
+    path = MOB_MODELS / name
+    return path if path.is_file() and same_path(path.parent, MOB_MODELS) else None
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = 'MmaiReplayViewer/1'
 
@@ -839,6 +857,14 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_file(file_path, 'application/json')
             else:
                 self.send_error(404, 'No such replay')
+        elif path.startswith('/models/') and path.count('/') == 2:
+            file_path = mob_model_path(path[len('/models/'):])
+            if file_path:
+                self.send_file(file_path, 'application/json')
+            else:
+                # Not an error worth a line in the log: the page asks the index which mobs are there before asking for
+                # one, so a miss here is a checkout whose viewer/models has not been written yet.
+                self.send_error(404, 'No such mob shape')
         elif path.startswith('/vendor/') and path.count('/') == 2:
             file_path = vendor_path(path[len('/vendor/'):])
             if file_path:
