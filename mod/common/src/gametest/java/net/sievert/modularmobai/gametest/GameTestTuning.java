@@ -57,8 +57,8 @@ public final class GameTestTuning {
     /**
      * How many arenas of a suite of the given size fall to this worker.
      *
-     *  total The size of the whole suite.
-     *  The number this process will actually run.
+     * @param total The size of the whole suite.
+     * @return The number this process will actually run.
      */
     public static int arenasInShard(int total) {
 
@@ -77,7 +77,7 @@ public final class GameTestTuning {
      * Where this process should write the durations it recorded, so the process that started the workers can combine them
      * into one summary. Empty when nothing is collecting them.
      *
-     *  The path to write to, or null.
+     * @return The path to write to, or null.
      */
     public static String statsFile() {
 
@@ -225,7 +225,8 @@ public final class GameTestTuning {
      * is the whole of the {@code terrain} and {@code arena} suites, asks none of them, and neither does the agent facing
      * it: nothing there burns, nothing spawns, and nothing catches fire for rain to put out.
      *
-     * <p>Everything else keeps its light, and each for its own reason. The {@code league} suite fights 26 mobs, among
+     * <p>Everything else keeps its light, and each for its own reason. The {@code league} suite fields 37 mobs and 11
+     * squads of them, among
      * them the undead, spiders and endermen, and an enderman takes damage in rain; its ratings are a record of vanilla
      * behaviour and should stay one. The {@code library} suite saves the chunks it generates, light and all, and that
      * saved light is exactly what later workers read instead of working it out again. A run that keeps its world

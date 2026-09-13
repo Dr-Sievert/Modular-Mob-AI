@@ -281,7 +281,7 @@ afterEvaluate {
     // and the parity check between this build's forward pass and PyTorch's.
     // Which body a run trains, and so which layout the training side is handed. One body has a trained network today, and
     // naming it here rather than letting the tool guess is what keeps a run from quietly training the wrong shape; see
-    // brain/schema/Species.java and docs/architecture.md, "Adding a species".
+    // brain/schema/Species.java and docs/species.md.
     def trainedSpecies = providers.gradleProperty('species').getOrElse('humanoid')
 
     // The same answer told to the game, so that anything asked to load a network for this run can say which body it has to
@@ -1449,8 +1449,6 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
 
         def seconds = (System.nanoTime() - started) / 1_000_000_000.0d
 
-        // Combined from the raw durations, since a minimum, maximum and average cannot be recovered from per worker
-        // summaries.
         // Every worker writes the durations it recorded, then its own server side totals as comment lines. Combining
         // has to happen on the raw values: a minimum, maximum and average cannot be recovered from per worker summaries.
         def durations = []

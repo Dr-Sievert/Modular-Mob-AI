@@ -108,8 +108,9 @@ class Config:
     # through. Nearer the end of a segment than this, the answer is only known where the recording shows the end.
     aux_horizon: int = 32
 
-    # The network the game runs: 634 -> h1 -> GRU hidden -> h3 -> 19 logits. The hidden width is the agent's memory and
-    # the middle of the tick budget; the encoder is wide because the observation is.
+    # The network the game runs: obs -> h1 -> GRU hidden -> h3 -> one logit per output, which on the humanoid is
+    # 792 -> 256 -> 128 -> 128 -> 19. The hidden width is the agent's memory and the middle of the tick budget; the
+    # encoder is wide because the observation is.
     h1: int = 256
     hidden: int = 128
     h3: int = 128

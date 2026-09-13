@@ -4,7 +4,9 @@ A neural-network brain for Minecraft mobs. A player-shaped mob, the **agent**, i
 running inside the game in plain Java. The network is trained offline with PyTorch PPO from what the game recorded.
 Today its published network wins about 83 to 86% of a league of every vanilla mob that fights fair, about five points more
 than the hand-written fighter it was copied from on the same bench (see docs/models.md). Bows, crossbows, shields, axes, mining and
-placing work under a player's rules. An ELO league against every vanilla mob that fights fair is being built.
+placing work under a player's rules. That league is an Elo one and it is what a run trains and is judged on: 37 mobs, 11
+squads, a difficulty ladder, the hand-written fighter held at 1500 as the anchor, published networks and the run's own
+checkpoints.
 
 Read these before changing anything:
 

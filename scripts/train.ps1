@@ -12,8 +12,8 @@
 #   scripts\train.ps1 -Run league -Suite league -TeacherWeight 0.5
 #                                               the same, pulled back towards the teacher's recorded answers every update,
 #                                               which scripts\dagger.ps1 records for a league run
-#   scripts\train.ps1 -Run league -Suite league -LeagueModels blast
-#                                               the same, with two published networks in the league as rated players, so its
+#   scripts\train.ps1 -Run league -Suite league -LeagueModels blast,blast4
+#                                               the same, with published networks in the league as rated players, so its
 #                                               tier list can be read beside another run's that fields them too
 #   scripts\compare.ps1                         two runs side by side instead, see there
 #

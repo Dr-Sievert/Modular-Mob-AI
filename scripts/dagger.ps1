@@ -21,8 +21,8 @@ param(
     [Parameter(Mandatory = $true)] [string] $Run,
 
     # Every fight on the league draws the next opponent and loadout in turn, so a round wants enough fights for each of
-    # the twenty seven opponents and ten loadouts to come round a few times. Four thousand is about fifteen fights a
-    # pairing, which is what scripts\imitate.ps1 records per round against the one vindicator.
+    # the thirty seven mobs, eleven squads and ten loadouts to come round a few times. Four thousand is about fifteen
+    # fights a pairing, which is what scripts\imitate.ps1 records per round against the one vindicator.
     [int] $Fights = 4000,
 
     [ValidateSet('terrain', 'arena', 'league')] [string] $Suite = 'league',

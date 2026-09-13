@@ -20,7 +20,7 @@ scripts\play.ps1 -World arena             straight into the saved world 'arena' 
 ```
 
 - **The best network** is the one whose `models\<name>\model.json` records the highest win rate (more fights breaks a
-  tie). Today `models\` holds one, `blast`, so that is what it picks; see [models.md](models.md).
+  tie). Today that is `blast4`; see [models.md](models.md) for everything published.
 - It builds the mod in this checkout and starts `:<loader>:runClient` with
   `-Pbrain=neural -PbrainWeights=<file> -Pmodels=<repo>\models`. Those become `-Dmodular_mob_ai.brain`,
   `-Dmodular_mob_ai.brain.weights` and `-Dmodular_mob_ai.models` in the game.
@@ -30,8 +30,8 @@ scripts\play.ps1 -World arena             straight into the saved world 'arena' 
 **Check the network loaded.** As soon as a world opens, `logs\latest.log` in the game directory says:
 
 ```
-Loaded C:\...\models\blast\best.mbw from iteration 2150: 792 -> 792 -> 256 -> GRU 128 -> 128 -> 19 (371,783 parameters)
-Agents with no brain of their own run on best.mbw from C:\...\models\blast, iteration 2150
+Loaded C:\...\models\blast4\best.mbw from iteration 8825: 792 -> 792 -> 256 -> GRU 128 -> 128 -> 19 (371,783 parameters)
+Agents with no brain of their own run on best.mbw from C:\...\models\blast4, iteration 8825
 ```
 
 In the game, `/mmai info` shows what each agent runs on, and `/mmai models` shows every network the game can find.

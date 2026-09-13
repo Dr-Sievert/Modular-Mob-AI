@@ -13,13 +13,20 @@ models\<run>\
   state.pt      the trainer's whole state (optional), to carry the training on elsewhere
 ```
 
+One lineage, each carried on from the one before it: `blast` → `blast2` → `blast3` (not published) → `blast4`.
+
 | Model | What | Evaluated |
 | --- | --- | --- |
 | `blast` | PPO on the league, from the teacher | 76.3% won, 20.1% lost, 3.6% timed out (iteration 2150, 1021 league fights) |
+| `blast2` | carried on from `blast`'s last checkpoint | 79.5 / 17.3 / 3.2 (iteration 3100, 1009 fights) |
+| `blast4` | carried on again, on the fixed ground the lava leak had spoiled | 86.2 / 11.2 / 2.7 (iteration 8825, 1012 fights) |
 
-That is one number on one bench: `blast` fights the whole league roster, wardens and evokers included, where the retired
-networks below fought a vindicator. The two are not comparable, and nothing in `models\` is comparable to anything
-measured in another sitting; see the win rate section below, and `scripts\bench.ps1` in
+`blast4` is the best of them and so what `best` names, in the jar and in `scripts\play.ps1` alike.
+
+Those are each one number on one bench: they fight the whole league roster, wardens and evokers included, where the retired
+networks below fought a vindicator. The two are not comparable, and **nothing in `models\` is comparable to anything
+measured in another sitting** — not even one of these to another, since each was judged by its own run against the
+opponents that run's matchmaking drew. See the win rate section below, and `scripts\bench.ps1` in
 [testing.md](testing.md) for the only way to put two networks on one scale.
 
 ## What was retired, and why

@@ -5,7 +5,9 @@
 #   scripts\league.ps1 -Run league              the tier list, the newest checkpoints in it, and the tables
 #   scripts\league.ps1 -Run league -All         every checkpoint that has been rated, not only the newest
 #   scripts\league.ps1 -Run league -Pairings 40 more of the pairings the fights are drawn as
-#   scripts\league.ps1 -Test                    the league's unit tests: the Elo arithmetic, the pairings, the pool
+#   scripts\league.ps1 -Test                    the trainer's whole unit suite, which is where the league's own tests live:
+#                                               the Elo arithmetic, the pairings, the pool, and beside them the shard
+#                                               reader, the critic, the auxiliary heads and the rest
 #
 # Ratings are Elo, from evaluation fights only: a checkpoint on its most likely action against an opponent drawn evenly
 # from everyone, one point for a win, half for a timeout or a draw. The scripted fighter is held at 1500, so the scale
@@ -30,6 +32,9 @@ param(
 
 if ($Test) {
 
+    # The whole trainer suite, not only the league's own tests: they live in the same folder, they all run in seconds, and
+    # a switch that ran a subset would be a second list to keep in step with the first.
+    #
     # unittest reports on stderr, which Windows PowerShell would take for an error.
     $ErrorActionPreference = 'Continue'
 
@@ -47,7 +52,7 @@ if ($Test) {
 
     if ($LASTEXITCODE -ne 0) {
 
-        throw 'The league''s unit tests failed'
+        throw 'The trainer''s unit tests failed'
     }
 
     return

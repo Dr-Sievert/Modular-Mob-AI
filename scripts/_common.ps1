@@ -135,7 +135,7 @@ function Test-MachineStability {
     if ($revision -lt 0x12B) {
 
         Write-Warning ("{0} is running microcode 0x{1:X}. Intel's stability fix needs 0x12B or newer, which comes with a " +
-                "BIOS update. Until then heavy load can blue screen this machine; see docs\README.md, 'Machine stability'." -f $cpu.Trim(), $revision)
+                "BIOS update. Until then heavy load can blue screen this machine; see docs\findings.md." -f $cpu.Trim(), $revision)
     }
 }
 
