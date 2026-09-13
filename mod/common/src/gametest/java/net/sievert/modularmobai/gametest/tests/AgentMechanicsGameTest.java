@@ -47,6 +47,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.sievert.modularmobai.arena.AgentReward;
 import net.sievert.modularmobai.arena.Episode;
+import net.sievert.modularmobai.arena.FightFacts;
 import net.sievert.modularmobai.arena.Loadout;
 import net.sievert.modularmobai.brain.Brain;
 import net.sievert.modularmobai.brain.Brains;
@@ -1756,6 +1757,162 @@ public class AgentMechanicsGameTest {
                     "a lit creeper's fuse reads " + observation[at + ObservationSchema.ENEMY_FUSE]);
             helper.assertTrue(observation[at + ObservationSchema.ENEMY_FUSE] < 1.0F, "the fuse is already spent");
             return true;
+        });
+    }
+
+    /**
+     * What a slot says about the armour the body in it wears and about whether it has actually come for the agent, and that
+     * both agree with the privileged facts the critic is handed.
+     *
+     * <p>Neither was in the observation. A body in iron takes about half the damage a bare one does from the same swing and
+     * read as the same body with the same empty hands; and whether the other side has engaged decides whether the fight
+     * happens at all, where the only proxy was which way it faced. The zombie takes the agent and lets it go again inside
+     * one tick, so that nothing whatever can have moved between the two readings, and the facing comes out the same to the
+     * digit while the new field flips: that is the whole of what facing could not say.
+     *
+     * <p>The armour is asserted on a second agent rather than on the zombie, because vanilla's own spawn rolls a zombie a
+     * piece of armour and a bonus to the attribute besides, and a test of a number wants a number nobody rolled for.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 100)
+    public static void aSlotSaysWhatItWearsAndWhoItIsAfter(GameTestHelper helper) {
+
+        AgentMob agent = agent(helper, new BlockPos(4, 2, 1), 0.0F, 0.0F);
+        AgentMob other = agent(helper, new BlockPos(6, 2, 5), 0.0F, 0.0F);
+        Mob zombie = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new BlockPos(2, 2, 5));
+
+        Loadouts.ARMOURED_SWORD.equip(other);
+
+        // On no team, so each agent counts the other an enemy, and the other agent is the whole of the side: with one body
+        // on it, the best armour anything on that side wears is that body's own, which is what lets the two be compared.
+        agent.startEpisode(new Episode(FIGHT_TICKS, bounds(helper), other));
+
+        run(helper, tick -> {
+
+            if (tick < 2) {
+
+                return false;
+            }
+
+            float[] observation = new float[ObservationSchema.OBS_DIM];
+            AgentObservation.write(agent, agent.brain().enemySlots(), observation, 0);
+
+            float[] told = new float[FightFacts.SIZE];
+            FightFacts.write(agent, told, 0);
+
+            int wearing = ObservationSchema.enemyOffset(slotOf(agent, other));
+            int mob = ObservationSchema.enemyOffset(slotOf(agent, zombie));
+
+            // A full set of iron: two, six, five and two, out of the twenty a body tops out at.
+            helper.assertValueEqual(observation[wearing + ObservationSchema.ENEMY_ARMOUR],
+                    15.0F / ObservationSchema.ARMOUR_SCALE, "what a body in iron wears");
+
+            // The same measurement as the critic's, so neither can drift: both read getArmorValue over the same twenty.
+            helper.assertValueEqual(observation[wearing + ObservationSchema.ENEMY_ARMOUR], told[FightFacts.FOE_ARMOUR],
+                    "the slot's armour against the critic's");
+            helper.assertValueEqual(observation[mob + ObservationSchema.ENEMY_ARMOUR],
+                    zombie.getArmorValue() / ObservationSchema.ARMOUR_SCALE, "what the zombie wears");
+
+            // An agent is always coming: it fights from a network and holds no target for anything to read.
+            helper.assertValueEqual(observation[wearing + ObservationSchema.ENEMY_TARGETS_ME], 1.0F, "another agent");
+            helper.assertValueEqual(told[FightFacts.WENT_FOR], 1.0F, "the critic's went for");
+
+            // The flip, inside one tick: the target is set, read, let go and read again, with no tick in between for
+            // anything to move in.
+            zombie.setTarget(agent);
+            AgentObservation.write(agent, agent.brain().enemySlots(), observation, 0);
+
+            helper.assertValueEqual(observation[mob + ObservationSchema.ENEMY_TARGETS_ME], 1.0F,
+                    "the mob that took the agent");
+
+            float facingSin = observation[mob + ObservationSchema.ENEMY_FACING_SIN];
+            float facingCos = observation[mob + ObservationSchema.ENEMY_FACING_COS];
+
+            zombie.setTarget(null);
+            AgentObservation.write(agent, agent.brain().enemySlots(), observation, 0);
+
+            helper.assertValueEqual(observation[mob + ObservationSchema.ENEMY_TARGETS_ME], 0.0F,
+                    "the mob that let the agent go");
+
+            // Unmoved to the digit either side of it, which is exactly why facing was not enough.
+            helper.assertValueEqual(observation[mob + ObservationSchema.ENEMY_FACING_SIN], facingSin,
+                    "the way it faces, having let go");
+            helper.assertValueEqual(observation[mob + ObservationSchema.ENEMY_FACING_COS], facingCos,
+                    "the way it faces, having let go");
+
+            return true;
+        });
+    }
+
+    /**
+     * What the agent sees of its own armour and of the weapon in its hand. The hotbar says "a sword" for stone, iron and
+     * diamond alike, and the armoured loadout read exactly like the plain one.
+     *
+     * <p>The two are read differently on purpose, and the first tick is where the difference shows. The weapon is added up
+     * from the item's own modifiers, so it is right from the first row and follows a slot change at once; the armour is
+     * {@code getArmorValue}, the same call the damage a blow gets through is worked out from and the same one the critic
+     * reads, which vanilla catches up on when it notices the equipment change — the body's own first tick. See
+     * {@code ObservationSchema#SELF_WEAPON_DAMAGE}.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 100)
+    public static void theAgentSeesItsArmourAndWhatItIsHolding(GameTestHelper helper) {
+
+        AgentMob plain = agent(helper, new BlockPos(2, 2, 1), 0.0F, 0.0F);
+        AgentMob armoured = agent(helper, new BlockPos(6, 2, 1), 0.0F, 0.0F);
+
+        // Two swords, because a swap is the thing the attribute cannot follow: an iron sword takes off six and a stone one
+        // five, and both are the one hotbar category "sword".
+        plain.setHotbarItem(0, new ItemStack(Items.IRON_SWORD));
+        plain.setHotbarItem(1, new ItemStack(Items.STONE_SWORD));
+        Loadouts.ARMOURED_SWORD.equip(armoured);
+
+        run(helper, tick -> {
+
+            // Asked for from the third tick on; a press is acted on in the tick after the step that made it.
+            plain.controls().selectedSlot = tick >= 2 ? 1 : 0;
+
+            float damage = selfField(plain, ObservationSchema.SELF_WEAPON_DAMAGE);
+            float worn = selfField(armoured, ObservationSchema.SELF_ARMOUR);
+
+            float[] told = new float[FightFacts.SIZE];
+            FightFacts.write(armoured, told, 0);
+
+            helper.assertValueEqual(selfField(plain, ObservationSchema.SELF_ARMOUR), 0.0F, "the armour of a body with none");
+            helper.assertValueEqual(worn, told[FightFacts.OWN_ARMOUR], "its own armour against the critic's");
+
+            if (tick == 0) {
+
+                // The row nothing has ticked on yet. The iron sword is in the hand and the field says so, while the
+                // attribute still says a bare fist: this is the tick the two readings differ on, and the reason for the one
+                // that is not the attribute.
+                helper.assertValueEqual(damage, 6.0F / ObservationSchema.DAMAGE_SCALE, "an iron sword on the first row");
+                helper.assertValueEqual((float) plain.getAttributeValue(Attributes.ATTACK_DAMAGE), 1.0F,
+                        "the attribute on the first row");
+                helper.assertValueEqual(worn, 0.0F, "armour vanilla has not noticed yet");
+                return false;
+            }
+
+            if (tick == 1) {
+
+                // Vanilla has noticed the equipment by now, and from here the two agree.
+                helper.assertValueEqual(damage, 6.0F / ObservationSchema.DAMAGE_SCALE, "an iron sword");
+                helper.assertValueEqual(damage,
+                        (float) plain.getAttributeValue(Attributes.ATTACK_DAMAGE) / ObservationSchema.DAMAGE_SCALE,
+                        "the weapon against the attribute");
+
+                // A full set of iron: two, six, five and two.
+                helper.assertValueEqual(worn, 15.0F / ObservationSchema.ARMOUR_SCALE, "a set of iron armour");
+                return false;
+            }
+
+            // The swap asked for on tick 2 is in the hand by tick 3, and the field follows it there.
+            if (tick >= 3) {
+
+                helper.assertValueEqual(plain.getSelectedSlot(), 1, "the slot it swapped to");
+                helper.assertValueEqual(damage, 5.0F / ObservationSchema.DAMAGE_SCALE, "a stone sword, after the swap");
+                return true;
+            }
+
+            return false;
         });
     }
 

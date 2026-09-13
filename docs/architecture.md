@@ -42,21 +42,32 @@ those rules from the echo:
 There is no aim assist. The agent turns with its yaw and pitch controls, and a swing hits whatever is under its
 crosshair within reach, as for a player.
 
-## What the agent sees: 770 floats
+## What the agent sees: 792 floats
 
 This is the **humanoid**'s observation, the player-shaped body every trained network drives. A layout belongs to a body
 rather than to the game: a body with no hands has no hotbar to see, no slot to choose and no use buttons to press, and no
 amount of masking makes those inputs mean anything. `brain/schema/Species.java` is what the rest of the game asks how wide
-an observation is, and the humanoid's answer is the table below. The second body, the **beast**, has no hands: 747 floats,
+an observation is, and the humanoid's answer is the table below. The second body, the **beast**, has no hands: 769 floats,
 seven controls and no categorical head at all. See [species.md](species.md) for how to write a third.
+
+**Nothing goes in here that a real game cannot supply the same way.** The mod runs server-side in an ordinary game — see
+[playing.md](playing.md) — so anything that server knows about the agent's own body, what it holds and wears, and the
+entities it perceives is fair, and a field of that kind reads the same number in an arena and out in a world. What only the
+arena knows is not, however much it would help: how long this fight is given, who the other side is, how it ends. Those go
+to the **critic** instead, which is never exported (`arena/FightFacts`, and the critic below). The clock is the edge of the
+rule and passes it: elapsed ticks are a count the body itself keeps, and an agent with no episode reads nought for the whole
+of its life, which is the honest reading of a clock that will never expire. The limit it is a fraction of fails the same
+test and stays with the critic. A field that would read one number in training and nothing at all in a real game is a field
+that would quietly make every trained network worse the moment it left the arena.
 
 | Block | Size | Contents |
 | --- | --- | --- |
-| self | 22 | health, velocity (forward/up/right), on ground, in water, attack strength, use cooldown, using (main/off hand), sprinting, crouching, fall distance, body offset (sin/cos), pitch, aim (sin/cos), hurt time, enemies in range, **the clock**, **arrows left** |
+| self | 24 | health, velocity (forward/up/right), on ground, in water, attack strength, use cooldown, using (main/off hand), sprinting, crouching, fall distance, body offset (sin/cos), pitch, aim (sin/cos), hurt time, enemies in range, **the clock**, **arrows left**, **its own armour**, **what its weapon takes off** |
 | hotbar | 9 | what each hotbar slot holds |
 | echo | 20 | what the body actually did last tick: moved (forward/strafe), jumped, sprinted, sneaked, turned (yaw/pitch), attacked, hit, attack strength and damage, crit, sweep, sprint knockback, used (main/off hand/on a block), selected slot, swapped weapon, **how far the use has charged** |
-| enemies | 10 × 29 | every hostile within 32 blocks, and anything shot at the agent, in ten stable slots, in its own frame. Where it is and what it is doing: present, position (forward/up/right), distance, velocity, health as a fraction, facing (sin/cos), pitch, **kind**, main and off hand item, swinging, using, sprinting. **What it is**: max health and health left in hearts, attack damage, speed, width, height, knockback resistance, a creeper's fuse, and whether it explodes, shoots or flies |
+| enemies | 10 × 31 | every hostile within 32 blocks, and anything shot at the agent, in ten stable slots, in its own frame. Where it is and what it is doing: present, position (forward/up/right), distance, velocity, health as a fraction, facing (sin/cos), pitch, **kind**, main and off hand item, swinging, using, sprinting, **whether it has the agent as its target**. **What it is**: max health and health left in hearts, attack damage, speed, width, height, knockback resistance, **armour**, a creeper's fuse, and whether it explodes, shoots or flies |
 | terrain | 9 × 5 × 9 = 405 | the blocks around it, from 2 below the feet to 2 above: 0 empty, 0.5 fluid, 1 solid by collision, 1.5 hazard. A hazard hurts or kills a body in it or on it: lava, fire, magma, cactus, lit campfires, wither roses, pointed dripstone, powder snow, berry bushes, cobwebs. An empty cell in the bottom layer reads as a hazard when the fall below it would be more than 8 blocks, or would end in a hazard |
+| rays | 8 × 3 = 24 | eight rays out from the feet, one every 45° and world aligned as the grid is: how far to a wall, to something that hurts, and to a drop of more than 4, each a fraction of 32 blocks and 1 where that ray found none. The grid is a block a cell and reaches four, so this is the agent's only sight of the lava lake, the ravine lip or the wall at its back; widening the grid to the same distance would be 1,445 cells against 405 |
 
 Animals and villagers never take an enemy slot. The enemy's `kind` says what sort of thing it is: another agent, a
 player, a monster, something else alive, or, below zero, something shot at the agent. The layout is fixed: every trained
@@ -98,6 +109,39 @@ produced nothing — an inference a network sampling a button afresh each tick c
 whatever it carries, since vanilla spends nothing from it and the real-game loadouts carry a single arrow for that reason
 (`arena/Loadouts`). The beast gets the clock as well, for the same reward and the same timed fights, and not the arrows:
 it has no hands, so there is no quiver to be out of.
+
+**Armour, on both sides of the fight** (`SELF_ARMOUR`, `ENEMY_ARMOUR`), each over the 20 points a body tops out at. Armour
+was nowhere in the observation at all: a zombie in iron takes under half the damage a bare one does from the same swing and
+read as the same zombie with the same empty hands, and the agent's own armoured loadout read exactly like the plain sword
+while halving what every blow of the fight cost it. It is also most of what a hard rung of the league's ladder changes — a
+rung is how likely a mob is to spawn in armour and to have it enchanted — so a network that could not see armour could not
+see what made the rung hard. Both read `getArmorValue`, the same call the damage a blow gets through is worked out from and
+the same one the critic's `FOE_ARMOUR` and `OWN_ARMOUR` read, so a slot and the privileged column cannot drift apart; one
+mechanics test asserts they are the same number.
+
+**Whether the other side has actually come for the agent** (`ENEMY_TARGETS_ME`), per slot. Facing was the only proxy and it
+is poor both ways: a mob that has just let its target go goes on facing the agent for as long as it takes to turn away, and
+one walking over from behind a hill faces nothing yet. Whether the other side engages decides whether the fight happens at
+all, and a fight that does not happen runs the clock out, which is paid as a loss. The rule is `Allegiance#goesFor` — its
+own target, and an agent always, since an agent fights from a network and holds no target — and the enemy slot, the critic's
+`WENT_FOR` and the league's "went for" column all ask that one.
+
+**What the weapon in its hand takes off** (`SELF_WEAPON_DAMAGE`), over 20. The hotbar says "a sword" for stone, iron and
+diamond alike, and the echo says what a blow took off only once one has landed, which against something that kills in three
+is a fight too late. It is added up from the held item's own attribute modifiers rather than read off the attack damage
+attribute, and the difference is a tick: vanilla applies a held item's modifiers when it notices the equipment change, in
+the body's own tick, and the observation for that tick was written before any body moved. So the attribute is what the
+*last* tick's hand was worth — a bare fist holding an iron sword on the first row of a fight, and the weapon swapped out of
+on the row after a slot change, while the blow on that row already takes off what the weapon now held does. The critic can
+be priced off a row it reads late (`OWN_DAMAGE` is the attribute, and documents the same quirk); a policy deciding whether
+to swing cannot. The beast has the same field under its own name, its bite rather than a weapon, since a blow is paid out of
+the same strength whichever body throws it; and it has armour for the same reason it has a clock — neither needs a hand.
+
+**There is no count of the other side**, and that is the rule above doing its work. The critic gets one (`FOES`); what makes
+it worth having is that it counts the side whether anything is perceived or not, so an opponent behind a hill is still two
+zombies standing. In a real game there is no roster to count, and a count over the radius the agent does perceive is
+`enemies in range` again, since both already ask one rule for who is an enemy (`Allegiance#isEnemy`). A field that
+duplicates its neighbour costs weights and teaches nothing, so none was added.
 
 ### The three places the hands are not a player's
 
@@ -159,8 +203,8 @@ The continuous controls add a learned spread while training (`logStd`, per contr
 
 ## The network
 
-`770 -> 256 -> GRU 128 -> 128 -> 19`: an encoder, a recurrent layer that carries 128 numbers of memory from tick to tick
-for the whole fight (blank at the start of each fight), and one head per kind of control. That's 366,107 parameters.
+`792 -> 256 -> GRU 128 -> 128 -> 19`: an encoder, a recurrent layer that carries 128 numbers of memory from tick to tick
+for the whole fight (blank at the start of each fight), and one head per kind of control. That's 371,783 parameters.
 Training runs the GRU through chunks of 32 ticks. The widths are trainer options (`--h1 --hidden --h3`); the game reads
 them from the weight file, so a wider network needs no Java change. `scripts\parity.ps1` checks that the Java forward
 pass matches PyTorch's to within about 1e-6.

@@ -243,6 +243,28 @@ are deliberate.
 - **Only a shot that is coming is worth a slot.** Most arrows in a fight are lying in the grass or flying past: one
   earns a slot while it is moving, while the agent is ahead of it, and while its line would pass within a block and a
   half. Without that, slots filled with litter.
+- **Nothing goes into the observation that a real game cannot supply the same way.** The mod runs server-side in an
+  ordinary game, so what that server knows about the agent's own body, what it holds and wears, and the entities it
+  perceives is fair, and a field of that kind reads the same number in an arena and out in a world. What only the arena
+  knows is not: the fight's time limit, who the other side is, how it ends. Those are the critic's, which is never exported.
+  A field that read one thing in training and nothing at all in a real game would make every trained network quietly worse
+  the moment it left the arena, and nothing would show it. The clock is the edge of the rule and passes: elapsed is a count
+  the body keeps, and an agent with no episode reads nought for life.
+- **Three of the critic's own facts were fair for the actor all along, and one was not.** Armour was nowhere in the
+  observation at all, on either side — a zombie in iron takes under half the damage a bare one does and read as the same
+  zombie, and the agent's armoured loadout read exactly like the plain sword — and armour is most of what a hard rung of
+  the ladder changes. Whether the other side has engaged had only facing as a proxy, which a mob that has just dropped its
+  target keeps for as long as it takes to turn away. What the weapon in the hand takes off had only the hotbar's one
+  "sword" category for stone, iron and diamond. All three are per-entity or per-body readings the server always had.
+  - **A count of the other side is not.** That is the one the critic keeps, because what makes it worth having is counting
+    the side whether it is perceived or not, and in a real game there is no roster to count. Counted over the radius the
+    agent does perceive it is `enemies in range` again — both already ask one rule for who is an enemy — so it was left
+    out rather than added as a duplicate that costs weights and says nothing.
+  - **The weapon is read from the item, not from the attribute the swing uses.** Vanilla applies a held item's modifiers
+    when it notices the equipment change, in the body's own tick, and the observation for that tick is written before any
+    body moves: so the attribute is what the *last* tick's hand was worth — a bare fist holding an iron sword on the first
+    row of a fight, the weapon swapped out of on the row after a slot change. A critic may be priced off a row it reads
+    late; a policy choosing whether to swing may not.
 
 ## The league's curriculum
 

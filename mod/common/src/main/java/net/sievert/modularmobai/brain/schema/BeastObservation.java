@@ -63,6 +63,11 @@ final class BeastObservation {
         // The same clock the humanoid reads, from the same place: the beast's fights are timed the same way and paid the
         // same way, so the reward is as much a function of the clock for it as for anybody. See BeastSchema#SELF_CLOCK.
         out[at + BeastSchema.SELF_CLOCK] = AgentObservation.clock(agent);
+
+        // What it wears and what its bite is worth, both from the shared readings: neither needs a hand, and a body that
+        // cannot tell how hard it hits or how much it soaks cannot tell how a fight is going. See BeastSchema#SELF_ARMOUR.
+        out[at + BeastSchema.SELF_ARMOUR] = AgentObservation.armour(agent);
+        out[at + BeastSchema.SELF_ATTACK_DAMAGE] = AgentObservation.blowDamage(agent);
     }
 
     private static void writeEcho(ExecutedControls echo, float[] out, int at) {

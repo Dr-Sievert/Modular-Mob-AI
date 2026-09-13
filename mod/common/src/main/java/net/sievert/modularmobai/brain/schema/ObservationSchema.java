@@ -14,6 +14,15 @@ import net.sievert.modularmobai.entity.agent.MobControls;
  * moves everything after it without anyone having to remember to follow, so the schema stays cheap to rearrange while the
  * design is still moving.
  *
+ * <p><b>Nothing goes in here that a real game cannot supply the same way.</b> The mod runs server-side in an ordinary game
+ * (see {@code docs/playing.md}), so anything that server knows about the agent's own body, what it holds and wears, and the
+ * entities it perceives is fair: a field of that kind reads the same number in an arena and out in a world. What only the
+ * arena knows is not, however much it would help — the fight's time limit, who the other side is, how the fight ends — and
+ * that is what the critic's privileged floats are for ({@code arena/FightFacts}), which are never exported and never
+ * reach a network the game runs. {@link #SELF_CLOCK} is the edge of the rule and passes it: elapsed is a count the body
+ * itself keeps, and an agent with no episode reads nought for the whole of its life, which is the honest reading of a clock
+ * that will never expire. The limit that fraction is of fails the same test and stays with the critic.
+ *
  * <p>The vector is flat on purpose: the terrain grid could have gone through its own encoder, but a single input path
  * keeps the recorded row a single row, which is what the training side and the shard format both want.
  */
@@ -44,7 +53,7 @@ public final class ObservationSchema {
     // -----------------------------------------------------------------------------------------------------------
 
     public static final int ENEMY_SLOTS = 10;
-    public static final int ENEMY_STRIDE = 29;
+    public static final int ENEMY_STRIDE = 31;
     public static final int ENEMY_SIZE = ENEMY_SLOTS * ENEMY_STRIDE;
 
     /** How far an enemy can be and still hold a slot. Beyond this it is only part of the in range count. */
@@ -124,17 +133,41 @@ public final class ObservationSchema {
     public static final int ENEMY_SHOOTS = 27;
     public static final int ENEMY_FLIES = 28;
 
+    /**
+     * What it wears, over {@link #ARMOUR_SCALE}. It was not in the observation at all, in any slot: a zombie in iron takes
+     * under half the damage a bare one does from the same swing, and it read as the same zombie with the same empty hands.
+     * It is also most of what a hard rung of the league's ladder changes — a rung is how likely a mob is to spawn in armour
+     * and to have it enchanted — so a network that could not see armour could not see what made the rung hard.
+     */
+    public static final int ENEMY_ARMOUR = 29;
+
+    /**
+     * Whether this one is coming for the agent: its own target, and always so for another agent, which fights with a brain
+     * and holds no target at all. See {@code Allegiance#goesFor}, the one rule, which the privileged
+     * {@code FightFacts#WENT_FOR} asks as well so the two cannot disagree.
+     *
+     * <p>Facing was the only proxy, and it is a poor one both ways: a mob that has just let its target go goes on facing the
+     * agent for as long as it takes to turn away, and one walking over from behind a hill faces nothing yet. Whether the
+     * other side has engaged decides whether the fight happens at all, and a fight that does not happen runs the clock out,
+     * which is paid as a loss. Nought for a projectile, which has nothing to aim at: its being in a slot already says it is
+     * coming.
+     */
+    public static final int ENEMY_TARGETS_ME = 30;
+
     /** What the absolute numbers above are divided by, so that all of them sit in roughly nought to one. */
     public static final float HEALTH_SCALE = 100.0F;
     public static final float DAMAGE_SCALE = 20.0F;
     public static final float SPEED_SCALE = 0.5F;
     public static final float SIZE_SCALE = 4.0F;
 
+    /** Twenty points of armour is the most a player wears and where the damage it takes off tops out. */
+    public static final float ARMOUR_SCALE = 20.0F;
+
     // -----------------------------------------------------------------------------------------------------------
     // Self
     // -----------------------------------------------------------------------------------------------------------
 
-    public static final int SELF_SIZE = 22;
+    public static final int SELF_SIZE = 24;
 
     public static final int SELF_HEALTH = 0;
     public static final int SELF_VELOCITY_FORWARD = 1;
@@ -160,6 +193,18 @@ public final class ObservationSchema {
     public static final int SELF_AIM_SIN = 16;
     public static final int SELF_AIM_COS = 17;
     public static final int SELF_HURT_TIME = 18;
+
+    /**
+     * How many enemies the agent can see: everything alive that counts as one within {@link #VIEW_DISTANCE}, whether it won
+     * a slot or not, over {@link #ENEMY_SLOTS}. See {@code EnemySlots#inRangeCount}.
+     *
+     * <p>There is deliberately no second count of <i>the side</i> beside it. The critic gets one ({@code FightFacts#FOES}),
+     * and the difference between the two is exactly the part a real game cannot supply: the side is the arena's roster,
+     * known whether anything is perceived or not, so an opponent that walks behind a hill lowers this and not that. Counted
+     * instead over the radius the agent actually perceives, a count of the side is this number again, because the rule for
+     * who is an enemy is already the one rule ({@code Allegiance#isEnemy}) in both. So nothing was added: a field that
+     * duplicates its neighbour costs a network weights and teaches it nothing.
+     */
     public static final int SELF_ENEMIES_IN_RANGE = 19;
 
     /**
@@ -179,6 +224,32 @@ public final class ObservationSchema {
      * {@link AgentObservation#arrows}.
      */
     public static final int SELF_ARROWS = 21;
+
+    /**
+     * The armour the agent itself wears, over {@link #ARMOUR_SCALE}. Nothing in the layout said: the armoured loadout read
+     * exactly like the plain sword, and iron armour takes about half off every blow of the fight. Read off the same call the
+     * damage it takes is worked out from, {@code getArmorValue}, which is what the privileged {@code FightFacts#OWN_ARMOUR}
+     * reads too, so the two agree to the point.
+     */
+    public static final int SELF_ARMOUR = 22;
+
+    /**
+     * What one of the agent's own blows takes off, over {@link #DAMAGE_SCALE}. The hotbar says a slot holds a sword and
+     * stops there — stone, iron and diamond are one category — and the echo says what a blow took off only once one has
+     * landed, which against anything that kills in three is a fight too late.
+     *
+     * <p>Worked out from the item in the hand and the body's own strength, <b>not</b> read off the attack damage attribute
+     * the way {@code FightFacts#OWN_DAMAGE} is, and the difference is a tick. Vanilla applies a held item's modifiers when it
+     * notices the equipment change, in the body's own tick, and the observation for that tick was written before any body
+     * moved: so the attribute is what the <i>last</i> tick's hand was worth. On the first row of a fight that is a bare fist
+     * holding an iron sword, and on the row after a slot change it is the weapon swapped out of — while the blow on that row
+     * already takes off what the weapon now held does. The item is therefore what agrees with the blow and the attribute is
+     * what lags it. The critic can be priced off a row read late; the actor choosing whether to swing cannot.
+     *
+     * <p>It is the item's own number, so an enchantment that adds damage where vanilla adds it — at the blow, not as an
+     * attribute — is not in it, exactly as it is not in the critic's.
+     */
+    public static final int SELF_WEAPON_DAMAGE = 23;
 
     /** A full quiver: the 64 arrows a bow or crossbow loadout carries, see {@code arena/Loadout}. */
     public static final float ARROW_SCALE = 64.0F;

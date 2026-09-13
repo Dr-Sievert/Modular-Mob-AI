@@ -56,7 +56,7 @@ to copy a hand-written fighter first, then improve the copy with reinforcement l
      network is copied again from everything so far.
    - `runs\vindicator4`, made this way, wins 97.9% on its most likely action.
    - **One imitation at a time on one machine.** Cloning holds the whole record in memory — a 4,000-fight record is some
-     two million ticks, and at 770 floats a tick that is about 7 GB — so two of them side by side is not a matter of
+     two million ticks, and at 792 floats a tick that is about 7 GB — so two of them side by side is not a matter of
      workers. Tried: a second imitation started beside one already cloning took free memory to nothing and the build
      stopped the first one's workers to protect the machine. Two *training* runs are fine; two imitations are not.
 3. **Reinforcement learning from the copy**, with `scripts\train.ps1 -Run <run> -FromCopy` (start by copying the copy's

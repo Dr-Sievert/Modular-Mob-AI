@@ -23,7 +23,7 @@ public final class BeastSchema {
     // Self: the humanoid's, less everything that needs a hand
     // -----------------------------------------------------------------------------------------------------------
 
-    public static final int SELF_SIZE = 17;
+    public static final int SELF_SIZE = 19;
 
     public static final int SELF_HEALTH = 0;
     public static final int SELF_VELOCITY_FORWARD = 1;
@@ -53,6 +53,27 @@ public final class BeastSchema {
      * that cannot hold a bow has no quiver to be out of. See {@link AgentObservation#clock}.
      */
     public static final int SELF_CLOCK = 16;
+
+    /**
+     * What it wears, over {@link ObservationSchema#ARMOUR_SCALE}. Armour is worn rather than held, so a body with no hands
+     * can have it and it takes the same share off every blow it takes; the humanoid's reasons are
+     * {@link ObservationSchema#SELF_ARMOUR}, and they are not about hands.
+     */
+    public static final int SELF_ARMOUR = 17;
+
+    /**
+     * What one of its bites takes off, over {@link ObservationSchema#DAMAGE_SCALE}. The humanoid's field is the weapon in its
+     * hand ({@link ObservationSchema#SELF_WEAPON_DAMAGE}); a beast has no hand to fill, and its own strength is the honest
+     * answer to the same question — how fast can I end this — since a blow is paid out of that strength whichever body
+     * throws it.
+     *
+     * <p>Kept rather than left out as a field that would always read the same number, because it would not: the strength of
+     * this body is whatever its entity type was registered with, so a third body of this shape reads its own, and anything
+     * put into its hands by a command in a real game raises it whether the body can see the hand or not. A field of zeroes
+     * would have been the only field in either layout known in advance to mean nothing. See
+     * {@link AgentObservation#blowDamage}, which both bodies read.
+     */
+    public static final int SELF_ATTACK_DAMAGE = 18;
 
     // -----------------------------------------------------------------------------------------------------------
     // Echo: what the body actually did, which for this one is moving and biting

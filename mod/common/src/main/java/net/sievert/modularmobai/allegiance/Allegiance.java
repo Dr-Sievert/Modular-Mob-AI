@@ -32,6 +32,8 @@ import net.sievert.modularmobai.entity.agent.AgentMob;
  *   <li>who the agent counts as an enemy, {@link #isEnemy}: never an ally, always a member of another team, and
  *       otherwise what it always fought. That decides what takes a slot in its view, so it is the enemy the
  *       observation describes and the one both the network and the scripted fighter go after;
+ *   <li>whether one of them is coming for the other, {@link #goesFor}: its own target, and an agent always, since an agent
+ *       fights from a network and keeps no target. The enemy slots, the critic and the league all ask this one;
  *   <li>vanilla mobs on a team go after members of other teams, whatever they are, see {@link OtherTeamTargetGoal},
  *       where vanilla would only ever send them after players, villagers and golems;
  *   <li>friendly fire: a team with it off keeps the agent from hurting its own side and its own side from hurting it,
@@ -101,6 +103,24 @@ public final class Allegiance {
                 || other instanceof Player
                 || other instanceof AgentMob
                 || (other instanceof Mob mob && mob.getTarget() == self);
+    }
+
+    /**
+     * Whether that one is coming for this one right now. Vanilla's own {@code getTarget}, which answers for a mob that thinks
+     * with goals and for one that thinks with a brain alike, since a brain's memory of its target is what that mob's
+     * {@code getTarget} reads. Always true of an agent, which fights from a network and holds no target at all — the league
+     * counts one as having gone for the agent from its first tick for the same reason.
+     *
+     * <p>One rule in one place because three things ask it: an enemy slot's {@code ENEMY_TARGETS_ME}, which is what the
+     * network reads; the critic's {@code FightFacts#WENT_FOR}; and the league's "went for" column. An observation and a
+     * privileged float disagreeing about whether the fight had started would be a bug nobody could see.
+     *
+     * <p>Asked of something already counted an enemy, {@link #isEnemy}. It says nothing about sides itself: an ally that has
+     * somehow taken the agent as its target would answer yes.
+     */
+    public static boolean goesFor(LivingEntity other, LivingEntity self) {
+
+        return other instanceof AgentMob || other instanceof Mob mob && mob.getTarget() == self;
     }
 
     /**

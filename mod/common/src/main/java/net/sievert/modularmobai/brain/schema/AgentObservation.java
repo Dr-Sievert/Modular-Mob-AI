@@ -8,9 +8,11 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.FlyingMob;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.attributes.Attribute;
+import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ambient.Bat;
 import net.minecraft.world.entity.animal.Bee;
@@ -49,6 +51,7 @@ import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
+import net.sievert.modularmobai.allegiance.Allegiance;
 import net.sievert.modularmobai.arena.Episode;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 import net.sievert.modularmobai.entity.agent.ExecutedControls;
@@ -162,6 +165,63 @@ public final class AgentObservation {
         out[at + ObservationSchema.SELF_ENEMIES_IN_RANGE] = slots.inRangeCount() / (float) ObservationSchema.ENEMY_SLOTS;
         out[at + ObservationSchema.SELF_CLOCK] = clock(agent);
         out[at + ObservationSchema.SELF_ARROWS] = arrows(agent);
+        out[at + ObservationSchema.SELF_ARMOUR] = armour(agent);
+        out[at + ObservationSchema.SELF_WEAPON_DAMAGE] = blowDamage(agent);
+    }
+
+    /**
+     * What a body wears, over {@link ObservationSchema#ARMOUR_SCALE}. Every body's, and the agent's own and an opponent's
+     * both go through here: the same call the damage a blow gets through armour is worked out from, and the one
+     * {@code FightFacts} reads, so a slot's armour and the critic's cannot drift apart. See
+     * {@link ObservationSchema#SELF_ARMOUR} and {@link ObservationSchema#ENEMY_ARMOUR}.
+     */
+    static float armour(LivingEntity body) {
+
+        return body.getArmorValue() / ObservationSchema.ARMOUR_SCALE;
+    }
+
+    /**
+     * What one of this body's blows takes off, over {@link ObservationSchema#DAMAGE_SCALE}: its own strength and whatever the
+     * item in its main hand adds to it, by vanilla's own three operations over that item's own modifiers.
+     *
+     * <p>Every body's, and one reading answers for all of them: for the humanoid it is the weapon it is holding, which the
+     * network chooses and changes ({@link ObservationSchema#SELF_WEAPON_DAMAGE}), and for a body with nothing in its hands it
+     * is what its own bite is worth ({@code BeastSchema#SELF_ATTACK_DAMAGE}), which is the base with nothing added to it. A
+     * blow is paid out of the same strength whichever body throws it ({@code AgentMob#resolveAttack}).
+     *
+     * <p>Why the item rather than the attribute that swing reads is in {@link ObservationSchema#SELF_WEAPON_DAMAGE}: the
+     * attribute is a tick behind the hand, and on the first row of a fight it is a bare fist holding a sword.
+     */
+    static float blowDamage(AgentMob agent) {
+
+        AttributeInstance strength = agent.getAttribute(Attributes.ATTACK_DAMAGE);
+
+        if (strength == null) {
+
+            return 0.0F;
+        }
+
+        // Vanilla's three operations in vanilla's own order, over the one item instead of over the whole body: what is added
+        // to the base, what is then scaled by the base, and what scales the total. See AttributeInstance#calculateValue. An
+        // array because a lambda cannot assign to a local, and this runs for every agent on every tick.
+        double[] parts = {strength.getBaseValue(), 0.0D, 1.0D};
+
+        agent.getMainHandItem().forEachModifier(EquipmentSlot.MAINHAND, (attribute, modifier) -> {
+
+            if (attribute.value() != Attributes.ATTACK_DAMAGE.value()) {
+
+                return;
+            }
+
+            switch (modifier.operation()) {
+
+                case ADD_VALUE -> parts[0] += modifier.amount();
+                case ADD_MULTIPLIED_BASE -> parts[1] += modifier.amount();
+                case ADD_MULTIPLIED_TOTAL -> parts[2] *= 1.0D + modifier.amount();
+            }
+        });
+
+        return (float) (parts[0] * (1.0D + parts[1]) * parts[2] / ObservationSchema.DAMAGE_SCALE);
     }
 
     /**
@@ -358,14 +418,18 @@ public final class AgentObservation {
                 out[at + ObservationSchema.ENEMY_SWINGING] = living.swinging ? 1.0F : 0.0F;
                 out[at + ObservationSchema.ENEMY_USING] = living.isUsingItem() ? 1.0F : 0.0F;
 
+                // Whether this one has actually come for the agent, rather than merely happening to face it. The rule lives
+                // with the rest of who fights whom, and the critic asks the same one.
+                out[at + ObservationSchema.ENEMY_TARGETS_ME] = Allegiance.goesFor(living, agent) ? 1.0F : 0.0F;
+
                 writeCapabilities(living, out, at);
             }
         }
     }
 
     /**
-     * What the body in a slot can do: how much of it there is, how hard it hits, how fast it moves, how much knockback it
-     * shrugs off, and whether it explodes, shoots or flies.
+     * What the body in a slot can do: how much of it there is, how hard it hits, how fast it moves, what it wears, how much
+     * knockback it shrugs off, and whether it explodes, shoots or flies.
      *
      * <p>This is what tells a creeper from a zombie and a warden from either, which nothing in the layout did before: the
      * kind says "monster" for all three and the health is a fraction, so all three read the same at full health with empty
@@ -382,6 +446,9 @@ public final class AgentObservation {
         out[at + ObservationSchema.ENEMY_DAMAGE] = attribute(living, Attributes.ATTACK_DAMAGE) / ObservationSchema.DAMAGE_SCALE;
         out[at + ObservationSchema.ENEMY_SPEED] = attribute(living, Attributes.MOVEMENT_SPEED) / ObservationSchema.SPEED_SCALE;
         out[at + ObservationSchema.ENEMY_KNOCKBACK_RESISTANCE] = attribute(living, Attributes.KNOCKBACK_RESISTANCE);
+
+        // What it wears, which is half of how long it takes to cut down and was not in the observation anywhere.
+        out[at + ObservationSchema.ENEMY_ARMOUR] = armour(living);
 
         if (living instanceof Creeper creeper) {
 

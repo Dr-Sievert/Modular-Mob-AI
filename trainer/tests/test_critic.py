@@ -229,7 +229,7 @@ class CriticTest(unittest.TestCase):
         self.assertEqual(one.critic.encoder.in_features, one.schema.obs_dim + one.config.hidden + PRIVILEGED_COLUMNS)
 
     def test_the_privileged_columns_are_load_bearing(self):
-        """Ten of them are a tenth of nothing beside 770 of observation, so it is worth proving the value path actually
+        """Ten of them are a tenth of nothing beside 792 of observation, so it is worth proving the value path actually
         reads them rather than that they merely fit."""
 
         one = trainer()

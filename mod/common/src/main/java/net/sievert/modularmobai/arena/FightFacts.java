@@ -5,10 +5,10 @@ import java.util.List;
 
 import net.minecraft.core.Holder;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.monster.Creeper;
+import net.sievert.modularmobai.allegiance.Allegiance;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 
 /**
@@ -32,7 +32,9 @@ import net.sievert.modularmobai.entity.agent.AgentMob;
  *       use. The critic reads the raw row and has no encoder over the enemy slots, so a fact spread across ten slots is a
  *       fact it has to find; and a slot is filled only while the opponent is perceived — inside 32 blocks, inside the
  *       episode's bounds, and for 40 ticks of grace after that — so an opponent that walked behind a hill or teleported
- *       away reads exactly like no opponent at all.</li>
+ *       away reads exactly like no opponent at all. Where the observation has since grown a field for the same measurement
+ *       — armour, whether the other side has engaged — the column below says what is still only here, which is the side's
+ *       answer rather than one slot's.</li>
  * </ul>
  *
  * <p>The other side is described by what it <b>can do</b> rather than by which mob it is, for the same reason the enemy
@@ -41,7 +43,7 @@ import net.sievert.modularmobai.entity.agent.AgentMob;
  * they carry the difficulty ladder for free — a hard rung spawns a mob with more health and better armour, and that is what
  * these numbers say.
  *
- * <p>Ten floats a row, on a row that already holds 770 of observation, and the cost is per row in every shard: that is the
+ * <p>Ten floats a row, on a row that already holds 792 of observation, and the cost is per row in every shard: that is the
  * whole budget, and anything added here has to be worth more than what is already in it.
  */
 public final class FightFacts {
@@ -76,10 +78,10 @@ public final class FightFacts {
     public static final int FOE_DAMAGE = 3;
 
     /**
-     * The best armour anything still standing on the other side wears, over {@link #ARMOUR_SCALE}. <b>Nowhere in the
-     * observation at all</b>, in any slot: a zombie in iron takes less than half the damage a bare one does from the same
-     * swing, and it reads as the same zombie holding the same sword. It is also most of what a hard rung of the difficulty
-     * ladder actually changes.
+     * The best armour anything still standing on the other side wears, over {@link #ARMOUR_SCALE}. A slot now says what the
+     * mob in it wears ({@code ObservationSchema#ENEMY_ARMOUR}), which is where a policy needs it; this is the side's, in one
+     * place, whether the mob wearing it is perceived or not. Most of what a hard rung of the difficulty ladder changes is
+     * armour, so it is also most of what tells one rung's position from another's.
      */
     public static final int FOE_ARMOUR = 4;
 
@@ -91,28 +93,30 @@ public final class FightFacts {
     public static final int FOE_FUSE = 5;
 
     /**
-     * Whether anything on the other side has the agent as its target right now. Not in the observation in any form: a slot
-     * says where an opponent is looking, which a mob that has just let its target go still does, and says nothing at all
-     * about one that is out of view and walking over. It decides whether the fight happens — an opponent that never engages
-     * runs the clock out, and a timeout is paid as a loss.
+     * Whether anything on the other side has the agent as its target right now, by the one rule {@link Allegiance#goesFor}.
+     * A slot carries this per mob now ({@code ObservationSchema#ENEMY_TARGETS_ME}); what is still only here is the mob that
+     * is out of view and walking over, which fills no slot at all. It decides whether the fight happens — an opponent that
+     * never engages runs the clock out, and a timeout is paid as a loss.
      */
     public static final int WENT_FOR = 6;
 
     /**
      * What one of the agent's own blows takes off, over {@link #DAMAGE_SCALE}: the other half of how fast this fight can
-     * end. The hotbar block says a slot holds a sword, one coarse category for stone, iron and diamond alike, and the echo
-     * says what a blow took off only after one has landed. This is the weapon in its hand now, so it follows a swap.
+     * end. The self block carries this now as well ({@code ObservationSchema#SELF_WEAPON_DAMAGE}), and the two are worked out
+     * differently on purpose: that one adds up the item's own modifiers, so it is right on the first row and follows a swap
+     * at once, and this one is the attribute, which is a tick behind the hand.
      *
-     * <p>On the very first row of a fight this and {@link #FOE_DAMAGE} read the bare body: vanilla applies a held item's
-     * attribute modifiers when it notices the equipment change, which is the body's first tick, so a fight recorded as
-     * 0.05 then 0.30 is an agent that was handed an iron sword. That is what the attribute says on that tick, and one row
-     * of several hundred.
+     * <p>On the very first row of a fight this and {@link #FOE_DAMAGE} therefore read the bare body: vanilla applies a held
+     * item's attribute modifiers when it notices the equipment change, which is the body's first tick, so a fight recorded as
+     * 0.05 then 0.30 is an agent that was handed an iron sword. That is what the attribute says on that tick, and one row of
+     * several hundred — and a row the critic is allowed to price late, where the policy choosing whether to swing is not.
      */
     public static final int OWN_DAMAGE = 7;
 
     /**
-     * The armour the agent is wearing, over {@link #ARMOUR_SCALE}. The agent cannot see its own armour anywhere: the
-     * armoured loadout reads exactly like the plain sword, and it halves what every blow in the fight costs.
+     * The armour the agent is wearing, over {@link #ARMOUR_SCALE}. The self block reads the same call for its own
+     * ({@code ObservationSchema#SELF_ARMOUR}), so the two agree to the point; it is kept here because the critic reads the raw
+     * row and pricing what a blow will cost the agent is what armour is for.
      */
     public static final int OWN_ARMOUR = 8;
 
@@ -191,7 +195,7 @@ public final class FightFacts {
                 out[base + FOE_FUSE] = Math.max(out[base + FOE_FUSE], creeper.getSwelling(1.0F));
             }
 
-            if (wentFor(opponent, agent)) {
+            if (Allegiance.goesFor(opponent, agent)) {
 
                 out[base + WENT_FOR] = 1.0F;
             }
@@ -200,24 +204,6 @@ public final class FightFacts {
         out[base + FOES] = standing / FOE_SCALE;
         out[base + FOE_HEALTH] = whole > 0.0F ? left / whole : 0.0F;
         out[base + FOE_HEARTS] = whole / HEALTH_SCALE;
-    }
-
-    /**
-     * Whether this opponent is going for the agent. A mob that thinks with a brain rather than with goals keeps its target
-     * in its memory, and vanilla's own {@code getTarget} answers from there, which is also the question the league asks for
-     * its "went for" column, so the two cannot disagree.
-     *
-     * <p>Another agent is always fighting back: it has a brain and no target at all, and the league counts one as having
-     * gone for the agent from the first tick.
-     */
-    private static boolean wentFor(LivingEntity opponent, AgentMob agent) {
-
-        if (opponent instanceof AgentMob) {
-
-            return true;
-        }
-
-        return opponent instanceof Mob mob && mob.getTarget() == agent;
     }
 
     /** An attribute's value, or nought where the body has no such attribute at all, which asking outright would throw on. */
