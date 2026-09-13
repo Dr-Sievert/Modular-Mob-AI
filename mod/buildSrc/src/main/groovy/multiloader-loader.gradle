@@ -335,6 +335,32 @@ afterEvaluate {
         return brainTool(['species'], true).findAll { it ==~ /^[a-z0-9_]+$/ }
     }
 
+    // The layout the training side builds its network from, written into a run's folder straight out of the game's own
+    // classes. Written every time, so a schema that changed is caught here rather than by a network reading the wrong slots.
+    //
+    // A run belongs to one body for its whole life, and -Pspecies is a flag that is easy to leave off the second command:
+    // dagger.ps1 or a resumed train.ps1 without it would have quietly replaced a beast run's layout with the humanoid's,
+    // and every shard and checkpoint the run already has would then have been refused one at a time by a message about two
+    // hexadecimal numbers. So the body a run already has is read back and held to, by name, before anything is overwritten.
+    def writeRunSchema = { File runDirectory ->
+
+        def schema = new File(runDirectory, 'schema.json')
+
+        if (schema.isFile()) {
+
+            def already = (new groovy.json.JsonSlurper().parse(schema) as Map).species
+
+            if (already && already != trainedSpecies) {
+
+                throw new GradleException("${runDirectory.name} has been training a ${already} and this command is for a "
+                        + "${trainedSpecies}. A run is one body's: pass -Pspecies=${already} (scripts: -Species ${already}), "
+                        + "or start a run of its own for the ${trainedSpecies}. See docs/species.md.")
+            }
+        }
+
+        brainTool(['schema', trainedSpecies, schema.absolutePath])
+    }
+
     // Generating the terrain is most of what starting a worker on natural terrain costs, and a world generated once can be
     // fought in again. So every such worker's world is kept in runs/terrain/<minecraft version>, and later workers start
     // from one of those, reading their fight sites from disk instead of generating them: the least used first, each at
@@ -2054,8 +2080,9 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
 
             demonstrations.mkdirs()
 
-            // The trainer builds its network from the layout, so it goes in with the record.
-            brainTool(['schema', trainedSpecies, new File(runDirectory, 'schema.json').absolutePath])
+            // The trainer builds its network from the layout, so it goes in with the record. Held to the body the run
+            // already has, since -Pspecies is easy to leave off a second command; see writeRunSchema.
+            writeRunSchema(runDirectory)
 
             def properties = [
                     'modular_mob_ai.gametest.suite'        : suite,
@@ -2100,9 +2127,7 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
 
             runDirectory.mkdirs()
 
-            // The layout the training side builds its network from, straight out of the game's own classes. Written every
-            // run, so a schema that changed is caught here rather than by a network reading the wrong slots.
-            brainTool(['schema', trainedSpecies, new File(runDirectory, 'schema.json').absolutePath])
+            writeRunSchema(runDirectory)
 
             // A training process left behind by a cancelled run would write weights into the same folder, so it is
             // stopped before another starts. One whose build is still going is not left behind: that run is training

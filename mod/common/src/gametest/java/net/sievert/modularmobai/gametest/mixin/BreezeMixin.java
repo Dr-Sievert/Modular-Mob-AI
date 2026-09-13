@@ -18,7 +18,9 @@ public abstract class BreezeMixin {
     @Inject(method = "canAttackType", at = @At("HEAD"), cancellable = true)
     private void modular_mob_ai$fightsTheAgent(EntityType<?> type, CallbackInfoReturnable<Boolean> cir) {
 
-        if (type == ModEntities.trainingAgent()) {
+        // Any body's agent, asked of the register rather than named: a breeze has no more reason to refuse one body than
+        // another, and a body added later would otherwise be the one thing in the league a breeze wanders away from.
+        if (ModEntities.speciesOf(type) != null) {
 
             cir.setReturnValue(true);
         }

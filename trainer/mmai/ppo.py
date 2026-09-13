@@ -1316,6 +1316,10 @@ class Trainer:
             {
                 "config": asdict(self.config),
                 "schema_id": self.schema.schema_id,
+                # Which body this run is for, by name. The id already says it and is what refuses a mismatch; this is so the
+                # refusal can say "a beast against a humanoid" rather than two hexadecimal numbers, which is the difference
+                # between a message that names the mistake and one that only proves there was one.
+                "species": self.schema.species,
                 "actor": self.actor.state_dict(),
                 "critic": self.critic.state_dict(),
                 # The shape of the critic in this file, since load builds the one the state holds rather than the one the
@@ -1350,9 +1354,20 @@ class Trainer:
         state = torch.load(path, map_location=self.device, weights_only=False)
 
         if state["schema_id"] != self.schema.schema_id:
+            # Named by body wherever the state says which one it was, because "36f36b69 against 9f7a1358" is the same
+            # sentence for a layout that moved a field and for a run pointed at the wrong body, and only one of those has an
+            # answer. A state written before this carries no name, and then the numbers are all there is to say.
+            was = state.get("species")
             raise ValueError(
-                f"{path} was trained against schema {state['schema_id']:08x} and the game is running "
-                f"{self.schema.schema_id:08x}"
+                f"{path} was trained "
+                + (f"as a {was} " if was else "")
+                + f"against schema {state['schema_id']:08x} and this run is a {self.schema.species} "
+                f"({self.schema.schema_id:08x})"
+                + (
+                    ". A run is one body's for its whole life: train the other body in a run of its own. See docs/species.md"
+                    if was and was != self.schema.species
+                    else ""
+                )
             )
 
         # A critic's shape comes from the state and not from the flags, because a critic is learned rather than

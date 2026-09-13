@@ -17,6 +17,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.scores.PlayerTeam;
 import net.sievert.modularmobai.allegiance.Allegiance;
 import net.sievert.modularmobai.arena.Episode;
+import net.sievert.modularmobai.brain.schema.Species;
 import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 import net.sievert.modularmobai.gametest.Evaluation;
@@ -252,7 +253,10 @@ public class AgentLeagueGameTest {
 
             Opposition opposition = this.matchup.opposition();
 
-            this.agent = ModEntities.trainingAgent().create(this.level);
+            // Whichever body this run is for, rather than the humanoid by name: the build tells the game the same answer it
+            // wrote the run's schema.json for, so a run cannot train one body and fight in another. A body that declares no
+            // mob an arena can fight in is refused here, by name, before a fight is set up.
+            this.agent = ModEntities.training(Species.trained()).create(this.level);
             this.opponents.clear();
 
             if (this.agent == null) {
@@ -269,7 +273,8 @@ public class AgentLeagueGameTest {
             for (int on = 0; on < this.matchup.mobs(); on++) {
 
                 Roster.Member member = opposition != null ? opposition.mobs().get(on) : null;
-                LivingEntity opponent = member != null ? member.type().create(this.level) : ModEntities.trainingAgent().create(this.level);
+                LivingEntity opponent = member != null ? member.type().create(this.level)
+                        : ModEntities.training(Species.trained()).create(this.level);
 
                 if (opponent == null) {
 

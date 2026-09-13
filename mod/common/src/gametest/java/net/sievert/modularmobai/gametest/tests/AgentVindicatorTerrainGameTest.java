@@ -11,6 +11,7 @@ import net.minecraft.world.entity.MobSpawnType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.sievert.modularmobai.arena.Episode;
+import net.sievert.modularmobai.brain.schema.Species;
 import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 import net.sievert.modularmobai.gametest.Evaluation;
@@ -182,7 +183,8 @@ public class AgentVindicatorTerrainGameTest {
             float agentYaw = yawTowards(this.site.agent(), this.site.opponent()) + Mth.nextFloat(this.level.getRandom(), -45.0F, 45.0F);
             float opponentYaw = yawTowards(this.site.opponent(), this.site.agent());
 
-            this.agent = ModEntities.trainingAgent().create(this.level);
+            // Whichever body this run is for; see AgentLeagueGameTest, which says the same.
+            this.agent = ModEntities.training(Species.trained()).create(this.level);
             this.opponent = Opponents.create(this.level);
 
             if (this.agent == null || this.opponent == null) {

@@ -81,13 +81,6 @@ public final class Published {
 
     private static final String PROPERTY = "modular_mob_ai.league.models";
 
-    /**
-     * Which body this run's agents are, and so which body a published network has to have been trained for. The build
-     * passes on the same answer it wrote the run's schema.json for ({@code -Pspecies}); a process started with neither gets
-     * the humanoid, which is the body the training agent is and every network published so far drives.
-     */
-    private static final String SPECIES = "modular_mob_ai.species";
-
     /** What kind of player a published model is, in roster.csv and in the ratings. */
     public static final String KIND = "model";
 
@@ -192,7 +185,7 @@ public final class Published {
                     + "cannot be loaded: " + exception.getMessage(), exception);
         }
 
-        Species body = body();
+        Species body = Species.trained();
 
         if (brain.species() != body) {
 
@@ -207,12 +200,5 @@ public final class Published {
         }
 
         return brain;
-    }
-
-    private static Species body() {
-
-        String named = System.getProperty(SPECIES, "").trim();
-
-        return named.isEmpty() ? Species.HUMANOID : Species.byName(named);
     }
 }
