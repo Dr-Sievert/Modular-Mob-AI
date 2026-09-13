@@ -156,6 +156,16 @@ public final class AgentReward {
         return this.elapsedTicks;
     }
 
+    /**
+     * The arena's own time limit in ticks, which {@link #elapsedFraction} is a fraction of and the speed bonus is measured
+     * against. Public because the critic is told it: a fraction of a limit says nothing about how long the limit is, and a
+     * league matchup sets its own. See {@link FightFacts#LIMIT}.
+     */
+    public int maxTicks() {
+
+        return this.maxTicks;
+    }
+
     public boolean isTerminal() {
 
         return this.terminal;

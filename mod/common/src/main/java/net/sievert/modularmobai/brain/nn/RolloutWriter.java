@@ -16,20 +16,26 @@ import java.util.Arrays;
  * from after the fact.
  *
  * <p>The rows are the step the game already takes once a tick, written down: who, what they could see, what they earned
- * since last time, and what they chose. The training side rebuilds each agent's trajectory from them. A row's reward
- * belongs to the action on that agent's previous row, the same convention the brain has always been fed.
+ * since last time, what they chose, and what the game knows about the fight that the observation does not. The training
+ * side rebuilds each agent's trajectory from them. A row's reward belongs to the action on that agent's previous row, the
+ * same convention the brain has always been fed.
  *
  * <pre>
  *   header, 16 u32 words, little endian
  *     magic 'MBR1' | version | schema id | topology hash | iteration | round | worker | worker count
- *     obsDim | actDim | hidden | final | row count | segment count | steps | reserved
+ *     obsDim | actDim | hidden | final | row count | segment count | steps | privDim
  *
- *   rows, row count of them, each 4 + actDim + obsDim words
- *     u32 agent | u32 flags | f32 reward | f32 log probability | f32 action[actDim] | f32 obs[obsDim]
+ *   rows, row count of them, each 4 + actDim + obsDim + privDim words
+ *     u32 agent | u32 flags | f32 reward | f32 log probability | f32 action[actDim] | f32 obs[obsDim] | f32 priv[privDim]
  *
  *   segments, segment count of them, each 1 + hidden words
  *     u32 row | f32 h0[hidden]          the hidden state going into the row that starts each segment
  * </pre>
+ *
+ * <p>The privileged floats are {@link net.sievert.modularmobai.arena.FightFacts}, for the critic, which never leaves the
+ * training side. They sit at the end of the row, after the observation, so that one reshape reads a shard and a column is a
+ * column: nothing before them moved, and the width is in the header rather than assumed, in the word the format kept spare.
+ * Nothing in this block is ever fed to a network that gets exported.
  *
  * <p>A segment is one agent's run of rows within this shard. It starts on the agent's first row here, carrying the
  * hidden state it had going in, so the training side can replay the recurrent network from exactly where the game was
@@ -44,7 +50,13 @@ public final class RolloutWriter {
 
     public static final String EXTENSION = ".mbr";
 
-    public static final int VERSION = 1;
+    /**
+     * 2 added the privileged floats at the end of every row. There is no reading of a version 1 shard: a shard is the
+     * experience of one iteration and is learned from and deleted within the minute, so nothing older than the build that
+     * wrote it is ever worth keeping, and a reader that quietly filled the new columns with zeroes would hand the critic
+     * ten numbers that all say "no opponent, no armour, no clock". The training side refuses one by version and says so.
+     */
+    public static final int VERSION = 2;
 
     /** The agent's episode starts on this row. Its hidden state going in is all zeroes. */
     public static final int FLAG_NEW = 1;
@@ -66,6 +78,7 @@ public final class RolloutWriter {
     private final int[] header = new int[HEADER_WORDS];
     private final int obsDim;
     private final int actDim;
+    private final int privDim;
     private final int hidden;
     private final int rowBytes;
 
@@ -78,15 +91,17 @@ public final class RolloutWriter {
 
     private boolean closed;
 
+    /** @param privDim how many privileged floats a row carries, which is {@code FightFacts.SIZE} */
     public RolloutWriter(Path target, int schemaId, int topologyHash, int iteration, int round, int worker,
-                         int workerCount, int obsDim, int actDim, int hidden) {
+                         int workerCount, int obsDim, int actDim, int privDim, int hidden) {
 
         this.target = target;
         this.temporary = target.resolveSibling(target.getFileName() + ".tmp");
         this.obsDim = obsDim;
         this.actDim = actDim;
+        this.privDim = privDim;
         this.hidden = hidden;
-        this.rowBytes = 4 * (4 + actDim + obsDim);
+        this.rowBytes = 4 * (4 + actDim + obsDim + privDim);
         this.segmentStates = new float[64 * hidden];
 
         this.header[0] = MAGIC;
@@ -100,6 +115,7 @@ public final class RolloutWriter {
         this.header[8] = obsDim;
         this.header[9] = actDim;
         this.header[10] = hidden;
+        this.header[15] = privDim;
 
         try {
 
@@ -140,20 +156,23 @@ public final class RolloutWriter {
      * @param newEpisode whether the agent's episode starts here
      */
     public void step(int agent, boolean newEpisode, float reward, float logProb, float[] actions, int actionBase,
-                     float[] obs, int obsBase) {
+                     float[] obs, int obsBase, float[] facts, int factsBase) {
 
-        this.row(agent, newEpisode ? FLAG_NEW : 0, reward, logProb, actions, actionBase, obs, obsBase);
+        this.row(agent, newEpisode ? FLAG_NEW : 0, reward, logProb, actions, actionBase, obs, obsBase, facts, factsBase);
         this.steps++;
     }
 
-    /** The last row of a segment: an observation and a reward, and nothing chosen. */
-    public void end(int agent, boolean done, float reward, float[] obs, int obsBase) {
+    /**
+     * The last row of a segment: an observation and a reward, and nothing chosen. It carries the privileged floats as any
+     * other row does, since this is the row a cut fight is bootstrapped from and the critic has to price it.
+     */
+    public void end(int agent, boolean done, float reward, float[] obs, int obsBase, float[] facts, int factsBase) {
 
-        this.row(agent, done ? FLAG_DONE : FLAG_TRUNCATED, reward, 0.0F, null, 0, obs, obsBase);
+        this.row(agent, done ? FLAG_DONE : FLAG_TRUNCATED, reward, 0.0F, null, 0, obs, obsBase, facts, factsBase);
     }
 
     private void row(int agent, int flags, float reward, float logProb, float[] actions, int actionBase,
-                     float[] obs, int obsBase) {
+                     float[] obs, int obsBase, float[] facts, int factsBase) {
 
         if (this.buffer.remaining() < this.rowBytes) {
 
@@ -172,6 +191,9 @@ public final class RolloutWriter {
 
         this.buffer.asFloatBuffer().put(obs, obsBase, this.obsDim);
         this.buffer.position(this.buffer.position() + 4 * this.obsDim);
+
+        this.buffer.asFloatBuffer().put(facts, factsBase, this.privDim);
+        this.buffer.position(this.buffer.position() + 4 * this.privDim);
 
         this.rows++;
     }

@@ -23,13 +23,21 @@ import torch
 from torch import Tensor
 
 from . import files, log
-from .model import (EPISODE_TICKS, INITIAL_LOG_STD, PRIVILEGED, Actor, AuxiliaryHeads, Critic, PolicyHeads, RewardScaler,
-                    RunningNormalizer)
+from .model import (EPISODE_TICKS, INITIAL_LOG_STD, PRIVILEGED, PRIVILEGED_COLUMNS, SHARD_PRIVILEGED, Actor,
+                    AuxiliaryHeads, Critic, PolicyHeads, RewardScaler, RunningNormalizer)
 from .rollout import Segment, pack_by_rows
 from .schema import Schema
 from .weights import export as export_weights
 
 logger = log.get("ppo")
+
+
+def describe_critic(gru: int, privileged: int) -> str:
+    """A critic's shape in words, for the lines that say which one a run ended up with: both halves of its input width,
+    since either can differ from what the flags ask for."""
+
+    return (f"a critic with {gru} of its own memory and {privileged} privileged inputs" if gru
+            else "the plain feed-forward critic")
 
 
 @dataclass
@@ -357,11 +365,16 @@ class Trainer:
         # Config.teacher_release and note_evaluation.
         self.teacher_released: int | None = None
 
+        # Whether this critic has ever taken a gradient step. False for one just built, and for one loaded from a state whose
+        # critic never learned either; see load, which is where it matters.
+        self.critic_trained = False
+
         logger.info(
             "%s, critic %d wide%s, learning on %s",
             self.actor.topology.describe(),
             config.critic_width,
-            f" with {self.critic.gru_width} of its own memory and {len(PRIVILEGED)} privileged inputs"
+            f" with {self.critic.gru_width} of its own memory and {self.critic.privileged} privileged inputs "
+            f"({len(PRIVILEGED)} the trainer's, {len(SHARD_PRIVILEGED)} the game's)"
             if self.critic.gru_width else ", feed-forward on the actor's memory",
             self.device,
         )
@@ -374,12 +387,16 @@ class Trainer:
                 self.aux.describe(),
             )
 
-    def _new_critic(self, gru: int) -> Critic:
+    def _new_critic(self, gru: int, privileged: int | None = None) -> Critic:
         """The critic of a given width of memory, or the plain feed-forward one at zero. Built here rather than inline
-        because a resume builds the one its state holds rather than the one the flags ask for; see load."""
+        because a resume builds the one its state holds rather than the one the flags ask for; see load.
+
+        :param privileged: how many columns it reads, for a resume whose critic was built when there were fewer of them;
+            every column this build has, by default
+        """
 
         return Critic(self.schema.obs_dim, self.config.hidden, self.config.critic_width, gru,
-                      len(PRIVILEGED) if gru else 0).to(self.device)
+                      (PRIVILEGED_COLUMNS if privileged is None else privileged) if gru else 0).to(self.device)
 
     # -----------------------------------------------------------------------------------------------------------
     # One iteration
@@ -479,14 +496,20 @@ class Trainer:
                 logger.warning("  %s was masked by %s", head.name, np.array2string(mask, precision=3))
 
     def _scale(self, segments: list[Segment]) -> tuple[list[np.ndarray], list[np.ndarray]]:
-        """Rewards as the critic sees them, the episode totals as the game paid them, and what only this side knows.
+        """Rewards as the critic sees them, the episode totals as the game paid them, and everything it is told besides.
 
-        The privileged rows are worked out here because this is the one place that knows both a step's scaled reward and
-        where the fight stood before the segment it belongs to: the totals per agent are kept across iterations, so a
+        The trainer's own columns are worked out here because this is the one place that knows both a step's scaled reward
+        and where the fight stood before the segment it belongs to: the totals per agent are kept across iterations, so a
         segment cut out of the middle of a fight still knows how long the fight has run and what it has been paid. One row
         per observation, the row the segment ended on included, since that row is what a cut fight is bootstrapped from.
 
-        Every column is strictly behind the row it sits on; see model.PRIVILEGED for why that matters and what they are.
+        The game's own columns are already a row apiece in the shard, so they are simply laid beside them, in that order and
+        never the other way round; see model.PRIVILEGED_COLUMNS.
+
+        No column is ever ahead of the row it sits on: the trainer's four are strictly behind it, and the game's ten are the
+        fight as it stood on that very tick, exactly as the observation beside them is. The return is the target, so a column
+        carrying any part of what is still to come would teach the critic to read the answer off its own inputs; see
+        model.PRIVILEGED and the game's FightFacts.
         """
 
         scaled, privileged = [], []
@@ -520,11 +543,12 @@ class Trainer:
             # The reward on a row was earned by the action on the row before it, so the account on row j is the rewards of
             # steps 0 to j - 1 and the last one paid is step j - 1. Neither ever reaches step j, which is the first term of
             # the very return this row's value is fitted to.
-            rows = np.zeros((segment.steps + 1, len(PRIVILEGED)), dtype=np.float32)
+            rows = np.zeros((segment.steps + 1, PRIVILEGED_COLUMNS), dtype=np.float32)
             rows[:, 0] = paid + np.concatenate([[0.0], np.cumsum(values, dtype=np.float64)])
             rows[1:, 1] = values
             rows[:, 2] = (age + np.arange(segment.steps + 1)) / float(EPISODE_TICKS)
             rows[0, 3] = 1.0
+            rows[:, len(PRIVILEGED):] = segment.privileged
 
             totals[2] = float(rows[-1, 0])
             privileged.append(rows)
@@ -567,7 +591,7 @@ class Trainer:
             obs = torch.zeros(len(group), width, self.schema.obs_dim)
             actions = torch.zeros(len(group), width, self.schema.act_dim)
             hidden = torch.zeros(len(group), config.hidden)
-            told = torch.zeros(len(group), width, len(PRIVILEGED))
+            told = torch.zeros(len(group), width, PRIVILEGED_COLUMNS)
 
             for row, index in enumerate(group):
                 segment = segments[index]
@@ -791,6 +815,11 @@ class Trainer:
         policy_losses, value_losses, entropies, clip_fractions, approximate_kls, teacher_losses = [], [], [], [], [], []
         aux_losses: dict[str, list[float]] = {}
         epochs_run = 0
+
+        # From here the critic has learned something, whatever else this update does: the value loss is applied in every
+        # iteration, warmup included. What that fact is for is load, which builds a critic that has never learned to the
+        # flags rather than to the state.
+        self.critic_trained = True
 
         self.actor.train()
         self.critic.train()
@@ -1291,6 +1320,13 @@ class Trainer:
                 # The shape of the critic in this file, since load builds the one the state holds rather than the one the
                 # flags ask for. Zero is the plain feed-forward critic, and so is the absence of this key.
                 "critic_gru_width": self.critic.gru_width,
+                # And how many privileged columns it reads, which is the other half of its input width: a critic trained
+                # when there were fewer columns has to be rebuilt reading that many, or its own first layer will not load.
+                "critic_privileged": self.critic.privileged,
+                # Whether that critic has ever taken a gradient step. A state whose critic has not is a copy's: imitation
+                # trains the actor and never the critic, so what is in it is the random initialisation of whatever build
+                # made the copy, and a run seeded from it should build the critic it configured rather than inherit that.
+                "critic_trained": self.critic_trained,
                 "optimizer": self.optimizer.state_dict(),
                 # Absent for a run with aux_coef 0, which has no such heads at all.
                 "aux": self.aux.state_dict() if self.aux is not None else None,
@@ -1325,25 +1361,57 @@ class Trainer:
         # that reads as the plain feed-forward critic it holds, whose parameters this one's still are.
         saved_gru = int(state.get("critic_gru_width", 0))
 
-        if saved_gru != self.critic.gru_width:
+        # Its input width is the other half of its shape, and a critic keeps that as well: one trained against four
+        # privileged columns goes on reading four, which is what the columns being in a fixed order with the trainer's own
+        # first is for, and what lets a run started before the game wrote any of its own carry on at all. A state from
+        # before this was recorded holds a critic built when the trainer's four were all there were.
+        saved_privileged = int(state.get("critic_privileged", len(PRIVILEGED) if saved_gru else 0))
+
+        # Unless there is nothing there to keep. A critic that has never taken a gradient step holds the random numbers some
+        # other build initialised it with, and every argument above is about not throwing away what a critic has learned. A
+        # copy's state is exactly that case — imitation trains the actor only — so a run seeded from one used to inherit the
+        # feed-forward critic of the build that made the copy, silently, and could never be given the one it asked for. It is
+        # built to the flags instead, and its parameters and the optimizer's moments are left where a new run's would be:
+        # unlearned either way, and the optimizer's state is indexed by position over the actor's parameters and then the
+        # critic's, so a critic of another shape cannot take it.
+        #
+        # Absent from a state written before this was recorded, where an iteration past zero is what says a critic has
+        # trained: nothing but an imitation writes a state at iteration zero.
+        trained = bool(state.get("critic_trained", state["iteration"] > 0))
+
+        self.critic_trained = trained
+
+        if not trained:
+            logger.info(
+                "%s holds a critic that has never learned anything, so this run builds the one it configured: %s",
+                path.name,
+                describe_critic(self.critic.gru_width, self.critic.privileged),
+            )
+
+        elif (saved_gru, saved_privileged) != (self.critic.gru_width, self.critic.privileged):
             logger.warning(
                 "%s holds %s and these settings ask for %s; the run carries on with the critic it has. Start a new run to "
                 "change it.",
                 path.name,
-                f"a critic with {saved_gru} of its own memory" if saved_gru else "the plain feed-forward critic",
-                f"one with {self.critic.gru_width}" if self.critic.gru_width else "the plain feed-forward one",
+                describe_critic(saved_gru, saved_privileged),
+                describe_critic(self.critic.gru_width, self.critic.privileged),
             )
 
             # Before the optimizer is loaded: its saved state is indexed by position over the actor's parameters and then
             # the critic's, so the critic has to be the one the file was written with.
-            self.critic = self._new_critic(saved_gru)
+            self.critic = self._new_critic(saved_gru, saved_privileged)
             self.optimizer = torch.optim.Adam(
                 list(self.actor.parameters()) + list(self.critic.parameters()), lr=self.config.learning_rate, eps=1e-5
             )
 
         self.actor.load_state_dict(state["actor"])
-        self.critic.load_state_dict(state["critic"])
-        self.optimizer.load_state_dict(state["optimizer"])
+
+        # The critic and the optimizer's moments only where there is something in them: see `trained` above. A copy's
+        # optimizer holds nothing anyway, since imitation steps an optimizer of its own over the actor alone.
+        if trained:
+            self.critic.load_state_dict(state["critic"])
+            self.optimizer.load_state_dict(state["optimizer"])
+
         self.normalizer.load_state_dict(state["normalizer"])
         self.reward_scaler.load_state_dict(state["reward_scaler"])
         self.iteration = state["iteration"]

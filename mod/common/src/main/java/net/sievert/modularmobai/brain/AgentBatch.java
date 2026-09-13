@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import net.sievert.modularmobai.arena.Episode;
+import net.sievert.modularmobai.arena.FightFacts;
 import net.sievert.modularmobai.brain.schema.Species;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 
@@ -73,6 +74,11 @@ public final class AgentBatch {
 
             state.enemySlots().tick(agent, episode == null ? null : episode.bounds());
             this.species.observe(agent, state.enemySlots(), this.step.observations, index * this.species.obsDim());
+
+            // What the fight is, beside what the agent can see of it. No brain reads this; it goes into the rollout row for
+            // the critic on the training side, and it is written here because this is where a fight and a body are both to
+            // hand. Every body's, as the reward is: it is about the fight and not about the shape of whoever is in it.
+            FightFacts.write(agent, this.step.facts, index * FightFacts.SIZE);
 
             this.step.agentIds[index] = agent.getId();
             this.step.rewards[index] = episode == null ? 0.0F : episode.reward().takeTick();

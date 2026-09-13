@@ -66,4 +66,14 @@ public final class Episode {
 
         return this.opponents.isEmpty() || this.opponents.contains(target);
     }
+
+    /**
+     * The other side of this fight, whether any of it is still standing or not, and empty where the agent is paid for
+     * hurting anything at all. This is what {@link FightFacts} describes to the critic: who the agent is actually up
+     * against, rather than what it happens to be able to see.
+     */
+    public List<LivingEntity> opponents() {
+
+        return this.opponents;
+    }
 }

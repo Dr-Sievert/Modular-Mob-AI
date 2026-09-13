@@ -1,4 +1,4 @@
-"""The critic's own memory, what it is told that the actor is not, and that a run keeps the critic it has.
+"""The critic's own memory, what it is told that the actor is not, and which critic a resume and a seed each end up with.
 
     python -m unittest discover -s tests       from trainer/, or scripts\\league.ps1 -Test
 """
@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from mmai.model import EPISODE_TICKS, PRIVILEGED
+from mmai.model import EPISODE_TICKS, PRIVILEGED, PRIVILEGED_COLUMNS, SHARD_PRIVILEGED
 from mmai.ppo import Config, Trainer
 from mmai.rollout import Segment
 from mmai.schema import Schema
@@ -34,13 +34,18 @@ def fight(one: Trainer, steps: int, key: tuple[int, int, int] = (1, 0, 7), done:
 
     The actions are nought rather than noise because a categorical control is an index: a negative one is not a choice the
     game could have made, and the replay refuses it.
+
+    The privileged columns are the ones the game writes into a row, counting up from a tenth so that each is a different
+    number and it is obvious which column ended up where.
     """
 
     schema = one.schema
+    told = np.arange(1, len(SHARD_PRIVILEGED) + 1, dtype=np.float32) / 10.0
 
     return Segment(
         key=key,
         obs=np.random.default_rng(seed).standard_normal((steps + 1, schema.obs_dim)).astype(np.float32),
+        privileged=np.tile(told, (steps + 1, 1)),
         actions=np.zeros((steps, schema.act_dim), dtype=np.float32),
         log_probs=np.zeros(steps, dtype=np.float32),
         rewards=np.arange(1, steps + 1, dtype=np.float32),
@@ -87,15 +92,15 @@ class CriticTest(unittest.TestCase):
         segments = [fight(one, 21)]
         privileged, replayed, batch = replay(one, segments)
 
-        self.assertEqual(privileged[0].shape, (22, len(PRIVILEGED)))
+        self.assertEqual(privileged[0].shape, (22, PRIVILEGED_COLUMNS))
         self.assertEqual(replayed[0].values.shape, (21,))
-        self.assertEqual(replayed[0].privileged.shape, (21, len(PRIVILEGED)))
+        self.assertEqual(replayed[0].privileged.shape, (21, PRIVILEGED_COLUMNS))
         self.assertEqual(replayed[0].critic_hidden_in.shape, (21, 16))
 
         # 21 steps of a seq_len of 8 is three chunks, the last one padded.
         self.assertEqual(tuple(batch["obs"].shape[:2]), (3, 8))
         self.assertEqual(tuple(batch["critic_hidden"].shape), (3, 16))
-        self.assertEqual(tuple(batch["privileged"].shape), (3, 8, len(PRIVILEGED)))
+        self.assertEqual(tuple(batch["privileged"].shape), (3, 8, PRIVILEGED_COLUMNS))
         self.assertEqual(int(batch["mask"].sum()), 21)
 
     def test_it_starts_a_segment_from_nothing_and_not_from_the_actors_memory(self):
@@ -200,6 +205,45 @@ class CriticTest(unittest.TestCase):
         self.assertEqual(float(privileged[1][0, 0]), 0.0)
         self.assertEqual(float(privileged[1][0, 2]), 0.0)
 
+    def test_the_games_own_columns_come_through_the_shard_and_land_after_the_trainers(self):
+        """The order is the contract. A critic reads its columns from the first, so anything appended has to go on the end:
+        putting the game's block first would move `paid` under a critic already trained to read it there."""
+
+        one = trainer(scale_rewards=False)
+        privileged, replayed, batch = replay(one, [fight(one, 9)])
+
+        told = [round(float(value), 4) for value in privileged[0][3, len(PRIVILEGED):]]
+
+        self.assertEqual(told, [round(0.1 * (column + 1), 4) for column in range(len(SHARD_PRIVILEGED))])
+
+        # And they arrive on every row the same way, the row the segment ended on included, since that is the row a cut
+        # fight is bootstrapped from.
+        self.assertTrue(np.allclose(privileged[0][:, len(PRIVILEGED):], privileged[0][0, len(PRIVILEGED):]))
+        self.assertTrue(np.allclose(replayed[0].privileged[:, len(PRIVILEGED):], told, atol=1e-6))
+        self.assertTrue(np.allclose(batch["privileged"][0, 0, len(PRIVILEGED):].numpy(), told, atol=1e-6))
+
+    def test_the_critic_reads_the_observation_the_actors_memory_and_every_privileged_column(self):
+        one = trainer()
+
+        self.assertEqual(one.critic.privileged, PRIVILEGED_COLUMNS)
+        self.assertEqual(one.critic.encoder.in_features, one.schema.obs_dim + one.config.hidden + PRIVILEGED_COLUMNS)
+
+    def test_the_privileged_columns_are_load_bearing(self):
+        """Ten of them are a tenth of nothing beside 770 of observation, so it is worth proving the value path actually
+        reads them rather than that they merely fit."""
+
+        one = trainer()
+        _, replayed, batch = replay(one, [fight(one, 9)])
+
+        moved = batch["privileged"].clone()
+        moved[..., len(PRIVILEGED):] = 0.0
+
+        with torch.no_grad():
+            values, _ = one.critic(one.actor.normalise(batch["obs"]), batch["memory"], moved, batch["critic_hidden"])
+
+        self.assertFalse(np.allclose(values.reshape(-1).numpy()[batch["mask"].reshape(-1).numpy()],
+                                     replayed[0].values, atol=1e-5))
+
     def test_the_plain_critic_is_handed_the_columns_and_reads_none_of_them(self):
         """The trainer works the columns out once whatever critic it has, so both shapes take the same batch and there is
         one value path rather than two."""
@@ -207,7 +251,7 @@ class CriticTest(unittest.TestCase):
         one = trainer(critic_gru=False)
         _, _, batch = replay(one, [fight(one, 9)])
 
-        self.assertEqual(tuple(batch["privileged"].shape), (2, 8, len(PRIVILEGED)))
+        self.assertEqual(tuple(batch["privileged"].shape), (2, 8, PRIVILEGED_COLUMNS))
         self.assertEqual(one.critic.privileged, 0)
         self.assertEqual(one.critic.net[0].in_features, one.schema.obs_dim + one.config.hidden)
 
@@ -239,10 +283,15 @@ class CriticTest(unittest.TestCase):
     def test_a_critic_survives_a_save_and_a_load(self):
         one = trainer()
 
+        # One update first, so the critic saved is one that has learned something: an untrained critic is rebuilt on the way
+        # in rather than loaded, and two freshly built ones would agree whether it loaded or not.
+        _, _, batch = replay(one, [fight(one, 21, key=(1, 0, 5))])
+        one._learn(batch)
+
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "state.pt"
 
-            # Saved before either of them replays anything, so both start from the same reward scaler: the scaling of a
+            # Saved before either of them replays anything further, so both carry the same reward scaler: the scaling of a
             # reward is part of the run's state, and a critic that was handed different numbers would price differently
             # however faithfully its weights came back.
             one.save(path)
@@ -251,7 +300,7 @@ class CriticTest(unittest.TestCase):
             two.load(path)
 
         self.assertEqual(two.critic.gru_width, 16)
-        self.assertEqual(two.critic.privileged, len(PRIVILEGED))
+        self.assertEqual(two.critic.privileged, PRIVILEGED_COLUMNS)
 
         _, mine, _ = replay(one, [fight(one, 21)])
         _, theirs, _ = replay(two, [fight(two, 21)])
@@ -266,13 +315,20 @@ class CriticTest(unittest.TestCase):
 
         old = trainer(critic_gru=False)
 
+        # A run that has been training, which is the case the rule is about; one that has not is the seed gap below.
+        _, _, batch = replay(old, [fight(old, 21, key=(1, 0, 5))])
+        old._learn(batch)
+        old.iteration = 40
+
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "state.pt"
             old.save(path)
 
-            # What a state from before this change looks like: the key that says what shape the critic is is simply absent.
+            # What a state from before that change looks like: the keys that say what shape the critic is, and whether it has
+            # learned anything, are simply absent.
             state = torch.load(path, map_location="cpu", weights_only=False)
             del state["critic_gru_width"]
+            del state["critic_trained"]
             torch.save(state, path)
 
             two = trainer(critic_gru=True)
@@ -289,8 +345,48 @@ class CriticTest(unittest.TestCase):
         _, _, batch = replay(two, [fight(two, 21)])
         self.assertGreater(two._learn(batch)["value"], 0.0)
 
+    def test_a_critic_trained_when_there_were_fewer_columns_goes_on_reading_those(self):
+        """What a run that was already going when the game started writing privileged floats of its own resumes into. Its
+        critic's first layer is ten columns narrower, and it would not load into this build's at all; the columns being in a
+        fixed order with the trainer's own first is what makes carrying on correct rather than merely possible — it reads
+        exactly what it learned to read."""
+
+        old = trainer()
+        old.critic = old._new_critic(16, len(PRIVILEGED))
+        old.optimizer = torch.optim.Adam(list(old.actor.parameters()) + list(old.critic.parameters()), lr=1e-3, eps=1e-5)
+
+        _, _, batch = replay(old, [fight(old, 21, key=(1, 0, 5))])
+        old._learn(batch)
+        old.iteration = 40
+
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "state.pt"
+            old.save(path)
+
+            # A state from before the width was written down holds a critic built when the trainer's four columns were all
+            # there were, which is what its absence has to read as.
+            state = torch.load(path, map_location="cpu", weights_only=False)
+            del state["critic_privileged"]
+            torch.save(state, path)
+
+            two = trainer()
+
+            with self.assertLogs("mmai.ppo", level="WARNING"):
+                two.load(path)
+
+        self.assertEqual(two.critic.privileged, len(PRIVILEGED))
+        self.assertEqual(two.critic.encoder.in_features, two.schema.obs_dim + two.config.hidden + len(PRIVILEGED))
+        self.assertTrue(torch.allclose(old.critic.encoder.weight, two.critic.encoder.weight))
+
+        # And it still prices a fight, from the batch every shape of critic is handed.
+        _, _, batch = replay(two, [fight(two, 21)])
+        self.assertGreater(two._learn(batch)["value"], 0.0)
+
     def test_a_flag_cannot_take_a_recurrent_critic_away_from_a_run_either(self):
         one = trainer()
+
+        _, _, batch = replay(one, [fight(one, 21, key=(1, 0, 5))])
+        one._learn(batch)
 
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "state.pt"
@@ -303,6 +399,100 @@ class CriticTest(unittest.TestCase):
 
         self.assertEqual(two.critic.gru_width, 16)
         self.assertTrue(torch.allclose(one.critic.gru.weight_hh_l0, two.critic.gru.weight_hh_l0))
+
+    # ---------------------------------------------------------------------------------------------------------------
+    # Seeding a run from somebody else's copy
+    # ---------------------------------------------------------------------------------------------------------------
+
+    def test_a_critic_that_has_never_learned_is_built_to_the_flags_and_not_to_the_state(self):
+        """The seed gap. A copy's state holds an actor worth having and a critic that has never seen a fight: imitation
+        trains the actor only. Keeping that critic because the state names it meant a run seeded from a copy silently got the
+        critic of whatever build made the copy, and could never be given the one it asked for."""
+
+        copy = trainer(critic_gru=False)
+
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "state.pt"
+
+            # What imitation leaves behind: iteration zero, an actor that learned, a critic that did not.
+            copy.save(path)
+
+            two = trainer(critic_gru=True)
+
+            with self.assertLogs("mmai.ppo", level="INFO") as said:
+                two.load(path)
+
+        self.assertIn("never learned anything", "\n".join(said.output))
+        self.assertEqual(two.critic.gru_width, 16)
+        self.assertEqual(two.critic.privileged, PRIVILEGED_COLUMNS)
+
+        # The actor is what a seed is for, and it came across whole.
+        self.assertTrue(torch.allclose(copy.actor.fc1.weight, two.actor.fc1.weight))
+
+        # And the run trains from there, which is what the optimizer being rebuilt around the new critic has to allow.
+        _, _, batch = replay(two, [fight(two, 21)])
+        self.assertGreater(two._learn(batch)["value"], 0.0)
+
+    def test_a_copy_seeded_at_its_parents_iteration_is_still_a_critic_that_has_never_learned(self):
+        """`-Seed` carries the iteration over, so the iteration cannot be what says whether a critic has learned. A copy
+        published as a model keeps whatever iteration its run had reached."""
+
+        copy = trainer(critic_gru=False)
+        copy.iteration = 770
+
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "state.pt"
+            copy.save(path)
+
+            two = trainer(critic_gru=True)
+
+            with self.assertLogs("mmai.ppo", level="INFO"):
+                two.load(path)
+
+        self.assertEqual(two.iteration, 770)
+        self.assertEqual(two.critic.gru_width, 16)
+
+    def test_a_critic_that_has_learned_is_kept_however_it_was_reached(self):
+        one = trainer(critic_gru=False)
+
+        _, _, batch = replay(one, [fight(one, 21)])
+        one._learn(batch)
+        one.iteration = 40
+
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "state.pt"
+            one.save(path)
+
+            two = trainer(critic_gru=True)
+
+            with self.assertLogs("mmai.ppo", level="WARNING") as said:
+                two.load(path)
+
+        self.assertIn("carries on with the critic it has", "\n".join(said.output))
+        self.assertEqual(two.critic.gru_width, 0)
+        self.assertTrue(torch.allclose(one.critic.net[0].weight, two.critic.net[0].weight))
+
+    def test_a_state_from_before_this_was_recorded_goes_by_its_iteration(self):
+        """The only thing that writes a state at iteration zero is an imitation, so a state with no word on the matter and
+        an iteration past zero is a run that has been training, and its critic is its own."""
+
+        one = trainer(critic_gru=False)
+        one.iteration = 40
+
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "state.pt"
+            one.save(path)
+
+            state = torch.load(path, map_location="cpu", weights_only=False)
+            del state["critic_trained"]
+            torch.save(state, path)
+
+            two = trainer(critic_gru=True)
+
+            with self.assertLogs("mmai.ppo", level="WARNING"):
+                two.load(path)
+
+        self.assertEqual(two.critic.gru_width, 0)
 
     def test_the_switch_off_is_exactly_the_critic_that_was_there_before(self):
         """Parameter names included, since that is what lets an older state load into it at all: the old critic was one

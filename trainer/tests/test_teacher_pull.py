@@ -10,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
+from mmai.model import SHARD_PRIVILEGED
 from mmai.ppo import Config, Trainer
 from mmai.rollout import Segment
 from mmai.schema import Schema
@@ -31,6 +32,7 @@ def demo(one: Trainer, steps: int = 4) -> list[Segment]:
     return [Segment(
         key=(1, 0, 7),
         obs=np.zeros((steps + 1, schema.obs_dim), dtype=np.float32),
+        privileged=np.zeros((steps + 1, len(SHARD_PRIVILEGED)), dtype=np.float32),
         actions=actions,
         log_probs=np.zeros(steps, dtype=np.float32),
         rewards=np.zeros(steps, dtype=np.float32),

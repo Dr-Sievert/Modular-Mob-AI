@@ -16,7 +16,7 @@ import numpy as np
 import torch
 
 from mmai import weights
-from mmai.model import AuxiliaryHeads, masked_mean
+from mmai.model import SHARD_PRIVILEGED, AuxiliaryHeads, masked_mean
 from mmai.ppo import Config, Trainer
 from mmai.rollout import Segment
 from mmai.schema import Schema
@@ -74,6 +74,9 @@ def fight(one: Trainer, steps: int, *, done: bool, agent: int = 7, mark: float =
     return Segment(
         key=(1, 0, agent),
         obs=obs,
+        # The game's own privileged columns. Nothing here asks anything of them -- they reach the critic and never the
+        # memory these heads shape -- but a segment carries them, so one row per observation of nothing in particular.
+        privileged=np.zeros((steps + 1, len(SHARD_PRIVILEGED)), dtype=np.float32),
         actions=actions,
         log_probs=np.zeros(steps, dtype=np.float32),
         rewards=(np.arange(steps, dtype=np.float32) + 1.0) / 10.0,

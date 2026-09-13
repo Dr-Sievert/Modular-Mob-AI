@@ -9,6 +9,10 @@ earned, and no action: either the fight ended there, or the shard was cut while 
 what the rest of the fight has to be bootstrapped from. The reward on a row always belongs to the action on the row
 before it, which is why the first row's reward is not ours to use: it was paid for an action in an earlier shard.
 
+A row also carries the privileged floats, after the observation: what the game knows about the fight that no body's
+observation says, for the critic, which never leaves this side. The game's FightFacts is what they are and why; here they
+are a block of columns whose width the header states.
+
 The format is in the game's RolloutWriter; this is the other half of it.
 """
 
@@ -20,7 +24,12 @@ from pathlib import Path
 import numpy as np
 
 MAGIC = int.from_bytes(b"MBR1", "little")
-VERSION = 1
+
+# 2 added the privileged floats at the end of every row; see the game's RolloutWriter. Exactly one version is read, and a
+# version 1 shard is refused rather than filled in: a shard is one iteration's experience, learned from and deleted within
+# the minute, so there is no such thing as a legacy shard worth reading, and zeroes in those columns would tell the critic
+# there was no opponent, no armour and no clock.
+VERSION = 2
 EXTENSION = ".mbr"
 
 HEADER_WORDS = 16
@@ -48,6 +57,9 @@ class ShardHeader:
     segments: int
     steps: int
 
+    # How many privileged floats each row carries, in the header word the format kept spare.
+    privileged: int
+
     def describe(self) -> str:
         return (
             f"{self.path.name}: iteration {self.iteration}, round {self.round}, worker {self.worker} of "
@@ -64,6 +76,10 @@ class Segment:
 
     # (steps + 1, obs_dim): one row per step, plus the row the segment ended on.
     obs: np.ndarray
+
+    # (steps + 1, privileged): what the game knew about the fight on each of those rows and the observation does not say.
+    # The row the segment ended on has them too, since that is the row a cut fight is bootstrapped from.
+    privileged: np.ndarray
 
     # (steps, act_dim) and (steps,): what was chosen, and how likely the game thought it was.
     actions: np.ndarray
@@ -96,7 +112,10 @@ def read_header(path: str | Path) -> ShardHeader:
         raise ValueError(f"{path} is not a rollout shard")
 
     if int(words[1]) != VERSION:
-        raise ValueError(f"{path} is format version {int(words[1])}, not {VERSION}")
+        raise ValueError(
+            f"{path} is rollout format version {int(words[1])} and this reads {VERSION} only: a shard written by an "
+            f"older game has no privileged columns in its rows. Rebuild the mod, and throw away what is in rollouts/."
+        )
 
     return ShardHeader(
         path=path,
@@ -114,6 +133,7 @@ def read_header(path: str | Path) -> ShardHeader:
         rows=int(words[12]),
         segments=int(words[13]),
         steps=int(words[14]),
+        privileged=int(words[15]),
     )
 
 
@@ -123,7 +143,7 @@ def read_shard(path: str | Path) -> tuple[ShardHeader, list[Segment]]:
     header = read_header(path)
     raw = np.fromfile(path, dtype="<u4")
 
-    per_row = 4 + header.act_dim + header.obs_dim
+    per_row = 4 + header.act_dim + header.obs_dim + header.privileged
     expected = HEADER_WORDS + header.rows * per_row + header.segments * (1 + header.hidden)
 
     if raw.size != expected:
@@ -137,7 +157,8 @@ def read_shard(path: str | Path) -> tuple[ShardHeader, list[Segment]]:
     rewards = floats[:, 2]
     log_probs = floats[:, 3]
     actions = floats[:, 4 : 4 + header.act_dim]
-    observations = floats[:, 4 + header.act_dim :]
+    observations = floats[:, 4 + header.act_dim : 4 + header.act_dim + header.obs_dim]
+    privileged = floats[:, 4 + header.act_dim + header.obs_dim :]
 
     tail = raw[HEADER_WORDS + header.rows * per_row :].reshape(header.segments, 1 + header.hidden)
     starts = {int(row): index for index, row in enumerate(tail[:, 0])}
@@ -172,6 +193,7 @@ def read_shard(path: str | Path) -> tuple[ShardHeader, list[Segment]]:
                     # worker. Leaving the round out would glue a new fight onto whatever an old one left behind.
                     key=(header.round, header.worker, int(keys[piece[0]])),
                     obs=observations[piece].copy(),
+                    privileged=privileged[piece].copy(),
                     actions=actions[acted].copy(),
                     log_probs=log_probs[acted].copy(),
                     rewards=rewards[piece[1:]].copy(),
