@@ -1,6 +1,6 @@
 # Modular Mob AI
 
-A neural-network brain for Minecraft mobs. A player-shaped mob, the agent, is driven every tick by a small network (770
+A neural-network brain for Minecraft mobs. A player-shaped mob, the agent, is driven every tick by a small network (792
 inputs, a GRU memory, 11 controls) that runs inside the game in plain Java, one batched pass per tick for every mob on
 the same weights. It's trained offline with PyTorch PPO from what the game recorded, and new weights swap in without the
 game restarting.

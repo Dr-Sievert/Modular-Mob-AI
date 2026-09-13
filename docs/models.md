@@ -5,10 +5,11 @@ copied into `models\<run>\` and committed, so anyone with the repository can fig
 them.
 
 > **Every network below is retired.** They were trained against the humanoid's old 634-float observation, schema
-> `f818e282`, and this build's humanoid is 770 floats, schema `7d7bf60e`: the enemy slots now say what an opponent *is* —
-> hearts, damage, speed, size, knockback resistance, a creeper's fuse, explodes, shoots, flies — because before that a
-> zombie and a warden filled a slot identically and the league cost of that was 0% against the warden; and the self block
-> now carries the clock the reward is paid by and what is left in the quiver. A weight file
+> `f818e282`, and this build's humanoid is 792 floats, schema `9f7a1358`: the enemy slots now say what an opponent *is* —
+> hearts, damage, speed, size, knockback resistance, armour, a creeper's fuse, explodes, shoots, flies, and whether it has
+> the agent as its target — because before that a zombie and a warden filled a slot identically and the league cost of that
+> was 0% against the warden; and the self block now carries the clock the reward is paid by, what is left in the quiver, the
+> agent's own armour and what its weapon takes off. A weight file
 > carries the schema it was trained on and the game refuses one it cannot drive, so these load nowhere and are kept only as
 > a record of what was measured. The chain is being rebuilt from the teacher: record, imitate, DAgger, league. See
 > [architecture.md](architecture.md) for the layout and [findings.md](findings.md) for why it changed.

@@ -33,10 +33,10 @@ ACT_DIM = 2
 HIDDEN = 2
 PRIVILEGED = len(SHARD_PRIVILEGED)
 
-# The widths the trainer runs by default, and the parameter count they come to on the humanoid's 770 floats. The number is
+# The widths the trainer runs by default, and the parameter count they come to on the humanoid's 792 floats. The number is
 # in docs/architecture.md, and the point of having it here is that anything the actor grows an input for moves it.
 H1, MEMORY, H3 = 256, 128, 128
-PARAMETERS = 366_107
+PARAMETERS = 371_783
 
 
 def written(path: Path, rows: list[tuple], starts: list[tuple[int, list[float]]], version: int = VERSION,

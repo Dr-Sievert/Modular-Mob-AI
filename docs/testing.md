@@ -12,14 +12,14 @@ scripts\parity.ps1               Java forward pass against PyTorch's, after touc
 | Check | Pass looks like | Proves |
 | --- | --- | --- |
 | `test.ps1` | `All 20 required tests passed`; every fight 54 ticks | the observation, the body and the scripted fighter still work; the 54 ticks are deterministic, so any change in them is a behaviour change |
-| `test.ps1 -Mechanics` | `All 37 required tests passed` | bows, crossbows, shields, axes, mining, placing, use slowdown and damage payment follow a player's rules, what a press of attack costs and what holding it down costs, that a hand keeps the slot it started a draw in, what the observation says about a use, about the clock and the quiver, and about what is shot at the agent, the teacher getting itself out of powder snow and starting no draw it cannot finish, and how a league training fight is drawn from the trainer's shares |
+| `test.ps1 -Mechanics` | `All 39 required tests passed` | bows, crossbows, shields, axes, mining, placing, use slowdown and damage payment follow a player's rules, what a press of attack costs and what holding it down costs, that a hand keeps the slot it started a draw in, what the observation says about a use, about the clock and the quiver, about what is shot at the agent, about the armour on either side of the fight, about whether the other side has engaged and about what the weapon in the agent's hand takes off — the last three against the same numbers the critic's privileged facts carry — the teacher getting itself out of powder snow and starting no draw it cannot finish, and how a league training fight is drawn from the trainer's shares |
 | `test.ps1 -Play` | `All 18 required tests passed`, and `Loaded the mod's jar, modular_mob_ai/models/vs-copy.mbw from iteration 650` | what [playing.md](playing.md) promises: the bundled networks load and drive an agent, the commands, saving, sides and friendly fire, the Infinity loadouts |
 | `parity.ps1` | `parity ok` once per body, logits agreeing to about 1e-6, and `the plain ones agree to the bit at batches 1 to 64` | the game runs exactly the network PyTorch trained, **for every body this build has**, and the forward pass's explicit vector loops give the same bits as its plain ones |
 
 The play suite's three jar-network tests — `networksInTheJarLoadByName`, `worldAgentFightsOnTheBundledNetwork` and
 `brainCommandRefusesWhatLeadsNowhere` — fail until a network is published for the layout this build has. Everything in
-`models\` was trained on the old 634-float observation and the game refuses a weight file it cannot drive, which is the
-schema id doing its job; see [models.md](models.md).
+`models\` was trained on the old 634-float observation, this build's humanoid is 792 floats, and the game refuses a weight
+file it cannot drive, which is the schema id doing its job; see [models.md](models.md).
 
 Each boots a headless server in seconds, and all of them need only Java (parity also needs the trainer's Python).
 `test.ps1 -Loader neoforge` runs a suite on NeoForge instead of Fabric.

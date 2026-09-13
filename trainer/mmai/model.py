@@ -425,7 +425,7 @@ class AuxiliaryHeads(nn.Module):
       own body is about to be has learned what the controls do, which is most of what a fighter needs. Copying the fields
       that barely move is free and stops mattering as soon as the head learns it; what is left of the loss is carried by
       the fields that actually move, which is why the value rather than the change is enough to ask for. The rest of the
-      observation is left out on purpose: the terrain grid is 405 of the humanoid's 770 numbers and hardly changes from
+      observation is left out on purpose: the terrain grid is 405 of the humanoid's 792 numbers and hardly changes from
       tick to tick, so predicting it is easy for the wrong reason.
     - **what this step earns**: the same scaled reward the critic is fitted against. This is exactly the signal the wall
       around the value loss keeps out, and a memory that knows a blow is about to land, or about to be taken, is the one
