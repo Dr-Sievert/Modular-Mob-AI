@@ -83,22 +83,15 @@ $record = ''
 
 if ($Demos) {
 
-    # A run's name, that run's demos folder, or either as a path: whichever of them holds shards, nearest first.
-    $fromName = Get-RunDirectory $Demos
-
-    $candidates = @((Join-Path $fromName 'demos'), $fromName, (Join-Path $Demos 'demos'), $Demos)
-
-    $record = @($candidates |
-            Where-Object { Test-Path $_ -PathType Container } |
-            Where-Object { @(Get-ChildItem $_ -Filter '*.mbr' -Recurse -ErrorAction SilentlyContinue).Count -gt 0 } |
-            Select-Object -First 1)
+    # A run's name, that run's demos folder, or either as a path: whichever of them holds shards, nearest first. The same
+    # four places scripts\train.ps1 -Demos looks in, so a name means one thing; see Find-TeacherRecord in _common.ps1.
+    $record = Find-TeacherRecord $Demos
 
     if (-not $record) {
 
         throw "No record of the teacher in '$Demos'; make one with scripts\imitate.ps1 -Run $Demos"
     }
 
-    $record = (Resolve-Path $record).Path
     $shards = @(Get-ChildItem $record -Filter '*.mbr' -Recurse)
 
     Write-Host ("Copying from the record in ${record}: {0} shards, {1:N2} GB, no fighting of its own" -f

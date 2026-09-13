@@ -46,6 +46,7 @@ import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 import net.sievert.modularmobai.entity.agent.BeastMob;
 import net.sievert.modularmobai.gametest.GameTestGroup;
+import net.sievert.modularmobai.gametest.util.TestTicks;
 
 /**
  * The agent in a real game: the networks the jar carries, {@code /mmai}, sides, and the loadouts that keep a bow firing.
@@ -925,17 +926,9 @@ public class PlayGameTest {
         throw new GameTestAssertException("Brains.named took " + what);
     }
 
-    /** Runs a test a tick at a time, as the mechanics suite does: the step gets the tick's number until it returns true. */
+    /** See {@link TestTicks#run}, which the mechanics suite runs its own tests through too. */
     private static void run(GameTestHelper helper, IntPredicate step) {
 
-        int[] tick = {0};
-
-        helper.onEachTick(() -> {
-
-            if (step.test(tick[0]++)) {
-
-                helper.succeed();
-            }
-        });
+        TestTicks.run(helper, step);
     }
 }

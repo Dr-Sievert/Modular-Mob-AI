@@ -245,19 +245,13 @@ $record = ''
 
 if ($Demos) {
 
-    $fromName = Get-RunDirectory $Demos
-
-    $record = @((Join-Path $fromName 'demos'), $fromName, (Join-Path $Demos 'demos'), $Demos |
-            Where-Object { Test-Path $_ -PathType Container } |
-            Where-Object { @(Get-ChildItem $_ -Filter '*.mbr' -Recurse -ErrorAction SilentlyContinue).Count -gt 0 } |
-            Select-Object -First 1)
+    $record = Find-TeacherRecord $Demos
 
     if (-not $record) {
 
         throw "No record of the teacher in '$Demos'"
     }
 
-    $record = (Resolve-Path $record).Path
     $Extra = "--demos `"$record`" $Extra".Trim()
 }
 
