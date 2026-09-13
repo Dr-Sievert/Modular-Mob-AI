@@ -58,7 +58,9 @@ This is the **humanoid**'s observation, the player-shaped body every trained net
 rather than to the game: a body with no hands has no hotbar to see, no slot to choose and no use buttons to press, and no
 amount of masking makes those inputs mean anything. `brain/schema/Species.java` is what the rest of the game asks how wide
 an observation is, and the humanoid's answer is the table below. The second body, the **beast**, has no hands: 769 floats,
-seven controls and no categorical head at all. See [species.md](species.md) for how to write a third.
+seven controls and no categorical head at all. The third, **test_body**, is a layout and nothing else — no mob, no
+encoder — and exists so that the claim that a body is declared in one place is checked rather than believed.
+`Species.ALL` is that one place; see [species.md](species.md) for how to write a fourth.
 
 **Nothing goes in here that a real game cannot supply the same way.** The mod runs server-side in an ordinary game — see
 [playing.md](playing.md) — so anything that server knows about the agent's own body, what it holds and wears, and the

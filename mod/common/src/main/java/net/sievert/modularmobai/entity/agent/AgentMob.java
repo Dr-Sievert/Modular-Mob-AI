@@ -196,7 +196,7 @@ public class AgentMob extends PathfinderMob {
 
         super(type, level);
 
-        this.training = EntityType.getKey(type).equals(ModEntities.TRAINING_AGENT_ID);
+        this.training = ModEntities.isTraining(type);
 
         // Both of the vanilla controls fight the controller on every tick if they are left in place: the look control
         // snaps the pitch back to zero and drags the head toward the body, and the move control zeroes the forward input
@@ -243,13 +243,34 @@ public class AgentMob extends PathfinderMob {
      * Which body this is, and so what it sees and what it can be asked to do. A brain is trained for one species and is
      * refused any other, so this is what decides whether a set of weights may drive this mob at all.
      *
-     * <p>A second body overrides this and nothing else about the plumbing: the driver batches by brain, the observation is
-     * filled in by the species, and the action comes back through it. See {@code docs/species.md}.
+     * <p>Read from the entity type this mob was registered under, which is what the body itself declared: one entity class
+     * does for every body, since the controls, the echo of what the body actually did, the driver, the memory and the arena
+     * plumbing are the same for all of them, and only the schema differs. A class per body would be a file whose only
+     * content is its own name, and a body that forgot to write one would quietly have been a humanoid. See
+     * {@code ModEntities} and {@code docs/species.md}.
      */
-    public Species species() {
+    public final Species species() {
 
-        return Species.HUMANOID;
+        if (this.species == null) {
+
+            Species found = ModEntities.speciesOf(this.getType());
+
+            if (found == null) {
+
+                throw new IllegalStateException("The mob " + this.getType() + " is an agent of no body this build declares, "
+                        + "so nothing knows what it sees or what it can be asked to do; every agent's entity type comes from "
+                        + "a Species.mobs()");
+            }
+
+            this.species = found;
+        }
+
+        return this.species;
     }
+
+    /** Set on the first ask rather than in the constructor, which runs while its own entity type is still being built. */
+    @Nullable
+    private Species species;
 
     public ExecutedControls executed() {
 

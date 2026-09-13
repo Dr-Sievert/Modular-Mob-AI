@@ -72,14 +72,31 @@ public final class Models {
     }
 
     /**
-     * The network the jar carries that won the most of its evaluation fights, which is what {@code best} names; null when
-     * the jar carries none. Chosen by the build from each one's model.json, so it is the same pick scripts\play.ps1 makes.
+     * The network the jar carries for that body which won the most of its evaluation fights, which is what {@code best}
+     * names; null where the jar carries none of that body. Chosen by the build from each one's model.json, so it is the same
+     * pick scripts\play.ps1 makes.
+     *
+     * <p>Per body, because a network only fits the body its layout was written for. One global best would hand a beast's
+     * network to a humanoid on any day a beast evaluated higher, and the only thing that would say so is the driver, in the
+     * middle of a fight.
      */
     @Nullable
-    public static synchronized String best() {
+    public static synchronized String best(String species) {
 
-        String best = index().getProperty("best", "").trim();
+        String best = index().getProperty("best." + species, "").trim();
         return best.isEmpty() ? null : best;
+    }
+
+    /**
+     * Which body a network the jar carries drives, or null for one the build could say nothing about: a folder published
+     * before the layout was recorded beside the weights. Such a network is still loadable by name, where its own schema id
+     * decides, and is no body's {@code best}.
+     */
+    @Nullable
+    public static synchronized String speciesOf(String name) {
+
+        String species = index().getProperty(name + ".species", "").trim();
+        return species.isEmpty() ? null : species;
     }
 
     /** What the build recorded about a network the jar carries, such as its win rate, or null for one it knows nothing of. */

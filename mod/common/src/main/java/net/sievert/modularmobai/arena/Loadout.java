@@ -61,8 +61,23 @@ public record Loadout(String name, List<ItemStack> hotbar, ItemStack offhand, Li
         return new Loadout(name, this.hotbar, this.offhand, List.of(pieces));
     }
 
-    /** Arms a fighter with this, replacing whatever it held before. */
+    /**
+     * Arms a fighter with this, replacing whatever it held before.
+     *
+     * @throws IllegalArgumentException naming the body, for an agent of a body that holds nothing. A mob's inventory is the
+     *                                 game's and takes whatever is put in it, so a body with no hands would be handed a
+     *                                 sword it has no control that could swing, lose every fight it was sent into, and say
+     *                                 nothing about why. This is the one call that arms any fighter, so it is the one place
+     *                                 that has to ask. See {@code Species#holdsItems} and {@code docs/species.md}.
+     */
     public void equip(LivingEntity fighter) {
+
+        if (fighter instanceof AgentMob agent && !agent.species().holdsItems()) {
+
+            throw new IllegalArgumentException("A " + agent.species().name() + " cannot be armed with the " + this.name
+                    + " loadout: it has no hands, no hotbar to see and no control that could use what is in one. A body that "
+                    + "is to fight with weapons needs a schema that can hold them");
+        }
 
         if (fighter instanceof AgentMob agent) {
 

@@ -43,6 +43,25 @@ final class Humanoid implements Species {
         return "humanoid";
     }
 
+    /**
+     * Two registrations of one body. They are the same entity class with the same controls and the same observation, which
+     * is what lets a network trained against one drive the other without anything drifting; only how the world treats them
+     * differs.
+     */
+    @Override
+    public List<Species.Mob> mobs() {
+
+        return List.of(Species.Mob.playerShaped("agent_mob", Species.Mob.Role.WORLD),
+                Species.Mob.playerShaped("training_agent", Species.Mob.Role.TRAINING));
+    }
+
+    /** Two hands and a hotbar of nine, which is most of what this body is. */
+    @Override
+    public boolean holdsItems() {
+
+        return true;
+    }
+
     @Override
     public int obsDim() {
 

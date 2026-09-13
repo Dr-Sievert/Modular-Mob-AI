@@ -315,7 +315,8 @@ def check(header: ShardHeader, trainer: Trainer, schema: Schema) -> None:
     if header.schema_id != schema.schema_id:
         raise ValueError(
             f"{header.path.name} was recorded against schema {header.schema_id:08x} and this run is "
-            f"{schema.schema_id:08x}"
+            f"{schema.schema_id:08x}, a {schema.species}: a shard belongs to the body it was recorded by. See "
+            f"docs/species.md"
         )
 
     if header.topology_hash != trainer.actor.topology.hash():

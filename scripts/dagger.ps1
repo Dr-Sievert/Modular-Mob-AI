@@ -27,6 +27,10 @@ param(
 
     [ValidateSet('terrain', 'arena', 'league')] [string] $Suite = 'league',
 
+    # Which body the run is for, which has to be the one it has been training: a run is one body's for its whole life, and
+    # the build refuses to write another body's layout over the one the run already has. See docs\species.md.
+    [string] $Species = 'humanoid',
+
     # Which network drives. The run's best weights unless another is named, since the best is what the run would be
     # judged on and so the one whose mistakes are worth correcting.
     [string] $Weights = '',
@@ -81,7 +85,7 @@ Write-Host ("Recording $Fights fights on the $Suite suite: $(Split-Path $driver 
 
 Invoke-Gradle (@(':fabric:recordDemonstrations', "-Prun=$Run", "-Psuite=$Suite", "-Parenas=$Fights", "-Pworkers=$Workers",
         "-PbatchSize=$Slots", "-PmaxWorkers=$Workers", "-PworkerHeap=$Heap", "-PdemonstrationNoise=$StudentNoise",
-        "-Pstudent=$driver") + @(if ($Loadouts.Count -gt 0) { "-PleagueLoadouts=$($Loadouts -join ',')" }))
+        "-Pspecies=$Species", "-Pstudent=$driver") + @(if ($Loadouts.Count -gt 0) { "-PleagueLoadouts=$($Loadouts -join ',')" }))
 
 $recorded = @(Get-ChildItem $demos -Filter '*.mbr' -Recurse -ErrorAction SilentlyContinue)
 

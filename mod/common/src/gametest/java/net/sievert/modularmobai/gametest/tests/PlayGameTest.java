@@ -44,7 +44,6 @@ import net.sievert.modularmobai.brain.schema.EnemySlots;
 import net.sievert.modularmobai.brain.schema.Species;
 import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.entity.agent.AgentMob;
-import net.sievert.modularmobai.entity.agent.BeastMob;
 import net.sievert.modularmobai.gametest.GameTestGroup;
 import net.sievert.modularmobai.gametest.util.TestTicks;
 
@@ -102,14 +101,25 @@ public class PlayGameTest {
 
         // best is a name of its own for one of them, picked by the win rate each model.json records, the same pick
         // scripts\play.ps1 makes; naming it either way has to reach the one brain, so both share a forward pass.
-        String bestName = Models.best();
+        //
+        // Per body, because a network only fits the body its layout was written for. The humanoid's is the one asked for
+        // here, since it is the body every network published so far drives; a body nothing is published for has no best, and
+        // asking for one says so by name rather than handing over another body's.
+        String bestName = Models.best(Species.HUMANOID.name());
 
-        helper.assertTrue(bestName != null && bundled.contains(bestName), "The jar names no best network");
+        helper.assertTrue(bestName != null && bundled.contains(bestName), "The jar names no best humanoid network");
+        helper.assertValueEqual(Models.speciesOf(bestName), Species.HUMANOID.name(), "the body " + bestName + " drives");
 
         Brain best = loads(helper, "best");
 
         helper.assertTrue(best instanceof NeuralBrain, "best is not a network");
         helper.assertTrue(best == Brains.named(bestName), "best and " + bestName + " load two copies of one network");
+        helper.assertTrue(((NeuralBrain) best).species() == Species.HUMANOID, "best is not a humanoid's network");
+
+        // And a body nothing is published for: refused by name, saying what the jar has instead, rather than handing over
+        // the network of whichever body happened to evaluate highest and leaving the driver to notice mid fight.
+        helper.assertTrue(Models.best(Species.BEAST.name()) == null, "A beast network is published, so this proves nothing");
+        refused(helper, () -> Brains.named("best", Species.BEAST), "best for a body nothing is published for");
 
         helper.assertTrue(Brains.named("scripted") instanceof ScriptedBrain, "scripted is not the scripted fighter");
         helper.assertTrue(Brains.known().containsAll(List.of("scripted", "best")) && Brains.known().containsAll(bundled),
@@ -216,11 +226,16 @@ public class PlayGameTest {
      * shorter action vector than the humanoid's. This is the whole of what that costs at the game's end — it is spawned,
      * driven and it moves — and it is also where the refusal is proved, because a brain for the wrong body is the mistake
      * that will be made and the one failure that would not look like one.
+     *
+     * <p>Then {@link #everyBodyInTheRegister}, which holds <b>every</b> body to the generic paths rather than this one:
+     * they are one test because they are one claim, that a body is declared in one place and everything else follows.
      */
     @GameTest(template = ARENA)
     public static void aSecondBodyIsDrivenAndARefusedBrainIsNamed(GameTestHelper helper) {
 
-        BeastMob beast = helper.spawn(ModEntities.beastAgent(), new BlockPos(4, 2, 1));
+        everyBodyInTheRegister(helper);
+
+        AgentMob beast = helper.spawn(ModEntities.training(Species.BEAST), new BlockPos(4, 2, 1));
         face(beast, 0.0F);
 
         helper.assertTrue(beast.species() == Species.BEAST, "The beast is not of its own species");
@@ -271,6 +286,91 @@ public class PlayGameTest {
 
             return false;
         });
+    }
+
+    /**
+     * Every body in the register, held to what a body is for. Nothing here names one: the whole point of the register is
+     * that adding a body is one entry in it, so anything that named the bodies it knows about would be the list this is
+     * meant to make impossible.
+     *
+     * <p>What it checks is the generic path each part of the mod takes. Every mob every body declares is registered, and the
+     * entity type it was registered under leads back to the body that declared it, which is what {@link AgentMob#species}
+     * reads and so what decides whether a set of weights may drive a mob at all. A body that declares no mob is refused by
+     * name, and so is arming a body with no hands — both of them states a real body can be in, and both of them silent
+     * before: a sword went into a handless body's inventory and it lost every fight without saying why.
+     *
+     * <p>The layouts themselves are checked by the parity check, which goes round the same register; this is the half of it
+     * that needs the game running.
+     */
+    private static void everyBodyInTheRegister(GameTestHelper helper) {
+
+        helper.assertTrue(Species.ALL.size() > 1, "One body proves nothing about going round them");
+
+        for (Species body : Species.ALL) {
+
+            for (Species.Mob declared : body.mobs()) {
+
+                EntityType<AgentMob> type = ModEntities.of(body, declared.role());
+
+                helper.assertValueEqual(EntityType.getKey(type).getPath(), declared.path(),
+                        body.name() + "'s registered id");
+                helper.assertTrue(ModEntities.speciesOf(type) == body, "The " + declared.path() + " does not lead back to "
+                        + "the " + body.name() + " that declared it, so nothing knows what it sees");
+
+                // Made rather than spawned: what is being checked is the body the mob knows itself to be, which is what
+                // refuses a brain, and that is settled by its type before it ever stands anywhere.
+                AgentMob made = type.create(helper.getLevel());
+
+                helper.assertTrue(made != null, "The " + declared.path() + " could not be made");
+                helper.assertTrue(made.species() == body, declared.path() + " calls itself a " + made.species().name());
+                helper.assertValueEqual(made.isTraining(), declared.role() == Species.Mob.Role.TRAINING,
+                        declared.path() + " being the kind an arena fights in");
+
+                // Armed only where the body has hands; refused by name where it has not, rather than carrying a sword it
+                // has no control that could swing.
+                if (body.holdsItems()) {
+
+                    Loadout.SWORD.equip(made);
+                    helper.assertTrue(made.getHotbarItem(0).is(Items.IRON_SWORD), body.name() + " was not armed");
+                }
+
+                else {
+
+                    named(helper, () -> Loadout.SWORD.equip(made), body.name(), "arming a body with no hands");
+                    helper.assertTrue(made.getHotbarItem(0).isEmpty(),
+                            body.name() + " was armed anyway, so the refusal came too late");
+                }
+
+                made.discard();
+            }
+
+            // A body with no mob of a role cannot be put in the world as one, and says which body and what it has not got.
+            for (Species.Mob.Role role : Species.Mob.Role.values()) {
+
+                if (body.mob(role) == null) {
+
+                    named(helper, () -> ModEntities.of(body, role), body.name(), "spawning a body with no such mob");
+                }
+            }
+        }
+    }
+
+    /** Runs something that has to be refused, and insists the refusal names the body rather than only failing. */
+    private static void named(GameTestHelper helper, Runnable attempt, String body, String what) {
+
+        try {
+
+            attempt.run();
+        }
+
+        catch (RuntimeException expected) {
+
+            helper.assertTrue(expected.getMessage() != null && expected.getMessage().contains(body),
+                    "The refusal of " + what + " has to name the " + body + ", and said: " + expected.getMessage());
+            return;
+        }
+
+        throw new GameTestAssertException(what + " was allowed for the " + body);
     }
 
     // ---------------------------------------------------------------------------------------------------------------

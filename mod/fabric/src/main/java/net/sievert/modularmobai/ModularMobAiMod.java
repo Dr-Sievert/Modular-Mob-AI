@@ -9,6 +9,7 @@ import net.fabricmc.fabric.api.object.builder.v1.entity.FabricDefaultAttributeRe
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.SpawnEggItem;
@@ -26,29 +27,17 @@ public class ModularMobAiMod implements ModInitializer {
 
         Config.load(FabricLoader.getInstance().getGameDir(), FabricLoader.getInstance().getConfigDir());
 
-        ModEntities.setAgentMob(Registry.register(
-                BuiltInRegistries.ENTITY_TYPE,
-                ModEntities.AGENT_MOB_ID,
-                ModEntities.AGENT_MOB_BUILDER.build(ModEntities.AGENT_MOB_ID.toString())
-        ));
+        // Every mob every body declares, and nothing named here: see ModEntities and docs/species.md. The same attributes
+        // for all of them, because a body differs in what it may be asked to do rather than in what its body is, and a
+        // network trained against one has to find the same body in the next.
+        for (ModEntities.Registration registration : ModEntities.registrations()) {
 
-        ModEntities.setTrainingAgent(Registry.register(
-                BuiltInRegistries.ENTITY_TYPE,
-                ModEntities.TRAINING_AGENT_ID,
-                ModEntities.TRAINING_AGENT_BUILDER.build(ModEntities.TRAINING_AGENT_ID.toString())
-        ));
+            EntityType<AgentMob> type = Registry.register(BuiltInRegistries.ENTITY_TYPE, registration.id(),
+                    registration.builder().build(registration.id().toString()));
 
-        ModEntities.setBeastAgent(Registry.register(
-                BuiltInRegistries.ENTITY_TYPE,
-                ModEntities.BEAST_AGENT_ID,
-                ModEntities.BEAST_AGENT_BUILDER.build(ModEntities.BEAST_AGENT_ID.toString())
-        ));
-
-        // The same attributes for all of them: a network trained against one humanoid has to find the same body in the
-        // other, and the beast differs in what it may be asked to do rather than in what its body is.
-        FabricDefaultAttributeRegistry.register(ModEntities.agentMob(), AgentMob.createAttributes());
-        FabricDefaultAttributeRegistry.register(ModEntities.trainingAgent(), AgentMob.createAttributes());
-        FabricDefaultAttributeRegistry.register(ModEntities.beastAgent(), AgentMob.createAttributes());
+            ModEntities.accept(registration, type);
+            FabricDefaultAttributeRegistry.register(type, AgentMob.createAttributes());
+        }
 
         // Only the shipped one gets an egg. The training one is spawned by arenas and nothing else.
         ModItems.setAgentMobSpawnEgg(Registry.register(
