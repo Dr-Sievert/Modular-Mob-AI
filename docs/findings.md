@@ -639,6 +639,17 @@ are deliberate.
       "anywhere otherwise" — so every evaluation is a fresh sample of ground. What makes the answer repeat is the number of
       fights, not repeated ground: the two one-worker runs above agreed to three hundredths of a point on ground that was
       nothing like the same, 236 flat sites against 91, 174 lava against 70, no water at all in one and 159 in the other.
+    - **And a pinned seed does not make two builds fight the same fights either**, so it is no use for "did this change cost
+      anything". Measuring the teacher on one build and then the other, one worker, 600 league fights, `-Ground 7` both
+      times: `sword_and_bow` 88.2% then 88.3%, and `bow` **84.2% then 82.3%** — on a change that provably cannot touch a
+      bow-only fight, since the teacher with no sword and no axe asks for slot 0, which is the slot the bow is already in.
+      Unseeded, the same pair of builds gave 84.3% then 87.7% and 79.0% then 80.2%. Four sittings of one question spanning
+      four to five points, which is what "never subtract a number from one sitting from a number in another" means in
+      practice; see [testing.md](testing.md). A seed pins where in the library a worker starts and nothing else, and the
+      worker sizing is measured from the machine's own throughput at startup, so the fights themselves come out differently
+      every sitting. **To show a behaviour change, find a column that is not a win rate**: the same pinned pair moved
+      `hit it` on `sword_and_bow` from 164 of 600 fights to 142, which is the change doing its work where the win rate
+      could not see it.
 - **An experiment on one worker, judged on the league rating, cannot be judged.** league-pull05 forked league2 at
   iteration 6,000 to try a teacher pull of 0.05 against 0.2, and over 500 iterations on its single worker it produced three
   evaluations: 1610 against league2's 1600 to 1604 at the same iterations. But league2's own rating wanders between 1567

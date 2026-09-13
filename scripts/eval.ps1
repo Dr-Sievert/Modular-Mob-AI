@@ -50,10 +50,16 @@ param(
     # of it, which is how the league page answers a row whose fights were never written down.
     [string[]] $Opponents = @(),
 
-    # Which sites to fight on, as a seed. An evaluation already fights the same sites in the same order every time it is
-    # run, so this is not here to steady anything: measured, the same weights over 300 fights gave 134 wins and then 134
-    # again with no seed, and 137 and 139 with one. It is here to ask the same question of a *different* sample of the
-    # library, which is how to tell a real difference from one sample's worth of ground.
+    # Which sites to fight on, as a seed. **It does not steady the answer**, and it is not here to: measured, the same
+    # weights over 300 fights gave 134 wins and then 134 again with no seed, and 137 and 139 with one. Nor does it make two
+    # runs the same fights -- a seed pins where in the library each worker starts, and the rest of what decides a fight does
+    # not come from the library at all, so a pinned pair still disagrees by points. A merged build and an unmerged one
+    # measured on this seed, one worker, 600 league fights each: sword_and_bow 88.2% then 88.3%, but bow 84.2% then 82.3% on
+    # code that provably cannot touch a bow-only fight.
+    #
+    # It is here to ask the same question of a *different* sample of the library, which is how to tell a real difference from
+    # one sample's worth of ground. For "is this build better than that one" the answer is more fights, not a seed; see
+    # docs\findings.md, and bench.ps1 for why two numbers from two sittings cannot be subtracted at all.
     [int] $Ground = 0,
 
     # The scripted fighter instead of a network, which is the reference every other number here wants. A copy that wins 27%
