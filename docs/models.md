@@ -13,19 +13,26 @@ models\<run>\
   state.pt      the trainer's whole state (optional), to carry the training on elsewhere
 ```
 
-One lineage, each carried on from the one before it: `blast` → `blast2` → `blast3` (not published) → `blast4`.
+One lineage, each carried on from the one before it: `blast` → `blast2` → `blast3` (not published) → `blast4` →
+`blast5` (not published) → `blast6`.
 
 | Model | What | Evaluated |
 | --- | --- | --- |
-| `blast4` | PPO on the league, from the teacher, carried on across three runs, on the fixed ground the lava leak had spoiled | 86.2 / 11.2 / 2.7 (iteration 8825, 1012 league fights); benched in one sitting at 83.3% against the scripted fighter's 78.2% |
+| `blast6` | PPO on the league, from the teacher, carried on across five runs, on ground the lava leak no longer spoils | 83.1% won (iteration 12450, 1019 league fights); its parent checkpoint benched in one sitting at 84.7% against the scripted fighter's 82.3% and the retired `blast4`'s 77.2% |
 
-That is one number on one bench: `blast4` fights the whole league roster, wardens and evokers included, where the retired
+That is one number on one bench: `blast6` fights the whole league roster, wardens and evokers included, where the retired
 networks below fought a vindicator. The two are not comparable, and **nothing in `models\` is comparable to anything
 measured in another sitting**, since each run judges against the opponents its own matchmaking drew. See the win rate
 section below, and `scripts\bench.ps1` in
 [testing.md](testing.md) for the only way to put two networks on one scale.
 
 ## What was retired, and why
+
+`blast4` (iteration 8825, 86.2% by its own run) went when `blast6` was published, and the reason is worth keeping: `best`
+is picked by the win rate in `model.json`, and blast4's 86.2% — judged on ground the lava leak was still spoiling, which
+made fights easier to lose and the roster's numbers unlike today's — would have outranked blast6's 83.1% although blast6's
+parent checkpoint benched 84.7% against blast4's 77.2% in one sitting. Two runs' own numbers are not a comparison, and
+`models\` holding one network is what keeps that rule honest.
 
 `blast` (iteration 2150, 76.3%) and `blast2` (3100, 79.5%) were the first two networks published on this layout and were
 removed once `blast4` had been benched above both in one sitting (83.3% against 75.2%): every published network is bundled
