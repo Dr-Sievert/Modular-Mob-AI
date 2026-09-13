@@ -171,6 +171,12 @@ Test-MachineStability
 Write-Host 'Compiling the mod'
 Invoke-Gradle @(':fabric:gametestClasses')
 
+# The client's own assets -- textures, sounds, some 300 MB from Mojang -- are fetched by Loom the first time a client is
+# launched, which made the first scripts\play.ps1 on a machine a long silent download that failed outright when two
+# launches overlapped: the fetch is lock-file based, and a second launch dies on the first one's locks. Fetched here, once,
+# so the first play.ps1 starts straight into the game.
+Invoke-Gradle @(':fabric:downloadAssets')
+
 Write-Host 'Checking the game and PyTorch agree about the network'
 Invoke-Gradle @(':fabric:brainParity')
 
