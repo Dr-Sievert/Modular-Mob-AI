@@ -205,7 +205,7 @@ public class AgentMechanicsGameTest {
      * One press draws all the way and looses at full power. The button is down for a single tick and up for every tick
      * after it, and the arrow that leaves twenty ticks later is the same critical a held button would have sent.
      *
-     * <p>This is the body's one deliberate departure from a player's hands, and it is what makes a drawn weapon learnable
+     * <p>This is one of the body's deliberate departures from a player's hands, and it is what makes a drawn weapon learnable
      * at all: see AgentMob#drawingToFull. Letting go is still the agent's, once the draw is full â€” which is what the shot
      * above does, and why it can hold the aim before it looses.
      */
@@ -409,6 +409,240 @@ public class AgentMechanicsGameTest {
             }
 
             return false;
+        });
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // The slot a draw was started in
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * Where the sword and bow loadout the league fights with keeps each thing, see {@code league/Loadouts.SWORD_AND_BOW}.
+     * The crossbow test below lays its hotbar out the same way, so every test here flips between the same two slots.
+     */
+    private static final int MELEE_SLOT = 0;
+    private static final int DRAWN_SLOT = 1;
+    private static final int ARROW_SLOT = 2;
+
+    /**
+     * The step the other slot is first asked for on: eight ticks into the draw, which is clear of both ends, so the draw is
+     * well under way and the arrow is nowhere near away. A draw begins on the tick after the press, so the step is two more.
+     */
+    private static final int FLIP_AT = 10;
+
+    /**
+     * A slot asked for in the middle of a draw waits for the arrow. The hotbar is the league's sword and bow, the sword is
+     * asked for eight ticks into the draw, and it is asked for on every tick after that, the way a brain asks for a control
+     * afresh every tick. This is where the arrows were being lost: changing slot stops a use outright, with no release and
+     * so no arrow, and the slot head has twenty chances to do it. The hand keeps the bow, the arrow leaves at full power,
+     * and the sword comes up on the tick behind it. See AgentMob#drawHoldsTheSlot.
+     *
+     * <p>It opens on the case the rule must leave alone: with the hands free, the slot asked for is held on the very next
+     * tick and nothing waits for anything.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 100)
+    public static void aSlotFlipMidDrawWaitsForTheArrow(GameTestHelper helper) {
+
+        AgentMob agent = agent(helper, new BlockPos(4, 2, 1), 0.0F, 0.0F);
+        Loadouts.SWORD_AND_BOW.equip(agent);
+
+        int[] loosedAt = {-1};
+
+        run(helper, tick -> {
+
+            if (tick == 0) {
+
+                helper.assertValueEqual(agent.getSelectedSlot(), MELEE_SLOT, "the slot an agent starts in");
+                agent.controls().selectedSlot = DRAWN_SLOT;
+                return false;
+            }
+
+            if (tick == 1) {
+
+                helper.assertValueEqual(agent.getSelectedSlot(), DRAWN_SLOT, "the slot held with the hands free");
+                helper.assertTrue(agent.getMainHandItem().is(Items.BOW), "The bow never came up");
+
+                agent.controls().use = true;
+                return false;
+            }
+
+            // One press is one arrow: the draw runs to full on its own, see onePressDrawsToFullAndLooses.
+            agent.controls().use = false;
+
+            if (tick >= FLIP_AT) {
+
+                agent.controls().selectedSlot = MELEE_SLOT;
+            }
+
+            if (loosedAt[0] < 0) {
+
+                if (tick == FLIP_AT) {
+
+                    helper.assertValueEqual(agent.getTicksUsingItem(), FLIP_AT - 2, "ticks drawn when the sword was asked for");
+                }
+
+                // True on the tick the arrow leaves as well: the slot is applied before the hands are, so the swap cannot
+                // get in front of the shot.
+                helper.assertValueEqual(agent.getSelectedSlot(), DRAWN_SLOT, "the slot held while the draw ran");
+                helper.assertValueEqual(agent.executed().selectedSlot, DRAWN_SLOT, "the slot the echo reports while the draw ran");
+
+                List<Arrow> arrows = helper.getEntities(EntityType.ARROW);
+
+                if (arrows.isEmpty()) {
+
+                    helper.assertTrue(agent.isUsingItem(), "The draw was dropped, on tick " + tick);
+                    helper.assertTrue(tick < 24, "A draw with a slot flip in it never loosed an arrow");
+                    return false;
+                }
+
+                // The arrow left in this tick, and the slot was applied earlier in the same tick, so the swap is one tick
+                // behind the shot rather than in front of it.
+                Arrow arrow = arrows.get(0);
+                double speed = arrow.getDeltaMovement().length();
+
+                helper.assertTrue(arrow.isCritArrow(), "The flip cost the arrow its full draw");
+                helper.assertTrue(Math.abs(speed - 3.0D) < 0.1D, "The arrow left at " + speed + ", not a full draw's three");
+                helper.assertValueEqual(agent.getHotbarItem(ARROW_SLOT).getCount(), 63, "arrows left in the hotbar");
+
+                loosedAt[0] = tick;
+                return false;
+            }
+
+            // The first tick after the shot, and the slot that was waiting is held.
+            helper.assertValueEqual(agent.getSelectedSlot(), MELEE_SLOT, "the slot held once the arrow was away");
+            helper.assertTrue(agent.getMainHandItem().is(Items.IRON_SWORD), "The sword never came up behind the arrow");
+            return true;
+        });
+    }
+
+    /**
+     * The same for a crossbow's wind, which is worth its own test because a crossbow loses more: it fires nothing at all
+     * short of a full wind, so a flip eight ticks in costs the whole twenty five and the bolt with it. The wind finishes,
+     * the bolt is loaded, and the sword comes up behind it.
+     *
+     * <p>And then the other half of the rule: a <b>loaded</b> crossbow is not held to its slot. Its bolt is in the item and
+     * not in the hand, so putting it away loaded costs nothing and there is nothing to wait for.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 100)
+    public static void aSlotFlipMidWindWaitsForTheLoad(GameTestHelper helper) {
+
+        AgentMob agent = agent(helper, new BlockPos(4, 2, 1), 0.0F, 0.0F);
+
+        agent.setHotbarItem(MELEE_SLOT, new ItemStack(Items.IRON_SWORD));
+        agent.setHotbarItem(DRAWN_SLOT, new ItemStack(Items.CROSSBOW));
+        agent.setHotbarItem(ARROW_SLOT, new ItemStack(Items.ARROW, 64));
+
+        ItemStack crossbow = agent.getHotbarItem(DRAWN_SLOT);
+        boolean[] loaded = {false};
+
+        run(helper, tick -> {
+
+            if (tick == 0) {
+
+                agent.controls().selectedSlot = DRAWN_SLOT;
+                return false;
+            }
+
+            if (tick == 1) {
+
+                helper.assertValueEqual(agent.getSelectedSlot(), DRAWN_SLOT, "the slot held with the hands free");
+                agent.controls().use = true;
+                return false;
+            }
+
+            agent.controls().use = false;
+
+            if (tick >= FLIP_AT) {
+
+                agent.controls().selectedSlot = MELEE_SLOT;
+            }
+
+            if (!loaded[0]) {
+
+                // True on the tick the bolt is taken as well: the slot is applied before the hands are.
+                helper.assertValueEqual(agent.getSelectedSlot(), DRAWN_SLOT, "the slot held while the wind ran");
+                helper.assertTrue(helper.getEntities(EntityType.ARROW).isEmpty(), "Loading a crossbow fired it");
+
+                if (!CrossbowItem.isCharged(crossbow)) {
+
+                    helper.assertTrue(agent.isUsingItem(), "The wind was dropped, on tick " + tick);
+                    helper.assertTrue(tick < 32, "A wind with a slot flip in it never loaded the crossbow");
+                    return false;
+                }
+
+                helper.assertValueEqual(agent.getHotbarItem(ARROW_SLOT).getCount(), 63, "arrows after loading");
+
+                loaded[0] = true;
+                return false;
+            }
+
+            // Loaded, so nothing is waiting on the hands any more and the slot that was asked for is held.
+            helper.assertValueEqual(agent.getSelectedSlot(), MELEE_SLOT, "the slot held once the crossbow was loaded");
+            helper.assertTrue(agent.getMainHandItem().is(Items.IRON_SWORD), "The sword never came up behind the load");
+            helper.assertTrue(CrossbowItem.isCharged(crossbow), "A crossbow put away loaded lost its bolt");
+            return true;
+        });
+    }
+
+    /**
+     * The slot is handed back by the use ending and not by the arrow going. The quiver is emptied while the draw runs, so
+     * the release finds nothing to send: no arrow, no shot recorded, and the slot the brain has been asking for still lands
+     * on the tick after the hands come free. Without this the rule could strand a hand on a weapon that will never fire.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 100)
+    public static void aDrawThatSendsNothingStillHandsTheSlotBack(GameTestHelper helper) {
+
+        AgentMob agent = agent(helper, new BlockPos(4, 2, 1), 0.0F, 0.0F);
+        Loadouts.SWORD_AND_BOW.equip(agent);
+
+        boolean[] shot = {false};
+        int[] endedAt = {-1};
+
+        run(helper, tick -> {
+
+            if (tick == 0) {
+
+                agent.controls().selectedSlot = DRAWN_SLOT;
+                return false;
+            }
+
+            if (tick == 1) {
+
+                agent.controls().use = true;
+                return false;
+            }
+
+            agent.controls().use = false;
+            shot[0] |= agent.executed().shotFired;
+
+            if (tick == FLIP_AT) {
+
+                agent.controls().selectedSlot = MELEE_SLOT;
+                agent.setHotbarItem(ARROW_SLOT, ItemStack.EMPTY);
+                return false;
+            }
+
+            if (endedAt[0] < 0) {
+
+                if (agent.isUsingItem()) {
+
+                    helper.assertValueEqual(agent.getSelectedSlot(), DRAWN_SLOT, "the slot held while the draw ran");
+                    helper.assertTrue(tick < 30, "The draw never ended");
+                    return false;
+                }
+
+                // The draw reached full and the release found nothing to send. The slot was applied earlier in this tick,
+                // while the hands were still busy, so it is the next tick that has to hold the sword.
+                helper.assertFalse(shot[0], "A bow with an empty quiver recorded a shot");
+                helper.assertTrue(helper.getEntities(EntityType.ARROW).isEmpty(), "An arrow came from an empty quiver");
+
+                endedAt[0] = tick;
+                return false;
+            }
+
+            helper.assertValueEqual(agent.getSelectedSlot(), MELEE_SLOT, "the slot held after a draw that sent nothing");
+            helper.assertTrue(agent.getMainHandItem().is(Items.IRON_SWORD), "The sword never came up after a draw that sent nothing");
+            return true;
         });
     }
 
@@ -1664,9 +1898,9 @@ public class AgentMechanicsGameTest {
     // ---------------------------------------------------------------------------------------------------------------
 
     /**
-     * The teacher starts no draw it cannot finish. A draw is twenty ticks at a fifth of walking pace and changing slot is
-     * the only way out of one, so a draw begun at something that arrives first is a draw thrown away: no arrow, and the
-     * movement gone for as long as it lasted. A vindicator six blocks off covers that in twenty five ticks, which is why
+     * The teacher starts no draw it cannot finish. A draw is twenty ticks at a fifth of walking pace and there is no way
+     * out of one, so a draw begun at something that arrives first is twenty ticks spent shooting at a thing that is already
+     * swinging. A vindicator six blocks off covers that in twenty five ticks, which is why
      * nothing is drawn at it here — and it is what the distance alone could not say, since six blocks is past the range
      * a fighter with something to shoot used to shoot from.
      *

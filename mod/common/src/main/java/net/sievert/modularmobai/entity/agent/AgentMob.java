@@ -444,7 +444,9 @@ public class AgentMob extends PathfinderMob {
 
         int slot = Mth.clamp(this.controls.selectedSlot, 0, MobControls.HOTBAR_SIZE - 1);
 
-        if (slot != this.selectedSlot) {
+        // A hand in the middle of a draw keeps the slot it started in; see drawHoldsTheSlot. The request is not thrown
+        // away, since a control stays asked for until the brain asks for something else.
+        if (slot != this.selectedSlot && !this.drawHoldsTheSlot()) {
 
             this.selectedSlot = slot;
             this.syncMainHand();
@@ -668,29 +670,75 @@ public class AgentMob extends PathfinderMob {
      * not finished charging, and for nothing else: a shield drops the tick it is let go, food stops being eaten, and a
      * weapon at full charge is the agent's own to hold or to loose.
      *
-     * <p>This is the one place the agent's hands are not a player's, and it is here because a draw is a single skill that
-     * arrives twenty ticks late. A player holds the button down through those ticks without thinking about it. A network
-     * chooses the button afresh every tick from a probability, so a full draw asks it to choose the same thing twenty
-     * times over, and the odds of that happening by chance are the odds of pressing it once raised to the twentieth power.
-     * A network at even odds gets there once in a million draws, which is never, so a weapon that takes a draw can never
-     * be discovered by trying: the league's first bow network started forty-two draws a fight and loosed five weak
+     * <p>This is one of the places the agent's hands are not a player's, and it is here because a draw is a single skill
+     * that arrives twenty ticks late. A player holds the button down through those ticks without thinking about it. A
+     * network chooses the button afresh every tick from a probability, so a full draw asks it to choose the same thing
+     * twenty times over, and the odds of that happening by chance are the odds of pressing it once raised to the twentieth
+     * power. A network at even odds gets there once in a million draws, which is never, so a weapon that takes a draw can
+     * never be discovered by trying: the league's first bow network started forty-two draws a fight and loosed five weak
      * arrows, and its crossbow, which fires nothing at all short of a full wind, started forty-one loads a fight and fired
      * three bolts in a hundred fights. Committing the draw makes one press one arrow, which is a thing a policy can find.
      *
-     * <p>Nothing is taken away by it. Changing slot still drops the draw, because the hand no longer holds what it started,
-     * which is how the teacher gives up a shot to swing instead. The movement it costs is still a fifth of the keys for
-     * every tick of it, so drawing at the wrong moment is still paid for.
+     * <p>The button is not the only thing a draw needs twenty ticks of. The slot is the other, and it is committed for the
+     * same reason; see {@link #drawHoldsTheSlot}. The movement is still a fifth of the keys for every tick of a draw, so
+     * drawing at the wrong moment is still paid for.
      */
     private boolean drawingToFull() {
 
+        return this.drawnWeaponInUse() && this.useProgress() < FULL_DRAW;
+    }
+
+    /** Whether what is in use is a weapon whose use is a draw. The agent carries nothing else that charges. */
+    private boolean drawnWeaponInUse() {
+
         Item item = this.getUseItem().getItem();
 
-        if (!(item instanceof BowItem) && !(item instanceof CrossbowItem)) {
+        return item instanceof BowItem || item instanceof CrossbowItem;
+    }
 
-            return false;
-        }
+    /**
+     * Whether the hand is committed to a draw, and so keeps the slot that draw started in. True for as long as a bow or a
+     * crossbow is in use in the main hand, and false the moment that use ends, whether the arrow went, the crossbow took
+     * its bolt, or the wind ran out with nothing to show.
+     *
+     * <p>This is the third place the agent's hands are not a player's, and it is the other half of {@link #drawingToFull}:
+     * committing the button alone only moved where the draw was lost. A draw needs the same button twenty ticks running,
+     * which is why the button is committed, and it needs the same <b>slot</b> twenty ticks running, which the slot head is
+     * no likelier to manage: it is chosen afresh every tick from a distribution over the hotbar, exactly as the button is,
+     * where a player presses 1 and means it. Changing slot cancels a use outright — vanilla stops it where the hand no
+     * longer holds what started it, with no release and so no arrow — and measured on league-sharp that is where the
+     * arrows were going: a bow alone, which has no other slot worth slipping to, finishes 91% of its draws, while a bow
+     * with a sword beside it starts 2.42 draws a fight and looses <b>0.09</b> arrows, 4%. On the run l770n, a bow alone
+     * took 9.93 shots a fight and won 55.7%; a sword and bow, 5.84 and 42.4%.
+     *
+     * <p>It holds for the whole use and not only the part below full charge, because vanilla ticks the use before the
+     * controls are applied: a lock that lifted at full charge would lift on the tick the draw finished, one tick before
+     * the release, and a slot asked for on that tick with the button still down would throw the finished draw away. The
+     * cost of holding on is one tick of not pressing use, which is the same thing that looses the arrow.
+     *
+     * <p>Nothing is queued here and nothing is lost. {@link MobControls} is a keyboard and not a list of events: a slot
+     * stays asked for until the brain asks for another, so a request refused while the draw runs is granted on the first
+     * tick after it, and no second copy of it is kept here to disagree with the brain's own. The refusal is not invisible
+     * either — the echo carries the slot actually held and how far the use has charged, so a network reading its own last
+     * tick is told that the slot did not move and the draw did.
+     *
+     * <p>Only a draw, and only in the main hand:
+     * <ul>
+     *   <li>a <b>loaded</b> crossbow is not held to its slot. Its bolt is in the item rather than in the hand, so one put
+     *       away loaded comes back loaded and fires, and there is nothing to protect;
+     *   <li>a draw in the <b>off hand</b> is not held to it either. The hotbar is not what the off hand holds, and changing
+     *       slot does not disturb an off-hand use in the first place;
+     *   <li>a shield, food, a potion: none of them is a draw, and all of them still drop the moment their button does.
+     * </ul>
+     *
+     * <p>What it costs is the one deliberate cancel there was: inside {@code ScriptedBrain#ABANDON_DRAW_RANGE} the teacher
+     * used to drop a draw for the sword, and now spends the ticks left in it, looses, and swaps behind the arrow. It is
+     * rare, since the teacher starts no draw it cannot finish, and a network that wants to bail pays the twenty ticks
+     * either way — the draw it cancelled was twenty ticks of a fifth of the keys with nothing at all to show for them.
+     */
+    private boolean drawHoldsTheSlot() {
 
-        return this.useProgress() < FULL_DRAW;
+        return this.isUsingItem() && this.getUsedItemHand() == InteractionHand.MAIN_HAND && this.drawnWeaponInUse();
     }
 
     /**

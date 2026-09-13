@@ -454,10 +454,40 @@ are deliberate.
   - **The control is league-sharp**, which does have two league DAgger rounds. Same body, same rules: **12.04 draws and
     11.01 arrows a fight** with a bow, won 60.3%, which is *above* its own sword's 56.8%. A bow is not a handicap once the
     record holds one.
-  - **What is left, and it is small: a slot to slip to.** In league-sharp a bow alone finishes 91% of its draws; a bow with
-    a sword beside it starts 2.42 draws a fight and looses **0.09** arrows, 4%, and sword_and_bow sits 2.4 points under the
-    plain sword and 5.9 under the bow. Changing slot is the one thing that still drops a draw, and a network that chooses
-    its slot afresh every tick drops its own.
+  - **What was left, and it was the arrows: a slot to slip to.** In league-sharp a bow alone finishes 91% of its draws; a bow
+    with a sword beside it starts 2.42 draws a fight and looses **0.09** arrows, 4%, and sword_and_bow sits 2.4 points under
+    the plain sword and 5.9 under the bow. On l770n, with the record fixed but the slot still free, a bow alone took 9.93
+    shots a fight and won 55.7% against a sword and bow's 5.84 and 42.4%: the same gap, on a run where the bow itself works.
+    Changing slot was the one thing that still dropped a draw, and a network that chooses its slot afresh every tick dropped
+    its own.
+    - **So the slot is committed too, for the same reason the button was.** While a bow or a crossbow is in use in the main
+      hand, a slot the brain asks for is refused, and it is granted on the first tick after the use ends: the arrow goes and
+      the sword comes up on the tick behind it (`AgentMob#drawHoldsTheSlot`). It is the third place the hands are not a
+      player's. The arithmetic is the button's arithmetic over again — a draw needs the same slot twenty ticks running, and
+      4% of draws surviving twenty of them is a slot head holding the bow on 85% of ticks (0.85^20 = 3.9%), which is what a
+      head that is mostly right looks like. Committing the button alone had only moved where the draw was being lost.
+    - **It has to hold for the whole use and not only below full charge**, because vanilla ticks the use before the controls
+      are applied (`LivingEntity#tick` calls `updatingUsingItem` and then `aiStep`). A lock that lifted at full charge would
+      lift on the tick the draw finished, one tick before the release resolves, and a slot asked for on that tick with the
+      button still down would throw the whole finished draw away: vanilla stops a use whose hand no longer holds what started
+      it, and a stop is not a release, so there is no arrow. Put the two rates already measured together — use pressed again
+      on 47.6% of the ticks something is in use, a slot flicked on about 15% — and that leak is about one arrow in eight,
+      which is arithmetic off two numbers rather than a measurement of its own. Holding on costs one tick of not pressing
+      use, which is the same tick that looses the arrow.
+    - **Nothing is queued, and no layout changed.** `MobControls` is a keyboard and not a list of events, so a refused slot
+      needs no memory in the body: the brain is still asking for it next tick, and a second copy kept in the entity could
+      only disagree with the brain's own. Nor is the refusal invisible — the echo already carries the slot actually held and
+      how far the use has charged, so a network reading its own last tick is told that its slot did not move and its draw
+      did. The recorded action stays the slot the policy sampled, which is what the ratio needs; the body ignores it the way
+      it ignores a jump asked for in mid air.
+    - **What it takes away is the teacher's one deliberate cancel**, inside `ABANDON_DRAW_RANGE`: it used to drop a draw for
+      the sword at two and a half blocks, and it now spends the ticks left in the draw, looses, and swaps behind the arrow.
+      That is rare, because `finishesInTime` stops it starting a draw it cannot finish, and the arena's twenty fights still
+      take **exactly 54 ticks** each, which is the test that catches a change in the reference fighter.
+    - The alternative was to mask the slot head during a draw in the sampling instead, in both `Forward.java` and the PyTorch
+      heads. Not worth it: it touches the parity-checked forward pass and the log probabilities on both sides, for a rule the
+      body states in one line, and it would only bind a network — the teacher, and any hand written brain after it, could
+      still cancel a draw by accident.
   - The teacher's share of that is now fixed: of the draws it gave up before twenty ticks, **79% were begun between five
     and seven and a half blocks**, the band every walker in the league crosses in less than a draw. It draws only at what
     cannot be here before the draw is full — the slot's own `ENEMY_SPEED`, or the velocity it is already coming at,
@@ -490,7 +520,8 @@ are deliberate.
   - The fix is in the body, not the reward or the trainer: a draw once started runs to full on its own, and letting go is
     the agent's only when the weapon is charged (`AgentMob#drawingToFull`). One press is one full arrow, which is a thing
     a policy can find. Nothing else moves — no layout changes, no log probabilities change, the draw still costs a fifth
-    of the movement every tick of it, changing slot still gives it up, and holding at full draw to aim is still allowed.
+    of the movement every tick of it, and holding at full draw to aim is still allowed. Changing slot still gave it up,
+    which took another measurement to see; that is the bullet above.
   - What it did, on the same run and the same roster, about 1,150 training fights a loadout either side of the change:
 
     | | button held | draw committed |

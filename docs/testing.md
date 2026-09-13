@@ -12,7 +12,7 @@ scripts\parity.ps1               Java forward pass against PyTorch's, after touc
 | Check | Pass looks like | Proves |
 | --- | --- | --- |
 | `test.ps1` | `All 20 required tests passed`; every fight 54 ticks | the observation, the body and the scripted fighter still work; the 54 ticks are deterministic, so any change in them is a behaviour change |
-| `test.ps1 -Mechanics` | `All 34 required tests passed` | bows, crossbows, shields, axes, mining, placing, use slowdown and damage payment follow a player's rules, what a press of attack costs and what holding it down costs, what the observation says about a use, about the clock and the quiver, and about what is shot at the agent, the teacher getting itself out of powder snow and starting no draw it cannot finish, and how a league training fight is drawn from the trainer's shares |
+| `test.ps1 -Mechanics` | `All 37 required tests passed` | bows, crossbows, shields, axes, mining, placing, use slowdown and damage payment follow a player's rules, what a press of attack costs and what holding it down costs, that a hand keeps the slot it started a draw in, what the observation says about a use, about the clock and the quiver, and about what is shot at the agent, the teacher getting itself out of powder snow and starting no draw it cannot finish, and how a league training fight is drawn from the trainer's shares |
 | `test.ps1 -Play` | `All 18 required tests passed`, and `Loaded the mod's jar, modular_mob_ai/models/vs-copy.mbw from iteration 650` | what [playing.md](playing.md) promises: the bundled networks load and drive an agent, the commands, saving, sides and friendly fire, the Infinity loadouts |
 | `parity.ps1` | `parity ok` once per body, logits agreeing to about 1e-6, and `the plain ones agree to the bit at batches 1 to 64` | the game runs exactly the network PyTorch trained, **for every body this build has**, and the forward pass's explicit vector loops give the same bits as its plain ones |
 
@@ -84,6 +84,8 @@ Each test sets up one situation and checks the numbers a player would get:
 | `bowShotFliesHitsAndIsPaid` | 20-tick draw, full-draw crit arrow at 3.0 blocks/tick, owned by the agent, one arrow used, hit, paid once |
 | `bowWithoutArrowsDoesNotDraw`, `bowTakesTheArrowAPlayersWould` | ammo rules; an off-hand spectral arrow goes first |
 | `crossbowChargesHoldsItsLoadAndFires`, `crossbowMultishotLoadsThreeForOneArrow` | crossbow loading and firing at a player's speed |
+| `aSlotFlipMidDrawWaitsForTheArrow`, `aSlotFlipMidWindWaitsForTheLoad` | the hand keeps the slot it started a draw in: the sword asked for eight ticks into a draw waits, the arrow leaves at full power and the bolt is loaded, and the sword comes up on the tick behind; with the hands free a slot moves on the next tick, and a loaded crossbow is free to be put away |
+| `aDrawThatSendsNothingStillHandsTheSlotBack` | what hands the slot back is the use ending and not the arrow going, so an empty quiver cannot strand a hand on the bow |
 | `shieldBlocksWhatComesFromTheFront` | blocks blows and arrows from the front, not from behind |
 | `axeKnocksTheAgentsShieldAside`, `agentsAxeKnocksAShieldAside` | the axe disables a shield for 100 ticks, both ways |
 | `usingAnItemSlowsToAFifth`, `noAttackingWhileAnItemIsInUse` | use slowdown and no attacking while using |
