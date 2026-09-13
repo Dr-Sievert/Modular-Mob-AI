@@ -5,7 +5,7 @@ inputs, a GRU memory, 11 controls) that runs inside the game in plain Java, one 
 the same weights. It's trained offline with PyTorch PPO from what the game recorded, and new weights swap in without the
 game restarting.
 
-It beats a vindicator one on one on natural terrain in 99.8% of fights. It uses swords, axes, bows, crossbows and
+Its published network wins about 76% of a league of every vanilla mob that fights fair, and its latest checkpoint about 81%, level with the hand-written fighter it was copied from. It uses swords, axes, bows, crossbows and
 shields, and mines and places blocks, under the same rules as a player. Next: an ELO league against most vanilla mobs,
 itself and past versions, with random loadouts.
 
