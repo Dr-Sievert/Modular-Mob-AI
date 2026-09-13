@@ -3534,6 +3534,29 @@ function entityTextureNames() {
   return v3.entityNames;
 }
 
+/**
+ * Which mobs have a shape of their own on disk, asked for once. The shapes are Minecraft's own cuboid models, written
+ * out of the game into viewer/models by `gradlew :fabric:exportMobModels`; a page served from a checkout without them,
+ * or one opened from a file, gets an empty set and every fighter keeps the humanoid box the viewer drew before.
+ */
+function mobModelNames() {
+  if (!v3.modelNames) {
+    v3.modelNames = fetch('models/index.json', { cache: 'no-store' }).then(r => (r.ok ? r.json() : { mobs: [] }))
+      .then(j => new Set(j.mobs || [])).catch(() => new Set());
+  }
+  return v3.modelNames;
+}
+
+const mobShapes = new Map();   // mob -> Promise of its part tree, or null when there is none
+
+function loadMobShape(mob) {
+  if (!mobShapes.has(mob)) {
+    mobShapes.set(mob, fetch('models/' + mob + '.json', { cache: 'no-store' })
+      .then(r => (r.ok ? r.json() : null)).catch(() => null));
+  }
+  return mobShapes.get(mob);
+}
+
 const TILE = 16, CELL = 20;   // 16-pixel tiles in 20-pixel cells: two pixels of wrapped border keep mipmaps clean
 
 /**
@@ -4044,23 +4067,24 @@ function updateMobNote() {
 
 // ---- Minecraft mobs ---------------------------------------------------------------------------------------------
 //
-// Vanilla's cuboid models and their animations, ported from the game's model classes (HumanoidModel, PlayerModel,
-// IllagerModel, SkeletonModel, IronGolemModel, AnimationUtils). The textures are read from the user's own Minecraft jar
-// by serve.py, so this only happens when the page is served; opened from disk, the fighters stay boxes.
+// Every mob is drawn in its own shape: a tree of cuboids read out of the game's own model classes by
+// `gradlew :fabric:exportMobModels` into viewer/models/<mob>.json, one file a mob, and fetched here. Before this the
+// viewer had a handful of shapes ported by hand and wrapped every other mob's skin round a humanoid box, so a polar
+// bear, a spider and a ghast all came out person-shaped.
 //
 // A part lives in Minecraft's model space: 16 units to the block, y pointing down, the face towards -z. `at` is its
-// pivot and `rot` its resting rotation; a box is [u, v, x, y, z, width, height, depth, grow, mirror], as CubeListBuilder
-// takes them. Outer layers (hat, jacket, sleeves, trousers) ride as extra boxes on the part they follow in the game.
+// pivot, `rot` its resting rotation, `kids` its children, and a box is [u, v, x, y, z, width, height, depth, grow,
+// mirror], as CubeListBuilder takes them, with a texture scale and the faces to draw after those where a cube needs
+// them. buildRig turns that space into ours once, at the root, so every number stays the game's own.
+//
+// The animations are ported from the game's model classes (HumanoidModel, QuadrupedModel, IllagerModel, VillagerModel,
+// SkeletonModel, IronGolemModel, AnimationUtils); see MOB_ANIMS and animateByParts.
+//
+// Textures are read from the user's own Minecraft jar by serve.py, so all of this only happens when the page is served;
+// opened from disk, the fighters stay boxes.
 
+// The one shape kept here: what a mob with no file of its own is drawn as, which is what every mob used to get.
 const MOB_MODELS = {
-  player: {
-    head: { boxes: [[0, 0, -4, -8, -4, 8, 8, 8], [32, 0, -4, -8, -4, 8, 8, 8, 0.5]] },
-    body: { boxes: [[16, 16, -4, 0, -2, 8, 12, 4], [16, 32, -4, 0, -2, 8, 12, 4, 0.25]] },
-    right_arm: { at: [-5, 2, 0], boxes: [[40, 16, -3, -2, -2, 4, 12, 4], [40, 32, -3, -2, -2, 4, 12, 4, 0.25]] },
-    left_arm: { at: [5, 2, 0], boxes: [[32, 48, -1, -2, -2, 4, 12, 4], [48, 48, -1, -2, -2, 4, 12, 4, 0.25]] },
-    right_leg: { at: [-1.9, 12, 0], boxes: [[0, 16, -2, 0, -2, 4, 12, 4], [0, 32, -2, 0, -2, 4, 12, 4, 0.25]] },
-    left_leg: { at: [1.9, 12, 0], boxes: [[16, 48, -2, 0, -2, 4, 12, 4], [0, 48, -2, 0, -2, 4, 12, 4, 0.25]] },
-  },
   humanoid: {
     head: { boxes: [[0, 0, -4, -8, -4, 8, 8, 8], [32, 0, -4, -8, -4, 8, 8, 8, 0.5]] },
     body: { boxes: [[16, 16, -4, 0, -2, 8, 12, 4]] },
@@ -4069,48 +4093,54 @@ const MOB_MODELS = {
     right_leg: { at: [-1.9, 12, 0], boxes: [[0, 16, -2, 0, -2, 4, 12, 4]] },
     left_leg: { at: [1.9, 12, 0], boxes: [[0, 16, -2, 0, -2, 4, 12, 4, 0, true]] },
   },
-  skeleton: {
-    head: { boxes: [[0, 0, -4, -8, -4, 8, 8, 8], [32, 0, -4, -8, -4, 8, 8, 8, 0.5]] },
-    body: { boxes: [[16, 16, -4, 0, -2, 8, 12, 4]] },
-    right_arm: { at: [-5, 2, 0], boxes: [[40, 16, -1, -2, -1, 2, 12, 2]] },
-    left_arm: { at: [5, 2, 0], boxes: [[40, 16, -1, -2, -1, 2, 12, 2, 0, true]] },
-    right_leg: { at: [-2, 12, 0], boxes: [[0, 16, -1, 0, -1, 2, 12, 2]] },
-    left_leg: { at: [2, 12, 0], boxes: [[0, 16, -1, 0, -1, 2, 12, 2, 0, true]] },
-  },
-  // The hat IllagerModel defines is never shown. `arms` is the folded pair; the loose arms show instead when fighting.
-  illager: {
-    head: { boxes: [[0, 0, -4, -10, -4, 8, 10, 8]], kids: { nose: { at: [0, -2, 0], boxes: [[24, 0, -1, -1, -6, 2, 4, 2]] } } },
-    body: { boxes: [[16, 20, -4, 0, -3, 8, 12, 6], [0, 38, -4, 0, -3, 8, 20, 6, 0.5]] },
-    arms: { at: [0, 3, -1], rot: [-0.75, 0, 0], boxes: [[44, 22, -8, -2, -2, 4, 8, 4], [40, 38, -4, 2, -2, 8, 4, 4]],
-      kids: { left_shoulder: { boxes: [[44, 22, 4, -2, -2, 4, 8, 4, 0, true]] } } },
-    right_leg: { at: [-2, 12, 0], boxes: [[0, 22, -2, 0, -2, 4, 12, 4]] },
-    left_leg: { at: [2, 12, 0], boxes: [[0, 22, -2, 0, -2, 4, 12, 4, 0, true]] },
-    right_arm: { at: [-5, 2, 0], boxes: [[40, 46, -3, -2, -2, 4, 12, 4]] },
-    left_arm: { at: [5, 2, 0], boxes: [[40, 46, -1, -2, -2, 4, 12, 4, 0, true]] },
-  },
-  iron_golem: {
-    head: { at: [0, -7, -2], boxes: [[0, 0, -4, -12, -5.5, 8, 10, 8], [24, 0, -1, -5, -7.5, 2, 4, 2]] },
-    body: { at: [0, -7, 0], boxes: [[0, 40, -9, -2, -6, 18, 12, 11], [0, 70, -4.5, 10, -3, 9, 5, 6, 0.5]] },
-    right_arm: { at: [0, -7, 0], boxes: [[60, 21, -13, -2.5, -3, 4, 30, 6]] },
-    left_arm: { at: [0, -7, 0], boxes: [[60, 58, 9, -2.5, -3, 4, 30, 6]] },
-    right_leg: { at: [-4, 11, 0], boxes: [[37, 0, -3.5, -3, -3, 6, 16, 5]] },
-    left_leg: { at: [5, 11, 0], boxes: [[60, 0, -3.5, -3, -3, 6, 16, 5, 0, true]] },
-  },
 };
 
-// Which model, texture, arm animation, held item and size each mob gets. Anything else is a humanoid in its own texture.
+// Parts that are in a mob's model but that no renderer draws on the mob itself: a player's cape and its deadmau5 ears,
+// which the game shows only for the few skins that have them, and a breeze's wind, which vanilla draws in a layer of its
+// own with the wind texture rather than with the breeze's skin. Drawn from the tree they sit in, each would be a stray
+// box round its mob.
+const MOB_NOT_DRAWN = new Set(['cloak', 'ear', 'wind_body']);
+
+// The outer skin layer — a hat, a jacket, sleeves, trousers — rides on a part of its own that the game poses by copying
+// the part under it (ModelPart.copyFrom, at the end of HumanoidModel.setupAnim and PlayerModel.setupAnim). Those parts
+// are siblings in the tree, not children, so without this a walking mob's jacket and sleeves stay behind while its body
+// and arms move. Only between siblings: an illager's and a witch's hat is a real child of the head and follows it
+// already, and copying onto that one would drag it off the head.
+const MOB_COPIES = { hat: 'head', jacket: 'body', left_sleeve: 'left_arm', right_sleeve: 'right_arm',
+  left_pants: 'left_leg', right_pants: 'right_leg' };
+
+// Anything a mob needs beyond its shape: which texture (only as a shortcut — mobSkins finds the rest in the jar's own
+// list), which animation its arms take, what it holds, and how big it is drawn.
+//
+// The scales are the one thing the export cannot carry, because they are in the client's renderer rather than in the
+// model: every model is one size in the file and a few mobs are scaled as they are drawn. Each of these is that mob's
+// own renderer — HuskRenderer 1.0625, WitherSkeletonRenderer 1.2, CaveSpiderRenderer 0.7, IllagerRenderer and
+// WitchRenderer 0.9375, PolarBearRenderer 1.2, GhastRenderer 4.5 — and every mob not named here is drawn at 1, which
+// is what its renderer does. `sized` is for the two mobs that come in sizes: a slime's model is one block of slime and
+// the client scales it by the size, which the replay's recorded height is what says. `lift` and `shift` are the extra
+// move a renderer makes before the model is drawn, in blocks.
 const MOB_KINDS = {
-  vindicator: { model: 'illager', tex: 'entity/illager/vindicator', arms: 'axe', item: 'iron_axe', hold: 'handheld', scale: 0.9375 },
-  pillager: { model: 'illager', tex: 'entity/illager/pillager', arms: 'crossbow', item: 'crossbow_standby', hold: 'crossbow', scale: 0.9375 },
-  evoker: { model: 'illager', tex: 'entity/illager/evoker', arms: 'crossed', scale: 0.9375 },
-  skeleton: { model: 'skeleton', tex: 'entity/skeleton/skeleton', arms: 'bow', item: 'bow', hold: 'bow' },
-  stray: { model: 'skeleton', tex: 'entity/skeleton/stray', arms: 'bow', item: 'bow', hold: 'bow' },
-  bogged: { model: 'skeleton', tex: 'entity/skeleton/bogged', arms: 'bow', item: 'bow', hold: 'bow' },
-  wither_skeleton: { model: 'skeleton', tex: 'entity/skeleton/wither_skeleton', arms: 'melee', item: 'stone_sword', hold: 'handheld', scale: 1.2 },
-  zombie: { model: 'humanoid', tex: 'entity/zombie/zombie', arms: 'zombie' },
-  husk: { model: 'humanoid', tex: 'entity/zombie/husk', arms: 'zombie', scale: 1.0625 },
-  drowned: { model: 'humanoid', tex: 'entity/zombie/drowned', arms: 'zombie' },
-  iron_golem: { model: 'iron_golem', tex: 'entity/iron_golem/iron_golem', arms: 'golem' },
+  vindicator: { tex: 'entity/illager/vindicator', arms: 'axe', item: 'iron_axe', hold: 'handheld', scale: 0.9375 },
+  pillager: { tex: 'entity/illager/pillager', arms: 'crossbow', item: 'crossbow_standby', hold: 'crossbow', scale: 0.9375 },
+  evoker: { tex: 'entity/illager/evoker', arms: 'crossed', scale: 0.9375 },
+  witch: { arms: 'villager', scale: 0.9375 },
+  skeleton: { tex: 'entity/skeleton/skeleton', arms: 'bow', item: 'bow', hold: 'bow' },
+  stray: { tex: 'entity/skeleton/stray', arms: 'bow', item: 'bow', hold: 'bow' },
+  bogged: { tex: 'entity/skeleton/bogged', arms: 'bow', item: 'bow', hold: 'bow' },
+  wither_skeleton: { tex: 'entity/skeleton/wither_skeleton', arms: 'melee', item: 'stone_sword', hold: 'handheld', scale: 1.2 },
+  zombie: { tex: 'entity/zombie/zombie', arms: 'zombie' },
+  husk: { tex: 'entity/zombie/husk', arms: 'zombie', scale: 1.0625 },
+  drowned: { tex: 'entity/zombie/drowned', arms: 'zombie' },
+  zombie_villager: { arms: 'zombie' },
+  iron_golem: { tex: 'entity/iron_golem/iron_golem', arms: 'golem' },
+  cave_spider: { scale: 0.7 },
+  polar_bear: { scale: 1.2 },
+  ghast: { scale: 4.5 },
+  slime: { sized: true },
+  magma_cube: { sized: true },
+  // PhantomRenderer moves the model down and back before drawing it. Its scale grows with the phantom's size, which is
+  // always the smallest here: the league spawns one as it comes.
+  phantom: { lift: 1.3125, shift: 0.1875 },
 };
 
 // Item models' third-person right-hand display transforms: rotation in degrees, translation in pixels, scale.
@@ -4128,6 +4158,10 @@ const MOB_SKIN_NAMES = { polar_bear: 'bear/polarbear', magma_cube: 'slime/magmac
 // for a texture named creeper.
 const NOT_A_MOB = /^(banner|shield|conduit|bed)\//;
 
+/**
+ * What to draw a fighter as: which shape file, which texture, which animation and how big. `model` is the mob's own id,
+ * which is what its file in viewer/models is named; a mob with no file there falls back to the humanoid box.
+ */
 function mobKindOf(e) {
   const id = String(e.type || '').replace(/^minecraft:/, '');
   if (e.role === 'agent' || /^modular_mob_ai:/.test(e.type)) {
@@ -4135,9 +4169,44 @@ function mobKindOf(e) {
     return { model: 'player', arms: 'player', skins: ['skin/agent.png', 'mc/textures/entity/player/wide/steve.png'],
       item: 'iron_sword', hold: 'handheld', scale: 1 };
   }
-  const k = MOB_KINDS[id];
-  if (k) return Object.assign({ scale: 1 }, k, { skins: ['mc/textures/' + k.tex + '.png'] });
-  return { model: 'humanoid', arms: 'humanoid', scale: 1, id };
+  const k = MOB_KINDS[id] || {};
+  return Object.assign({ model: id, arms: '', scale: 1, id }, k,
+    k.tex ? { skins: ['mc/textures/' + k.tex + '.png'] } : {});
+}
+
+const notedMobs = new Set();   // mobs already complained about, so a fight of 200 ticks says it once
+
+/**
+ * A mob's own shape, or null with one note in the console for that mob: it then keeps the humanoid box every fighter
+ * used to get. Asked of the index first, so a mob with no file never costs a 404.
+ */
+async function mobShapeOf(kind) {
+  const have = await mobModelNames();
+  const shape = have.has(kind.model) ? await loadMobShape(kind.model) : null;
+  if (!shape && !notedMobs.has(kind.model)) {
+    notedMobs.add(kind.model);
+    console.warn('No shape for ' + kind.model + ' in viewer/models: drawn as a humanoid.'
+      + ' gradlew :fabric:exportMobModels writes them out of the game.');
+  }
+  return shape;
+}
+
+/**
+ * How big a mob is drawn, and the check that it is right. A slime and a magma cube come in sizes and are scaled by the
+ * one the replay recorded — their model is a single block of slime — and everything else takes the scale its renderer
+ * uses, from MOB_KINDS. A shape that then comes out more than twice or less than half the height the replay recorded
+ * for the mob is a scale that is wrong or missing, and says so once.
+ */
+function mobScale(kind, shape, e) {
+  const base = shape && shape.entity ? shape.entity[1] : 0;
+  const scale = kind.sized && base > 0 ? Math.max(1, Math.round(e.height / base)) : kind.scale || 1;
+  const drawn = shape ? (shape.bounds[4] - shape.bounds[1]) / 16 * scale : 0;
+  if (drawn > 0 && e.height > 0 && (drawn > e.height * 2 || drawn < e.height / 2) && !notedMobs.has(kind.model)) {
+    notedMobs.add(kind.model);
+    console.warn(kind.model + ' is drawn ' + drawn.toFixed(2) + ' blocks tall at scale ' + scale
+      + ', against the ' + e.height.toFixed(2) + ' the replay recorded: MOB_KINDS wants that mob\'s renderer scale.');
+  }
+  return scale;
 }
 
 /**
@@ -4177,27 +4246,38 @@ function loadMobTexture(url) {
   return mobTextures.get(url);
 }
 
-/** A part's boxes as one geometry, laid out on the texture exactly as the game's ModelPart.Cube does it. */
+/**
+ * A part's boxes as one geometry, laid out on the texture exactly as the game's ModelPart.Cube does it: the six faces in
+ * the order it builds them, each at its own rectangle of the standard box unwrap.
+ *
+ * `grow` is one number or one per axis; `scale` is the cube's own texture scale, which divides its corners by a texture
+ * of another size than the layer's; `faces` names the faces to draw for a cube that has fewer than six. All three are
+ * rare, and each comes straight out of a CubeDefinition.
+ */
 function boxesGeometry(boxes, texW, texH) {
   const THREE = v3.T, P = [], N = [], U = [], I = [];
-  boxes.forEach(([tu, tv, x, y, z, w, h, d, g = 0, mirror = false]) => {
-    let x0 = x - g, x1 = x + w + g;
-    const y0 = y - g, y1 = y + h + g, z0 = z - g, z1 = z + d + g;
+  boxes.forEach(([tu, tv, x, y, z, w, h, d, g = 0, mirror = false, scale = null, faces = null]) => {
+    const gx = Array.isArray(g) ? g[0] : g, gy = Array.isArray(g) ? g[1] : g, gz = Array.isArray(g) ? g[2] : g;
+    const tw = texW * (scale ? scale[0] : 1), th = texH * (scale ? scale[1] : 1);
+    let x0 = x - gx, x1 = x + w + gx;
+    const y0 = y - gy, y1 = y + h + gy, z0 = z - gz, z1 = z + d + gz;
     if (mirror) { const s = x0; x0 = x1; x1 = s; }
     const V = [[x1, y0, z0], [x1, y1, z0], [x0, y1, z0], [x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1], [x0, y0, z0]];
     const u0 = tu, u1 = tu + d, u2 = tu + d + w, u3 = tu + d + w + w, u4 = tu + d + w + d, u5 = tu + d + w + d + w;
     const v0 = tv, v1 = tv + d, v2 = tv + d + h;
-    // Each face: its four corners (indices into V), its texture rectangle, and which way it faces.
-    [[[4, 3, 7, 0], u1, v0, u2, v1, [0, -1, 0]], [[1, 2, 6, 5], u2, v1, u3, v0, [0, 1, 0]],
-      [[7, 3, 6, 2], u0, v1, u1, v2, [-1, 0, 0]], [[0, 7, 2, 1], u1, v1, u2, v2, [0, 0, -1]],
-      [[4, 0, 1, 5], u2, v1, u4, v2, [1, 0, 0]], [[3, 4, 5, 6], u4, v1, u5, v2, [0, 0, 1]]].forEach(([c, ua, va, ub, vb, n]) => {
+    // Each face: its four corners (indices into V), its texture rectangle, which way it faces, and its name.
+    [[[4, 3, 7, 0], u1, v0, u2, v1, [0, -1, 0], 'down'], [[1, 2, 6, 5], u2, v1, u3, v0, [0, 1, 0], 'up'],
+      [[7, 3, 6, 2], u0, v1, u1, v2, [-1, 0, 0], 'west'], [[0, 7, 2, 1], u1, v1, u2, v2, [0, 0, -1], 'north'],
+      [[4, 0, 1, 5], u2, v1, u4, v2, [1, 0, 0], 'east'], [[3, 4, 5, 6], u4, v1, u5, v2, [0, 0, 1], 'south']]
+        .forEach(([c, ua, va, ub, vb, n, name]) => {
+      if (faces && !faces.includes(name)) return;
       let corners = [[c[0], ub, va], [c[1], ua, va], [c[2], ua, vb], [c[3], ub, vb]];
       if (mirror) corners = corners.reverse();
       const base = P.length / 3;
       corners.forEach(([k, u, v]) => {
         P.push(V[k][0] / 16, V[k][1] / 16, V[k][2] / 16);
         N.push(mirror ? -n[0] : n[0], n[1], n[2]);
-        U.push(u / texW, 1 - v / texH);
+        U.push(u / tw, 1 - v / th);
       });
       I.push(base, base + 1, base + 2, base, base + 2, base + 3);
     });
@@ -4211,14 +4291,19 @@ function boxesGeometry(boxes, texW, texH) {
 }
 
 /**
- * A posable model. Its root turns the game's model space into ours (a half turn about x flips y and z, and the feet
- * land on the ground), so every part inside keeps the game's own numbers, rotations included, in ZYX order.
+ * A posable model, of any shape: the part tree goes in, cuboids come out. Its root turns the game's model space into
+ * ours (a half turn about x flips y and z, and the feet land on the ground), so every part inside keeps the game's own
+ * numbers, rotations included, in ZYX order.
+ *
+ * The 1.501 blocks is LivingEntityRenderer's own: it flips the model and lifts it by that much before any part is drawn,
+ * for every living thing in the game, so it belongs to the root here as well. `lift` and `shift` are the extra move the
+ * few renderers that make one add on top of it.
  */
-function buildRig(def, tex, texW, texH, scale, color) {
+function buildRig(def, tex, texW, texH, scale, color, lift = 0, shift = 0) {
   const THREE = v3.T, root = new THREE.Group(), parts = {};
   root.rotation.x = Math.PI;
   root.scale.setScalar(scale);
-  root.position.y = 1.501 * scale;
+  root.position.set(0, (1.501 - lift) * scale, -shift * scale);
   const mat = new THREE.MeshLambertMaterial({ map: tex, alphaTest: 0.1, side: THREE.DoubleSide });
   // The silhouette that shows through whatever hides the mob. It is drawn after the terrain but before the mob itself,
   // so only the terrain can cover it; drawn after, a mob's own arm in front of its body would count as cover too.
@@ -4226,10 +4311,11 @@ function buildRig(def, tex, texW, texH, scale, color) {
   const ghostMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(color), opacity: 0.5, depthWrite: false,
     depthFunc: THREE.GreaterDepth, blending: THREE.CustomBlending, blendSrc: THREE.SrcAlphaFactor,
     blendDst: THREE.OneMinusSrcAlphaFactor });
-  const add = (parent, name, p) => {
+  const add = (parent, name, p, top) => {
+    if (MOB_NOT_DRAWN.has(name)) return;
     const g = new THREE.Group(), at = p.at || [0, 0, 0], rot = p.rot || [0, 0, 0];
     g.rotation.order = 'ZYX';
-    if (p.boxes) {
+    if (p.boxes && p.boxes.length) {
       const geo = boxesGeometry(p.boxes, texW, texH), mesh = new THREE.Mesh(geo, mat), ghost = new THREE.Mesh(geo, ghostMat);
       mesh.castShadow = true;
       mesh.renderOrder = 2;
@@ -4237,10 +4323,11 @@ function buildRig(def, tex, texW, texH, scale, color) {
       g.add(mesh, ghost);
     }
     parent.add(g);
-    parts[name] = { g, at, rot };
-    Object.entries(p.kids || {}).forEach(([k, kid]) => add(g, k, kid));
+    // `top` is what MOB_COPIES needs: an outer layer is a sibling of the part it follows, never a child of it.
+    parts[name] = { g, at, rot, top };
+    Object.entries(p.kids || {}).forEach(([k, kid]) => add(g, k, kid, false));
   };
-  Object.entries(def).forEach(([name, p]) => add(root, name, p));
+  Object.entries(def).forEach(([name, p]) => add(root, name, p, true));
   return { root, parts, mat, ghostMat };
 }
 
@@ -4266,9 +4353,15 @@ async function attachMob(f) {
   let tex = null;
   for (const url of await mobSkins(kind)) if (!tex) tex = await loadMobTexture(url);
   const item = tex && kind.item ? await loadMobTexture('mc/textures/item/' + kind.item + '.png') : null;
+  const shape = tex ? await mobShapeOf(kind) : null;
   if (!tex || !v3.fighters.includes(f)) return;
-  const img = tex.image, rig = buildRig(MOB_MODELS[kind.model], tex, img.naturalWidth || img.width, img.naturalHeight || img.height,
-      kind.scale, f.e.color);
+  // The texture size the model was laid out for, not the image's: that is what the UVs divide by, and a texture pack
+  // hands over a bigger image of the same layout. Without a shape file there is nothing to say, so the image stands in.
+  const img = tex.image;
+  const texW = shape ? shape.texture[0] : img.naturalWidth || img.width;
+  const texH = shape ? shape.texture[1] : img.naturalHeight || img.height;
+  const rig = buildRig(shape ? shape.parts : MOB_MODELS.humanoid, tex, texW, texH, mobScale(kind, shape, f.e),
+      f.e.color, kind.lift || 0, kind.shift || 0);
   if (item && rig.parts.right_arm) holdItem(rig.parts.right_arm.g, item, HOLD[kind.hold]);
   f.tip.add(rig.root);
   f.rig = rig;
@@ -4381,6 +4474,39 @@ const MOB_ANIMS = {
   },
 };
 
+/** QuadrupedModel.setupAnim: four legs in the diagonal pattern, which CreeperModel uses too. */
+function walkQuadruped(S, a) {
+  S.right_hind_leg.xRot = Math.cos(a.limb * 0.6662) * 1.4 * a.amount;
+  S.left_hind_leg.xRot = Math.cos(a.limb * 0.6662 + PI) * 1.4 * a.amount;
+  S.right_front_leg.xRot = Math.cos(a.limb * 0.6662 + PI) * 1.4 * a.amount;
+  S.left_front_leg.xRot = Math.cos(a.limb * 0.6662) * 1.4 * a.amount;
+}
+
+/** VillagerModel.setupAnim: the arms stay folded, and the legs swing half as far as a humanoid's. */
+function walkVillager(S, a) {
+  S.head.xRot = a.pitch;
+  S.head.yRot = a.headYaw;
+  S.right_leg.xRot = Math.cos(a.limb * 0.6662) * 1.4 * a.amount * 0.5;
+  S.left_leg.xRot = Math.cos(a.limb * 0.6662 + PI) * 1.4 * a.amount * 0.5;
+}
+
+/**
+ * The animation for a mob with no entry of its own, chosen by the parts its model has, which is how the game's model
+ * classes divide up too: a pair of arms and a pair of legs is a HumanoidModel, four named legs a QuadrupedModel. Anything
+ * else — a spider's eight legs, a blaze's rods, a bee's wings, a slime, a ghast's tentacles — only turns its head, and
+ * stands still if it has not got one. A pose that is right beats a movement that is invented.
+ */
+function animateByParts(S, a) {
+  if (S.head && S.body && S.right_arm && S.left_arm && S.right_leg && S.left_leg) MOB_ANIMS.humanoid(S, a);
+  else if (S.right_hind_leg && S.left_hind_leg && S.right_front_leg && S.left_front_leg) walkQuadruped(S, a);
+  if (S.head && !(S.right_arm && S.left_arm)) {
+    // Added to the resting pose rather than set, since a head that rests turned — a ravager's, under its neck — should
+    // keep the turn it was built with.
+    S.head.xRot += a.pitch;
+    S.head.yRot += a.headYaw;
+  }
+}
+
 /** IllagerModel.setupAnim, with the vindicator's axe, the pillager's crossbow, or arms folded. */
 function illagerAnim(S, a, kind) {
   S.head.xRot = a.pitch;
@@ -4413,12 +4539,19 @@ function illagerAnim(S, a, kind) {
 
 /** Poses a fighter's mob for the playhead: resting pose first, then the animation, then onto the three.js groups. */
 function poseMob(f, a) {
-  const S = {};
+  const S = {}, arms = f.kind.arms;
   Object.entries(f.rig.parts).forEach(([name, p]) => {
     S[name] = { xRot: p.rot[0], yRot: p.rot[1], zRot: p.rot[2], x: p.at[0], y: p.at[1], z: p.at[2], visible: true };
   });
-  if (f.kind.model === 'illager') illagerAnim(S, a, f.kind);
-  else (MOB_ANIMS[f.kind.arms] || MOB_ANIMS.humanoid)(S, a);
+  if (arms === 'axe' || arms === 'crossbow' || arms === 'crossed') illagerAnim(S, a, f.kind);
+  else if (arms === 'villager') walkVillager(S, a);
+  else if (MOB_ANIMS[arms]) MOB_ANIMS[arms](S, a);
+  else animateByParts(S, a);
+  // The outer skin layer, once the part under it has moved: see MOB_COPIES.
+  Object.entries(MOB_COPIES).forEach(([outer, inner]) => {
+    const o = f.rig.parts[outer], i = f.rig.parts[inner];
+    if (o && i && o.top && i.top) S[outer] = Object.assign({}, S[inner], { visible: S[outer].visible });
+  });
   Object.entries(f.rig.parts).forEach(([name, p]) => {
     const s = S[name];
     p.g.rotation.set(s.xRot, s.yRot, s.zRot);

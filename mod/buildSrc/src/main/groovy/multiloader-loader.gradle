@@ -151,6 +151,33 @@ tasks.named('processGametestResources', ProcessResources) {
     from(configurations.commonGametestResources)
 }
 
+// Every mob's shape, out of the game and into viewer/models, so the replay viewer's 3D view can draw a polar bear as a
+// polar bear instead of as a humanoid box in a polar bear's skin.
+//
+//   gradlew :fabric:exportMobModels
+//
+// Minecraft's entity models are data: a tree of cuboids with pivots, rotations and texture offsets, built by the client's
+// model classes and nothing more. So this needs the client classes but no window and no graphics, which is why it is a
+// plain JavaExec on the game test runtime classpath rather than a game; it runs in a few seconds. See
+// gametest/tools/MobModelTool for what comes out.
+//
+// What it writes is committed. It is generated data derived from the game -- cuboid corners, sizes and texture offsets,
+// the same kind of thing as a block's shape -- and not a Mojang asset: no texture and no image is written, and mob skins
+// are still read at runtime from the user's own jar, never from the repository.
+tasks.register('exportMobModels', JavaExec) {
+
+    group = 'modular mob ai'
+    description = 'Writes every mob\'s cuboid shape to viewer/models for the replay viewer'
+
+    // This build lives in mod/; the viewer sits beside it at the repository root.
+    def output = new File(new File(rootProject.projectDir.parentFile, 'viewer'), 'models')
+
+    classpath = sourceSets.gametest.runtimeClasspath
+    mainClass = 'net.sievert.modularmobai.gametest.tools.MobModelTool'
+    args 'models', output.absolutePath
+    outputs.upToDateWhen { false }
+}
+
 // Runs the game test suite across several worker processes at once. The server ticks its tests on a single thread, so one
 // process only ever uses one core no matter how many arenas are live in it; real parallelism has to come from running
 // several servers side by side. Each worker is handed an interleaved slice of the arenas, its own game directory, and a

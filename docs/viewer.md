@@ -49,7 +49,7 @@ written over, so the page can ask every three seconds while training writes.
   - logs follow their axis; leaves are cut out; water is see-through;
   - plants are crossed sprites; slabs, stairs and snow are shaped;
   - fighters stay visible through blocks as silhouettes.
-- Mobs are drawn with their own textures.
+- Mobs are drawn in their own shape and their own texture; see [Mob shapes](#mob-shapes) below.
 - Textures are read at runtime from the local Minecraft jar in the Gradle cache. Nothing from the game is written to
   disk or into exports; without the jar, blocks keep their shapes in map colours.
 - The page asks the server what the jar holds — `/api/blocks` and `/api/entities` — and then asks only for those, so it
@@ -60,6 +60,63 @@ written over, so the page can ask every three seconds while training writes.
   it names the path.
 - A block the jar gives nothing for is drawn in its map colour, and the page says which in the browser's console: open a
   handful of replays with it open and anything named there wants a rule in `blockTextures`.
+
+## Mob shapes
+
+Every mob is drawn in its own shape. A polar bear is a polar bear, a spider a spider, a ghast a ghast; before this the
+page had five shapes ported by hand and wrapped every other mob's skin round a humanoid box, so a wolf and a creeper came
+out person-shaped.
+
+A Minecraft entity model is data — a tree of cuboids, each with a pivot, a resting rotation and a texture offset, and
+nothing else — but it lives in the client's Java classes, which a browser cannot read. So the game is asked once:
+
+```
+gradlew :fabric:exportMobModels          from mod\, writes viewer\models\<mob>.json
+```
+
+`LayerDefinitions.createRoots()` builds every model the client registers, as plain data with no window and no rendering,
+and `gametest/tools/MobModelTool` walks those trees and writes the numbers down: per part a pivot, a rotation and its
+cubes, per cube the corner, the size, the texture offset, the mirror and the inflate, and per mob the layer's texture
+size, the entity's own width and height, and the box the whole model covers. The tool takes a few seconds and needs no
+game running. Its output is committed: it is generated data derived from the game — cuboid numbers, the same kind of
+thing as a block's shape — and not a Mojang asset. **No texture and no image is in it**; mob skins are still read from
+the user's own jar while the viewer serves, as they always were.
+
+Regenerate it when the game version changes or a mob joins the league; the files come out byte for byte the same when
+the game has not changed, so a diff is the change.
+
+**Which mobs.** Every opponent the league fields — see `gametest/league/Roster`, which is also every mob a replay can
+hold — plus the player shape the agent is drawn in: 38 files, about 40 kB in all. A replay with anything else in it (an
+arena test told to fight something exotic) falls back to the humanoid box and says so once in the browser's console.
+
+**Only the base layer.** The extra layers a mob has are named in each file under `otherLayers` and drawn by nothing: the
+armour layers every humanoid carries, a wolf's collar and armour, a slime's outer shell, a creeper's charge. A fighter
+in a replay wears no armour, so there is nothing for them to do. A breeze's wind and a player's cape and deadmau5 ears
+are in the base layer but are drawn by a layer of the renderer's rather than by the model, so the page leaves those out
+too (`MOB_NOT_DRAWN`).
+
+**Size is not in the model.** Every model is one size in its file, and the client's renderer scales a few of them, which
+is code rather than data. Those scales are in `MOB_KINDS` in the page, each taken from that mob's renderer: 1.0625 for a
+husk, 1.2 for a wither skeleton and a polar bear, 0.7 for a cave spider, 0.9375 for the illagers and the witch, 4.5 for
+a ghast; a slime and a magma cube are scaled by their size, which the replay's recorded height is what says. Everything
+else is drawn at 1, which is what its renderer does. The check that one of them is wrong or missing is the recorded
+height: a shape drawn more than twice or less than half as tall as the mob the replay recorded says so in the console.
+
+**Animation** comes from the replay, and from the parts a model has rather than from a list of mobs, which is how the
+game's own model classes divide up too:
+
+| Model has | What moves |
+|---|---|
+| a pair of arms and a pair of legs | HumanoidModel's walk, the attack swing and the idle sway — every zombie, skeleton, piglin, illager, the warden, an iron golem, the agent |
+| four named legs | QuadrupedModel's diagonal gait — a wolf, a polar bear, a hoglin, a ravager, a creeper |
+| a head and neither of those | the head follows the recorded look, and nothing else |
+
+The walk is driven by the speed between the recorded positions, the head by the recorded yaw and pitch, the arm swing by
+the recorded `swing` ticks. Nothing else is invented: a spider's eight legs, a blaze's rods, a bee's wings, a ghast's
+tentacles, a slime's squash and a phantom's wingbeat are all still, because a pose that is right beats a movement that
+is made up. The outer skin layer — a hat, a jacket, sleeves, trousers — is a sibling part in the tree that the game
+poses by copying the part under it, and the page does the same (`MOB_COPIES`); without it a walking mob's jacket stays
+behind.
 
 ## Recording
 

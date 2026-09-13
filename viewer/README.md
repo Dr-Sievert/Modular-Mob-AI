@@ -45,18 +45,20 @@ A link like `http://127.0.0.1:8765/?run=imitate&replay=w01-f000400.json&t=120&vi
 ## Minecraft mobs in 3D
 
 When the viewer is served, the 3D view draws the fighters as their Minecraft mobs:
-- **Models:** the agent uses the player model with wide arms in its own skin (the mod's `agent.png`) and holds an iron
-  sword. There are also the vindicator (arms folded until it fights, then its axe raised), pillager, evoker,
-  skeleton (bow), stray, bogged, wither skeleton, zombie, husk, drowned and iron golem. Any other mob is a humanoid in
-  its own texture, or a box when the jar has no texture for it.
+- **Shapes:** each mob in its own, out of the game's own model classes. `viewer/models/<mob>.json` holds the tree of
+  cuboids a mob is built from, written by `gradlew :fabric:exportMobModels` and committed — generated data derived from
+  the game, no texture and no image in it. Every league opponent is there, 38 in all, plus the player shape the agent
+  is drawn in; anything else falls back to a humanoid box and says so in the console. See
+  [../docs/viewer.md](../docs/viewer.md), "Mob shapes", for what is exported, what is left out and how it is regenerated.
 - **Textures by name:** which texture a mob gets is looked up in the jar's own list, `/api/entities`, rather than
   guessed from its id. Vanilla files a mob's texture by family as often as by name — `spider/cave_spider`,
   `hoglin/zoglin`, `illager/ravager`, `piglin/zombified_piglin` — and two of them are named nothing like their id at
   all (`bear/polarbear`, `slime/magmacube`), which is why those mobs used to come out as boxes while the jar had them
   all along.
 - **Animation:** it comes from the replay. The head follows yaw and pitch, the body lags towards where the mob walks,
-  and the legs swing with its speed. Arms swing on `swing` ticks, the mob flashes red on `hurt` ticks, and it falls
-  over at 0 health.
+  and the legs swing with its speed — a humanoid's two, a quadruped's four in the diagonal gait. Arms swing on `swing`
+  ticks, the mob flashes red on `hurt` ticks, and it falls over at 0 health. A mob that is neither shape only turns its
+  head: a spider's legs, a blaze's rods and a bee's wings are still.
 - **Blocks:** the site's real blocks, each with its own texture from the jar: grass blocks with tinted tops and grassy
   sides, logs by the way they lie, leaves with their holes, water tinted and see-through and darker where it is deep.
   Grass, ferns, flowers, saplings, dead bushes, sugar cane, hanging roots and seagrass are crossed planes, vines and

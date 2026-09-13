@@ -1,0 +1,18 @@
+{
+  "mob": "magma_cube",
+  "layer": "minecraft:magma_cube#main",
+  "texture": [64, 32],
+  "entity": [0.52, 0.52],
+  "bounds": [-4, 16, -4, 4, 24, 4],
+  "parts": {
+    "cube0": {"boxes": [[0, 0, -4, 16, -4, 8, 1, 8, 0, false]]},
+    "cube1": {"boxes": [[0, 1, -4, 17, -4, 8, 1, 8, 0, false]]},
+    "cube2": {"boxes": [[24, 10, -4, 18, -4, 8, 1, 8, 0, false]]},
+    "cube3": {"boxes": [[24, 19, -4, 19, -4, 8, 1, 8, 0, false]]},
+    "cube4": {"boxes": [[0, 4, -4, 20, -4, 8, 1, 8, 0, false]]},
+    "cube5": {"boxes": [[0, 5, -4, 21, -4, 8, 1, 8, 0, false]]},
+    "cube6": {"boxes": [[0, 6, -4, 22, -4, 8, 1, 8, 0, false]]},
+    "cube7": {"boxes": [[0, 7, -4, 23, -4, 8, 1, 8, 0, false]]},
+    "inside_cube": {"boxes": [[0, 16, -2, 18, -2, 4, 4, 4, 0, false]]}
+  }
+}
