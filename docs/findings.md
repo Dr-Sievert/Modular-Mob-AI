@@ -415,9 +415,21 @@ are deliberate.
   had no such branch and went straight to `target.hurt`, which `Fireball#hurt` answers `false` to, so the press was spent
   for nothing. The aim was never the problem: `Projectile#isPickable` is true for that tag, so `pickAimedEntity` was
   already handing the fireball over. Measured over blast4's 100 recorded ghast fights, **489 fireballs and not one sent
-  back**. It is the whole matchup: a ghast has ten health, its own fireball explodes for more, and the ghast sits a mean
-  21 blocks above the agent — out of a sword's reach for the whole fight, while the fireball comes to the agent. The tag
-  holds only the fireball and the two wind charges, so nothing else in the league moves.
+  back**. The ghast sits a mean 21 blocks above the agent — out of a sword's reach for the whole fight, while the fireball
+  comes to the agent. The tag holds only the fireball and the two wind charges, so nothing else in the league moves.
+- **And it does not kill the ghast, because the agent is not a `Player`.** The obvious next sentence — a ghast has ten
+  health and its own fireball takes six on the way in, so sending one back is how you kill one — is true for a player and
+  false for the agent, and it was in this patch's own commit message before it was ever built. A ghast is **fire immune**,
+  so `DamageTypes.FIREBALL` is refused outright, and vanilla's one exception to that is a type test:
+  `Ghast#isReflectedFireball` asks whether the fireball's owner `instanceof Player`, and both `Ghast#isInvulnerableTo` and
+  `Ghast#hurt` go through it. The deflection hands the fireball to the agent, a `PathfinderMob`, so the thousand damage a
+  player's reflection deals is never reached; and the blast cannot make it up either, since a power-one explosion reaches
+  two blocks from its centre and a ghast is four wide, so its middle is always at least that far from wherever the fireball
+  met its face. Pinned by `aGhastIsSparedItsOwnFireballUnlessAPlayerSentItBack` rather than fixed: making it work means a
+  mixin on a vanilla mob's invulnerability, which is the owner's call. **What the deflection is worth is still real**: the
+  six and the blast that were coming at the agent go somewhere else, and the fireball is the agent's own projectile from
+  then on, so whatever it does reach it hurts (`aDeflectedFireballHurtsWhatItIsSentInto`). Don't plan a ghast matchup round
+  a kill that does not happen.
 - **Keeping off a hazard is not the same as getting off one.** Reading hazards at 1.5 stopped the teacher walking onto
   them, and then a vindicator's blow knocked it on anyway: over 4,000 fights on the 4,096-site terrain library the teacher
   won 98.7% and lost 15 fights to something that was not the vindicator, **14 of them freezing** and one a fall. Powder

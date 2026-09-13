@@ -973,10 +973,15 @@ public class AgentMob extends PathfinderMob {
         // then Fireball#hurt returns false, so this fell straight through its own hurt() check and the press was spent for
         // nothing. Measured over 100 recorded ghast fights: 489 fireballs, not one of them ever sent back.
         //
-        // It is worth the whole matchup. A ghast has ten health, its own fireball explodes for more than that, and sending
-        // one back is how a player kills one; the tag holds only the fireball and the two wind charges, so nothing else in
-        // the league changes. The agent cannot reach a ghast that sits 21 blocks up (the mean of those fights) with
-        // anything but a bow, and a fireball comes to it.
+        // What it is worth, measured rather than assumed: the six damage and the blast that were coming at the agent go
+        // somewhere else instead, and the fireball is the agent's own projectile from here on, so whatever it reaches it
+        // hurts. It does not kill the ghast. A ghast is fire immune and vanilla's one exception to that is a type test —
+        // Ghast#isReflectedFireball asks whether the fireball's owner is a Player and nothing else — so the thousand damage
+        // a player's reflection deals is out of the agent's reach, and a power-one blast cannot make it up across four
+        // blocks of ghast. See findings.md and AgentMechanicsGameTest; fixing it would take a mixin on a vanilla mob's
+        // invulnerability, which is nobody's to add in passing.
+        //
+        // The tag holds only the fireball and the two wind charges, so nothing else in the league moves.
         if (target.getType().is(EntityTypeTags.REDIRECTABLE_PROJECTILE)
                 && target instanceof Projectile shot
                 && shot.deflect(ProjectileDeflection.AIM_DEFLECT, this, this, true)) {

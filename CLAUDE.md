@@ -48,6 +48,11 @@ Read these before changing anything:
   while the aim stays on it. A network chooses each button **and its slot** afresh every tick, so without these three a bow
   fires weak arrows, a crossbow fires none at all, a bow with a sword beside it cancels its own draw, and no block is ever
   broken. Don't "restore parity" here; see [docs/architecture.md](docs/architecture.md) and findings.md.
+  **A swing at a ghast's fireball sends it back**, and that is not a fourth deviation: it is a player's rule
+  (`Player#attack` deflects anything in `redirectable_projectile` before it looks at the damage) that `AgentMob#resolveAttack`
+  was simply missing, so the press did nothing at all. Adding it moved the hands towards a player's, not away. It does not
+  kill the ghast — vanilla forgives a ghast's fire immunity only for a `Player`'s fireball — so don't plan a matchup round
+  that; see findings.md.
 
 ## Everyday commands (Windows PowerShell, from the repository root)
 

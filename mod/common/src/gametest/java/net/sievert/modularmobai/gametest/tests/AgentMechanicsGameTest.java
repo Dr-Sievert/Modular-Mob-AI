@@ -24,13 +24,16 @@ import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.MobSpawnType;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.monster.Creeper;
+import net.minecraft.world.entity.monster.Ghast;
 import net.minecraft.world.entity.projectile.Arrow;
+import net.minecraft.world.entity.projectile.LargeFireball;
 import net.minecraft.world.item.CrossbowItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -1277,6 +1280,227 @@ public class AgentMechanicsGameTest {
     }
 
     // ---------------------------------------------------------------------------------------------------------------
+    // A ghast's fireball
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * A swing at a ghast's fireball sends it back rather than hurting it, which is a player's own rule and not a favour to
+     * the agent: {@code Player#attack} asks it before it looks at the damage at all, deflects along the swinger's look,
+     * takes the projectile over, and ends the swing there.
+     *
+     * <p>Which is why the cooldown is read here as well. Vanilla restarts the ticker before that branch, so a deflection
+     * costs a press exactly what a landed blow costs, and the swing is spent: this is the assertion that would catch a
+     * deflection made free.
+     *
+     * <p>Where the swing used to go is the reason the test exists. {@code Fireball#hurt} answers {@code false} to
+     * everything, so the press reached the damage, was refused and did nothing whatever — over a hundred recorded ghast
+     * fights, 489 fireballs and not one sent back. Nothing was wrong with the aim: {@code Projectile#isPickable} is true
+     * for the {@code redirectable_projectile} tag, with a whole block of pick radius besides.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 100)
+    public static void aSwingSendsAFireballBackAndSpendsThePress(GameTestHelper helper) {
+
+        AgentMob agent = agent(helper, new BlockPos(4, 2, 1), 0.0F, 0.0F);
+        Loadout.SWORD.equip(agent);
+
+        int swing = SETTLE + 10;
+        LargeFireball[] shot = new LargeFireball[1];
+
+        run(helper, tick -> {
+
+            agent.controls().attack = tick == swing;
+
+            if (tick == swing) {
+
+                // Level with the eyes, a block and a half out, drifting in slowly: near enough for the aim to find and slow
+                // enough that a tick has not carried it anywhere.
+                shot[0] = fireball(helper, null, 4.5D, 3.12D, 3.2D, 0.0D, 0.0D, -0.25D);
+
+                helper.assertTrue(shot[0].getDeltaMovement().z < 0.0D, "The fireball is not coming at the agent");
+                helper.assertValueEqual(agent.getAttackStrengthScale(0.0F), 1.0F, "attack strength before the swing");
+                return false;
+            }
+
+            if (tick == swing + 1) {
+
+                LargeFireball fireball = shot[0];
+
+                helper.assertTrue(fireball.isAlive(), "The fireball went off rather than being sent back");
+                helper.assertTrue(agent.executed().attacked, "No swing went out");
+                helper.assertTrue(agent.executed().attackHit, "The swing found nothing: the fireball was not under the aim");
+                helper.assertValueEqual(agent.executed().attackDamage, 0.0F, "damage dealt to a fireball");
+
+                Vec3 sent = fireball.getDeltaMovement();
+                Vec3 look = agent.getLookAngle().normalize();
+
+                helper.assertTrue(sent.z > 0.0D, "The fireball is still coming at the agent, at " + sent);
+                helper.assertTrue(sent.normalize().distanceTo(look) < 1.0E-3D,
+                        "The fireball went " + sent.normalize() + " and not along the agent's look, " + look);
+
+                helper.assertTrue(fireball.getOwner() == agent,
+                        "The fireball's owner is " + fireball.getOwner() + " and not the agent that sent it back");
+
+                // A player's deflection restarts the ticker before the branch that returns, so the press costs what a
+                // landed blow costs. One tick of the sword's twelve and a half is back by the time this reads it.
+                helper.assertValueEqual(agent.getAttackStrengthScale(0.0F),
+                        1.0F / agent.getCurrentItemAttackStrengthDelay(), "attack strength after a deflected swing");
+                return true;
+            }
+
+            return false;
+        });
+    }
+
+    /**
+     * A fireball sent back is a weapon and not only a dodge: it is the agent's own projectile from the deflection on, and
+     * what it reaches it hurts, for the six a fireball takes on the way in and the blast behind that.
+     *
+     * <p>The zombie stands past the agent's own reach, so it is never what the swing was aimed at: the only thing under the
+     * aim is the fireball, and the only thing that carries the blow four blocks further is the deflection.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 100)
+    public static void aDeflectedFireballHurtsWhatItIsSentInto(GameTestHelper helper) {
+
+        AgentMob agent = agent(helper, new BlockPos(4, 2, 1), 0.0F, 0.0F);
+        Loadout.SWORD.equip(agent);
+
+        // Four blocks from the eyes, a block past the three a swing reaches, and dead in the line the deflection throws.
+        Mob opponent = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new BlockPos(4, 2, 5));
+
+        int swing = SETTLE + 10;
+
+        run(helper, tick -> {
+
+            agent.controls().attack = tick == swing;
+
+            if (tick == swing) {
+
+                fireball(helper, null, 4.5D, 3.12D, 3.2D, 0.0D, 0.0D, -0.25D);
+                helper.assertValueEqual(opponent.getHealth(), opponent.getMaxHealth(), "the zombie's health before the swing");
+                return false;
+            }
+
+            // Deflected on the tick after the press, then about a block a tick, so five leaves room to spare.
+            if (tick == swing + 5) {
+
+                helper.assertTrue(helper.getEntities(EntityType.FIREBALL).isEmpty(), "The fireball never went off");
+
+                helper.assertTrue(opponent.getHealth() < opponent.getMaxHealth(),
+                        "The zombie still has all " + opponent.getHealth() + " of its health: the fireball never reached it");
+
+                helper.assertTrue(agent.isAlive(), "The agent died to the fireball it sent back");
+                return true;
+            }
+
+            return false;
+        });
+    }
+
+    /**
+     * And what it does <b>not</b> buy, which is the thing a reader of the rule above would assume it did: a ghast is not
+     * killed by its own fireball coming back, because the agent is not a {@link net.minecraft.world.entity.player.Player}.
+     *
+     * <p>A ghast is fire immune, so a fireball's damage is refused outright, and vanilla's one exception is written as a
+     * type test: {@code Ghast#isInvulnerableTo} and {@code Ghast#hurt} both go through {@code isReflectedFireball}, which
+     * asks whether the fireball's owner {@code instanceof Player} and nothing else. The deflection hands the fireball to the
+     * agent, which is a {@code PathfinderMob}, so the thousand damage a player's reflection deals is never reached and the
+     * blast cannot make it up: a power-one explosion reaches two blocks and a ghast is four wide, so its middle is always
+     * further off than that from wherever the fireball met its face.
+     *
+     * <p>This is pinned rather than fixed. Making it work would take a mixin on a vanilla mob's invulnerability, which is
+     * the owner's call and not a test's; what a test can do is make sure nobody plans a ghast matchup around a kill that
+     * does not happen. See findings.md. What the deflection is worth against a ghast is everything above: the six and the
+     * blast that were coming at the agent go somewhere else instead.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 100)
+    public static void aGhastIsSparedItsOwnFireballUnlessAPlayerSentItBack(GameTestHelper helper) {
+
+        AgentMob agent = agent(helper, new BlockPos(4, 2, 1), 0.0F, 0.0F);
+        Loadout.SWORD.equip(agent);
+
+        // Four blocks wide and four high, so the far half of the box is ghast: its near face stands four blocks out, half a
+        // block past the fireball, and one tick of flight is enough to reach it.
+        Ghast ghast = helper.spawnWithNoFreeWill(EntityType.GHAST, new Vec3(4.5D, 2.0D, 6.0D));
+
+        int swing = SETTLE + 10;
+
+        run(helper, tick -> {
+
+            agent.controls().attack = tick == swing;
+
+            if (tick == swing) {
+
+                fireball(helper, ghast, 4.5D, 3.12D, 3.2D, 0.0D, 0.0D, -0.25D);
+                return false;
+            }
+
+            if (tick == swing + 5) {
+
+                // The fireball did go back and did go off on the ghast: this is not a test that nothing happened.
+                helper.assertTrue(helper.getEntities(EntityType.FIREBALL).isEmpty(),
+                        "The fireball never went off, so nothing here says anything about the ghast");
+
+                helper.assertValueEqual(ghast.getHealth(), ghast.getMaxHealth(),
+                        "the ghast's health after its own fireball came back");
+
+                helper.assertTrue(agent.isAlive(), "The agent died to the fireball it sent back");
+                return true;
+            }
+
+            return false;
+        });
+    }
+
+    /**
+     * Nothing else moves. The tag holds the fireball and the two wind charges and nothing besides, so a swing at an arrow
+     * does exactly what it always did: the arrow is not pickable, the aim passes straight through it, and the press is a
+     * swing at thin air that costs the whole cooldown and touches nothing.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 100)
+    public static void aSwingAtAnArrowDeflectsNothing(GameTestHelper helper) {
+
+        AgentMob agent = agent(helper, new BlockPos(4, 2, 1), 0.0F, 0.0F);
+        Mob shooter = helper.spawnWithNoFreeWill(EntityType.SKELETON, new BlockPos(1, 2, 7));
+        Loadout.SWORD.equip(agent);
+
+        int swing = SETTLE + 10;
+        Arrow[] shot = new Arrow[1];
+
+        run(helper, tick -> {
+
+            agent.controls().attack = tick == swing;
+
+            if (tick == swing) {
+
+                // Where the fireball stood, on the same slow drift at the agent.
+                shot[0] = shoot(helper, shooter, 4.5D, 3.4D, 3.2D, 0.0D, 0.0D, -0.25D);
+                return false;
+            }
+
+            if (tick == swing + 1) {
+
+                Arrow arrow = shot[0];
+
+                helper.assertTrue(arrow.getDeltaMovement().z < 0.0D,
+                        "The arrow was sent back, at " + arrow.getDeltaMovement());
+
+                helper.assertTrue(arrow.getOwner() == shooter,
+                        "The arrow's owner became " + arrow.getOwner() + " rather than staying the skeleton's");
+
+                helper.assertTrue(agent.executed().attacked, "No swing went out");
+                helper.assertFalse(agent.executed().attackHit, "The swing landed on the arrow");
+
+                // A swing at thin air, which is what a swing at an arrow has always been, and it costs the whole cooldown.
+                helper.assertValueEqual(agent.getAttackStrengthScale(0.0F),
+                        1.0F / agent.getCurrentItemAttackStrengthDelay(), "attack strength after a swing at an arrow");
+                return true;
+            }
+
+            return false;
+        });
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
     // Placing blocks
     // ---------------------------------------------------------------------------------------------------------------
 
@@ -2273,6 +2497,29 @@ public class AgentMechanicsGameTest {
         helper.getLevel().addFreshEntity(arrow);
 
         return arrow;
+    }
+
+    /**
+     * A ghast's fireball in the air from wherever, with whatever velocity, and an owner or none. Everything about it is
+     * vanilla's: one point of explosion power, as a ghast's has, and the acceleration it puts on itself every tick.
+     */
+    private static LargeFireball fireball(GameTestHelper helper, @Nullable LivingEntity owner,
+            double x, double y, double z, double vx, double vy, double vz) {
+
+        Vec3 at = helper.absoluteVec(new Vec3(x, y, z));
+        LargeFireball fireball = new LargeFireball(EntityType.FIREBALL, helper.getLevel());
+
+        fireball.moveTo(at.x, at.y, at.z);
+
+        if (owner != null) {
+
+            fireball.setOwner(owner);
+        }
+
+        fireball.setDeltaMovement(vx, vy, vz);
+        helper.getLevel().addFreshEntity(fireball);
+
+        return fireball;
     }
 
     /** Which of the agent's enemy slots this entity holds, or -1 for none. */

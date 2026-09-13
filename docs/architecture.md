@@ -42,6 +42,16 @@ those rules from the echo:
 There is no aim assist. The agent turns with its yaw and pitch controls, and a swing hits whatever is under its
 crosshair within reach, as for a player.
 
+A swing is resolved the way `Player#attack` resolves one (`AgentMob#resolveAttack`), including the branch that comes before
+the damage: a target in the `redirectable_projectile` tag — a ghast's fireball, a wind charge — is **deflected along the
+agent's own look**, taken over as the agent's own projectile, and the swing ends there, costing the cooldown a landed blow
+costs and dealing nothing itself. This branch was missing for a long time and the swing reached `Fireball#hurt` instead,
+which refuses every blow, so the press was spent for nothing. What it buys is the six damage and the blast that were coming
+at the agent going somewhere else, and a fireball the agent then owns and can put into something. It does **not** kill the
+ghast: a ghast is fire immune and vanilla forgives that only for a fireball a `Player` owns, which the agent is not; see
+[findings.md](findings.md). It is not one of the three places below — it is one of the places the hands were *not* yet a
+player's, and now are.
+
 ## What the agent sees: 792 floats
 
 This is the **humanoid**'s observation, the player-shaped body every trained network drives. A layout belongs to a body
