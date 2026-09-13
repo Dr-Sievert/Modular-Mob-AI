@@ -1,5 +1,6 @@
 package net.sievert.modularmobai.brain;
 
+import net.sievert.modularmobai.arena.FightFacts;
 import net.sievert.modularmobai.brain.schema.Species;
 
 /**
@@ -37,6 +38,13 @@ public final class BrainStep {
     /** What each agent earned since its previous step. */
     public float[] rewards = new float[0];
 
+    /**
+     * {@code count * FightFacts.SIZE}: what the game knows about each agent's fight that its observation does not, for the
+     * critic on the training side. Filled for every agent whatever is driving it, as the reward is, because a brain never
+     * knows whether it is being recorded. No brain reads it; see {@link FightFacts}.
+     */
+    public float[] facts = new float[0];
+
     /** {@link #FLAG_NEW} and {@link #FLAG_DONE}, or zero for an ordinary step in the middle of a fight. */
     public byte[] flags = new byte[0];
 
@@ -64,6 +72,7 @@ public final class BrainStep {
         this.agentIds = new int[capacity];
         this.observations = new float[capacity * species.obsDim()];
         this.rewards = new float[capacity];
+        this.facts = new float[capacity * FightFacts.SIZE];
         this.flags = new byte[capacity];
         this.hidden = new float[capacity * hiddenSize];
         this.actions = new float[capacity * species.actDim()];

@@ -129,8 +129,11 @@ comes from the game, which carried it tick by tick and wrote it into the shard; 
 game never runs it, and a state held over from the previous iteration would have been produced by weights that have since
 moved. What makes a blank start cheap is the inputs below.
 
-**What it is told that the agent is not.** Four numbers, `PRIVILEGED` in `trainer/mmai/model.py`, worked out by
-`Trainer._scale`:
+**What it is told that the agent is not.** Fourteen numbers, from two places, in this order, and the order is the contract:
+a critic reads its columns from the first, so anything added goes on the end and a critic already trained against fewer
+columns goes on reading exactly the ones it learned.
+
+Four are what only *this* side knows, `PRIVILEGED` in `trainer/mmai/model.py`, worked out by `Trainer._scale`:
 
 | Column | What it is |
 | --- | --- |
@@ -139,20 +142,43 @@ moved. What makes a blank start cheap is the inputs below.
 | `age` | how many ticks the fight has run before this row, over 1,200 |
 | `start` | one on a segment's first row: the one row whose previous reward is in a shard this side no longer has, and whose own memory starts from nothing |
 
-Every column is strictly *behind* the row it sits on. The return is the target, so an input carrying any part of the return
-would teach the critic to read the answer off its own inputs instead of learning what a position is worth: the fight's
-eventual outcome and the true number of ticks left to it are precisely the two things not to hand it. The past it may
-condition on as freely as its own memory does.
+Every one of those is strictly *behind* the row it sits on. The return is the target, so an input carrying any part of the
+return would teach the critic to read the answer off its own inputs instead of learning what a position is worth: the
+fight's eventual outcome and the true number of ticks left to it are precisely the two things not to hand it. The past it
+may condition on as freely as its own memory does.
 
-There is less on that list than there might be, and the reason is the shard format. A rollout row holds an agent id, flags,
-the reward, the log probability, the action and the observation, and nothing else (`RolloutWriter`, and
-`trainer/mmai/rollout.py` is the other half of it), so **the opponent's identity is not available on this side at all**:
-the league keeps a record per fight that names it, but those lines are keyed by iteration and matchup rather than by agent,
-so there is nothing to join them to. Nor is there a hidden part of the world left to reveal — the observation already
-carries the clock the reward is charged by, and an enemy slot already carries the opponent's hearts, damage, speed, size
-and flags. What the *trainer* knows and the game wrote down nowhere is the reward, which appears in no observation, and the
-shape of the episode the segments were cut out of. That is what the four columns are, and anything past them wants a new
-field in the shard.
+Ten are what only the *game* knows, `SHARD_PRIVILEGED` here and `arena/FightFacts.java` there, which the game now writes
+into every rollout row; the shard format is in [architecture.md](architecture.md#mbr-rollout-shards). Two things decide what
+belongs on this list. Nothing may carry the answer — no outcome, no reward, and no count of the ticks *left*. And a column
+has to change how a position should be priced, in a way the observation either cannot say or says in a form the critic
+cannot use: the critic reads the raw observation and has no encoder over the enemy slots, so a fact spread across ten slots
+is a fact it has to find, and a slot is filled only while the opponent is perceived — inside 32 blocks, inside the episode's
+bounds, and for 40 ticks of grace after that — so an opponent behind a hill reads exactly like no opponent at all.
+
+| Column | What it is, and why the observation will not do |
+| --- | --- |
+| `foes` | how many of the other side are still standing, over the ten enemy slots. Two zombies are not twice a zombie, and the observation's count of enemies in range counts only what is perceived |
+| `foe_health` | the health still standing over the health the other side has when whole: one at the start, nought once all of them are gone. The strongest single thing a value estimate can be given, and it is the past — it is the damage the agent has already dealt. A slot's health is one mob's own fraction, in one of ten places, and only while seen |
+| `foe_hearts` | what the other side has when whole, over 100: a zombie 0.2, a warden 5 |
+| `foe_damage` | the hardest blow anything still standing strikes with, over 20 |
+| `foe_armour` | the best armour anything still standing wears, over 20. **Nowhere in the observation at all**: a zombie in iron takes less than half the damage from the same swing and reads as the same zombie. It is also most of what a hard rung of the ladder changes |
+| `foe_fuse` | how far along a lit creeper's fuse is. The fight is about to move three or four in the reward, which is the largest jump a position can make |
+| `went_for` | whether anything on the other side has the agent as its target right now. Not in the observation in any form — facing is a proxy that a mob which just let its target go still shows — and it decides whether the fight happens at all, since an opponent that never engages runs the clock out and a timeout is paid as a loss |
+| `own_damage` | what one of the agent's own blows takes off, over 20. The hotbar says "a sword", one category for stone, iron and diamond, and the echo says what a blow took off only after one has landed |
+| `own_armour` | the armour the agent is wearing, over 20. The agent cannot see its own armour anywhere: the armoured loadout reads exactly like the plain sword, and it halves what every blow costs |
+| `limit` | how long this fight is given, in ticks over 1,200. Fixed before the first tick, so it is not a countdown; the observation's clock is a fraction of *this* limit, so tick 600 reads 0.5 in a melee fight and 0.25 against a ghast, and the speed bonus is paid against the limit. It also says coarsely what kind of opponent this is: 1,200 for something reachable, 1,800 for something that shoots, 2,400 for something that flies |
+
+The other side is described by what it **can do** rather than by which mob it is, for the same reason an enemy slot is: a
+species number has to be learned one mob at a time, says nothing about a mob the run never met, and would need a table kept
+in step between the shard and the trainer, where a rung of the ladder is a new player every time one opens. Capabilities
+need none of that, and they carry a rung for free — a hard zombie is one with more health and better armour, and that is
+what these numbers say. The same argument settled the agent's own loadout: `own_damage` and `own_armour` are what the
+hotbar block cannot show, and they generalise to a loadout no run has fielded yet.
+
+Left off deliberately: **the kind of ground the fight is on**. The site label (`lava`, `drop`, `hazard`, `water`, `flat`) is
+drawn from a scan of the middle 48 blocks of the site, and the observation's eight rays already say how far it is to a wall,
+to something that hurts and to a drop, out to the same 32 blocks — the local truth rather than a site-wide summary. It would
+have been the least informative float in the set and the only one needing the game-test side to tell the arena something.
 
 **A resume keeps the critic it has.** `--critic-gru` decides what a *new* run builds. The shape of the critic is written
 into `state.pt`, and a run carries on with the one its state holds whatever the flags say, with a line in the log to say
@@ -160,6 +186,21 @@ so. A critic is learned rather than configured: swapping its architecture under 
 knew about the fight and hands the policy nonsense advantages until it has learned again, which is the whole reason
 `--critic-warmup` exists. A state written before the critic had a memory of its own names no shape at all, and that reads
 as the plain feed-forward critic it holds, whose parameters are unchanged. Change it by starting a new run.
+
+Both halves of its input width are the state's, the number of privileged columns included: a run that was already going
+when the game started writing its own ten carries on reading the four it learned, which is exactly what the fixed order
+with the trainer's columns first buys. It is handed all fourteen either way, as every shape of critic is, and reads the ones
+it was built for.
+
+**A critic that has never learned is built to the flags instead.** Every word of the rule above is about not throwing away
+what a critic has learned, and a critic that has taken no gradient step has learned nothing: what is in it is the random
+initialisation of whatever build wrote the state. That is exactly a copy's state — imitation trains the actor and never the
+critic — so `scripts\train.ps1 -Seed <copy>` used to inherit, silently, the critic of the build that made the copy, and
+could never be given the one it asked for. The state says which case it is (`critic_trained`, written by `save`), and where
+the critic has not learned it is built to the flags and the optimizer's moments are left where a new run's would be: a
+copy's optimizer holds nothing anyway, since imitation steps one of its own over the actor alone. The actor, the
+normaliser, the reward scaler and the iteration all still come across, which is what a seed is for. A state written before
+this was recorded goes by its iteration, since nothing but an imitation writes a state at iteration zero.
 
 ## The terrain library, before any training
 
@@ -235,7 +276,7 @@ scripts\train.ps1 -Run league -Suite league -Seed vs-copy     the league, from v
 | `-LeagueModels` | | league only: published networks in `models\` to field as rated players, `vs-copy,vs-scratch`; see the league below |
 | `-ReplayEvery` | 200 | record one fight in this many per worker, for the viewer; 0 for none |
 | `-FromCopy` | off | the safeguarded settings for a run that starts from a copy |
-| `-Seed` | | start a new run from another's best checkpoint state: `runs\<seed>`, else `models\<seed>\state.pt`, else a folder by path; gentle settings as `-FromCopy` but no teacher pull, the critic alone for 30 iterations, 65536 steps and no battle limit by default |
+| `-Seed` | | start a new run from another's best checkpoint state: `runs\<seed>`, else `models\<seed>\state.pt`, else a folder by path; gentle settings as `-FromCopy` but no teacher pull, the critic alone for 30 iterations, 65536 steps and no battle limit by default. A seed whose critic never learned anything gets the critic this run configured rather than that one, see [the critic](#the-critic) |
 | `-TeacherWeight` | 0 | pull every update back towards the teacher's recorded answers in `runs\<run>\demos`; see `scripts\dagger.ps1` below |
 | `-Full` | off | the whole build output |
 | `-Extra` | | options passed to the trainer |
@@ -255,7 +296,7 @@ Every field of `Config` in `trainer/mmai/ppo.py` is an option, as `--field-name 
 | `--epochs` | 4 | passes over each iteration's data |
 | `--entropy-coef` | 0.01 | exploration bonus |
 | `--critic-warmup` | 0 | iterations where only the critic learns |
-| `--critic-gru` | true | the critic runs its own GRU and reads privileged inputs; `false` is the plain feed-forward critic. Decides what a new run builds; a resume keeps the critic its state holds, see [the critic](#the-critic) |
+| `--critic-gru` | true | the critic runs its own GRU and reads the fourteen privileged inputs; `false` is the plain feed-forward critic. Decides what a new run builds, and what a run seeded from a copy builds; a resume keeps the critic its state holds, see [the critic](#the-critic) |
 | `--critic-gru-width` | 0 = `--hidden` | how wide that memory is |
 | `--teacher-weight` | 0 | pull towards the run's demos; needs `runs\<run>\demos` |
 | `--seq-len` | 32 | ticks of GRU unrolled per training chunk |

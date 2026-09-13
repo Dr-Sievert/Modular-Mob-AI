@@ -13,6 +13,7 @@ import it.unimi.dsi.fastutil.ints.Int2IntMap;
 import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap;
 import it.unimi.dsi.fastutil.ints.IntSet;
 import net.sievert.modularmobai.Constants;
+import net.sievert.modularmobai.arena.FightFacts;
 import net.sievert.modularmobai.brain.nn.RolloutWriter;
 import net.sievert.modularmobai.brain.nn.WeightFile;
 import net.sievert.modularmobai.brain.nn.WeightSet;
@@ -180,7 +181,7 @@ final class TrainingRun {
             if (this.open.remove(agent)) {
 
                 this.shard.end(agent, (step.flags[row] & BrainStep.FLAG_DONE) != 0, step.rewards[row],
-                        step.observations, row * this.species.obsDim());
+                        step.observations, row * this.species.obsDim(), step.facts, row * FightFacts.SIZE);
             }
         }
 
@@ -237,12 +238,13 @@ final class TrainingRun {
             int agent = step.agentIds[row];
             byte flags = step.flags[row];
             int obs = row * this.species.obsDim();
+            int facts = row * FightFacts.SIZE;
 
             if ((flags & BrainStep.FLAG_DONE) != 0) {
 
                 if (this.open.remove(agent)) {
 
-                    this.shard.end(agent, true, step.rewards[row], step.observations, obs);
+                    this.shard.end(agent, true, step.rewards[row], step.observations, obs, step.facts, facts);
                     this.sinceStart.remove(agent);
                 }
 
@@ -257,7 +259,7 @@ final class TrainingRun {
             }
 
             this.shard.step(agent, (flags & BrainStep.FLAG_NEW) != 0, step.rewards[row], logProbs[row],
-                    step.actions, row * this.species.actDim(), step.observations, obs);
+                    step.actions, row * this.species.actDim(), step.observations, obs, step.facts, facts);
 
             this.sinceStart.put(agent, this.sinceStart.get(agent) + 1);
         }
@@ -277,7 +279,7 @@ final class TrainingRun {
                 .resolve(String.format(Locale.ROOT, "r%04d-w%02d%s", this.round, this.worker, RolloutWriter.EXTENSION));
 
         return new RolloutWriter(file, this.species.schemaId(), this.weights.topology().hash(), this.iteration, this.round,
-                this.worker, this.workerCount, this.species.obsDim(), this.species.actDim(),
+                this.worker, this.workerCount, this.species.obsDim(), this.species.actDim(), FightFacts.SIZE,
                 this.weights.topology().hidden());
     }
 

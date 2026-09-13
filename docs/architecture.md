@@ -155,6 +155,13 @@ Training runs the GRU through chunks of 32 ticks. The widths are trainer options
 them from the weight file, so a wider network needs no Java change. `scripts\parity.ps1` checks that the Java forward
 pass matches PyTorch's to within about 1e-6.
 
+That is the whole of what the game runs. The **critic**, which PPO needs to work out what a position was worth, is a second
+network that never leaves the trainer: it is not exported, no weight file mentions it, and nothing in the game has to carry
+weights it will never use. Because it is never exported it is allowed to know things the agent cannot, and it is told two
+sets of numbers besides the observation — what only the trainer knows about the episode, and the privileged floats the game
+writes into every rollout row. None of them reaches the actor, so the layout above, the schema id and every trained network
+are untouched by anything the critic is given. See [training.md](training.md#the-critic).
+
 ## The reward (`arena/AgentReward`)
 
 | Case | Dealt | Taken | Outcome | Total |
@@ -411,13 +418,22 @@ the dimensions, a parameter count or file length that disagrees with the topolog
 ### `.mbr`: rollout shards
 
 Written by the mod, one per worker per iteration, read by the trainer. A 64-byte header, the rows, then the segment table.
+Version 2; version 1 is refused, not read, and the trainer's message says which version it found. A shard is one
+iteration's experience, learned from and deleted within the minute, so there is no such thing as a legacy shard worth
+keeping, and filling the columns version 2 added with zeroes would tell the critic there was no opponent and no clock.
 
 ```
 header   16 u32: 'MBR1' | version | schema id | topology hash | iteration | round | worker | worker count
-                 | obsDim | actDim | hidden | final | row count | segment count | steps | 0
-row      u32 agent | u32 flags | f32 reward | f32 log probability | f32 action[actDim] | f32 obs[obsDim]
+                 | obsDim | actDim | hidden | final | row count | segment count | steps | privDim
+row      u32 agent | u32 flags | f32 reward | f32 log probability | f32 action[actDim] | f32 obs[obsDim] | f32 priv[privDim]
 segment  u32 row | f32 h0[hidden]
 ```
+
+The **privileged floats** are `arena/FightFacts`, for the critic, and nothing an exported network ever sees; see
+[training.md](training.md#the-critic) for what they are and why each one. They sit at the end of the row, after the observation, so
+that one reshape reads a shard and nothing before them moved, and their width is in the header word the format kept spare
+rather than assumed. The two sides of the list are `FightFacts` in the game and `SHARD_PRIVILEGED` in
+`trainer/mmai/model.py`; a shard whose width disagrees with this build is refused by name.
 
 Flags:
 - 1: the agent's episode starts on this row;
@@ -426,7 +442,8 @@ Flags:
 
 A row's reward belongs to the action on that agent's previous row. A segment is one agent's run of rows in one shard. It
 starts on a row listed in the segment table, with the hidden state the agent had going in, and its last row carries an
-observation and a reward but no action. `final` means the worker is shutting down and will send nothing more. Shards are
+observation, its privileged floats and a reward but no action — that row is what a cut fight is bootstrapped from, so the
+critic has to be able to price it. `final` means the worker is shutting down and will send nothing more. Shards are
 written under `.tmp` and renamed when complete.
 
 ### Run folder control files

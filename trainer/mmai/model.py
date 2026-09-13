@@ -268,10 +268,10 @@ class Actor(nn.Module):
         return self.out(torch.relu(self.fc2(states))), states
 
 
-# What the critic is told that the actor is not, in order; Trainer._scale fills them in. All of it is the past. A value
-# estimate may condition on anything that happened before the step it prices and must see nothing after it: the return is
-# the target, so an input carrying any part of the return would teach the critic to read the answer off its own inputs
-# instead of learning what a position is worth.
+# What only the trainer knows, in order; Trainer._scale fills these in. All of it is the past. A value estimate may
+# condition on anything that happened before the step it prices and must see nothing after it: the return is the target, so
+# an input carrying any part of the return would teach the critic to read the answer off its own inputs instead of learning
+# what a position is worth.
 #
 #   paid   the fight's reward account before this row, in the same scaled units as the target
 #   last   what the action on the row before this one earned, and nought on a segment's first row
@@ -280,9 +280,30 @@ class Actor(nn.Module):
 #          whose own memory starts from nothing rather than from where the fight had got to
 PRIVILEGED = ("paid", "last", "age", "start")
 
+# What only the *game* knows, which it now writes into every rollout row: the other side as it really is rather than as the
+# agent perceives it, what the agent itself carries, and how long the fight is given. The game's arena/FightFacts.java is
+# the one place any of it is argued for, and this tuple is its order; the two have to be changed together, and the shard
+# header states its own width so a mismatch is caught by name rather than by a silently shifted column.
+SHARD_PRIVILEGED = (
+    "foes",
+    "foe_health",
+    "foe_hearts",
+    "foe_damage",
+    "foe_armour",
+    "foe_fuse",
+    "went_for",
+    "own_damage",
+    "own_armour",
+    "limit",
+)
+
+# The critic's whole privileged block, the trainer's columns first. That order is what lets a critic trained before a column
+# was added carry on reading only the columns it was built for; see Critic.forward.
+PRIVILEGED_COLUMNS = len(PRIVILEGED) + len(SHARD_PRIVILEGED)
+
 # Only the scale the age is divided by, so a training fight's clock lands near one; a league matchup sets its own limit
 # and a longer fight simply reads above one. The observation already carries the elapsed *fraction* of this fight's limit
-# (SELF_CLOCK), so it is the age in ticks beside it that says how long the limit itself is.
+# (SELF_CLOCK), and the shard's `limit` says how long the limit itself is.
 EPISODE_TICKS = 1200
 
 
@@ -302,9 +323,10 @@ class Critic(nn.Module):
     have since moved. Zero is the honest reading, and the privileged inputs are what make it cheap — the age and the
     reward already paid say where in the fight this row is without a memory having to.
 
-    **What it knows that the actor does not**: see PRIVILEGED. Everything the game itself knows is already in the
-    observation, the clock included, so what is left to hand the critic is what the *trainer* knows and the game wrote
-    down nowhere: the reward, which appears in no observation, and the shape of the episode the segments were cut out of.
+    **What it knows that the actor does not**, from two places and in this order: PRIVILEGED, which only the trainer knows —
+    the reward, which appears in no observation, and the shape of the episode the segments were cut out of — and then
+    SHARD_PRIVILEGED, which only the game knows and now writes into every row: what the other side really is, what the agent
+    carries, and how long the fight is given. None of it reaches the actor, and none of it is in the exported weights.
 
     With no GRU it is exactly the network that was here before this, parameter names included, so a state saved by an
     older trainer loads into it unchanged; see Config.critic_gru and Trainer.load.
@@ -313,7 +335,7 @@ class Critic(nn.Module):
     def __init__(self, obs_dim: int, hidden: int, width: int = 256, gru: int = 0, privileged: int = 0) -> None:
         """
         :param gru: width of its own recurrent memory, or zero for the plain feed-forward critic
-        :param privileged: how many of the PRIVILEGED columns it reads; the rest are ignored
+        :param privileged: how many privileged columns it reads, counted from the first; the rest are ignored
         """
         super().__init__()
 
@@ -357,8 +379,9 @@ class Critic(nn.Module):
     def forward(self, normalised_obs: Tensor, memory: Tensor, privileged: Tensor, hidden: Tensor) -> tuple[Tensor, Tensor]:
         """
         :param memory: the actor's hidden state at each step, ``(batch, time, hidden)``
-        :param privileged: ``(batch, time, len(PRIVILEGED))``; the columns past what this critic reads are ignored, so the
-            trainer works them out once and every shape of critic takes the same batch
+        :param privileged: ``(batch, time, PRIVILEGED_COLUMNS)``; the columns past what this critic reads are ignored, so the
+            trainer works them out once, every shape of critic takes the same batch, and a critic already trained against
+            fewer columns goes on reading exactly the ones it learned
         :param hidden: ``(batch, gru)``, its own state going into the first step, zero width where it has no memory
         :returns: the value of every step ``(batch, time)`` and its own state after every step ``(batch, time, gru)``
         """

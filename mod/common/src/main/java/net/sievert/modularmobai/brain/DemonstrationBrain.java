@@ -8,6 +8,7 @@ import java.util.random.RandomGenerator;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.ints.IntSet;
 import net.minecraft.util.Mth;
+import net.sievert.modularmobai.arena.FightFacts;
 import net.sievert.modularmobai.brain.nn.Heads;
 import net.sievert.modularmobai.brain.nn.RolloutWriter;
 import net.sievert.modularmobai.brain.schema.Species;
@@ -89,7 +90,8 @@ final class DemonstrationBrain implements Brain {
         this.noise = noise;
         this.random = new SplittableRandom(0x6A09E667L ^ worker);
         this.shard = new RolloutWriter(directory.resolve(String.format(Locale.ROOT, "w%02d%s", worker, RolloutWriter.EXTENSION)),
-                this.species.schemaId(), 0, 0, 0, worker, workers, this.species.obsDim(), this.species.actDim(), 0);
+                this.species.schemaId(), 0, 0, 0, worker, workers, this.species.obsDim(), this.species.actDim(),
+                FightFacts.SIZE, 0);
     }
 
     @Override
@@ -129,12 +131,13 @@ final class DemonstrationBrain implements Brain {
             int agent = step.agentIds[row];
             byte flags = step.flags[row];
             int obs = row * this.species.obsDim();
+            int facts = row * FightFacts.SIZE;
 
             if ((flags & BrainStep.FLAG_DONE) != 0) {
 
                 if (this.open.remove(agent)) {
 
-                    this.shard.end(agent, true, step.rewards[row], step.observations, obs);
+                    this.shard.end(agent, true, step.rewards[row], step.observations, obs, step.facts, facts);
                 }
 
                 continue;
@@ -147,7 +150,7 @@ final class DemonstrationBrain implements Brain {
             }
 
             this.shard.step(agent, (flags & BrainStep.FLAG_NEW) != 0, step.rewards[row], 0.0F,
-                    this.chosen, row * this.species.actDim(), step.observations, obs);
+                    this.chosen, row * this.species.actDim(), step.observations, obs, step.facts, facts);
         }
     }
 

@@ -29,6 +29,7 @@ import numpy as np
 from mmai import log
 from mmai.evaluate import Evaluator
 from mmai.league import League, checkpoint_name
+from mmai.model import SHARD_PRIVILEGED
 from mmai.ppo import Config, Trainer
 from mmai.rollout import ShardHeader, read_header, read_shard
 from mmai.run import TRAINING, WAITING, RunDirectory, Workers
@@ -322,6 +323,15 @@ def check(header: ShardHeader, trainer: Trainer, schema: Schema) -> None:
 
     if header.obs_dim != schema.obs_dim or header.act_dim != schema.act_dim:
         raise ValueError(f"{header.path.name} disagrees about the size of an observation or an action")
+
+    # The privileged block is the game's FightFacts and this side's SHARD_PRIVILEGED, and the two are only ever the same
+    # thing by being changed together. Caught here by width rather than by every column past the change reading as the one
+    # beside it.
+    if header.privileged != len(SHARD_PRIVILEGED):
+        raise ValueError(
+            f"{header.path.name} carries {header.privileged} privileged floats a row and this trainer reads "
+            f"{len(SHARD_PRIVILEGED)}: {', '.join(SHARD_PRIVILEGED)}"
+        )
 
 
 if __name__ == "__main__":
