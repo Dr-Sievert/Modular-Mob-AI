@@ -90,6 +90,13 @@ What an agent does in the world:
   falls back to the default with one warning in the log, and comes back once the network is there.
 - **It never despawns**, and doesn't count towards the mob cap.
 - Mobs don't go after agents on their own unless they're on opposing sides. An agent that hits one gets hit back.
+- **A crowd in view is what today's networks cannot do.** The agent sees every monster within 32 blocks, whether or not it
+  can be seen or reached, and a league network has only ever fought one opponent or a squad of two or three, all of them
+  coming for it. Measured: with nothing else in view it kills a zombie beside it in 45 ticks; with three monsters standing
+  about in view it lands nothing and dies; with nine it never swings at all. So a night on the surface, or anywhere with
+  mobs in the caves below, looks like an agent ignoring the fight it is in. Somewhere quiet, or daylight, is where a network
+  fights as the bench says it does. What it sees is not the problem and the play suite holds it to that; see
+  [findings.md](findings.md#perception) and [training.md](training.md#a-crowded-view).
 
 ## Loadouts
 
