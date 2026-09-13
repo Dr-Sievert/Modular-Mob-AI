@@ -369,6 +369,19 @@ are deliberate.
 
 ## The league's curriculum
 
+- **Seen on screen, in the owner's own world, the same evening.** Driven through the dev client with keystrokes and
+  screenshots (`scripts\play.ps1 -World Test`, chat by clipboard paste, frames every half second): on the build before the
+  sight rule, `blast4` killed one engaged zombie in about 3.6 s taking one hit, shot three skeletons dead in a row
+  untouched with the Infinity bow, and cleared two zombies behind a shield in 3 s at full health — then stood among nine
+  zombies in view and died on 20 → 14 → 5 → gone without landing a blow, its opponent still on 20 of 20. On the build with
+  the sight rule, `blast6`: the same crowd of eight *behind a three-block wall* and it killed the engaged zombie in about
+  2 s at 20 of 20, twice; the same eight *in plain sight* and it walked into them and died as before. The wall is the
+  whole difference the rule makes, and the plain-sight case is what the bystander share is for. Frames are not kept in
+  the repository; the driver's helpers (`mc.ps1`, `mc2run.ps1`, `fight.ps1`) live in the session scratch and are worth
+  lifting into `scripts\` if this is to be repeated.
+  - Two things that bit the driver: `/kill @e[type=!minecraft:player]` kills the agent too, and every loaded animal in
+    the world; and a client on the same GPU as a training run takes the VRAM the trainer's 4 GB cap was counting on — the
+    run's update hit CUDA out of memory and fell back to the CPU at three times the cost per update until restarted.
 - **A crowd of bystanders costs a fifth of a worker, not nothing, and the reason is their wits.** The share that stands 1 to 9
   idle monsters about a quarter of the league's fights was written down as probably free: a probe had run fourteen of them in
   a box with no measurable slowdown. Measured properly — 200 league fights on one worker, share off and on — it is **7,330
