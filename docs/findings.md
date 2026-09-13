@@ -693,6 +693,14 @@ are deliberate.
     the current roster afresh.
   - What a better rule needs: the opponents only the candidate has met are evidence too, weighted by how many fights they
     are, rather than discarded. Not done yet.
+  - The second time it was checked it was right, which is worth recording beside the first. `blast2` (carried on from
+    that 3053) set its best at 3100, read 83.4% and 81.9% plain at 4800 and 4850, and ended on patience at 4944. Benched
+    in one sitting: **4944 won 77.0% against 3100's 75.3%** and 2150's 75.2%, a spread the bench itself calls equal, with
+    the teacher at 80.5% in the same sitting. So the plain reads overstated it, the judged best was as good as the last,
+    and the published network stayed. The two sittings also differ by five points for the same files (80.7 → 77.0, 81.0
+    → 80.5 for the teacher), which is the cross-sitting drift above: one ran on an idle machine, the other beside eight
+    training workers. Only the numbers inside a sitting are comparable, and "level with the teacher" reads as "within a
+    few points of" once both sittings are counted.
 - **An experiment on one worker, judged on the league rating, cannot be judged.** league-pull05 forked league2 at
   iteration 6,000 to try a teacher pull of 0.05 against 0.2, and over 500 iterations on its single worker it produced three
   evaluations: 1610 against league2's 1600 to 1604 at the same iterations. But league2's own rating wanders between 1567
