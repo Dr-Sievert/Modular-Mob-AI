@@ -1,5 +1,6 @@
 package net.sievert.modularmobai.gametest.tests;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.IntPredicate;
 
@@ -41,6 +42,7 @@ import net.sievert.modularmobai.brain.ScriptedBrain;
 import net.sievert.modularmobai.brain.schema.ActionSchema;
 import net.sievert.modularmobai.brain.schema.BeastSchema;
 import net.sievert.modularmobai.brain.schema.EnemySlots;
+import net.sievert.modularmobai.brain.schema.ObservationSchema;
 import net.sievert.modularmobai.brain.schema.Species;
 import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.entity.agent.AgentMob;
@@ -180,6 +182,165 @@ public class PlayGameTest {
                     + " ticks: " + swings[0] + " swings, " + String.format(java.util.Locale.ROOT, "%.2f",
                     agent.distanceTo(zombie)) + " blocks away, slots " + agent.brain().enemySlots().inRangeCount());
         });
+    }
+
+    /**
+     * What an agent out in a real world sees of the mob beside it is the world's own reading, and a crowd of monsters
+     * standing about in view does not take that away from it.
+     *
+     * <p>This is the test that says where a real game's trouble is not. An agent met in a world has no arena bounding its
+     * view and no episode paying it, and a night's worth of monsters within the thirty two blocks it sees — through walls,
+     * underground, taking no interest — is the one thing no training fight ever had: the league fields one opponent, or a
+     * squad of two or three, and all of them come for the agent. A published network in that position stops fighting; it
+     * aims at the sky and dies to the zombie beside it without swinging once. Measured, one agent on {@code best} against an
+     * engaged zombie two blocks off, 200 ticks each: with nothing else in view it kills the zombie in 45 ticks and keeps
+     * all twenty health; with three idle monsters in view it lands nothing and dies; with nine it presses attack not once.
+     * See findings.md.
+     *
+     * <p>So the suspicion this pins is the other one. Everything the body and the observation do here is right, and this
+     * holds them to it on every tick:
+     *
+     * <ul>
+     *   <li>the zombie beside the agent holds an enemy slot, crowd or no crowd, and the furthest candidate is the one that
+     *       goes without;</li>
+     *   <li>its place in that slot is the world's own delta in the agent's own frame, to a hundredth of a block — nothing
+     *       here is measured against a fight site, an episode or an arena's origin, none of which a real world has;</li>
+     *   <li>{@code ENEMY_TARGETS_ME} follows the zombie's own target, tick for tick.</li>
+     * </ul>
+     *
+     * <p>The crowd stands outside the box, which is where a real night's monsters are: on the other side of a wall. It is
+     * discarded again however this test ends, since entities beyond the plot are not what the framework clears between
+     * tests, and thirty two blocks reaches into the next one.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 200)
+    public static void theCrowdedViewOfARealWorldIsTheWorldsOwn(GameTestHelper helper) {
+
+        AgentMob agent = worldAgent(helper, new BlockPos(4, 2, 1), 0.0F);
+        agent.equip(Loadout.SWORD);
+        agent.setBrainName("best");
+
+        // Ten standing about at twelve blocks and one at twenty, which with the zombie beside the agent is twelve
+        // candidates for ten slots: the two furthest have to be the ones that go without. Near enough that the whole crowd
+        // stays inside the thirty two blocks wherever the fight carries the agent in a box seven across.
+        List<Mob> crowd = new ArrayList<>();
+
+        for (int index = 0; index < 10; index++) {
+
+            double angle = index * (Math.PI * 2.0D / 10.0D);
+            crowd.add(bystander(helper, (int) Math.round(Math.cos(angle) * 12.0D), (int) Math.round(Math.sin(angle) * 12.0D)));
+        }
+
+        Mob furthest = bystander(helper, 0, 20);
+        crowd.add(furthest);
+
+        Zombie zombie = helper.spawn(EntityType.ZOMBIE, new BlockPos(4, 2, 3));
+        PlayerTeam[] sides = Allegiance.enemy(List.of(agent), List.of(zombie)).toArray(new PlayerTeam[0]);
+
+        EnemySlots view = agent.brain().enemySlots();
+
+        run(helper, tick -> {
+
+            try {
+
+                // The first tick is before the driver has ever looked, so the slots are still empty.
+                if (tick > 0) {
+
+                    helper.assertTrue(agent.brain().brain() == Brains.named("best"), "The agent is not on best");
+                    helper.assertValueEqual(view.inRangeCount(), 12, "monsters in view");
+                    helper.assertTrue(occupies(view, zombie), "The zombie beside the agent lost its slot to the crowd");
+                    helper.assertFalse(occupies(view, furthest), "The furthest monster of twelve took one of ten slots");
+
+                    theSlotIsTheWorlds(helper, agent, zombie);
+                }
+
+                if (tick == 60) {
+
+                    tidy(crowd, sides);
+                    return true;
+                }
+
+                return false;
+            }
+
+            catch (RuntimeException | AssertionError failed) {
+
+                tidy(crowd, sides);
+                throw failed;
+            }
+        });
+    }
+
+    /** One monster standing about out in the world, out of reach and taking no interest: a slot and nothing else. */
+    private static Mob bystander(GameTestHelper helper, int x, int z) {
+
+        BlockPos at = helper.absolutePos(new BlockPos(4, 2, 3)).offset(x, 0, z);
+        Zombie standing = EntityType.ZOMBIE.create(helper.getLevel());
+
+        standing.moveTo(at.getX() + 0.5D, at.getY(), at.getZ() + 0.5D, 0.0F, 0.0F);
+        standing.setNoAi(true);
+        helper.getLevel().addFreshEntity(standing);
+
+        return standing;
+    }
+
+    /** Everything this test left outside its own plot, taken away again. */
+    private static void tidy(List<Mob> crowd, PlayerTeam[] sides) {
+
+        for (Mob standing : crowd) {
+
+            standing.discard();
+        }
+
+        for (PlayerTeam side : sides) {
+
+            Allegiance.disband(side);
+        }
+    }
+
+    /**
+     * The occupant's place in its slot against the world's own, worked out here from the entity positions and the agent's
+     * yaw rather than read back from the same code that wrote it.
+     */
+    private static void theSlotIsTheWorlds(GameTestHelper helper, AgentMob agent, LivingEntity enemy) {
+
+        float[] row = new float[Species.HUMANOID.obsDim()];
+        Species.HUMANOID.observe(agent, agent.brain().enemySlots(), row, 0);
+
+        int slot = slotOf(agent.brain().enemySlots(), enemy);
+
+        if (slot < 0) {
+
+            throw new GameTestAssertException(enemy.getType().toShortString() + " holds no slot to read");
+        }
+
+        int at = ObservationSchema.enemyOffset(slot);
+
+        double yaw = agent.getYRot() * Math.PI / 180.0D;
+        double sin = Math.sin(yaw);
+        double cos = Math.cos(yaw);
+        Vec3 delta = enemy.getEyePosition().subtract(agent.getEyePosition());
+
+        near(helper, row[at + ObservationSchema.ENEMY_PRESENT], 1.0D, "the present flag");
+        near(helper, blocks(row, at + ObservationSchema.ENEMY_FORWARD), delta.x * -sin + delta.z * cos, "forward");
+        near(helper, blocks(row, at + ObservationSchema.ENEMY_RIGHT), delta.x * -cos + delta.z * -sin, "right");
+        near(helper, blocks(row, at + ObservationSchema.ENEMY_UP), delta.y, "up");
+        near(helper, blocks(row, at + ObservationSchema.ENEMY_DISTANCE), delta.length(), "distance");
+
+        boolean comes = enemy instanceof Mob mob && mob.getTarget() == agent;
+        near(helper, row[at + ObservationSchema.ENEMY_TARGETS_ME], comes ? 1.0D : 0.0D,
+                "targets me, where the zombie's own target is " + (enemy instanceof Mob mob ? mob.getTarget() : null));
+    }
+
+    /** A slot's position field back in blocks, which is what the observation holds it as a fraction of the view. */
+    private static double blocks(float[] row, int index) {
+
+        return row[index] * ObservationSchema.VIEW_DISTANCE;
+    }
+
+    private static void near(GameTestHelper helper, double seen, double expected, String what) {
+
+        helper.assertTrue(Math.abs(seen - expected) < 0.01D, String.format(java.util.Locale.ROOT,
+                "The agent's view of the mob beside it says %s is %.4f where the world says %.4f", what, seen, expected));
     }
 
     /**
@@ -912,15 +1073,21 @@ public class PlayGameTest {
 
     private static boolean occupies(EnemySlots view, LivingEntity entity) {
 
-        for (int slot = 0; slot < net.sievert.modularmobai.brain.schema.ObservationSchema.ENEMY_SLOTS; slot++) {
+        return slotOf(view, entity) >= 0;
+    }
+
+    /** Which of the enemy slots holds it, or -1 for none. */
+    private static int slotOf(EnemySlots view, LivingEntity entity) {
+
+        for (int slot = 0; slot < ObservationSchema.ENEMY_SLOTS; slot++) {
 
             if (view.occupant(slot) == entity) {
 
-                return true;
+                return slot;
             }
         }
 
-        return false;
+        return -1;
     }
 
     private static List<AbstractArrow> arrows(GameTestHelper helper) {

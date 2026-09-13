@@ -308,6 +308,36 @@ are deliberate.
   lands inside a few hundred ticks. That is the engaged reading above doing exactly what it was added for, from the other
   side: a mob that has never taken the agent as its target is not a fight, and a league network was never trained on one.
   Fights in a test want a live opponent; a dummy is for the body's own rules, which is what the mechanics suite uses one for.
+- **A crowded view is what breaks a published network in a real game, and it is not a bug in the body.** Reported from a
+  creative world at night: `/mmai spawn`, a zombie summoned beside it, and the agent — `blast4`, 86% of the league and 98%
+  against zombies on the bench — walked about and looked around while the zombie hit it, swinging at the grass and never at
+  the mob, with `/mmai enemy` set or not. Four things were suspected and all four are innocent. **The observation is the
+  world's own**: measured tick by tick against positions worked out independently, the zombie's slot reads its forward,
+  right, up and distance in the agent's frame to under a hundredth of a block, with no fight site, episode or arena origin
+  anywhere in it. **The zombie holds a slot**, `Allegiance.isEnemy` counting any vanilla `Enemy` as one; `ENEMY_TARGETS_ME`
+  reads 1 the tick the zombie takes the agent as its target. **The attack path is whole**: in a bare box the same network
+  and the same spawn press attack and kill that zombie in 45 ticks on 20 health. **Plants are not it either**: floor the box
+  with grass and plant every block of it and it still kills the zombie in 65.
+  What does it is the **number of monsters in view**, and nothing else. One agent on `best` against an engaged zombie two
+  blocks off, 200 ticks each, monsters standing about out of reach at twelve blocks:
+
+  | Monsters in view besides the opponent | Presses of attack | Blows landed | Outcome |
+  | --- | --- | --- | --- |
+  | none (nine of them at forty blocks, outside the view) | 3 | 3 | the zombie dead in 45 ticks, agent on 20 health |
+  | one | 83 | 3 | the zombie dead, the agent down to 5 |
+  | three | 7 | 0 | **the agent dead**, the zombie untouched |
+  | five | 1 | 0 | the agent dead |
+  | seven | 16 | 0 | the agent dead, aim pinned at -90°, straight up |
+  | nine (every slot full) | **0** | 0 | the agent dead without swinging once |
+
+  A night in a real world puts that many in view easily: the view is 32 blocks of distance and nothing else — no line of
+  sight, no reachability — so mobs through a wall, across a valley and in the caves below all take slots, and
+  `SELF_ENEMIES_IN_RANGE` reads 1.5 where nothing in training put it over 0.3. The league fields **one** opponent or a squad
+  of **two or three**, every one of them on the other team and coming for the agent, so a view of ten bodies that mostly
+  ignore it is a shape no network has ever seen. It is a curriculum hole, not a body or an allegiance fault, and
+  `theCrowdedViewOfARealWorldIsTheWorldsOwn` in the play suite holds the innocent half — the slots, the crowd's nearest-win,
+  and the numbers being the world's own — so nobody has to investigate it twice. What to do about the guilty half is in
+  [training.md](training.md#a-crowded-view).
 
 ## The league's curriculum
 
