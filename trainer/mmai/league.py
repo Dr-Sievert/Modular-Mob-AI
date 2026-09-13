@@ -29,8 +29,13 @@ under league_easy_below there is nothing to learn from it yet, so easy does. Eit
 fights behind it. Once open a rung stays open, so its rating is never of a moving target and the agent has to keep what it
 won. Each rung is a player of its own, as each composition is, and a cap belongs to the opponent rather than the rung.
 
-Who is rated. Every player is a fixed policy: a kind of mob, a squad of them, a rung of the ladder, the scripted fighter,
-a published network the run fields, a checkpoint on its most likely action.
+Who is rated. Every player is a fixed policy: a kind of mob, a squad of them, a rung of the ladder, a fight with a crowd of
+monsters standing about it, the scripted fighter, a published network the run fields, a checkpoint on its most likely action.
+A crowd is what a real world's night puts in the agent's view and what no league fight used to, and a share of the fights
+against a mob or a squad now has one: zombie+3_idle, rated separately for the same reason a rung is, so the plain zombie
+rating keeps meaning what it meant in every run before this one. Nothing here matchmakes over those names, since they are not
+in the roster the workers hand over; they arrive in the results and take a row in the tier list. See the game's
+league/Bystanders.
 The agent in training is none of those, since it samples and changes every iteration, so only evaluation fights are
 rated: a checkpoint on its most likely action, against an opponent drawn evenly from everyone. A fight scores one for a
 win, nothing for a loss, and a half when neither killed the other, on time or because a creeper blew itself up. Both
@@ -96,6 +101,7 @@ rating that holds still can mean everything around it got better too.
 from __future__ import annotations
 
 import json
+import re
 from collections import deque
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -123,6 +129,12 @@ FADED = 1.0e-3
 # the gametest's league/Opposition. Normal has no suffix, so every name the league had before the ladder means what it did.
 RUNGS = ("(hard)", "(easy)")
 
+# The crowd of monsters a share of league fights stands about it, as the game writes it on the end of an opponent's name:
+# zombie+3_idle, 2x_zombie+3_idle, zombie(hard)+3_idle. A fight with a crowd in it is a player of its own, so the plain
+# zombie rating keeps meaning what it meant in every run before this one, and a digit followed by _idle cannot be a squad
+# member's name, so this cannot swallow one. See the gametest's league/Bystanders.
+IDLE = re.compile(r"\+([1-9])_idle$")
+
 # The kinds of player that have rungs at all: a rung is how hard the mobs on one side spawn, so only they and the squads of
 # them have one. The scripted fighter and a published network are fixed policies with nothing to turn up.
 RUNGED = ("mob", "squad")
@@ -145,7 +157,14 @@ def checkpoint_iteration(name: str) -> int | None:
 
 
 def base(name: str) -> str:
-    """The opponent a name is a rung of: zombie for zombie(hard), and the name itself for anything else."""
+    """The opponent a name is a variation on: zombie for zombie(hard), for zombie+3_idle and for zombie(hard)+3_idle, and
+    the name itself for anything else.
+
+    What this is for is everything a variation inherits from the opponent it is one of: what kind of thing it is, and the cap
+    on its share of the training fights. A crowd of bystanders comes off first, since the game writes it outside the rung.
+    """
+
+    name = IDLE.sub("", name)
 
     for rung in RUNGS:
         if name.endswith(rung):

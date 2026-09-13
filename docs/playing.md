@@ -89,14 +89,17 @@ What an agent does in the world:
   (`BrainName`) and its loadout's name (`Loadout`). A saved brain the game can't find (a network another install had)
   falls back to the default with one warning in the log, and comes back once the network is there.
 - **It never despawns**, and doesn't count towards the mob cap.
-- Mobs don't go after agents on their own unless they're on opposing sides. An agent that hits one gets hit back.
-- **A crowd in view is what today's networks cannot do.** The agent sees every monster within 32 blocks, whether or not it
-  can be seen or reached, and a league network has only ever fought one opponent or a squad of two or three, all of them
-  coming for it. Measured: with nothing else in view it kills a zombie beside it in 45 ticks; with three monsters standing
-  about in view it lands nothing and dies; with nine it never swings at all. So a night on the surface, or anywhere with
-  mobs in the caves below, looks like an agent ignoring the fight it is in. Somewhere quiet, or daylight, is where a network
-  fights as the bench says it does. What it sees is not the problem and the play suite holds it to that; see
-  [findings.md](findings.md#perception) and [training.md](training.md#a-crowded-view).
+- Mobs mostly leave agents alone unless they're on opposing sides, and an agent that hits one gets hit back — but not always:
+  measured, three plain zombies on no team with nothing having touched them all took a nearby agent as their target at six
+  blocks. Don't count on a mob ignoring an agent. See [findings.md](findings.md#the-leagues-curriculum).
+- **A crowd in view used to be what a network could not do, and half of that is fixed.** The agent's ten enemy slots now go
+  only to what it could actually see: a monster behind rock, across a valley or in the caves below takes none, which is where
+  most of a real night's crowd was coming from. Measured in the box, with eleven monsters standing about behind its wall, an
+  agent on `best` kills the zombie beside it in 67 ticks where before it died without touching it. What is left is the crowd
+  that really is in sight — a night in the open with several monsters around and only one of them interested — and that is a
+  curriculum hole a run now trains on rather than something the game can fix; a network published before that training will
+  still fight worse in a real crowd than the bench says. See [findings.md](findings.md#perception) and
+  [training.md](training.md#a-crowded-view).
 
 ## Loadouts
 

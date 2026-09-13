@@ -54,6 +54,11 @@ import net.sievert.modularmobai.gametest.util.DeathCauses;
  *   runs/RUN/league/results/wNN.csv   appended here, a line a fight, see {@link #write}
  * </pre>
  *
+ * <p>A share of the fights against a mob or a squad also has a crowd of monsters standing about it taking no interest in the
+ * fight, which is the shape a real world has and no league fight had; see {@link Bystanders}. They are not the other side and
+ * the reward does not know they are there, but the fight is written down under a name of its own, {@code zombie+3_idle}, so
+ * that the plain {@code zombie} rating keeps meaning what it meant.
+ *
  * <p>An opponent is a mob, a squad of mobs or a rung of the difficulty ladder by the name {@link Opposition} gives it,
  * {@code scripted}, a published network a run named, see {@link Published}, or a checkpoint of the run as
  * {@code iteration-000125}, whose weights play it on their most likely action, frozen, with nothing recorded: only the agent
@@ -110,9 +115,12 @@ public final class League {
      * @param loadout         what the agent carries
      * @param opponentLoadout what an agent opponent carries, or null for mobs, which keep what they spawn with
      * @param evaluation      the checkpoint playing the agent's side instead of the training brain, or null
+     * @param bystanders      how many monsters stand about the fight taking no interest in it, and nought for none. They are
+     *                        not the other side and are not paid for; the count is in {@code opponent} because a fight with a
+     *                        crowd in it is a player of its own, see {@link Bystanders}
      */
     public record Matchup(String opponent, @Nullable Opposition opposition, @Nullable Brain brain, Loadout loadout,
-                          @Nullable Loadout opponentLoadout, @Nullable Evaluation.Assignment evaluation) {
+                          @Nullable Loadout opponentLoadout, @Nullable Evaluation.Assignment evaluation, int bystanders) {
 
         /** How many mobs are on the other side, which is how many places to stand the fight's ground needs. */
         public int mobs() {
@@ -289,7 +297,30 @@ public final class League {
 
         // A checkpoint whose weights will not load is not worth stopping a fight over; a mob always can be fielded. The
         // loadout the pairing asked for is kept, since it is the agent's own half of the draw and nothing about it failed.
-        return matchup != null ? matchup : matchup(fixed.get(random.nextInt(fixed.size())), loadout, evaluation, random, fight);
+        return crowded(matchup != null ? matchup
+                : matchup(fixed.get(random.nextInt(fixed.size())), loadout, evaluation, random, fight), random);
+    }
+
+    /**
+     * The same fight with a share of them given a crowd of monsters standing about it, which the agent can see and which take
+     * no interest in it, see {@link Bystanders}. The crowd goes in the opponent's name, since a fight with one is a player of
+     * its own: the plain {@code zombie} rating has to keep meaning what it meant in every run before this one.
+     *
+     * <p>Only against a mob or a squad. A fight against the scripted fighter is the one every rating in the league is
+     * measured against, held at 1500, and a fight against a checkpoint or a published network is a policy against a policy;
+     * changing any of those under a run already going would move the scale rather than add to the curriculum.
+     */
+    private static Matchup crowded(Matchup matchup, RandomSource random) {
+
+        if (matchup.opposition() == null) {
+
+            return matchup;
+        }
+
+        int standing = Bystanders.wanted(random);
+
+        return standing <= 0 ? matchup : new Matchup(Bystanders.name(matchup.opponent(), standing), matchup.opposition(),
+                matchup.brain(), matchup.loadout(), matchup.opponentLoadout(), matchup.evaluation(), standing);
     }
 
     /**
@@ -415,7 +446,7 @@ public final class League {
 
         if (opposition != null) {
 
-            return new Matchup(name, opposition, null, loadout, null, evaluation);
+            return new Matchup(name, opposition, null, loadout, null, evaluation, 0);
         }
 
         Brain brain;
@@ -458,7 +489,8 @@ public final class League {
             return null;
         }
 
-        return new Matchup(name, null, brain, loadout, opponentLoadouts.get(random.nextInt(opponentLoadouts.size())), evaluation);
+        return new Matchup(name, null, brain, loadout, opponentLoadouts.get(random.nextInt(opponentLoadouts.size())),
+                evaluation, 0);
     }
 
     private static List<Loadout> melee(List<Loadout> loadouts) {

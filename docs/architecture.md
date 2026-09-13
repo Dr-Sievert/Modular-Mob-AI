@@ -77,13 +77,24 @@ that would quietly make every trained network worse the moment it left the arena
 | self | 24 | health, velocity (forward/up/right), on ground, in water, attack strength, use cooldown, using (main/off hand), sprinting, crouching, fall distance, body offset (sin/cos), pitch, aim (sin/cos), hurt time, enemies in range, **the clock**, **arrows left**, **its own armour**, **what its weapon takes off** |
 | hotbar | 9 | what each hotbar slot holds |
 | echo | 20 | what the body actually did last tick: moved (forward/strafe), jumped, sprinted, sneaked, turned (yaw/pitch), attacked, hit, attack strength and damage, crit, sweep, sprint knockback, used (main/off hand/on a block), selected slot, swapped weapon, **how far the use has charged** |
-| enemies | 10 × 31 | every hostile within 32 blocks, and anything shot at the agent, in ten stable slots, in its own frame. Where it is and what it is doing: present, position (forward/up/right), distance, velocity, health as a fraction, facing (sin/cos), pitch, **kind**, main and off hand item, swinging, using, sprinting, **whether it has the agent as its target**. **What it is**: max health and health left in hearts, attack damage, speed, width, height, knockback resistance, **armour**, a creeper's fuse, and whether it explodes, shoots or flies |
+| enemies | 10 × 31 | every hostile within 32 blocks **and in sight of the agent's eyes**, and anything shot at the agent, in ten stable slots, in its own frame. Where it is and what it is doing: present, position (forward/up/right), distance, velocity, health as a fraction, facing (sin/cos), pitch, **kind**, main and off hand item, swinging, using, sprinting, **whether it has the agent as its target**. **What it is**: max health and health left in hearts, attack damage, speed, width, height, knockback resistance, **armour**, a creeper's fuse, and whether it explodes, shoots or flies |
 | terrain | 9 × 5 × 9 = 405 | the blocks around it, from 2 below the feet to 2 above: 0 empty, 0.5 fluid, 1 solid by collision, 1.5 hazard. A hazard hurts or kills a body in it or on it: lava, fire, magma, cactus, lit campfires, wither roses, pointed dripstone, powder snow, berry bushes, cobwebs. An empty cell in the bottom layer reads as a hazard when the fall below it would be more than 8 blocks, or would end in a hazard |
 | rays | 8 × 3 = 24 | eight rays out from the feet, one every 45° and world aligned as the grid is: how far to a wall, to something that hurts, and to a drop of more than 4, each a fraction of 32 blocks and 1 where that ray found none. The grid is a block a cell and reaches four, so this is the agent's only sight of the lava lake, the ravine lip or the wall at its back; widening the grid to the same distance would be 1,445 cells against 405 |
 
 Animals and villagers never take an enemy slot. The enemy's `kind` says what sort of thing it is: another agent, a
 player, a monster, something else alive, or, below zero, something shot at the agent. The layout is fixed: every trained
 network depends on it, and the schema id refuses a mismatch.
+
+**A slot goes only to what the agent could see.** Distance was once the whole rule, and out in a real world it was wrong:
+thirty two blocks with no sight test in it hands the slots to the monsters through the wall, across the valley and in the
+caves below, so a night filled all ten with bodies that could not reach the agent and were not coming, and the published
+network stopped fighting the zombie beside it. A candidate now also wants a line of sight from the agent's eyes to its own,
+vanilla's `hasLineOfSight`, which is the test every mob's targeting already makes; one clip per hostile candidate per tick,
+asked last of the three so distance and sides rule most of them out first. Something that goes behind cover **keeps its
+slot and loses its reading**: the lease runs on for its grace, so an opponent stepping behind a tree comes back to the slot
+it left, but while it cannot be seen the slot reads plainly empty rather than either a position through rock or a stale one,
+and remembering is the GRU's job. `EnemySlots` is the one place all of that lives; the numbers this cost and bought are in
+[findings.md](findings.md#perception).
 
 **What the opponent is, not just where.** `kind` has five values and every hostile mob in the game is the one value
 "monster", so for a long time a creeper, a zombie, a ravager and a warden filled a slot identically: same kind, health as

@@ -1,0 +1,420 @@
+package net.sievert.modularmobai.gametest.tests;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.function.IntPredicate;
+
+import net.minecraft.core.BlockPos;
+import net.minecraft.gametest.framework.GameTest;
+import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.util.RandomSource;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
+import net.sievert.modularmobai.arena.Episode;
+import net.sievert.modularmobai.brain.Brain;
+import net.sievert.modularmobai.brain.BrainStep;
+import net.sievert.modularmobai.brain.schema.ActionSchema;
+import net.sievert.modularmobai.brain.schema.AgentObservation;
+import net.sievert.modularmobai.brain.schema.EnemySlots;
+import net.sievert.modularmobai.brain.schema.ObservationSchema;
+import net.sievert.modularmobai.brain.schema.Species;
+import net.sievert.modularmobai.entity.ModEntities;
+import net.sievert.modularmobai.entity.agent.AgentMob;
+import net.sievert.modularmobai.gametest.GameTestGroup;
+import net.sievert.modularmobai.gametest.league.Bystanders;
+import net.sievert.modularmobai.gametest.util.TestTicks;
+
+/**
+ * A crowd in the agent's view, and what the view is allowed to make of it.
+ *
+ * <p>Two rules are held here, both of them about slots rather than about fighting, which is why this is in the mechanics
+ * suite and not the league's: the nearest of what the agent can see win the ten slots, and <b>a slot goes only to what it
+ * could see at all</b>. The second is new, and it is what a real game turned out to want: thirty two blocks of distance with
+ * no sight test in it hands the slots to the monsters through the wall and in the caves below, and the published network,
+ * fed a view of ten bodies that mostly ignored it, stopped fighting the zombie beside it. The whole story and the numbers are
+ * in findings.md; {@code PlayGameTest.theCrowdedViewOfARealWorldIsTheWorldsOwn} is the same thing proved on a real fight.
+ *
+ * <p>The two after that are the curriculum's half of the same problem: the bystanders a share of league fights now stands
+ * about it, which are the crowd the league never had, and which have to stay out of the fight's own arithmetic while filling
+ * its view. See {@link Bystanders}.
+ *
+ * <p>Everything happens inside the plot's own bedrock box, and the walls that take sight away are built by the test rather
+ * than borrowed from the arena's, so nothing moves between the two readings but the block in the way. An agent that could
+ * see out of its plot would see its neighbours' fights instead, which is what the episode's bounds are for.
+ */
+@GameTestGroup
+public class AgentCrowdGameTest {
+
+    private static final String ARENA = "arena";
+
+    /** Long enough for the leases' own grace to run out twice over, which the wall test waits through. */
+    private static final int FIGHT_TICKS = 1200;
+
+    /**
+     * Where the twelve stand, as offsets inside the room from the corner the agent is in. Twelve candidates for ten slots,
+     * with a clear gap between the tenth nearest and the eleventh so that a body settling a fraction of a block after it
+     * falls cannot change the order.
+     */
+    private static final int[][] CROWD = {{2, 1}, {3, 1}, {4, 1}, {5, 1}, {6, 1}, {7, 1},
+            {2, 3}, {2, 4}, {2, 5}, {2, 7}, {6, 7}, {7, 7}};
+
+    /**
+     * More bodies in sight than there are slots, and the nearest of them are the ones described: twelve standing about in a
+     * bedrock room with nothing between them, and the two furthest go without.
+     *
+     * <p>Which two is worked out from where they actually are rather than from where they were put, so this says what it
+     * means to say — the slots go by distance — instead of restating the arrangement.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 100)
+    public static void theNearestOfWhatIsInSightTakeTheSlots(GameTestHelper helper) {
+
+        AgentMob agent = still(helper, new BlockPos(1, 2, 1));
+        List<Mob> crowd = new ArrayList<>();
+
+        for (int[] at : CROWD) {
+
+            crowd.add(helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new BlockPos(at[0], 2, at[1])));
+        }
+
+        EnemySlots view = agent.brain().enemySlots();
+
+        run(helper, tick -> {
+
+            // Ten ticks in, so everyone has finished the block they fall when they are put a block above the floor.
+            if (tick < 10) {
+
+                return false;
+            }
+
+            helper.assertValueEqual(view.inRangeCount(), CROWD.length, "bodies in sight");
+
+            List<Mob> byDistance = new ArrayList<>(crowd);
+            byDistance.sort(Comparator.comparingDouble(agent::distanceToSqr));
+
+            for (int place = 0; place < byDistance.size(); place++) {
+
+                Mob standing = byDistance.get(place);
+                boolean wanted = place < ObservationSchema.ENEMY_SLOTS;
+
+                helper.assertTrue(occupies(view, standing) == wanted, "The " + (place + 1) + "th nearest of "
+                        + byDistance.size() + ", " + blocks(agent.distanceTo(standing)) + " blocks off, "
+                        + (wanted ? "has no slot" : "took one of " + ObservationSchema.ENEMY_SLOTS));
+            }
+
+            return true;
+        });
+    }
+
+    /**
+     * A wall between the agent and a body takes the reading away and leaves the slot: while it cannot be seen its slot is
+     * empty and it is not counted, and the moment the wall comes down it is back in the slot it had.
+     *
+     * <p>This is the whole of the decision that came with the sight rule, in one test. The body never moves, so the only
+     * thing that changes between one reading and the next is the block in the way — distance, side and everything else are
+     * held still. What the agent may not do is read a position through rock: that was the fault. What it may not be told
+     * either is a position from two seconds ago, so the slot reads plainly empty rather than stale, and remembering is left
+     * to the GRU, which is what a recurrence is for. The lease is kept all the same, for the grace, so an opponent that
+     * steps behind a tree comes back to the slot it left instead of reshuffling the view; once the grace is out, the lease
+     * goes with it.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 200)
+    public static void aWallTakesTheReadingAndLeavesTheSlot(GameTestHelper helper) {
+
+        AgentMob agent = still(helper, new BlockPos(4, 2, 1));
+        Mob standing = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new BlockPos(4, 2, 7));
+
+        EnemySlots view = agent.brain().enemySlots();
+        int[] held = {-1};
+
+        run(helper, tick -> {
+
+            if (tick == 5) {
+
+                held[0] = slotOf(view, standing);
+
+                helper.assertTrue(held[0] >= 0, "The zombie across an empty room took no slot");
+                helper.assertValueEqual(view.inRangeCount(), 1, "bodies in sight");
+
+                wall(helper, true);
+                return false;
+            }
+
+            if (tick == 15) {
+
+                helper.assertValueEqual(view.inRangeCount(), 0, "bodies in sight through a wall");
+                helper.assertTrue(view.occupant(held[0]) == null, "A zombie behind a wall is still being read");
+                helper.assertTrue(view.leaseholder(held[0]) == standing, "The zombie lost the slot it will come back to");
+                helper.assertValueEqual(present(agent, held[0]), 0.0F, "the present flag of a slot behind a wall");
+
+                wall(helper, false);
+                return false;
+            }
+
+            if (tick == 25) {
+
+                helper.assertTrue(view.occupant(held[0]) == standing,
+                        "The zombie came back to slot " + slotOf(view, standing) + " rather than the " + held[0] + " it left");
+                helper.assertValueEqual(present(agent, held[0]), 1.0F, "the present flag once the wall is down");
+
+                wall(helper, true);
+                return false;
+            }
+
+            // Half the grace after the wall went back up, the slot is still being kept.
+            if (tick == 45) {
+
+                helper.assertTrue(view.leaseholder(held[0]) == standing, "The slot was given up inside its own grace");
+                return false;
+            }
+
+            // And a good way past it, the lease is gone: a body nothing has seen for two seconds is not being waited for.
+            if (tick == 25 + ObservationSchema.LEASE_GRACE_TICKS + 20) {
+
+                helper.assertTrue(view.leaseholder(held[0]) == null, "The slot is still held for a zombie out of sight for "
+                        + (ObservationSchema.LEASE_GRACE_TICKS + 20) + " ticks");
+                return true;
+            }
+
+            return false;
+        });
+    }
+
+    /**
+     * The bystanders a share of league fights stands about it: on no team, off the agent until something hits them, holding
+     * slots in its view all the same, and nothing the fight is paid for.
+     *
+     * <p>Here rather than in the league suite because what is worth pinning is the arrangement and not the fight. A bystander
+     * that ended up on the opponent's team would come for the agent and be an extra opponent nobody rated; one the episode
+     * paid for would turn a crowd into a reward for farming it; and one that took no slot would make the number in a crowded
+     * fight's name a number about nothing. All three would be invisible in a run's results.
+     *
+     * <p>The last claim is the one that had to be built rather than assumed, and this is where it is held. Three plain zombies
+     * on no team, with nothing having touched them, all take the agent as their target on tick seven at six blocks — vanilla
+     * looks for players and an agent is none, so that should not happen and it does. So the crowd is unprovoked every tick,
+     * {@link Bystanders#leaveAlone}, and the last third of this test strikes one of them and shows that it is then free to
+     * fight back, which is what passive <b>until struck</b> means.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 120)
+    public static void leagueBystandersStandAsideUntilStruck(GameTestHelper helper) {
+
+        AgentMob agent = still(helper, new BlockPos(4, 2, 1));
+        Mob opponent = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new BlockPos(4, 2, 3));
+
+        agent.startEpisode(new Episode(FIGHT_TICKS, bounds(helper), List.of(opponent)));
+
+        // Three of them with all their free will, stood in this box rather than on a fight site: what is tested is the
+        // arrangement, which is the part a fight could get wrong, and not the ground.
+        List<Mob> idle = new ArrayList<>();
+
+        for (int index = 0; index < 3; index++) {
+
+            idle.add(helper.spawn(EntityType.ZOMBIE, new BlockPos(1 + index * 3, 2, 7)));
+        }
+
+        EnemySlots view = agent.brain().enemySlots();
+        Mob struck = idle.get(0);
+        boolean[] hit = {false};
+
+        run(helper, tick -> {
+
+            // Every tick, as the league does it, and before anything is asked: a mob's own mind is not still.
+            for (Mob standing : idle) {
+
+                Bystanders.leaveAlone(standing, agent);
+            }
+
+            if (tick < 5) {
+
+                return false;
+            }
+
+            for (Mob standing : idle) {
+
+                helper.assertTrue(standing.getTeam() == null, "A bystander is on a team, so it is somebody's side");
+                helper.assertFalse(agent.episode().pays(standing), "The fight pays for hurting a bystander");
+                helper.assertFalse(agent.episode().opponents().contains(standing),
+                        "A bystander counts as the other side of the fight");
+
+                // And the thing they are there for: a monster is an enemy on sight whoever it is coming for, so it fills a
+                // slot, which is the crowd the league had never shown the agent.
+                helper.assertTrue(occupies(view, standing), "A bystander in plain sight holds no slot, so it crowds nothing");
+
+                if (!hit[0] || standing != struck) {
+
+                    helper.assertTrue(standing.getTarget() == null, "A bystander came for the agent unprovoked");
+                    helper.assertValueEqual(targetsMe(agent, slotOf(view, standing)), 0.0F, "a bystander's targets-me flag");
+                }
+            }
+
+            helper.assertValueEqual(view.inRangeCount(), 1 + idle.size(), "bodies in sight");
+
+            // The opponent is still the opponent: a fight with bystanders in it is the fight it was.
+            helper.assertTrue(agent.episode().pays(opponent), "The fight stopped paying for its own opponent");
+            helper.assertValueEqual(agent.episode().opponents().size(), 1, "who the other side is");
+
+            // Struck by the agent, and from then on it is allowed to fight back: nothing hands its target away again.
+            if (tick == 40) {
+
+                hit[0] = struck.hurt(helper.getLevel().damageSources().mobAttack(agent), 2.0F);
+                helper.assertTrue(hit[0], "The bystander took no damage from the agent");
+            }
+
+            if (tick == 60) {
+
+                helper.assertTrue(struck.getLastHurtByMob() == agent, "The agent's blow did not land on the bystander");
+                helper.assertTrue(struck.getTarget() == agent, "A struck bystander is still being kept off the agent");
+                return true;
+            }
+
+            return false;
+        });
+    }
+
+    /**
+     * A crowd is drawn from the monsters that walk, and the name a crowded fight goes into the results under says which
+     * opponent it was against and how many stood about it.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 40)
+    public static void aCrowdedFightIsNamedForItsOpponentAndItsCrowd(GameTestHelper helper) {
+
+        helper.assertValueEqual(Bystanders.name("zombie", 3), "zombie+3_idle", "a crowded fight's name");
+        helper.assertValueEqual(Bystanders.name("2x_zombie(hard)", 9), "2x_zombie(hard)+9_idle", "a crowded squad's name");
+        helper.assertValueEqual(Bystanders.name("zombie", 0), "zombie", "a fight with no crowd");
+
+        // Every draw asks for 1 to 9 of them or for none at all, and the fights that get a crowd come out at the share this
+        // build was told, which is what a run turns the curriculum up and down by.
+        RandomSource random = RandomSource.create(7L);
+        int draws = 4_000;
+        int crowded = 0;
+
+        for (int draw = 0; draw < draws; draw++) {
+
+            int wanted = Bystanders.wanted(random);
+
+            helper.assertTrue(wanted >= 0 && wanted <= 9, "A draw asked for " + wanted + " bystanders");
+            crowded += wanted > 0 ? 1 : 0;
+        }
+
+        // Asked of the share this process is running with rather than of a quarter, so a run told -PleagueBystanders=0.1 does
+        // not fail a suite for doing as it was told. Four standard deviations of a binomial draw either way.
+        double share = Bystanders.share();
+        double expected = draws * share;
+        double spread = 4.0D * Math.sqrt(Math.max(1.0D, expected * (1.0D - share)));
+
+        helper.assertTrue(Math.abs(crowded - expected) <= spread, crowded + " of " + draws + " fights were given a crowd, "
+                + "where a share of " + share + " asks for about " + Math.round(expected));
+
+        helper.succeed();
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /** A wall of bedrock across the middle of the room, or the air it was built out of. */
+    private static void wall(GameTestHelper helper, boolean up) {
+
+        for (int x = 1; x <= 7; x++) {
+
+            for (int y = 1; y <= 7; y++) {
+
+                helper.setBlock(new BlockPos(x, y, 4), up ? Blocks.BEDROCK : Blocks.AIR);
+            }
+        }
+    }
+
+    /** The present flag of one slot, read out of the observation the network is handed rather than off the slots. */
+    private static float present(AgentMob agent, int slot) {
+
+        return field(agent, slot, ObservationSchema.ENEMY_PRESENT);
+    }
+
+    /** Whether the slot's occupant has come for the agent, as the observation says it. */
+    private static float targetsMe(AgentMob agent, int slot) {
+
+        return field(agent, slot, ObservationSchema.ENEMY_TARGETS_ME);
+    }
+
+    private static float field(AgentMob agent, int slot, int offset) {
+
+        float[] observation = new float[ObservationSchema.OBS_DIM];
+        AgentObservation.write(agent, agent.brain().enemySlots(), observation, 0);
+
+        return observation[ObservationSchema.enemyOffset(slot) + offset];
+    }
+
+    private static boolean occupies(EnemySlots view, LivingEntity entity) {
+
+        return slotOf(view, entity) >= 0;
+    }
+
+    /** Which slot is reading it, or -1 for none. */
+    private static int slotOf(EnemySlots view, Entity entity) {
+
+        for (int slot = 0; slot < ObservationSchema.ENEMY_SLOTS; slot++) {
+
+            if (view.occupant(slot) == entity) {
+
+                return slot;
+            }
+        }
+
+        return -1;
+    }
+
+    private static String blocks(double distance) {
+
+        return String.format(java.util.Locale.ROOT, "%.2f", distance);
+    }
+
+    /**
+     * A training agent that presses nothing, so the only thing moving in these tests is the wall. It is a training agent
+     * because one is driven whatever is in its view, and given the plot's own bounds because the mechanics suite's plots sit
+     * close enough together that thirty two blocks reaches into the neighbours.
+     */
+    private static AgentMob still(GameTestHelper helper, BlockPos feet) {
+
+        AgentMob agent = helper.spawn(ModEntities.trainingAgent(), feet);
+
+        agent.setYRot(0.0F);
+        agent.setYHeadRot(0.0F);
+        agent.setYBodyRot(0.0F);
+        agent.setXRot(0.0F);
+        agent.startEpisode(new Episode(FIGHT_TICKS, bounds(helper), List.of()));
+        agent.brain().use(STILL);
+
+        return agent;
+    }
+
+    /** The plot this test owns, with a little slack: the box an agent in it is allowed to see into. */
+    private static AABB bounds(GameTestHelper helper) {
+
+        return new AABB(Vec3.atLowerCornerOf(helper.absolutePos(BlockPos.ZERO)),
+                Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(9, 9, 9)))).inflate(1.0D);
+    }
+
+    private static void run(GameTestHelper helper, IntPredicate step) {
+
+        TestTicks.run(helper, step);
+    }
+
+    /** A brain that presses nothing at all, so the agent stands where it was put and only looks. */
+    private static final Brain STILL = new Brain() {
+
+        @Override
+        public Species species() {
+
+            return Species.HUMANOID;
+        }
+
+        @Override
+        public void act(BrainStep step) {
+
+            java.util.Arrays.fill(step.actions, 0, step.count * ActionSchema.ACT_DIM, 0.0F);
+        }
+    };
+}

@@ -335,12 +335,62 @@ are deliberate.
   `SELF_ENEMIES_IN_RANGE` reads 1.5 where nothing in training put it over 0.3. The league fields **one** opponent or a squad
   of **two or three**, every one of them on the other team and coming for the agent, so a view of ten bodies that mostly
   ignore it is a shape no network has ever seen. It is a curriculum hole, not a body or an allegiance fault, and
-  `theCrowdedViewOfARealWorldIsTheWorldsOwn` in the play suite holds the innocent half — the slots, the crowd's nearest-win,
-  and the numbers being the world's own — so nobody has to investigate it twice. What to do about the guilty half is in
-  [training.md](training.md#a-crowded-view).
+  `theCrowdedViewOfARealWorldIsTheWorldsOwn` in the play suite holds the innocent half — the slots and the numbers being the
+  world's own — so nobody has to investigate it twice. What was done about it is the two entries below.
+- **Most of that crowd was never a crowd: the view had no line of sight in it, and a wall was all it took.** A slot went to
+  any hostile within thirty two blocks, full stop, so at night a real world put the monsters behind the rock, across the
+  valley and in the caves below into the agent's ten slots. A candidate now also has to be in sight of the agent's eyes,
+  vanilla's own `hasLineOfSight`, which is the test every mob's targeting already makes before it picks anything. Asked last
+  of the three conditions, so distance and sides throw most candidates out before anything is clipped through the world; one
+  clip per hostile candidate per tick, and the leases read the answer off the same walk instead of clipping again.
+  - **Proved on the fight the finding is about.** The play suite's crowd of eleven stands outside the plot's bedrock box,
+    twelve and twenty blocks off, which is exactly where a night's monsters are: on the other side of a wall. With the sight
+    rule, not one of them is counted or leased, and the agent on `best` kills the engaged zombie two blocks away in **67
+    ticks on 17 of its 20 health**. With the rule taken out and nothing else changed, the same eleven filled the slots and
+    the same agent was **dead by tick 174 with the zombie on all twenty of its health**. That pair of numbers is the whole
+    case.
+  - **The arena did not move**, which is the check that says the rule is narrow: 20 of 20 at exactly 54.0 ticks, because a
+    bare box and a league fight site have nothing between the fighters to occlude. The teacher reads the same slots, so a
+    suite that had moved would have meant the rule was wrong rather than that the fighter was.
+  - **Cover takes the reading away and leaves the slot.** An occupant out of sight keeps its lease for the grace — an
+    opponent stepping behind a tree comes back to the slot it left, which is what leases are for — but `occupant` answers
+    null for it and its slot reads plainly empty. There is no honest third answer: writing where it is now is seeing through
+    the wall, which is the fault being fixed, and freezing where it was last tells the network a body is somewhere it has had
+    two seconds to leave. A GRU is the thing that remembers, and it is better fed "gone" than a stale position. A slot saying
+    nothing is also the first one a newcomer in plain sight takes, so a crowd that ducked behind rock cannot sit on ten slots.
+    `aWallTakesTheReadingAndLeavesTheSlot` holds all three halves of that on a body that never moves.
+  - **Reachability is not done, and was not needed to fix this.** A mob twenty blocks down in a cave with a line of sight up
+    through a hole still takes a slot, and a player would see it too and also not fight it. What is wrong with it is that it
+    cannot be reached, which is a property of the ground between and not of the view, and the observation already says how far
+    below it is and that the floor under the agent is solid. A real path query per candidate per tick is the expensive kind of
+    rule, and sight already removes the great majority of what a cave holds, because rock is what a cave is made of. Left
+    undone deliberately; if it is ever wanted it belongs beside the sight test in `EnemySlots`, which is the one place who
+    takes a slot is decided.
 
 ## The league's curriculum
 
+- **A crowd of bystanders costs a fifth of a worker, not nothing, and the reason is their wits.** The share that stands 1 to 9
+  idle monsters about a quarter of the league's fights was written down as probably free: a probe had run fourteen of them in
+  a box with no measurable slowdown. Measured properly — 200 league fights on one worker, share off and on — it is **7,330
+  arena ticks a second against 5,475** on one pinned terrain seed and 6,809 against 6,216 on a freely drawn pair, so 10 to 25%
+  of a worker for a quarter of the fights, which puts a crowded fight at one and a half to two times a plain one. The probe's
+  fourteen had **no AI**; a bystander on real ground has its wits, and a mob with its wits pathfinds every tick. The share is
+  a property (`-PleagueBystanders`) so a run that cannot afford it can turn it down, and the number is here so nobody guesses
+  again.
+  - Keeping them motionless would buy all of it back and was rejected: a crowd that never moves hands the network a tell that
+    a real world does not give it. The discriminator that has to be learned is `ENEMY_TARGETS_ME`, which is the same one out
+    in a world, and an agent that learned "it is harmless if it is standing still" would fail in exactly the place this was
+    built for.
+- **A vanilla mob does go after an agent on its own, and the docs said it does not.** Three plain zombies, on no team, with
+  nothing having touched them and no provocation of any kind, all took a nearby training agent as their target on tick seven at
+  six blocks. Vanilla's zombie looks for a target among players, villagers, iron golems and turtles, and an agent is none of
+  those; `OtherTeamTargetGoal` is asleep while a mob has no team; nothing had hurt them. **What does it was not found**, and it
+  is written down here rather than chased because the fix does not depend on the cause: a bystander is handed its target back
+  on every tick until something hits it (`Bystanders#leaveAlone`), which is the exact opposite of the provocation an opponent
+  gets and is asked just as often. Without it a quarter of the league's fights would quietly have gained extra opponents that
+  the reward does not pay for and the ratings know nothing about — a fault that would never have shown up in a result.
+  `leagueBystandersStandAsideUntilStruck` holds both halves: unstruck they stay off the agent, struck one fights back.
+  The line in playing.md has been corrected to what was measured.
 - **The loadout and the opponent have to be drawn together.** Drawn independently, a bow was handed out against a creeper it
   should kite exactly as often as against a ghast it cannot reach, so the gradient reaching the drawing of a bow was an
   average over the matchups where a bow is the answer and the matchups where it is hopeless: measured over a league run's

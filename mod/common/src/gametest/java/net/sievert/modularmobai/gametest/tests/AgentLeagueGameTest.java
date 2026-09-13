@@ -25,6 +25,7 @@ import net.sievert.modularmobai.gametest.GameTestGroup;
 import net.sievert.modularmobai.gametest.GameTestTuning;
 import net.sievert.modularmobai.gametest.RepeatGameTest;
 import net.sievert.modularmobai.gametest.league.Behaviour;
+import net.sievert.modularmobai.gametest.league.Bystanders;
 import net.sievert.modularmobai.gametest.league.League;
 import net.sievert.modularmobai.gametest.league.Opposition;
 import net.sievert.modularmobai.gametest.league.Roster;
@@ -53,6 +54,12 @@ import net.sievert.modularmobai.gametest.util.TestDurationStats;
  * and all of them on another, so each goes for the agent and not for its own, and the agent counts every one of them an
  * enemy whatever kind of mob it is. The teams live on the server's scoreboard, so they are taken down again the moment the
  * fight is over. A fight against one mob is set up with no teams at all, exactly as it always was.
+ *
+ * <p>A share of the fights against a mob or a squad also stands a crowd of monsters about the fight, 8 to 30 blocks off, on
+ * no team and never provoked: the shape a real world has and no league fight had, see
+ * {@link net.sievert.modularmobai.gametest.league.Bystanders}. Nothing about the fight itself moves for them — the episode is
+ * given the opponents and only the opponents, so the reward cannot pay for one, and winning still means every opponent's
+ * health gone — but the fight goes into the results under a name of its own, {@code zombie+3_idle}.
  *
  * <p>The pairing is drawn before any ground is asked for, since what the agent is up against is what decides how many
  * places to stand the site has to have.
@@ -114,6 +121,13 @@ public class AgentLeagueGameTest {
 
         /** Everyone on the other side: one mob, one agent, or a whole squad. */
         private final List<LivingEntity> opponents = new ArrayList<>();
+
+        /**
+         * The monsters standing about this fight taking no interest in it, and nothing to do with who wins it. Kept only so
+         * that a fight knows what it stood out, since everything else about them is deliberately the same as scenery: they
+         * are on no team, the episode is not given them, and the site's own sweep takes them away afterwards.
+         */
+        private List<Mob> bystanders = List.of();
 
         /** The sides a squad fight was set up with, to take down again afterwards; empty for a fight against one. */
         private List<PlayerTeam> teams = List.of();
@@ -217,6 +231,13 @@ public class AgentLeagueGameTest {
                         this.struck |= opponent.getLastHurtByMob() == this.agent;
                     }
 
+                    // The other half of the same rule: an opponent is handed the agent every tick, and a bystander is handed
+                    // it back, so a crowd stays a crowd rather than quietly becoming opponents nobody is paying for.
+                    for (Mob standing : this.bystanders) {
+
+                        Bystanders.leaveAlone(standing, this.agent);
+                    }
+
                     if (!this.agent.isAlive() || this.beaten() || this.helper.getTick() - this.started >= this.matchup.ticks()) {
 
                         this.decide();
@@ -237,6 +258,10 @@ public class AgentLeagueGameTest {
                         // would end with thousands on the scoreboard.
                         this.teams.forEach(Allegiance::disband);
                         this.teams = List.of();
+
+                        // The release above swept them: they carry the fight's own tag and are not among the fighters handed
+                        // back, which is the same rule that takes away an evoker's vexes. Nothing here has to discard them.
+                        this.bystanders = List.of();
                         this.matchup = null;
                         this.phase = Phase.IDLE;
                     }
@@ -345,9 +370,16 @@ public class AgentLeagueGameTest {
             this.struck = false;
             this.did = new Behaviour();
 
-            // A replay holds one agent and one opponent, so a squad fight is not one: a recording with the rest of the side
-            // missing would show the agent losing to nothing at all. See docs/replay-format.md.
-            this.replay = this.opponents.size() > 1 ? null : FightRecorder.start(this.agent, this.opponents.get(0));
+            // Stood out after the episode is going, so what the agent is paid for is settled before anything else is in its
+            // view, and nowhere near the fight: 8 to 30 blocks off, on no team, never provoked. See league/Bystanders.
+            this.bystanders = opposition == null ? List.of()
+                    : Bystanders.stand(this.level, this.site, opposition, this.matchup.bystanders(), this.level.getRandom());
+
+            // A replay holds one agent and one opponent, so a squad fight is not one, and neither is one with a crowd
+            // standing about it: a recording with the rest of what the agent could see missing would show it losing to
+            // nothing at all. See docs/replay-format.md.
+            this.replay = this.opponents.size() > 1 || !this.bystanders.isEmpty() ? null
+                    : FightRecorder.start(this.agent, this.opponents.get(0));
 
             return Phase.FIGHTING;
         }

@@ -56,12 +56,17 @@ public final class ObservationSchema {
     public static final int ENEMY_STRIDE = 31;
     public static final int ENEMY_SIZE = ENEMY_SLOTS * ENEMY_STRIDE;
 
-    /** How far an enemy can be and still hold a slot. Beyond this it is only part of the in range count. */
+    /**
+     * How far an enemy can be and still hold a slot. Beyond this it is nothing to the agent at all — not even part of the in
+     * range count, which is over what it can see. Distance is not the whole rule: a slot also wants a line of sight from the
+     * agent's eyes, see {@code EnemySlots}.
+     */
     public static final double VIEW_DISTANCE = 32.0D;
 
     /**
-     * How long a slot stays reserved for an enemy that has left the view. Without this an opponent that steps out and
-     * back can return in a different slot, which is exactly the reshuffling the leases exist to prevent.
+     * How long a slot stays reserved for an enemy that has left the view or gone behind cover. Without this an opponent that
+     * steps out and back can return in a different slot, which is exactly the reshuffling the leases exist to prevent. The
+     * slot reads empty while the lease runs on grace: it is the slot that is kept, not the reading.
      */
     public static final int LEASE_GRACE_TICKS = 40;
 
@@ -195,8 +200,10 @@ public final class ObservationSchema {
     public static final int SELF_HURT_TIME = 18;
 
     /**
-     * How many enemies the agent can see: everything alive that counts as one within {@link #VIEW_DISTANCE}, whether it won
-     * a slot or not, over {@link #ENEMY_SLOTS}. See {@code EnemySlots#inRangeCount}.
+     * How many enemies the agent can see: everything alive that counts as one within {@link #VIEW_DISTANCE} and in sight of
+     * its eyes, whether it won a slot or not, over {@link #ENEMY_SLOTS}. See {@code EnemySlots#inRangeCount}. Sight is part
+     * of it because without it a night in a real world read 1.5 here where no training fight ever put it over 0.3, counting
+     * the monsters through the wall and in the caves below; see findings.md.
      *
      * <p>There is deliberately no second count of <i>the side</i> beside it. The critic gets one ({@code FightFacts#FOES}),
      * and the difference between the two is exactly the part a real game cannot supply: the side is the arena's roster,

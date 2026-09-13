@@ -4,6 +4,7 @@ import java.util.Collection;
 
 import net.minecraft.gametest.framework.TestFunction;
 import net.sievert.modularmobai.gametest.tests.AgentBlockGameTest;
+import net.sievert.modularmobai.gametest.tests.AgentCrowdGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentDrawnWeaponGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentLeagueGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentMeleeGameTest;
@@ -37,11 +38,12 @@ public class ModularMobAiGameTests {
             case "baseline" -> new Class<?>[] {VillagerVindicatorGameTest.class};
 
             // The agent's body against a player's rules, one rule at a time: no fights, a minute or so all told. One class
-            // per concern, all of them sharing tests/Mechanics; every one of them has to be named here or its tests are
-            // silently not run, which is why the suite prints how many it found.
+            // per concern, all of them sharing tests/Mechanics, and what its view is allowed to hold is the same kind of
+            // rule, so the crowd tests run here too. Every class has to be named here or its tests are silently not run,
+            // which is why the suite prints how many it found.
             case "mechanics" -> new Class<?>[] {AgentDrawnWeaponGameTest.class, AgentMeleeGameTest.class,
                     AgentBlockGameTest.class, AgentPerceptionGameTest.class, AgentTeacherGameTest.class,
-                    FightSetupGameTest.class};
+                    AgentCrowdGameTest.class, FightSetupGameTest.class};
 
             // The agent in a real game: networks by name, /mmai, sides and the loadouts that keep a bow firing.
             case "play" -> new Class<?>[] {PlayGameTest.class};
