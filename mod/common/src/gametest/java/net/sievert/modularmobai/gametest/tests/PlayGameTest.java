@@ -45,6 +45,7 @@ import net.sievert.modularmobai.brain.schema.Species;
 import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 import net.sievert.modularmobai.gametest.GameTestGroup;
+import net.sievert.modularmobai.gametest.util.HeldControls;
 import net.sievert.modularmobai.gametest.util.TestTicks;
 
 /**
@@ -707,7 +708,7 @@ public class PlayGameTest {
     public static void friendlyFireOffSparesTheSide(GameTestHelper helper) {
 
         AgentMob agent = trainingAgent(helper, new BlockPos(4, 2, 2), null);
-        AgentMechanicsGameTest.HeldControls.drive(agent);
+        HeldControls.drive(agent);
         Loadout.SWORD.equip(agent);
 
         Mob zombie = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new BlockPos(4, 2, 4));
@@ -761,7 +762,7 @@ public class PlayGameTest {
     public static void infinityBowNeverRunsOut(GameTestHelper helper) {
 
         AgentMob agent = trainingAgent(helper, new BlockPos(4, 2, 1), null);
-        AgentMechanicsGameTest.HeldControls.drive(agent);
+        HeldControls.drive(agent);
         Loadouts.byName(Loadouts.BOW_INFINITY, helper.getLevel().registryAccess()).orElseThrow().equip(agent);
 
         helper.assertValueEqual(Loadout.BOW.hotbar().get(1).getCount(), 64, "arrows in the bow loadout fights train with");
@@ -796,7 +797,7 @@ public class PlayGameTest {
     public static void infinityCrossbowNeverRunsOut(GameTestHelper helper) {
 
         AgentMob agent = trainingAgent(helper, new BlockPos(4, 2, 1), null);
-        AgentMechanicsGameTest.HeldControls.drive(agent);
+        HeldControls.drive(agent);
         Loadouts.byName(Loadouts.CROSSBOW_INFINITY, helper.getLevel().registryAccess()).orElseThrow().equip(agent);
 
         run(helper, tick -> {

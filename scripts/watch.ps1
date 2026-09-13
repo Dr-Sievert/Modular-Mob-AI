@@ -13,10 +13,7 @@
 param(
     [string[]] $Run = @(),
     [int] $Every = 5,
-    [switch] $Once,
-
-    # Accepted from older habits; this is the only view now.
-    [switch] $Brief
+    [switch] $Once
 )
 
 . "$PSScriptRoot\_common.ps1"

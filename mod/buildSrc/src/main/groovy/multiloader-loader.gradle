@@ -1072,10 +1072,16 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
 
                     ProcessHandle.of(pid as long).ifPresent { handle ->
 
-                        // A process id gets reused eventually, so only ever stop one that is still a java process.
+                        // A process id gets reused eventually, so only ever stop one that is still a java process. The
+                        // parentheses are load-bearing: && binds tighter than ||, so without them the Unix arm stood on
+                        // its own and a dead process whose command ended '/java' would have been destroyed. Harmless on
+                        // Windows, where the command ends 'java.exe' and the guarded arm is the one that ever matches,
+                        // which is why it went unnoticed - and it is a game test worker being force-killed, so it is
+                        // worth being right about on the loader that does run on Unix.
                         def command = handle.info().command().orElse('')
 
-                        if (handle.isAlive() && command.toLowerCase(Locale.ROOT).endsWith('java.exe') || command.endsWith('/java')) {
+                        if (handle.isAlive()
+                                && (command.toLowerCase(Locale.ROOT).endsWith('java.exe') || command.endsWith('/java'))) {
 
                             logger.lifecycle("Stopping a game test worker left behind by an earlier run (pid ${pid})")
                             handle.destroyForcibly()

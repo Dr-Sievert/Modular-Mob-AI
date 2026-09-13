@@ -281,7 +281,7 @@ a block offset, a head that reads the wrong outputs, or an encoder writing a fie
    layout adds up, an actor builds at its width, a shard of its width round trips, and the blocks it has and has not are
    asked for rather than assumed.
 9. `scripts\test.ps1` and `scripts\test.ps1 -Mechanics` — the humanoid must be untouched: 20 of 20 arena fights at
-   **exactly 54 ticks**, 40 of 40 mechanics. The 54 is deterministic, so any change in it is a change in behaviour.
+   **exactly 54 ticks**, 46 of 46 mechanics. The 54 is deterministic, so any change in it is a change in behaviour.
 10. `scripts\test.ps1 -Play` — `PlayGameTest.aSecondBodyIsDrivenAndARefusedBrainIsNamed` walks the register at the game's
     end as well: every mob you declared is registered and leads back to you, and your body is armed or refused by name
     according to `holdsItems`. It will pick your body up on its own. If your body has a mob and is meant to fight, add the

@@ -567,7 +567,7 @@ are deliberate.
     sword in slot zero.
   - **Because every demo the run is pulled towards is an iron sword.** All 16,000 fights in `runs\league768\demos` — the
     teacher record and all three DAgger rounds — were recorded on the *terrain* suite, one vindicator, hotbar `[iron_sword]`
-    and nothing else. `scripts\compare.ps1` carries a copy's record into the run it seeds, and league768 has never had a
+    and nothing else. A seeded run is pulled towards the record of the copy it came from, and league768 has never had a
     DAgger round of its own, so the teacher pull it spends 6,000 iterations under has never once shown it a bow, a shield
     or an axe. This is "a network never learns what the teacher never did" again, one level up: the teacher can do it, and
     the record still cannot say so.
@@ -743,6 +743,10 @@ are deliberate.
   - What follows for anything being compared: **put every candidate in one `bench.ps1` call**, which is why that script
     takes a list, and never subtract a number from one sitting from a number in another. It also means a published model's
     recorded win rate is a statement about the sitting it was measured in, to a few points.
+    - **The scripted fighter is a candidate like any other**, and the reference is worth nothing measured anywhere else: its
+      own reads span 78.2 to 81.5% across sittings, which is wider than most of what it is asked to judge. `bench.ps1
+      -Teacher` puts it in the same call rather than in a second one; `eval.ps1 -Teacher` is for asking about that fighter
+      on its own.
   - **Keep `-Workers` at one, and the same either way, because several workers are worth several points on their own.** This
     was recorded as "each worker takes its own slice of the arenas" without a number on it. The number is large. The scripted
     fighter, 600 league fights, back to back: **three workers gave 77.8% and then 83.0%; one worker gave 79.00% and then
@@ -778,9 +782,9 @@ are deliberate.
   Benched in one sitting, one worker, 600 fights: **iteration 3053 won 80.7% against the judged best's 72.7%**, and the
   teacher on the same bench 81.0%. So the run's own verdict was eight points wrong about which of its networks to keep,
   and the published one was the weaker.
-  - What to do until the rule is better: **bench the last checkpoint against the best before publishing**, always, and
-    carry a plateaued run on as a *new run seeded from its latest state* rather than resuming it, so the evaluator judges
-    the current roster afresh.
+  - What to do until the rule is better: **bench the last checkpoint against the best before publishing**, always, with
+    `-Teacher` in the same call so the pair has a scale, and carry a plateaued run on as a *new run seeded from its latest
+    state* rather than resuming it, so the evaluator judges the current roster afresh.
   - What a better rule needs: the opponents only the candidate has met are evidence too, weighted by how many fights they
     are, rather than discarded. Not done yet.
   - The second time it was checked it was right, which is worth recording beside the first. `blast2` (carried on from

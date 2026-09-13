@@ -10,9 +10,10 @@ Start with [architecture.md](architecture.md); the rest are how-tos.
 | [testing.md](testing.md) | check a change: the arena and mechanics suites, evaluation, the parity check, running and writing game tests |
 | [models.md](models.md) | find, publish and use the trained networks kept in git |
 | [playing.md](playing.md) | start the game with a model, spawn agents, give them loadouts and brains, set allies and enemies, every `/mmai` command, the config and the networks the jar carries |
-| [viewer.md](viewer.md) | watch recorded fights in 2D and 3D, and delete replays |
+| [viewer.md](viewer.md) | watch recorded fights in 2D and 3D, read the league standings, and delete replays |
 | [replay-format.md](replay-format.md) | read or write replay files |
 | [findings.md](findings.md) | know what was learned the hard way before changing something that looks odd |
 
-The trainer has its own notes in [../trainer/README.md](../trainer/README.md). Each script documents its parameters at
-its top.
+The trainer has its own notes in [../trainer/README.md](../trainer/README.md) and the viewer's code in
+[../viewer/README.md](../viewer/README.md); both are for changing those, not for using them. Each script documents its
+parameters at its top.

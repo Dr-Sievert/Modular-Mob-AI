@@ -60,8 +60,9 @@ to copy a hand-written fighter first, then improve the copy with reinforcement l
      workers. Tried: a second imitation started beside one already cloning took free memory to nothing and the build
      stopped the first one's workers to protect the machine. Two *training* runs are fine; two imitations are not.
 3. **Reinforcement learning from the copy**, with `scripts\train.ps1 -Run <run> -FromCopy` (start by copying the copy's
-   `state.pt`, `schema.json`, `weights\000000.mbw` and a link to its `demos` into the new run; `scripts\compare.ps1` does
-   this). It's PPO with safeguards, because plain PPO made a good copy worse twice:
+   `state.pt`, `schema.json` and `weights\000000.mbw` into the new run, and naming the copy's record with `-Demos`;
+   `scripts\train.ps1 -Seed <copy> -Demos <copy>` does all of it). It's PPO with safeguards, because plain PPO made a good
+   copy worse twice:
    - four times the experience per update (65,536 steps);
    - smaller, bounded steps: learning rate 5e-5, clip 0.1, target KL 0.01;
    - 30 iterations where only the critic learns;
@@ -288,23 +289,39 @@ minute: iteration, ticks/s, fights/s, training win rate, fight length; plus eval
 
 ### Trainer options (`-Extra`)
 
-Every field of `Config` in `trainer/mmai/ppo.py` is an option, as `--field-name value`. The useful ones:
+Every field of `Config` in `trainer/mmai/ppo.py` is an option, as `--field-name value`. The useful ones below; each field's
+own comment in `ppo.py` is where the reasoning and the measurements are.
+
+**Why some of these are `train.ps1` parameters and the rest are not.** A setting is first-class — its own named parameter —
+when a documented workflow asks for it by name: `-Suite`, `-Seed`, `-TeacherWeight`, `-LeagueModels`, `-Workers`. Anything
+else goes through `-Extra`, which reaches every field of `Config` without the script having to know it exists. That keeps
+`train.ps1` a list of the ways a run is actually started rather than a second copy of `Config` to be kept in step, and it is
+why a new knob in the trainer needs no change here at all.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--learning-rate` | 3e-4 | Adam step size |
 | `--clip` | 0.2 | PPO clip range |
 | `--target-kl` | 0.02 | stop an update early past this KL |
+| `--kl-adapt` | 1.5 | the learning rate moves against the KL each update produced, by this factor, so `--target-kl` is a step size rather than a trip switch. It was firing after the damage: on league768, 251 of 300 updates ran a single epoch at a KL of 0.013 against a target of 0.010 — 65,536 steps of collected fighting used once, and the policy 30% past the step it asked for anyway. The rate is in the run's state, so resuming keeps what it found; 0 turns it off |
+| `--kl-adapt-band` | 2.0 | how far either side of the target counts as on target, as a factor: inside it the rate is left alone |
+| `--kl-adapt-range` | 10.0 | how far the rate may wander from the configured one, as a factor either way |
 | `--epochs` | 4 | passes over each iteration's data |
 | `--entropy-coef` | 0.01 | exploration bonus |
 | `--critic-warmup` | 0 | iterations where only the critic learns |
 | `--critic-gru` | true | the critic runs its own GRU and reads the fourteen privileged inputs; `false` is the plain feed-forward critic. Decides what a new run builds, and what a run seeded from a copy builds; a resume keeps the critic its state holds, see [the critic](#the-critic) |
 | `--critic-gru-width` | 0 = `--hidden` | how wide that memory is |
 | `--teacher-weight` | 0 | pull towards the run's demos; needs `runs\<run>\demos` |
+| `--teacher-decay` | 1500 | iterations over which that pull falls to nothing, from the first one this run ever pulled; 0 holds it for ever. A pull held at full strength is a ceiling and not a floor, see [the pipeline](#the-pipeline-that-works) |
+| `--teacher-release` | 6 | judged checkpoints in a row that fail to beat the best, while the pull is still on, before the rest of it is let go without waiting for the horizon: a run that is still being pulled and has stopped improving is the shape of a ceiling. 0 waits for the horizon |
+| `--teacher-release-over` | 200 | iterations that release takes. Gradual, because an imitation term removed between two updates moves the policy on its own |
+| `--teacher-rows` | 262144 | steps of the record a pull is scored on per update |
 | `--aux-coef` | 0.05 | how hard the auxiliary predictions pull on the memory; 0 turns them off, see below |
 | `--aux-horizon` | 32 | ticks ahead that "the fight ends soon" looks |
 | `--seq-len` | 32 | ticks of GRU unrolled per training chunk |
 | `--h1 --hidden --h3` | 256, 128, 128 | network widths; only for a new run, and the game needs no change |
+| `--slot-enc` | 0 | width of one shared encoder over the ten enemy slots, or 0 for a first layer that takes every slot's numbers on its own. Ten slots of the same shape, learned once instead of ten times, which was the difference between beating one skeleton 84% of the time and two of them 9%. It is part of the network's shape and not a setting: a state trained with it cannot be read into a network without it, which is why `-Seed` reads it out of the state it is seeding from |
+| `--scale-rewards` | true | divide rewards by the running spread of the return, so the value loss is the same size whatever the reward is measured in |
 | `--eval-fights` | 500 | fights per judged checkpoint (2,000 tells 99.6% from 99.9%) |
 | `--eval-patience` | 10 | judged checkpoints without a new best before done |
 | `--eval-target` | 0.995 | win rate at which the run is done at once |
@@ -448,16 +465,27 @@ something in the league already answers to it (a mob, a squad, a rung, `scripted
 in), or when the network was trained for **another body** — the message names both bodies, since a beast's network cannot
 drive a humanoid at all; see [species.md](species.md).
 
-### `scripts\compare.ps1`: from the copy and from nothing, side by side
+### `scripts\compare.ps1`: seeded from a copy and from nothing, side by side
 
 ```
-scripts\compare.ps1                                  copy of runs\vindicator4 vs from nothing, runs vs-copy / vs-scratch
-scripts\compare.ps1 -CopyWorkers 4 -ScratchWorkers 2
+scripts\imitate.ps1 -Run league-copy -Suite league    the copy first
+scripts\compare.ps1 -Copy league-copy                 both arms on the league, runs vs-copy / vs-scratch
+scripts\compare.ps1 -Copy league-copy -CopyWorkers 4 -ScratchWorkers 2
+scripts\compare.ps1 -Copy vindicator -Suite terrain   the one on one fight instead
 ```
 
-This sets up `runs\<prefix>-copy` from the copy the first time (state, weights, a junction to its demos) and starts both
-runs in the background, with output going to each run's `console.log`. The copy's run stops when evaluation says done;
-the run from nothing only stops at `-ScratchBattles` (3,000,000).
+It starts both runs in the background, output going to each run's `console.log`. The seeded run is `train.ps1 -Seed <copy>
+-Demos <copy> -TeacherWeight 0.5`, which takes the copy's state and leaves the copy alone; the other is the same suite from
+nothing. The seeded one stops when evaluation says done; the run from nothing only stops at `-ScratchBattles` (3,000,000).
+
+`-Copy` has to be named. It used to default to `runs\vindicator4`, a copy trained against the humanoid's old 634-float
+observation whose weights load nowhere, so the default could only fail. It also used to link the copy's `demos` in as a
+junction, and now names it with `-Demos`: a link under `runs\` is one more thing for a recursive delete to follow, which
+has cost this repository a trainer environment and half an hour of generated ground; see
+[findings.md](findings.md#throughput-and-stability).
+
+**This compares two lineages, not two networks.** For "which of these two is better" the answer is `scripts\bench.ps1`,
+which puts both on one bench in one sitting with the scripted fighter beside them.
 
 ### `scripts\dagger.ps1`: correct a run that is already training
 
@@ -483,11 +511,13 @@ against one vindicator is not.
 | `-Workers`, `-Slots`, `-Heap`, `-StudentNoise` | 8, 25, 1280M, 0.05 | as for `imitate.ps1` |
 
 Records are named after the suite they were made on: `demos\league-round-1` beside `demos\round-1`, so a league record
-never lands on top of a vindicator one and a run can keep both. `runs\vindicator4`'s melee record stays exactly as
-usable as it was, and `train.py imitate` and `--teacher-weight` both read every folder under `demos`.
+never lands on top of a vindicator one and a run can keep both: a melee record made before the naming stays exactly as
+usable as it was, and `train.py imitate` and `--teacher-weight` both read every folder under `demos`. A record of an older
+*layout* is a different matter — a shard carries its schema id and the trainer refuses a mismatch by name.
 
-The script refuses to write into a `demos` folder that is a junction to another run's, which `compare.ps1` makes: a round
-recorded there would put this run's corrections into the other run's record.
+The script refuses to write into a `demos` folder that is a junction to another run's: a round recorded there would put this
+run's corrections into the other run's record. Nothing makes such a junction any more — `compare.ps1` used to, and names
+the record with `-Demos` instead — but a run started before that change still carries one.
 
 Then train pulled back towards it:
 

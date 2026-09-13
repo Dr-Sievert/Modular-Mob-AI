@@ -68,9 +68,10 @@ if (-not $driver -or -not (Test-Path $driver)) {
     throw "No weights to drive with. Run '$Run' has no best.mbw yet, so give -Weights a file, or train it until evaluation names a best."
 }
 
-# A demos folder that is a junction points at another run's record, which scripts\compare.ps1 makes so a copy's run can be
-# pulled towards the record it was copied from. Writing a round into that would put this run's corrections into the other
-# run's folder, where every run reading it would learn from fights it never had.
+# A demos folder that is a junction points at another run's record. Writing a round into that would put this run's
+# corrections into the other run's folder, where every run reading it would learn from fights it never had. Nothing makes one
+# any more -- scripts\compare.ps1 used to, so a seeded run could be pulled towards the record it was copied from, and names
+# it with train.ps1 -Demos instead -- but a run started before that change still carries one.
 $demos = Join-Path $directory 'demos'
 $item = Get-Item $demos -ErrorAction SilentlyContinue
 

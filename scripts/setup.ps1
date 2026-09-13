@@ -179,4 +179,9 @@ $cores = (Get-CimInstance Win32_Processor | Measure-Object -Property NumberOfLog
 
 Write-Host ''
 Write-Host ('Ready: {0} logical cores, {1:N0} GB of memory, PyTorch {2}' -f $cores, $memory, $torch)
-Write-Host 'Try scripts\test.ps1 -Terrain for a first look at some fights, then scripts\compare.ps1 or scripts\train.ps1.'
+Write-Host ''
+Write-Host 'Try scripts\test.ps1 -Terrain for a first look at some fights. Then, in order:'
+Write-Host '  scripts\terrain.ps1                                    the ground every run fights on, once per machine'
+Write-Host '  scripts\imitate.ps1 -Run league-copy -Suite league      a copy of the scripted fighter over every matchup'
+Write-Host '  scripts\train.ps1 -Run league -Suite league -Seed league-copy'
+Write-Host 'See docs\training.md; scripts\watch.ps1 follows a run and scripts\league.ps1 prints its tier list.'

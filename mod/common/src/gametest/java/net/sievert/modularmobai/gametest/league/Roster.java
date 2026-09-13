@@ -31,6 +31,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.util.RandomSource;
 import net.sievert.modularmobai.Constants;
+import net.sievert.modularmobai.arena.AgentReward;
 import net.sievert.modularmobai.gametest.mixin.SlimeInvoker;
 import net.sievert.modularmobai.gametest.terrain.TerrainSites;
 
@@ -146,8 +147,12 @@ public final class Roster {
      *
      * <p>The clock is also what fast and slow are paid against, so a win in six hundred ticks pays more of the speed bonus
      * in a two minute fight than in a one minute one. That is the intended reading: fast for the fight it was.
+     *
+     * <p>The minute is {@link AgentReward#DEFAULT_MAX_TICKS} and not a literal of its own, because the reward's default, the
+     * scale the critic's limit column is divided by and the trainer's age divisor are all the same number and used to be
+     * written four times. The two longer clocks are this roster's alone, so they stay literals.
      */
-    public static final int MELEE_TICKS = 1200;
+    public static final int MELEE_TICKS = AgentReward.DEFAULT_MAX_TICKS;
     private static final int RANGED_TICKS = 1800;
     private static final int FLYING_TICKS = 2400;
     private static final int MELEE_START = 0;

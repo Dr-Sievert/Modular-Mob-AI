@@ -49,7 +49,20 @@ public final class AgentReward {
     public static final float DEALT_WEIGHT = 1.5F;
     public static final float TAKEN_WEIGHT = 1.0F;
 
-    private static final int DEFAULT_MAX_TICKS = 1200;
+    /**
+     * A fight's minute, and <b>the one place the number is written</b>. Four things had it as their own literal and nothing
+     * tied them: the limit an episode gets when nobody sets one, the scale the critic's {@link FightFacts#LIMIT} divides a
+     * limit by, the clock a melee matchup asks for ({@code Roster.MELEE_TICKS}), and the divisor the trainer scales a row's
+     * age by ({@code EPISODE_TICKS} in {@code trainer/mmai/model.py}). Three of them now read this one; the fourth is on the
+     * other side of a language boundary and is held to it by
+     * {@code test_shard.test_the_trainer_divides_the_age_by_the_games_own_cap}, which reads this line.
+     *
+     * <p>They have to agree because the same tick count is being expressed three ways in one row: the observation's clock is
+     * the elapsed fraction of <i>this</i> fight's limit, the critic's limit column says how long that limit is on this
+     * scale, and the trainer's age column is the elapsed count on the same scale again. A minute here against a minute and a
+     * half there would make a fight read as though it were half over when it had barely started.
+     */
+    public static final int DEFAULT_MAX_TICKS = 1200;
 
     private float pending;
     private float episodeTotal;

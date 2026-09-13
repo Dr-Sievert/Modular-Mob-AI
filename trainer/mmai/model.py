@@ -308,6 +308,9 @@ PRIVILEGED_COLUMNS = len(PRIVILEGED) + len(SHARD_PRIVILEGED)
 # Only the scale the age is divided by, so a training fight's clock lands near one; a league matchup sets its own limit
 # and a longer fight simply reads above one. The observation already carries the elapsed *fraction* of this fight's limit
 # (SELF_CLOCK), and the shard's `limit` says how long the limit itself is.
+#
+# It is the game's AgentReward.DEFAULT_MAX_TICKS, which is the one place the number is written; nothing here can read a Java
+# constant, so test_shard.test_the_trainer_divides_the_age_by_the_games_own_cap reads that source and holds this to it.
 EPISODE_TICKS = 1200
 
 

@@ -15,7 +15,7 @@
 #   scripts\train.ps1 -Run league -Suite league -LeagueModels blast,blast4
 #                                               the same, with published networks in the league as rated players, so its
 #                                               tier list can be read beside another run's that fields them too
-#   scripts\compare.ps1                         two runs side by side instead, see there
+#   scripts\compare.ps1 -Copy league-copy       a seeded run and one from nothing side by side instead, see there
 #
 # Every checkpoint is played by the workers on its most likely action, in one fight in ten, and the best so far is kept
 # as runs\<run>\best.mbw, with the history in runs\<run>\eval.csv. The run stops on its own once evaluation says it has
@@ -32,6 +32,13 @@
 # battles are fought in rounds of -RoundSize, each with fresh worker processes, so a worker that crashes costs at most
 # the rest of its round. Starting workers takes about half a minute and a worker fights some seventy battles a second, so
 # a round is large enough to make that a small share of it.
+#
+# -Extra reaches every field of Config in trainer\mmai\ppo.py, as '--field-name value'. The rule for which settings are
+# parameters here instead: a setting is first-class when a documented workflow asks for it by name -- -Suite, -Seed,
+# -TeacherWeight, -LeagueModels, -Workers -- and everything else goes through -Extra. Otherwise this file becomes a second
+# copy of Config to be kept in step with it, and it would have to grow a parameter every time the trainer grows a knob.
+# The one exception is a setting this script has to act on rather than pass on: -FromCopy and -Seed set several trainer
+# options between them, and -Species and -LeagueModels are the build's rather than the trainer's.
 #
 # Each worker fights -Slots battles at once, on a quarter again as many terrain sites, in a -Heap sized heap. A worker
 # is bound by its one server thread, so the machine's memory, not its cores, decides how many run. Twenty five slots

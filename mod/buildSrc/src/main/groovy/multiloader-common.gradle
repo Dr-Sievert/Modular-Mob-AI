@@ -1,6 +1,5 @@
 plugins {
     id 'java-library'
-    id 'maven-publish'
 }
 
 base {
@@ -10,7 +9,6 @@ base {
 java {
     toolchain.languageVersion = JavaLanguageVersion.of(java_version)
     withSourcesJar()
-    withJavadocJar()
 }
 
 // The forward pass has a second set of loops written in explicit vector instructions, which need the incubator module to
@@ -57,16 +55,14 @@ repositories {
     }
 }
 
-// Declare capabilities on the outgoing configurations.
+// Declare capabilities on the outgoing configurations, which is what lets the three projects of one mod be told apart by
+// anything consuming them.
 // Read more about capabilities here: https://docs.gradle.org/current/userguide/component_capabilities.html#sec:declaring-additional-capabilities-for-a-local-component
-['apiElements', 'runtimeElements', 'sourcesElements', 'javadocElements'].each { variant ->
+['apiElements', 'runtimeElements', 'sourcesElements'].each { variant ->
     configurations."$variant".outgoing {
         capability("$group:${base.archivesName.get()}:$version")
         capability("$group:$mod_id-${project.name}-${minecraft_version}:$version")
         capability("$group:$mod_id:$version")
-    }
-    publishing.publications.configureEach {
-        suppressPomMetadataWarningsFor(variant)
     }
 }
 
@@ -139,18 +135,5 @@ jar {
     // and both carry a trailing #gametest marker instead.
     filesMatching(['META-INF/neoforge.mods.toml']) {
         filter { String line -> line.trim().endsWith('#gametest') ? null : line }
-    }
-}
-publishing {
-    publications {
-        register('mavenJava', MavenPublication) {
-            artifactId base.archivesName.get()
-            from components.java
-        }
-    }
-    repositories {
-        maven {
-            url System.getenv('local_maven_url')
-        }
     }
 }

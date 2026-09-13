@@ -162,17 +162,6 @@ public record Topology(int obsDim, int h1, int hidden, int h3, int outDim, int s
         return this.logStd() + this.stdDim;
     }
 
-    /** Multiply adds per agent per tick, which is what the tick budget is spent on. */
-    public long macsPerStep() {
-
-        return (long) this.slots * this.slotStride * this.slotEnc
-                + (long) this.fc1In() * this.h1
-                + 3L * this.hidden * this.h1
-                + 3L * this.hidden * this.hidden
-                + (long) this.hidden * this.h3
-                + (long) this.h3 * this.outDim;
-    }
-
     /**
      * A CRC32 of the dimensions as little endian integers. The training side works out the same number, and a weight file
      * whose stored hash disagrees with its own dimensions is corrupt rather than merely different.

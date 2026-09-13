@@ -4,6 +4,7 @@
 #   scripts\bench.ps1 -Run blast -Iterations 1900,2050,2150
 #   scripts\bench.ps1 -Weights models\blast\best.mbw,runs\blast\weights\002000.mbw
 #   scripts\bench.ps1 -Run blast -Last 3 -Arenas 2000    tighter, four times as long
+#   scripts\bench.ps1 -Run blast -Last 2 -Teacher        and the scripted fighter as one more row, in the same sitting
 #
 # Why this exists rather than reading a run's own eval.csv: a league run's win rate and rating are measured against
 # opponents the matchmaking keeps changing, so the same network scores differently as the run goes on, and a rating wanders
@@ -22,6 +23,10 @@
 #     77.8% and then 83.0%, one worker gave 79.00% and then 78.97%.
 #   - 600 fights is about half a point of repeatability within a sitting, so three points mean something and one does not.
 #     Use -Arenas 2000 to halve it, at four times the wall clock.
+#   - **-Teacher belongs in the same call, not in a second one.** A win rate on its own says nothing -- the league's roster
+#     holds wardens and evokers -- so the scripted fighter is the scale every other row is read against, and its own reads
+#     span 78.2 to 81.5% across sittings. Asking for it separately is exactly the mistake the first rule is about, so it is
+#     a switch here and a row like any other.
 #
 # Each network is copied aside before it is fought, because a run keeps only its last few weight files and prunes the rest
 # while this is running.
@@ -35,7 +40,10 @@ param(
     [int] $Workers = 1,
     [ValidateSet('terrain', 'arena', 'league')] [string] $Suite = 'league',
     [string[]] $Loadouts = @(),
-    [int] $Ground = 0
+    [int] $Ground = 0,
+
+    # The scripted fighter as one more row of this bench, measured first so the live lines have their scale from the start.
+    [switch] $Teacher
 )
 
 . "$PSScriptRoot\_common.ps1"
@@ -46,6 +54,12 @@ New-Item -ItemType Directory -Force $scratch | Out-Null
 try {
 
     $entries = @()
+
+    # First, so that every line after it is read against it. Nothing to copy aside: the scripted fighter is in the build.
+    if ($Teacher) {
+
+        $entries += [pscustomobject]@{ name = 'the scripted fighter'; file = '' }
+    }
 
     foreach ($path in $Weights) {
 
@@ -93,23 +107,33 @@ try {
 
     if ($entries.Count -eq 0) {
 
-        throw 'Nothing to bench: give -Run with -Last or -Iterations, or -Weights'
+        throw 'Nothing to bench: give -Run with -Last or -Iterations, or -Weights, or -Teacher'
     }
 
-    Write-Host "Benching $($entries.Count) network$(if ($entries.Count -ne 1) { 's' }) over $Arenas fights of the $Suite suite, $Workers worker$(if ($Workers -ne 1) { 's' }) each"
+    Write-Host "Benching $($entries.Count) fighter$(if ($entries.Count -ne 1) { 's' }) over $Arenas fights of the $Suite suite, $Workers worker$(if ($Workers -ne 1) { 's' }) each"
 
     $results = @()
 
     foreach ($entry in $entries) {
 
-        # Copied aside first: a run prunes all but its last few weight files, and the ones being benched are exactly the
-        # ones it is about to prune.
-        $copy = Join-Path $scratch ((Split-Path $entry.file -Leaf) + '.' + $results.Count)
-        Copy-Item $entry.file $copy -Force
-
         # A hashtable, not a list: splatting a list hands the values over positionally, and eval.ps1's second position is
         # the iteration.
-        $arguments = @{ Weights = $copy; Suite = $Suite; Arenas = $Arenas; Workers = $Workers }
+        $arguments = @{ Suite = $Suite; Arenas = $Arenas; Workers = $Workers }
+
+        if ($entry.file) {
+
+            # Copied aside first: a run prunes all but its last few weight files, and the ones being benched are exactly
+            # the ones it is about to prune.
+            $copy = Join-Path $scratch ((Split-Path $entry.file -Leaf) + '.' + $results.Count)
+            Copy-Item $entry.file $copy -Force
+
+            $arguments.Weights = $copy
+        }
+
+        else {
+
+            $arguments.Teacher = $true
+        }
 
         if ($Loadouts.Count -gt 0) {
 

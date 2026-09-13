@@ -999,7 +999,7 @@ public class AgentMob extends PathfinderMob {
         // hurts. It does not kill the ghast. A ghast is fire immune and vanilla's one exception to that is a type test —
         // Ghast#isReflectedFireball asks whether the fireball's owner is a Player and nothing else — so the thousand damage
         // a player's reflection deals is out of the agent's reach, and a power-one blast cannot make it up across four
-        // blocks of ghast. See findings.md and AgentMechanicsGameTest; fixing it would take a mixin on a vanilla mob's
+        // blocks of ghast. See findings.md and AgentMeleeGameTest; fixing it would take a mixin on a vanilla mob's
         // invulnerability, which is nobody's to add in passing.
         //
         // The tag holds only the fireball and the two wind charges, so nothing else in the league moves.
