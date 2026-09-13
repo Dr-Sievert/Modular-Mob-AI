@@ -1354,17 +1354,17 @@ class Trainer:
         state = torch.load(path, map_location=self.device, weights_only=False)
 
         if state["schema_id"] != self.schema.schema_id:
-            # Named by body wherever the state says which one it was, because "36f36b69 against 9f7a1358" is the same
-            # sentence for a layout that moved a field and for a run pointed at the wrong body, and only one of those has an
-            # answer. A state written before this carries no name, and then the numbers are all there is to say.
+            # The sentence up to the two numbers is the one docs/training.md troubleshoots by, and it stays. What is added
+            # is the bodies, where the state says which one it was, because those two numbers are the same sentence for a
+            # layout that moved a field and for a run pointed at the wrong body, and only one of those has an answer. A
+            # state written before this carries no name, and then the numbers are all there is to say.
             was = state.get("species")
             raise ValueError(
-                f"{path} was trained "
-                + (f"as a {was} " if was else "")
-                + f"against schema {state['schema_id']:08x} and this run is a {self.schema.species} "
-                f"({self.schema.schema_id:08x})"
+                f"{path} was trained against schema {state['schema_id']:08x} and the game is running "
+                f"{self.schema.schema_id:08x}"
                 + (
-                    ". A run is one body's for its whole life: train the other body in a run of its own. See docs/species.md"
+                    f": that one is a {was} and this one a {self.schema.species}, and a run is one body's for its whole "
+                    f"life. Train the other body in a run of its own; see docs/species.md"
                     if was and was != self.schema.species
                     else ""
                 )

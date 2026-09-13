@@ -16,7 +16,7 @@ Read these before changing anything:
 | [docs/architecture.md](docs/architecture.md) | How the mod and the trainer fit, the tick loop, the observation and action layouts, the reward, the file formats |
 | [docs/training.md](docs/training.md) | How to train: teacher, imitation, PPO, evaluation, best weights, every script and flag |
 | [docs/testing.md](docs/testing.md) | Game tests, the mechanics suite, evaluation, the parity check, writing tests |
-| [docs/species.md](docs/species.md) | Giving another body a brain: a schema per species, and the four files a new one takes |
+| [docs/species.md](docs/species.md) | Giving another body a brain: the one place a body is declared, and what follows from it |
 | [docs/models.md](docs/models.md) | Trained networks in git (`models/`), publishing, loading one |
 | [docs/playing.md](docs/playing.md) | Starting the game with a model, spawning agents, loadouts, allies and enemies |
 | [docs/viewer.md](docs/viewer.md) | The replay viewer |
