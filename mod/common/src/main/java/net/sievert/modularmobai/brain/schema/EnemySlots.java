@@ -24,6 +24,29 @@ import net.sievert.modularmobai.allegiance.Allegiance;
  * win the slots when there are more opponents than slots. Anything that could not be given a slot still shows up in the
  * count, so the agent knows it is outnumbered even when it cannot see by whom.
  *
+ * <h2>What the agent could see</h2>
+ *
+ * <p>A slot goes to a body within {@link ObservationSchema#VIEW_DISTANCE} <b>that the agent could actually see</b>, by
+ * vanilla's own line of sight from its eyes to the candidate's — the test every mob's targeting already makes before it
+ * picks anything. Distance alone was the whole rule, and a real game punished it: at night a view of thirty two blocks with
+ * nothing else in it takes in the monsters through the wall, across the valley and in the caves below, so ten slots filled
+ * with bodies that could not reach the agent and were not coming, {@code SELF_ENEMIES_IN_RANGE} read 1.5 where no training
+ * fight ever put it over 0.3, and the published network stopped fighting the zombie beside it altogether. Every league fight
+ * is one opponent or a squad of two or three on open ground with nothing between, so the arena and the terrain suites read
+ * exactly what they always did; see findings.md.
+ *
+ * <p><b>Cover takes the reading away, not the slot.</b> An occupant that goes behind rock, or out past the view, keeps its
+ * lease for {@link ObservationSchema#LEASE_GRACE_TICKS} — so an opponent stepping behind a tree comes back to the slot it
+ * left, which is the whole reason leases exist — but for as long as it cannot be seen {@link #occupant} answers null and its
+ * slot reads empty. There is no honest third answer: writing where it is now is seeing through the wall, which is the fault
+ * being fixed, and freezing where it was last is telling the network a body is somewhere it has had two seconds to leave.
+ * Remembering is the GRU's job, and it is better fed "gone" than a stale position. A slot that says nothing is also the
+ * first one taken from, {@link #slotToEvictFor}: a newcomer in plain sight is worth more than a reservation.
+ *
+ * <p>Sight is asked of bodies and not of shots. A projectile has to be moving, have the agent ahead of it and be on a line
+ * that would pass within a block and a half, see {@link #incoming}, and a wall in the way answers that itself: the arrow
+ * stops in the wall, loses its speed and its slot on the tick after. A clip per arrow would buy a tick.
+ *
  * <h2>Arrows in the air</h2>
  *
  * <p>A slot can also hold something that was shot at the agent. Half the league fights at a distance, and until now an
@@ -65,6 +88,12 @@ public final class EnemySlots {
     private final Entity[] occupants = new Entity[ObservationSchema.ENEMY_SLOTS];
     private final int[] graceRemaining = new int[ObservationSchema.ENEMY_SLOTS];
 
+    /**
+     * Whether this tick's walk found the occupant: within the view and, for a body, in sight of the agent's eyes. A slot
+     * whose occupant it did not is still leased and reads empty, see the class comment.
+     */
+    private final boolean[] sighted = new boolean[ObservationSchema.ENEMY_SLOTS];
+
     /** What the one walk over the surroundings found, kept for the life of the view rather than allocated every tick. */
     private final List<LivingEntity> bodies = new ArrayList<>();
     private final List<Projectile> shots = new ArrayList<>();
@@ -96,7 +125,11 @@ public final class EnemySlots {
 
             if (other instanceof LivingEntity living) {
 
-                if (living.isAlive() && hostile(owner, living)) {
+                // Sight last of the three, because it is the only one that costs a clip through the world: distance is done
+                // by the walk itself and whose side it is on is a couple of field reads. Each candidate is asked once a
+                // tick and the leases below read the answer off this list rather than clipping again, which is what
+                // vanilla's own per tick sensing cache buys a mob.
+                if (living.isAlive() && hostile(owner, living) && owner.hasLineOfSight(living)) {
 
                     this.bodies.add(living);
                 }
@@ -108,11 +141,12 @@ public final class EnemySlots {
             }
         }
 
-        // Bodies only. A count that grew with every arrow in the air would tell a network trained on it that it was
-        // outnumbered whenever a skeleton opened fire.
+        // Bodies only, and only the ones actually seen: this is what SELF_ENEMIES_IN_RANGE reads, and what makes it worth
+        // reading is that it counts the ones no slot was left for. A count that grew with every arrow in the air would tell
+        // a network trained on it that it was outnumbered whenever a skeleton opened fire.
         this.inRangeCount = this.bodies.size();
 
-        this.expireLeases(owner, viewSq);
+        this.expireLeases(owner);
 
         for (LivingEntity candidate : this.bodies) {
 
@@ -132,6 +166,7 @@ public final class EnemySlots {
 
                 this.occupants[slot] = candidate;
                 this.graceRemaining[slot] = ObservationSchema.LEASE_GRACE_TICKS;
+                this.sighted[slot] = true;
             }
         }
 
@@ -183,6 +218,7 @@ public final class EnemySlots {
 
             this.occupants[slot] = shot;
             this.graceRemaining[slot] = ObservationSchema.LEASE_GRACE_TICKS;
+            this.sighted[slot] = true;
         }
     }
 
@@ -223,7 +259,7 @@ public final class EnemySlots {
         return toOwner.lengthSqr() - along * along <= PROJECTILE_MISS * PROJECTILE_MISS;
     }
 
-    private void expireLeases(LivingEntity owner, double viewSq) {
+    private void expireLeases(LivingEntity owner) {
 
         for (int slot = 0; slot < this.occupants.length; slot++) {
 
@@ -236,7 +272,7 @@ public final class EnemySlots {
 
             if (!occupant.isAlive() || occupant.isRemoved()) {
 
-                this.occupants[slot] = null;
+                this.release(slot);
                 continue;
             }
 
@@ -246,7 +282,7 @@ public final class EnemySlots {
 
                 if (!incoming(owner, shot)) {
 
-                    this.occupants[slot] = null;
+                    this.release(slot);
                     continue;
                 }
             }
@@ -256,30 +292,48 @@ public final class EnemySlots {
             // still a wolf that just bit it.
             else if (occupant instanceof LivingEntity body && (Allegiance.allied(owner, body) || !owner.canAttack(body))) {
 
-                this.occupants[slot] = null;
+                this.release(slot);
                 continue;
             }
 
-            if (owner.distanceToSqr(occupant) <= viewSq) {
+            // Whether this tick's walk found it, which for a body means in the view and in sight. A shot that is still
+            // coming has just been asked the only question there is about one.
+            this.sighted[slot] = occupant instanceof Projectile || this.bodies.contains(occupant);
+
+            if (this.sighted[slot]) {
 
                 this.graceRemaining[slot] = ObservationSchema.LEASE_GRACE_TICKS;
                 continue;
             }
 
-            // Out of view, but the slot is held for a moment in case it is only stepping around a corner.
+            // Out of view or behind cover, and the slot is held for a moment in case it is only stepping around a corner —
+            // but it reads empty meanwhile, because nothing honest can be said about where it is. See the class comment.
             if (--this.graceRemaining[slot] <= 0) {
 
-                this.occupants[slot] = null;
+                this.release(slot);
             }
         }
     }
 
+    private void release(int slot) {
+
+        this.occupants[slot] = null;
+        this.graceRemaining[slot] = 0;
+        this.sighted[slot] = false;
+    }
+
     /**
-     * The slot to take for a newcomer that found none free: a projectile's before anything alive, and otherwise the one
-     * held by whichever body is furthest away, but only if the newcomer is actually closer. Evicting a body for one
-     * further off would just churn the slots for nothing.
+     * The slot to take for a newcomer that found none free: one whose occupant cannot be seen before anything that can, a
+     * projectile's before anything alive, and otherwise the one held by whichever body is furthest away, but only if the
+     * newcomer is actually closer. Evicting a body for one further off would just churn the slots for nothing.
+     *
+     * <p>An unsighted lease goes first because it is reading empty anyway, so the network loses nothing by it and gains a
+     * body it can see. That is also the answer to the one cost of holding a lease through cover: a crowd that ducked behind
+     * rock cannot sit on ten slots while the fight walks up.
      */
     private int slotToEvictFor(LivingEntity owner, LivingEntity candidate) {
+
+        int unsighted = -1;
 
         int furthestShot = -1;
         double furthestShotSq = -1.0D;
@@ -293,6 +347,12 @@ public final class EnemySlots {
 
             if (occupant == null) {
 
+                continue;
+            }
+
+            if (!this.sighted[slot]) {
+
+                unsighted = slot;
                 continue;
             }
 
@@ -316,7 +376,7 @@ public final class EnemySlots {
             }
         }
 
-        return furthestShot >= 0 ? furthestShot : furthest;
+        return unsighted >= 0 ? unsighted : furthestShot >= 0 ? furthestShot : furthest;
     }
 
     private int firstFreeSlot() {
@@ -345,13 +405,29 @@ public final class EnemySlots {
         return -1;
     }
 
+    /**
+     * What is in that slot to be described, or null for a slot the agent has nothing to say about: an empty one, and one
+     * whose occupant is out of the view or behind cover and holding its lease on grace. Every reader gets that one answer —
+     * the observation leaves the slot at zeroes, the scripted fighter does not go for it — so there is nowhere for a
+     * position the agent could not have seen to leak through.
+     */
     @Nullable
     public Entity occupant(int slot) {
+
+        return this.sighted[slot] ? this.occupants[slot] : null;
+    }
+
+    /**
+     * Whoever holds that slot, seen this tick or not. Nothing in the observation reads this: it is here so that a test can
+     * tell a lease held through cover from a lease let go, which is the difference the grace exists to make.
+     */
+    @Nullable
+    public Entity leaseholder(int slot) {
 
         return this.occupants[slot];
     }
 
-    /** Everything alive in view, including whatever could not be given a slot. Arrows are not counted. */
+    /** Everything alive the agent can see, including whatever could not be given a slot. Arrows are not counted. */
     public int inRangeCount() {
 
         return this.inRangeCount;
@@ -375,6 +451,7 @@ public final class EnemySlots {
 
         java.util.Arrays.fill(this.occupants, null);
         java.util.Arrays.fill(this.graceRemaining, 0);
+        java.util.Arrays.fill(this.sighted, false);
         this.inRangeCount = 0;
     }
 }

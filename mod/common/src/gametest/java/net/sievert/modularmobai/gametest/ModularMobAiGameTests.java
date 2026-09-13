@@ -3,6 +3,7 @@ package net.sievert.modularmobai.gametest;
 import java.util.Collection;
 
 import net.minecraft.gametest.framework.TestFunction;
+import net.sievert.modularmobai.gametest.tests.AgentCrowdGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentLeagueGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentMechanicsGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentVindicatorGameTest;
@@ -31,8 +32,9 @@ public class ModularMobAiGameTests {
             // The fifty thousand arena baseline, with no agent in it.
             case "baseline" -> new Class<?>[] {VillagerVindicatorGameTest.class};
 
-            // The agent's body against a player's rules, one rule at a time: no fights, a minute or so all told.
-            case "mechanics" -> new Class<?>[] {AgentMechanicsGameTest.class};
+            // The agent's body against a player's rules, one rule at a time: no fights, a minute or so all told. What its
+            // view is allowed to hold is the same kind of rule, so the crowd tests run here too.
+            case "mechanics" -> new Class<?>[] {AgentMechanicsGameTest.class, AgentCrowdGameTest.class};
 
             // The agent in a real game: networks by name, /mmai, sides and the loadouts that keep a bow firing.
             case "play" -> new Class<?>[] {PlayGameTest.class};

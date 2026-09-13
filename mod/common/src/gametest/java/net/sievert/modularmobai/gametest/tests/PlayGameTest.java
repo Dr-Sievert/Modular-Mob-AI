@@ -185,32 +185,30 @@ public class PlayGameTest {
     }
 
     /**
-     * What an agent out in a real world sees of the mob beside it is the world's own reading, and a crowd of monsters
-     * standing about in view does not take that away from it.
+     * What an agent out in a real world sees of the mob beside it is the world's own reading, and a crowd of monsters on the
+     * far side of a wall is not in its view at all — so it fights the zombie beside it and kills it.
      *
-     * <p>This is the test that says where a real game's trouble is not. An agent met in a world has no arena bounding its
-     * view and no episode paying it, and a night's worth of monsters within the thirty two blocks it sees — through walls,
-     * underground, taking no interest — is the one thing no training fight ever had: the league fields one opponent, or a
-     * squad of two or three, and all of them come for the agent. A published network in that position stops fighting; it
-     * aims at the sky and dies to the zombie beside it without swinging once. Measured, one agent on {@code best} against an
-     * engaged zombie two blocks off, 200 ticks each: with nothing else in view it kills the zombie in 45 ticks and keeps
-     * all twenty health; with three idle monsters in view it lands nothing and dies; with nine it presses attack not once.
-     * See findings.md.
+     * <p>This is the test the crowded view cost a day of. An agent met in a world has no arena bounding its view and no
+     * episode paying it, and a night's worth of monsters within the thirty two blocks it sees is the one thing no training
+     * fight ever had: the league fields one opponent, or a squad of two or three, and all of them come for the agent. The
+     * published network in that position stopped fighting — it aimed at the sky and died to the zombie beside it without
+     * swinging once. Measured here, one agent on {@code best} against an engaged zombie two blocks off, 200 ticks each:
+     * with nothing in the view besides it, the zombie dead in 45 ticks on full health; with three idle monsters in view,
+     * nothing landed and the agent dead; with nine, attack never pressed at all. See findings.md.
      *
-     * <p>So the suspicion this pins is the other one. Everything the body and the observation do here is right, and this
-     * holds them to it on every tick:
+     * <p>Everything the body and the observation did was already right, which this still holds them to on every tick: the
+     * zombie's place in its slot is the world's own delta in the agent's own frame, to a hundredth of a block, with nothing
+     * measured against a fight site, an episode or an arena's origin, none of which a real world has; and
+     * {@code ENEMY_TARGETS_ME} follows the zombie's own target, tick for tick.
      *
-     * <ul>
-     *   <li>the zombie beside the agent holds an enemy slot, crowd or no crowd, and the furthest candidate is the one that
-     *       goes without;</li>
-     *   <li>its place in that slot is the world's own delta in the agent's own frame, to a hundredth of a block — nothing
-     *       here is measured against a fight site, an episode or an arena's origin, none of which a real world has;</li>
-     *   <li>{@code ENEMY_TARGETS_ME} follows the zombie's own target, tick for tick.</li>
-     * </ul>
-     *
-     * <p>The crowd stands outside the box, which is where a real night's monsters are: on the other side of a wall. It is
-     * discarded again however this test ends, since entities beyond the plot are not what the framework clears between
-     * tests, and thirty two blocks reaches into the next one.
+     * <p>What was wrong was the view, and this is where it is proved. The crowd stands outside the box, which is where a
+     * real night's monsters are: on the other side of a wall, eleven of them at twelve and twenty blocks, well inside the
+     * thirty two the view reaches. Not one of them takes a slot or is counted, because a slot now goes only to what the
+     * agent could see; the zombie two blocks away keeps its slot throughout; and the agent kills it in 67 ticks on 17 of its
+     * 20 health. With the sight rule taken out and nothing else changed, the same eleven took ten slots and the same agent
+     * was dead by tick 174 with the zombie still on all twenty of its health, which is the measurement this rests on. The
+     * crowd is discarded again however this test ends, since entities beyond the plot are not what the framework clears
+     * between tests, and thirty two blocks reaches into the next one.
      */
     @GameTest(template = ARENA, timeoutTicks = 200)
     public static void theCrowdedViewOfARealWorldIsTheWorldsOwn(GameTestHelper helper) {
@@ -219,9 +217,9 @@ public class PlayGameTest {
         agent.equip(Loadout.SWORD);
         agent.setBrainName("best");
 
-        // Ten standing about at twelve blocks and one at twenty, which with the zombie beside the agent is twelve
-        // candidates for ten slots: the two furthest have to be the ones that go without. Near enough that the whole crowd
-        // stays inside the thirty two blocks wherever the fight carries the agent in a box seven across.
+        // Ten standing about at twelve blocks and one at twenty, every one of them behind a wall of bedrock. Near enough
+        // that the whole crowd would be well inside the thirty two blocks wherever the fight carries the agent in a box
+        // seven across, so distance is not what keeps them out.
         List<Mob> crowd = new ArrayList<>();
 
         for (int index = 0; index < 10; index++) {
@@ -230,30 +228,52 @@ public class PlayGameTest {
             crowd.add(bystander(helper, (int) Math.round(Math.cos(angle) * 12.0D), (int) Math.round(Math.sin(angle) * 12.0D)));
         }
 
-        Mob furthest = bystander(helper, 0, 20);
-        crowd.add(furthest);
+        crowd.add(bystander(helper, 0, 20));
 
         Zombie zombie = helper.spawn(EntityType.ZOMBIE, new BlockPos(4, 2, 3));
         PlayerTeam[] sides = Allegiance.enemy(List.of(agent), List.of(zombie)).toArray(new PlayerTeam[0]);
 
         EnemySlots view = agent.brain().enemySlots();
+        int[] died = {-1};
 
         run(helper, tick -> {
 
             try {
 
                 // The first tick is before the driver has ever looked, so the slots are still empty.
-                if (tick > 0) {
+                if (tick > 0 && zombie.isAlive()) {
 
                     helper.assertTrue(agent.brain().brain() == Brains.named("best"), "The agent is not on best");
-                    helper.assertValueEqual(view.inRangeCount(), 12, "monsters in view");
-                    helper.assertTrue(occupies(view, zombie), "The zombie beside the agent lost its slot to the crowd");
-                    helper.assertFalse(occupies(view, furthest), "The furthest monster of twelve took one of ten slots");
+                    helper.assertValueEqual(view.inRangeCount(), 1, "monsters in view");
+                    helper.assertTrue(occupies(view, zombie), "The zombie beside the agent has no slot");
+
+                    for (Mob standing : crowd) {
+
+                        // The lease rather than the reading, which is the stronger claim: one behind a wall was never seen,
+                        // so it has no slot to come back to either.
+                        helper.assertFalse(leases(view, standing), "A monster behind the wall holds slot "
+                                + leasedSlot(view, standing) + ", " + String.format(java.util.Locale.ROOT, "%.1f",
+                                agent.distanceTo(standing)) + " blocks off");
+                    }
 
                     theSlotIsTheWorlds(helper, agent, zombie);
                 }
 
-                if (tick == 60) {
+                if (died[0] < 0 && !zombie.isAlive()) {
+
+                    died[0] = tick;
+                }
+
+                // The finding's own case, and the whole point: with the crowd out of the view the agent fights. It took 45
+                // ticks with nothing in view at all and died without swinging with nine in it, so 180 is generous either way.
+                if (tick == 180) {
+
+                    helper.assertTrue(died[0] >= 0, "The agent never killed the zombie beside it: "
+                            + String.format(java.util.Locale.ROOT, "%.1f", zombie.getHealth()) + " health left, "
+                            + view.inRangeCount() + " monsters in view");
+                }
+
+                if (died[0] >= 0) {
 
                     tidy(crowd, sides);
                     return true;
@@ -1076,12 +1096,31 @@ public class PlayGameTest {
         return slotOf(view, entity) >= 0;
     }
 
-    /** Which of the enemy slots holds it, or -1 for none. */
+    /** Which of the enemy slots holds it and is reading it, or -1 for none. */
     private static int slotOf(EnemySlots view, LivingEntity entity) {
 
         for (int slot = 0; slot < ObservationSchema.ENEMY_SLOTS; slot++) {
 
             if (view.occupant(slot) == entity) {
+
+                return slot;
+            }
+        }
+
+        return -1;
+    }
+
+    /** Whether any slot is reserved for it at all, seen this tick or not: the lease rather than the reading. */
+    private static boolean leases(EnemySlots view, LivingEntity entity) {
+
+        return leasedSlot(view, entity) >= 0;
+    }
+
+    private static int leasedSlot(EnemySlots view, LivingEntity entity) {
+
+        for (int slot = 0; slot < ObservationSchema.ENEMY_SLOTS; slot++) {
+
+            if (view.leaseholder(slot) == entity) {
 
                 return slot;
             }

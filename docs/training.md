@@ -476,11 +476,13 @@ What to add, in the shape the league already has:
   seeing what a real world shows them, which is the point, and both are already one rule in one place. Nothing in the layout
   moves, so no published network is invalidated: this is fights, not fields.
 
-Separately, and the owner's call rather than a run's: **the view could be narrowed instead of the curriculum widened** — a
-line of sight or reachability test in `EnemySlots`, so that a mob behind rock never takes a slot. That is the other half of
-why a real night crowds the view, and it is cheap to say and expensive to do: a clip per candidate per tick on top of the
-terrain grid, an opponent that flickers out of the view behind a tree, and a change to what every network sees, so it wants
-a retrain rather than a patch. Neither has been done; both are written down here so the next person starts from the numbers.
+**The view has since been narrowed as well**, which was the other half: a slot now wants a line of sight from the agent's
+eyes and not only thirty two blocks, so a mob behind rock never takes one. That is what actually fixed the reported game —
+the agent kills the zombie beside it where it used to die to it — and it cost the arena suite nothing, since a league fight
+site has nothing between the fighters. The flicker it was feared for is answered by keeping the lease through cover and
+letting only the reading go; see [findings.md](findings.md#perception) and `architecture.md`. It is still a change to what
+every network sees, so a published network is better off retrained than trusted out in a world. Reachability — the mob in the
+cave below with a line of sight up through a hole — is deliberately not done, and the reason is in findings.md.
 
 ### `scripts\compare.ps1`: from the copy and from nothing, side by side
 
