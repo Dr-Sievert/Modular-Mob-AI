@@ -1,0 +1,12 @@
+{
+    "run":  "blast2",
+    "published":  "2026-09-13T08:37:16+02:00",
+    "code":  "2701cab",
+    "weights":  "best evaluated, iteration 3100",
+    "iteration":  3100,
+    "fights":  1009,
+    "won":  79.5,
+    "lost":  17.3,
+    "timed_out":  3.2,
+    "state":  true
+}
