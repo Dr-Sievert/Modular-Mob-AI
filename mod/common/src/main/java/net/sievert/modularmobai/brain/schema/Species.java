@@ -56,11 +56,14 @@ public interface Species {
     /** A body with no hands: the second one, and the proof that a body is a thing this can have more than one of. */
     Species BEAST = new Beast();
 
+    /** A layout and nothing else: no mob, no encoder, no fights. See {@link TestBody}, which says why it is here. */
+    Species TEST_BODY = new TestBody();
+
     /**
      * Every body there is, and the one place a body is declared. Everything that goes round the bodies goes round this:
      * the loaders' registrations, the parity check, the build's list, and every message that says what bodies there are.
      */
-    List<Species> ALL = checked(List.of(HUMANOID, BEAST));
+    List<Species> ALL = checked(List.of(HUMANOID, BEAST, TEST_BODY));
 
     /** As it appears in a schema, a weight file and a log. Lower case, no spaces, and never changed once published. */
     String name();
