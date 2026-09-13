@@ -13,7 +13,15 @@ scripts\viewer.ps1 -MinecraftJar <jar>     take textures from that jar instead o
 
 `viewer\serve.py` is a small local server with a live list of every run's replays; the pages are `viewer\replay.html`
 and `viewer\league.html`, and *League* in the replay page's header opens the second. Starting it again replaces an older
-running viewer rather than starting a second one. Ctrl+C stops it.
+running viewer rather than starting a second one. Ctrl+C stops it. [../viewer/README.md](../viewer/README.md) is the note for
+anyone changing the viewer itself: its files, its endpoints, the vendored three.js.
+
+Two ways to watch a fight without the server, both of which give up the Minecraft textures and the deleting, and say so on
+the page:
+
+- open `viewer\replay.html` straight from disk and drop replay files or folders on it;
+- `python viewer\serve.py --export [--run NAME | --path FILE_OR_FOLDER] [--count 20]` bakes the newest replays into
+  `runs\<name>\replays.html`, one file that works anywhere, its 3D view included.
 
 A checkout with no `runs\` of its own reads the main checkout's, found the way `scripts\_common.ps1` finds the trainer's
 environment: out of the `.git` file a worktree carries, never through a junction. Development happens in a worktree,
@@ -39,12 +47,34 @@ written over, so the page can ask every three seconds while training writes.
 - The list is the server's answer, not what has been opened: it is there from the first paint, and until the answer
   arrives the page says it is looking. It used to say *nothing under `runs\*\replays`* in that second instead, which on a
   machine with twenty five thousand replays on it reads as a page that can only show what has been dropped on it.
+- A replay of the older format, which has only a height and a colour per column rather than the site's blocks, is greyed
+  out as *old* with a link that selects every one of them for deleting. A page opened from disk or an export skips them.
 
 ## Watching
 
-- Fights play at 20 ticks a second, with pause, step, speed and full screen.
-- **V** switches between the 2D map and the 3D view.
-- **B** switches between block textures and map colours.
+| Key | |
+|---|---|
+| Space | play or pause; 1× is real time, 20 ticks a second |
+| ← → | one tick; with Shift, ten |
+| , . | previous or next hit |
+| - + | speed, 0.25× to 8× |
+| ↑ ↓ | previous or next replay in the list |
+| / | search the list; several words all have to match |
+| V | map or 3D |
+| F | full screen |
+| C, 0 | follow camera; the whole terrain |
+| T K E G H L | trails, contours, elevation tint, chunk grid, charts, list |
+| B | blocks in their textures, where the jar is there, or in their map colours |
+
+On the map the wheel zooms and dragging pans, which turns the follow camera off. In 3D dragging orbits, right-dragging or
+Shift-dragging pans, the wheel zooms, and *Iso* and *Top* are presets. Clicking a chart or an event marker jumps there.
+`?` in the page says how to read the views and what the numbers mean.
+
+A link carries all of it, so a fight can be pointed at:
+`http://127.0.0.1:8765/?run=blast&replay=w01-f000400.json&t=120&view=3d&zoom=3` opens that fight at tick 120, in 3D, three
+times closer than framing both fighters. With *Auto-open newest* ticked, the newest replay of the run opens whenever the one
+on screen finishes.
+
 - In 3D the site is drawn block by block, with textures and biome tints:
   - logs follow their axis; leaves are cut out; water is see-through;
   - plants are crossed sprites; slabs, stairs and snow are shaped;
