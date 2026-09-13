@@ -288,6 +288,19 @@ are deliberate.
     row of a fight, the weapon swapped out of on the row after a slot change. A critic may be priced off a row it reads
     late; a policy choosing whether to swing may not.
 
+- **A field nobody reads is a field nobody has.** `ENEMY_EXPLODES` and `ENEMY_FUSE` were added to every enemy slot so that
+  a creeper would read as "twenty health, no weapon, explodes, fuse at 0.4" instead of "monster", and then the teacher went
+  on guessing: `ScriptedBrain` had **zero occurrences of either name**. Its test for a lit creeper was the one it was
+  written with before the fields existed — empty hands, never swung, stopped coming, and inside 3.05 blocks — and it was
+  evaluated on the single `target` slot, so a second creeper was never reasoned about at all however close it came. Two
+  measurable costs. Against one creeper, 3.05 blocks is **0.8 blocks inside the creeper's own fuse range**, so the fighter
+  was still in the blast when it went off: over 81 recorded single-creeper fights, **41 draws**, ending on 9.2 health of 20
+  where a win ended on 19.9. Against two, the rule fired on whichever was nearer and walked the fighter into the other one.
+  The teacher now reads the two fields on **every occupied slot** and backs away from the nearest lit thing, target or not;
+  the guess is kept underneath for a body whose slots say nothing about exploding, and nothing else. Proved by
+  `theTeacherBacksOffALitCreeperOnTheFuseAlone` (a creeper lit five blocks off, where the guess could not have fired) and
+  `withTwoCreepersTheTeacherFleesTheLitOne`; with the fuse path disabled both fail, and the second fails by walking east
+  into the lit creeper, which is what the old rule did. **After adding a field, grep the teacher for it.**
 - **A network will not reliably attack something that is not fighting back, and a test must not ask it to.** The play
   suite's `worldAgentFightsOnTheBundledNetwork` put a `spawnWithNoFreeWill` zombie four blocks from an agent on the
   bundled network. The agent saw it, closed to a block, pressed attack twenty times in two hundred ticks — so the body was

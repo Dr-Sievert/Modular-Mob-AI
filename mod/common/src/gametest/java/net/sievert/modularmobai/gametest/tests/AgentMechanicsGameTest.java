@@ -2409,6 +2409,134 @@ public class AgentMechanicsGameTest {
     }
 
     // ---------------------------------------------------------------------------------------------------------------
+    // What the teacher does about a lit creeper
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /** How long a creeper's fuse burns before it goes off, so a test can watch the teacher react and stop short of it. */
+    private static final int FUSE_TICKS = 30;
+
+    /**
+     * The teacher backs off a lit creeper on the fuse field alone. The creeper stands five blocks off, which is past the
+     * three the old guess waited for, and it never moves or swings: so the only thing in the observation that can have sent
+     * the teacher backwards is {@code ENEMY_EXPLODES} and {@code ENEMY_FUSE}, which it never used to read at all.
+     *
+     * <p>Five blocks is also where a fighter with a sword would otherwise close in — the band it wants is about three — so
+     * the assertion cuts both ways: walking away is a decision, and the distance the teacher ends at says which way it went.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 100)
+    public static void theTeacherBacksOffALitCreeperOnTheFuseAlone(GameTestHelper helper) {
+
+        AgentMob agent = agent(helper, new BlockPos(4, 2, 2), 0.0F, 0.0F);
+        Creeper creeper = helper.spawnWithNoFreeWill(EntityType.CREEPER, new BlockPos(4, 2, 7));
+
+        agent.startEpisode(new Episode(FIGHT_TICKS, bounds(helper), creeper));
+        Loadout.SWORD.equip(agent);
+        agent.brain().use(Brains.scripted());
+
+        int light = 2;
+        double[] opened = {0.0D};
+        double[] nearest = {Double.MAX_VALUE};
+
+        run(helper, tick -> {
+
+            if (tick == light) {
+
+                opened[0] = agent.distanceTo(creeper);
+
+                helper.assertTrue(opened[0] > 3.05D,
+                        "The creeper stands " + opened[0] + " blocks off, inside the range the old guess fired at");
+
+                creeper.ignite();
+                return false;
+            }
+
+            if (tick > light) {
+
+                nearest[0] = Math.min(nearest[0], agent.distanceTo(creeper));
+            }
+
+            // Well short of the fuse, since a creeper's blast reaches six blocks and the point is what the teacher does
+            // about it rather than what it survives.
+            if (tick == light + FUSE_TICKS - 8) {
+
+                double ended = agent.distanceTo(creeper);
+
+                helper.assertTrue(ended > opened[0] + 0.8D,
+                        "The teacher ended " + ended + " blocks from a lit creeper it started " + opened[0] + " from");
+
+                helper.assertTrue(nearest[0] > opened[0] - 0.2D,
+                        "The teacher closed to " + nearest[0] + " blocks of a lit creeper on its way");
+
+                helper.assertTrue(creeper.isAlive() && agent.isAlive(), "The creeper went off before the check");
+                return true;
+            }
+
+            return false;
+        });
+    }
+
+    /**
+     * With two creepers it walks away from the <b>lit</b> one, and not from the one it is fighting. The unlit creeper is
+     * nearer, so it is the target and everything the old guess looked at was about it; the lit one is further off and on the
+     * opposite side, so the two answers point opposite ways along one axis and where the teacher ends up says which it took.
+     *
+     * <p>This is the fight the old guess lost outright: it was evaluated on the single target slot, so a second creeper was
+     * never reasoned about however close it came or however far along its fuse was. Read on the target, the old rule fired
+     * on the unlit creeper two blocks away and sent the teacher <em>into</em> the lit one.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 100)
+    public static void withTwoCreepersTheTeacherFleesTheLitOne(GameTestHelper helper) {
+
+        AgentMob agent = agent(helper, new BlockPos(4, 2, 4), 0.0F, 0.0F);
+
+        // The nearer of the two, so it is what the fighter takes for its target, and it is left unlit. The lit one is due
+        // east of the agent and the target due west, so walking away from either is a step along x and the two disagree.
+        Creeper target = helper.spawnWithNoFreeWill(EntityType.CREEPER, new BlockPos(2, 2, 4));
+        Creeper lit = helper.spawnWithNoFreeWill(EntityType.CREEPER, new BlockPos(7, 2, 4));
+
+        agent.startEpisode(new Episode(FIGHT_TICKS, bounds(helper), target));
+        Loadout.SWORD.equip(agent);
+        agent.brain().use(Brains.scripted());
+
+        int light = 2;
+        double[] opened = new double[3];
+
+        run(helper, tick -> {
+
+            if (tick == light) {
+
+                opened[0] = agent.distanceTo(target);
+                opened[1] = agent.distanceTo(lit);
+                opened[2] = agent.getX();
+
+                helper.assertTrue(opened[0] < opened[1],
+                        "The unlit creeper is not the nearer of the two: " + opened[0] + " against " + opened[1]);
+
+                lit.ignite();
+                return false;
+            }
+
+            if (tick == light + FUSE_TICKS - 8) {
+
+                double fromLit = agent.distanceTo(lit);
+
+                helper.assertTrue(fromLit > opened[1] + 0.5D,
+                        "The teacher ended " + fromLit + " from the lit creeper, having started " + opened[1] + " off");
+
+                // West, which is away from the lit creeper and towards the target. Fleeing the target instead would have
+                // been the same step east, so this is the one number the two answers cannot share.
+                helper.assertTrue(agent.getX() < opened[2] - 0.5D,
+                        "The teacher went to x " + agent.getX() + " from " + opened[2] + ", which is not away from the lit one");
+
+                helper.assertTrue(lit.isAlive() && agent.isAlive(), "The creeper went off before the check");
+                return true;
+            }
+
+            return false;
+        });
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
     // How a league training fight is drawn
     // ---------------------------------------------------------------------------------------------------------------
 
