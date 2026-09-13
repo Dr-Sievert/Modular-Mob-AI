@@ -9,6 +9,7 @@ import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.monster.Creeper;
 import net.sievert.modularmobai.allegiance.Allegiance;
+import net.sievert.modularmobai.brain.schema.ObservationSchema;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 
 /**
@@ -129,18 +130,19 @@ public final class FightFacts {
      */
     public static final int LIMIT = 9;
 
-    /** Deliberately the scales an enemy slot uses, so a number means the same here as it does there. */
-    private static final float HEALTH_SCALE = 100.0F;
-    private static final float DAMAGE_SCALE = 20.0F;
-
-    /** Twenty points of armour is the most a player wears and where damage reduction tops out. */
-    private static final float ARMOUR_SCALE = 20.0F;
+    /**
+     * Deliberately the scales an enemy slot uses, so a number means the same here as it does there — and read from there
+     * rather than copied, since two literals that have to agree eventually do not. Each was the same number written twice.
+     */
+    private static final float HEALTH_SCALE = ObservationSchema.HEALTH_SCALE;
+    private static final float DAMAGE_SCALE = ObservationSchema.DAMAGE_SCALE;
+    private static final float ARMOUR_SCALE = ObservationSchema.ARMOUR_SCALE;
 
     /** The enemy slots an observation holds, so a count of the other side reads on the same scale as enemies in range. */
-    private static final float FOE_SCALE = 10.0F;
+    private static final float FOE_SCALE = ObservationSchema.ENEMY_SLOTS;
 
-    /** A training fight's minute, so a matchup given longer than one reads above one. */
-    private static final float TICK_SCALE = 1200.0F;
+    /** A fight's minute, so a matchup given longer than one reads above one. See {@link AgentReward#DEFAULT_MAX_TICKS}. */
+    private static final float TICK_SCALE = AgentReward.DEFAULT_MAX_TICKS;
 
     /**
      * One agent's row. Everything about the other side comes from the episode, which is what knows who that is; what the

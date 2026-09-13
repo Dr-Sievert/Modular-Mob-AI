@@ -4,7 +4,8 @@
 
 The shards here are written by hand rather than by the game, so that what is tested is the format both sides agreed on and
 not whatever the reader happens to do. The game's half of it is arena/FightFacts.java and brain/nn/RolloutWriter.java, and
-the last test reads the first of those to make sure the two lists have not drifted apart.
+the last two tests read the game's own source — FightFacts for the column names and their order, AgentReward for the fight
+limit — so that neither list nor the tick scale can drift away from it unnoticed.
 """
 
 from __future__ import annotations
@@ -19,14 +20,16 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from mmai.model import SHARD_PRIVILEGED, Actor
+from mmai.model import EPISODE_TICKS, SHARD_PRIVILEGED, Actor
 from mmai.rollout import FLAG_DONE, FLAG_NEW, FLAG_TRUNCATED, VERSION, read_header, read_shard
 from mmai.schema import Schema
 from mmai.weights import export as export_weights, read as read_weights, segments as weight_segments
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 SCHEMA = REPOSITORY / "mod" / "fabric" / "build" / "brain-parity" / "check" / "humanoid" / "schema.json"
-FACTS = REPOSITORY / "mod" / "common" / "src" / "main" / "java" / "net" / "sievert" / "modularmobai" / "arena" / "FightFacts.java"
+GAME = REPOSITORY / "mod" / "common" / "src" / "main" / "java" / "net" / "sievert" / "modularmobai"
+FACTS = GAME / "arena" / "FightFacts.java"
+REWARD = GAME / "arena" / "AgentReward.java"
 
 OBS_DIM = 3
 ACT_DIM = 2
@@ -236,6 +239,21 @@ class ShardTest(unittest.TestCase):
         for index, name in enumerate(SHARD_PRIVILEGED):
             with self.subTest(column=name):
                 self.assertRegex(source, rf"int {name.upper()} = {index};")
+
+    def test_the_trainer_divides_the_age_by_the_games_own_cap(self):
+        """EPISODE_TICKS is the scale a row's age is divided by, and the game's fight limit is what that age counts up to.
+        The two were the same literal written on either side of a language boundary with nothing tying them, so this reads
+        the game's constant out of its source.
+
+        Deliberately no skip: the source is in this repository, so a path that no longer resolves is a rename to follow and
+        not a reason to pass quietly. That is the whole point of the check."""
+
+        self.assertTrue(REWARD.is_file(), f"{REWARD} is gone; the cap moved and this test has to follow it")
+
+        cap = re.search(r"int DEFAULT_MAX_TICKS = (\d+);", REWARD.read_text(encoding="utf-8"))
+
+        self.assertIsNotNone(cap, "AgentReward no longer states DEFAULT_MAX_TICKS as a literal")
+        self.assertEqual(int(cap.group(1)), EPISODE_TICKS)
 
 
 if __name__ == "__main__":

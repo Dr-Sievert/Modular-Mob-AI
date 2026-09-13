@@ -237,6 +237,13 @@ Training fights are one agent against one vindicator on natural terrain, generat
 either fighter dies, or after 1200 ticks (a minute), which counts as a loss. A league fight's clock is the matchup's; see
 the league below.
 
+That minute is written once, as `AgentReward.DEFAULT_MAX_TICKS`, and three other places read it rather than repeat it: the
+scale the critic's `limit` column is divided by (`FightFacts`), the clock a melee matchup asks for (`Roster.MELEE_TICKS`),
+and, across the language boundary, the divisor the trainer scales a row's age by (`EPISODE_TICKS` in `mmai/model.py`), which
+a trainer test holds to the Java constant by reading it out of the source. They have to agree because the same tick count is
+expressed three ways in one row: the observation's clock is the elapsed fraction of this fight's limit, the critic's `limit`
+says how long that limit is on this scale, and the age is the elapsed count on the same scale again.
+
 Each worker runs 25 fights at once on a quarter again as many sites (32), plus 4 spares, all held by
 `gametest/terrain/TerrainSites`:
 - A site is 80 × 80 blocks (5 × 5 chunks) and sites sit 128 blocks apart, 8 to a row: three chunks of dead ground between
