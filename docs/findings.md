@@ -672,6 +672,19 @@ are deliberate.
       every sitting. **To show a behaviour change, find a column that is not a win rate**: the same pinned pair moved
       `hit it` on `sword_and_bow` from 164 of 600 fights to 142, which is the change doing its work where the win rate
       could not see it.
+- **"Best on the opponents both met" cannot see a network that has learned the rungs opened since the best was set.** The
+  paired rule exists so a hardening roster does not make a better checkpoint read worse, and it does that; but the same
+  hardening hides the opposite. The run `blast` set its best at iteration 2150 (76.3% plain), then read 77 to 78.7% plain
+  from 2675 to 2925 and none of it counted, because over the opponents the two had *both* met the later ones were not a
+  point better — what they had learned was the hard rungs the best had never fought. Patience ended the run at 3053.
+  Benched in one sitting, one worker, 600 fights: **iteration 3053 won 80.7% against the judged best's 72.7%**, and the
+  teacher on the same bench 81.0%. So the run's own verdict was eight points wrong about which of its networks to keep,
+  and the published one was the weaker.
+  - What to do until the rule is better: **bench the last checkpoint against the best before publishing**, always, and
+    carry a plateaued run on as a *new run seeded from its latest state* rather than resuming it, so the evaluator judges
+    the current roster afresh.
+  - What a better rule needs: the opponents only the candidate has met are evidence too, weighted by how many fights they
+    are, rather than discarded. Not done yet.
 - **An experiment on one worker, judged on the league rating, cannot be judged.** league-pull05 forked league2 at
   iteration 6,000 to try a teacher pull of 0.05 against 0.2, and over 500 iterations on its single worker it produced three
   evaluations: 1610 against league2's 1600 to 1604 at the same iterations. But league2's own rating wanders between 1567
