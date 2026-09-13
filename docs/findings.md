@@ -409,6 +409,15 @@ are deliberate.
   - Everything learned before that fix was learned in a broken body.
 - **Swings at plants.** A player's swing breaks grass and flowers and costs no cooldown; the agent's swings used to stop
   at a fern. A swing into a block now never resets the attack cooldown, and instant-break blocks break.
+- **A swing at a ghast's fireball did nothing at all — a fourth divergence from a player's hands, and not a deliberate
+  one.** `Player#attack` carries a branch before it ever looks at the damage: a target in the `redirectable_projectile`
+  tag is deflected along the swinger's own look, reassigned to the swinger, and the swing ends. `AgentMob#resolveAttack`
+  had no such branch and went straight to `target.hurt`, which `Fireball#hurt` answers `false` to, so the press was spent
+  for nothing. The aim was never the problem: `Projectile#isPickable` is true for that tag, so `pickAimedEntity` was
+  already handing the fireball over. Measured over blast4's 100 recorded ghast fights, **489 fireballs and not one sent
+  back**. It is the whole matchup: a ghast has ten health, its own fireball explodes for more, and the ghast sits a mean
+  21 blocks above the agent — out of a sword's reach for the whole fight, while the fireball comes to the agent. The tag
+  holds only the fireball and the two wind charges, so nothing else in the league moves.
 - **Keeping off a hazard is not the same as getting off one.** Reading hazards at 1.5 stopped the teacher walking onto
   them, and then a vindicator's blow knocked it on anyway: over 4,000 fights on the 4,096-site terrain library the teacher
   won 98.7% and lost 15 fights to something that was not the vindicator, **14 of them freezing** and one a fall. Powder

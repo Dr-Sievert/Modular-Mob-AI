@@ -13,6 +13,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
+import net.minecraft.tags.EntityTypeTags;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.util.Mth;
 import net.minecraft.world.ContainerHelper;
@@ -38,6 +39,8 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.control.LookControl;
 import net.minecraft.world.entity.ai.control.MoveControl;
 import net.minecraft.world.entity.decoration.ArmorStand;
+import net.minecraft.world.entity.projectile.Projectile;
+import net.minecraft.world.entity.projectile.ProjectileDeflection;
 import net.minecraft.world.entity.projectile.ProjectileUtil;
 import net.minecraft.world.item.BowItem;
 import net.minecraft.world.item.CrossbowItem;
@@ -960,6 +963,26 @@ public class AgentMob extends PathfinderMob {
         // The cooldown curve: a fifth of the damage on a swing that was spammed, all of it on one that was waited for.
         damage *= 0.2F + strength * strength * 0.8F;
         bonus *= strength;
+
+        // A player's swing at a ghast's fireball sends it back instead of damaging it, and the agent's hands are a
+        // player's. Vanilla's own branch, in the place vanilla puts it: see Player#attack, which asks this before it looks
+        // at the damage at all, so a bare fist deflects as well as a diamond sword, and the swing ends there.
+        //
+        // Without it the swing did nothing whatever. The aim already finds the fireball — Projectile#isPickable is true
+        // for everything in REDIRECTABLE_PROJECTILE, so pickAimedEntity returns one and applyAttack passes it here — and
+        // then Fireball#hurt returns false, so this fell straight through its own hurt() check and the press was spent for
+        // nothing. Measured over 100 recorded ghast fights: 489 fireballs, not one of them ever sent back.
+        //
+        // It is worth the whole matchup. A ghast has ten health, its own fireball explodes for more than that, and sending
+        // one back is how a player kills one; the tag holds only the fireball and the two wind charges, so nothing else in
+        // the league changes. The agent cannot reach a ghast that sits 21 blocks up (the mean of those fights) with
+        // anything but a bow, and a fireball comes to it.
+        if (target.getType().is(EntityTypeTags.REDIRECTABLE_PROJECTILE)
+                && target instanceof Projectile shot
+                && shot.deflect(ProjectileDeflection.AIM_DEFLECT, this, this, true)) {
+
+            return true;
+        }
 
         if (damage <= 0.0F && bonus <= 0.0F) {
 
