@@ -55,7 +55,9 @@ import net.sievert.modularmobai.gametest.GameTestGroup;
  * make them, and every test takes the teams it made down again, since the scoreboard outlives the test.
  *
  * <p>The fights here are short and in the arena's closed box, a bedrock floor at height one, room from two to eight, a
- * roof that keeps a zombie out of the sun, and walls round an inside seven blocks across, from one to seven.
+ * roof, and walls round an inside seven blocks across, from one to seven. The roof is not what keeps a zombie out of the
+ * sun — on a test's first tick the light of the box it was just given has not been worked out, so the sky shows through
+ * bedrock — and that is why every game test runs at midnight; see {@code GameTestServerMixin}.
  *
  * <p>Run with {@code -Psuite=play}, which is what {@code scripts\test.ps1 -Play} does.
  */
@@ -612,6 +614,12 @@ public class PlayGameTest {
 
         helper.assertFalse(side.isAllowFriendlyFire(), "A team of the mod's own has friendly fire on");
 
+        // The one thing besides the agent that could take this zombie's health is the sun, and checking it is not the same
+        // as checking the roof: the box has one, but the sky light of a plot placed this tick is not worked out until the
+        // next, so canSeeSky answers yes under bedrock on the tick the zombie takes its first. What has to hold is that
+        // there is no sun to catch it, which is why every game test runs at midnight; see GameTestServerMixin.
+        helper.assertFalse(helper.getLevel().isDay(), "The suite is in daylight, so this zombie can catch fire under a roof");
+
         run(helper, tick -> {
 
             agent.controls().attack = tick == 20 || tick == 45;
@@ -620,9 +628,10 @@ public class PlayGameTest {
 
                 helper.assertTrue(agent.executed().attacked, "The agent never swung");
 
-                // What took the health is in the message because this test has failed once, one run in seven, and the
-                // message said only that the zombie was hurt: a swing that was not spared and something else in a lit box
-                // taking health off a zombie read identically, so there was nothing to go on. Its sibling above says why.
+                // What took the health stays in the message. This test failed about one run in seven and the message said
+                // only that the zombie was hurt, which reads the same whether a swing was let through or the box burned it;
+                // it was the sun, through a roof, on the first tick. The sun is gone now and the assertion above says so,
+                // but the next thing to take a zombie's health here should name itself the first time it happens.
                 helper.assertTrue(unhurt(zombie), "The agent hurt its own side with friendly fire off: the zombie at "
                         + zombie.getHealth() + " of " + zombie.getMaxHealth() + " from " + zombie.getLastDamageSource());
                 side.setAllowFriendlyFire(true);

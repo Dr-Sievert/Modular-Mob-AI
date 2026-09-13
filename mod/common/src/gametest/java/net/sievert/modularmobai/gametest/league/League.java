@@ -82,9 +82,6 @@ public final class League {
     /** How a checkpoint is named in the files: iteration-000125. */
     private static final String CHECKPOINT = "iteration-";
 
-    /** Midnight, when no undead burns, every spider is hostile and no enderman is chased off by the light. */
-    private static final long MIDNIGHT = 18000L;
-
     /**
      * What share of the fights ask for ground with something on it worth knocking an opponent into: lava, an edge, a
      * cactus patch. The terrain is a weapon, a fight the ground finishes is already the agent's win, and a hundred health
@@ -182,13 +179,15 @@ public final class League {
     private static final Map<String, Tally> siteTallies = new LinkedHashMap<>();
 
     /**
-     * Midnight for good, clear weather and no mob griefing, once per process as the first league fight starts. See
-     * {@link Roster} for why: the undead would burn at noon, rain would hurt a blaze and a snow golem and teleport an
-     * enderman, and a creeper's crater would stay in a kept world.
+     * No mob griefing and no fire spreading, once per process as the first league fight starts. The league wants both for
+     * reasons of its own: see {@link Roster}, where a creeper's crater would stay in a kept world.
      *
-     * <p>The weather is worth turning off rather than trusting: a freshly generated world starts clear, but a worker
-     * fights for hours of game time, and the first storm to roll in would be a different fight for every mob the weather
-     * touches, for as long as it lasted.
+     * <p>Midnight and clear weather, which the league wants just as much — the undead would burn at noon, and rain would
+     * hurt a blaze and a snow golem and teleport an enderman — are no longer asked for here. Every game test now runs at
+     * midnight in clear weather with both clocks stopped, because a plot's roof does not keep the sun off its first tick;
+     * see {@code GameTestServerMixin}. Turning the weather off rather than trusting it is still the point: a freshly
+     * generated world starts clear, but a worker fights for hours of game time, and the first storm to roll in would be a
+     * different fight for every mob the weather touches, for as long as it lasted.
      */
     public static synchronized void prepareWorld(ServerLevel level) {
 
@@ -199,8 +198,6 @@ public final class League {
 
         prepared = true;
 
-        level.getGameRules().getRule(GameRules.RULE_DAYLIGHT).set(false, level.getServer());
-        level.getGameRules().getRule(GameRules.RULE_WEATHER_CYCLE).set(false, level.getServer());
         level.getGameRules().getRule(GameRules.RULE_MOBGRIEFING).set(false, level.getServer());
 
         // Fire stays where it is put. Lava is poured next to a quarter of the fights on ground that has none
@@ -209,8 +206,6 @@ public final class League {
         // everyone. Nothing about a fight depends on fire spreading, and everything that makes lava lethal — the damage, the
         // burning — is untouched by this rule.
         level.getGameRules().getRule(GameRules.RULE_DOFIRETICK).set(false, level.getServer());
-        level.setDayTime(MIDNIGHT);
-        level.setWeatherParameters(0, 0, false, false);
 
         // Asked for here, before the first fight is drawn, so that a published network a run cannot field — one of another
         // body, or one by a name something else already answers to — stops the worker now rather than mid fight.

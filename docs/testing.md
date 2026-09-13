@@ -168,6 +168,12 @@ not change a single fight: nothing the agent or a vindicator does reads light. E
 is a light question and the undead, spiders, endermen and rain all are too. `GameTestTuning.lighting` decides, and a run
 that keeps its own world keeps its light so the light it saves is worth reading back.
 
+Every suite runs **at midnight in clear weather**, both cycles stopped (`GameTestServerMixin`). A plot's roof is no
+protection on a test's first tick: the plot is cleared and rebuilt between tests, and the light of a box placed this tick is
+not worked out until the next, so the sky shows through bedrock for that one tick and an undead mob catches fire under it.
+That cost the play suite about one run in seven, reported each time as whatever assertion the burning mob happened to trip;
+see [findings.md](findings.md). A test that depends on it should assert there is no sun, not that its mob cannot see the sky.
+
 ### Writing a test
 
 1. Add a class under `mod/common/src/gametest/java/net/sievert/modularmobai/gametest/tests`, annotate it with

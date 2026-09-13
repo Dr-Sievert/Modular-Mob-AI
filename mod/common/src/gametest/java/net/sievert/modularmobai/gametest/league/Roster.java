@@ -89,7 +89,8 @@ import net.sievert.modularmobai.gametest.terrain.TerrainSites;
  * agent does. It keeps its rating, and its share of the training fights is capped at {@link Member#trainingCap} so one
  * hopeless opponent cannot crowd out the fights there is something to learn from.
  *
- * <p>League fights happen at midnight, with mob griefing off and the weather held clear, see {@link League#prepareWorld}:
+ * <p>League fights happen at midnight with the weather held clear, which every game test does ({@code GameTestServerMixin}),
+ * and with mob griefing off, which is the league's own, see {@link League#prepareWorld}:
  * at noon the undead burn to death in the open, a spider in daylight lets its target go, and an enderman teleports away;
  * rain hurts a blaze and a snow golem and teleports an enderman; and a creeper's crater or an enderman's stolen block
  * would stay in a kept terrain world for every fight after.

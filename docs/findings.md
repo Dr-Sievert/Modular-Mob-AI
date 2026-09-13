@@ -136,6 +136,28 @@ are deliberate.
     `library` build, a run that keeps its own world, `play` and `mechanics` all keep their light for that reason.
   - A short round says the opposite. At 6,000 fights, whose steady window is 30 s, light-on measured *faster* twice; the
     difference only separates from the noise at 24,000.
+- **A roof does not keep the sun off a game test's first tick, so every game test runs at midnight.** The framework clears
+  each plot to air and places the structure again, and light propagates on a thread of its own: the sky light of a box
+  placed this tick is not worked out until the next one. Since `canSeeSky` is "is the sky light here fifteen", it answers
+  **yes inside a closed bedrock roof** for exactly one tick — measured at the zombie's eye in the arena box, sky 15 at tick
+  zero and 0 from tick one on — and that is the tick a mob the test body spawned takes its first. A zombie there rolls
+  vanilla's `isSunBurnTick`, one chance in twenty five, catches fire for eight seconds and is a health down a second later.
+  Two of the suite's tests read a zombie's health and so break on it — `friendlyFireOffSparesTheSide`, which then reports
+  that a blow got through friendly fire, and `mobsOnOneTeamLeaveEachOtherAlone`, which reports allies hurting each other —
+  which is about one run in a dozen, the **one run in seven** the suite was seen to fail at. Both were telling the truth
+  about the health and wrong about what took it, which is what widening those two messages to carry `getLastDamageSource()`
+  was for.
+  - The light engine is not the thing to take away — the suites that keep one keep it for the reasons above — and no suite
+    tests daylight, so **the sun goes instead**: `GameTestServerMixin` holds every game-test world at midnight in clear
+    weather with both cycles stopped. The `league` suite asked for exactly this first, for its undead, spiders and
+    endermen, and now gets it from that one place.
+  - Don't assert `canSeeSky` is false to prove a test's roof: it is false from tick one and true at tick zero, so the
+    assertion flakes the same one run in seven. Assert there is no sun (`!level.isDay()`), which is what actually holds.
+  - **Still open, and not this:** in 23 runs of the play suite before the sun went, the one failure seen was
+    `mobsOnOneTeamLeaveEachOtherAlone` tripping its *targeting* assertion, "Allies went after each other", not its health
+    one. Nothing a burning zombie does sets a target, and every vanilla target goal asks `TargetingConditions`, which
+    refuses an ally; so that is a second, rarer flake with its own cause. If it turns up again, the message wants widening
+    to say which of the two went after which, the way the health messages were.
 - **A worker's heap fits what it actually holds, and G1's regions have to be four megabytes.** Two things, measured on one
   worker over 6,000 fights on the terrain library, with the terrain seed pinned so both rounds fought the same ground and
   won the same 5,959 of 6,000:

@@ -5,6 +5,8 @@ import net.minecraft.gametest.framework.GameTestServer;
 import net.minecraft.gametest.framework.MultipleTestTracker;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.levelgen.presets.WorldPresets;
 import org.slf4j.Logger;
 import net.sievert.modularmobai.gametest.GameTestBenchmark;
@@ -36,6 +38,36 @@ public class GameTestServerMixin {
 
     @Unique
     private long modular_mob_ai$ticks;
+
+    /** Midnight, when no undead burns, every spider is hostile and no enderman is chased off by the light. */
+    @Unique
+    private static final long modular_mob_ai$MIDNIGHT = 18000L;
+
+    /**
+     * Every game test runs at midnight in clear weather, with neither clock moving.
+     *
+     * <p>Not a convenience: a roof is no protection on a test's first tick. The framework clears each plot to air and
+     * places the structure again, and the sky light of a box placed this tick is not worked out until the next one —
+     * {@code canSeeSky} is "is the sky light here fifteen", so for exactly one tick it answers yes inside a closed bedrock
+     * roof. That is the tick a mob spawned by the test body takes its first, and a zombie in a daylit world rolls vanilla's
+     * one-in-twenty-five sun burn on it. Measured: at tick zero the sky reads 15 at the zombie's eye in the arena box, and
+     * 0 from tick one on. The play suite failed about one run in seven that way, as whichever of its tests reads a zombie's
+     * health drew the short straw: a blow that got through friendly fire, or allies on one team hurting each other.
+     *
+     * <p>The light engine is not the thing to take away: the suites that keep one keep it for reasons of their own, see
+     * {@link net.sievert.modularmobai.gametest.GameTestTuning#lighting}. Nothing any suite tests is about daylight or
+     * weather, so the sun goes instead, and with the cycles stopped a long run cannot drift back into either. The league
+     * asked for this first, for its undead, spiders and endermen fighting in the open; it now gets it from here, and keeps
+     * only the rules that are its own, see {@link net.sievert.modularmobai.gametest.league.League#prepareWorld}.
+     */
+    @Inject(method = "startTests", at = @At("HEAD"))
+    private void modular_mob_ai$holdTheWorldAtMidnight(ServerLevel level, CallbackInfo ci) {
+
+        level.getGameRules().getRule(GameRules.RULE_DAYLIGHT).set(false, level.getServer());
+        level.getGameRules().getRule(GameRules.RULE_WEATHER_CYCLE).set(false, level.getServer());
+        level.setDayTime(modular_mob_ai$MIDNIGHT);
+        level.setWeatherParameters(0, 0, false, false);
+    }
 
     // The first tick is where the server thread finds out which processors it is allowed, because a thread can only set its
     // own affinity: see ServerThreadAffinity. Here rather than earlier on purpose. Starting up is the one part of a worker
