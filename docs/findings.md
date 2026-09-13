@@ -533,7 +533,7 @@ are deliberate.
     sword in slot zero.
   - **Because every demo the run is pulled towards is an iron sword.** All 16,000 fights in `runs\league768\demos` — the
     teacher record and all three DAgger rounds — were recorded on the *terrain* suite, one vindicator, hotbar `[iron_sword]`
-    and nothing else. `scripts\compare.ps1` carries a copy's record into the run it seeds, and league768 has never had a
+    and nothing else. A seeded run is pulled towards the record of the copy it came from, and league768 has never had a
     DAgger round of its own, so the teacher pull it spends 6,000 iterations under has never once shown it a bow, a shield
     or an axe. This is "a network never learns what the teacher never did" again, one level up: the teacher can do it, and
     the record still cannot say so.

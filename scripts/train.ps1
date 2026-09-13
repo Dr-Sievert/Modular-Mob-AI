@@ -15,7 +15,7 @@
 #   scripts\train.ps1 -Run league -Suite league -LeagueModels blast,blast4
 #                                               the same, with published networks in the league as rated players, so its
 #                                               tier list can be read beside another run's that fields them too
-#   scripts\compare.ps1                         two runs side by side instead, see there
+#   scripts\compare.ps1 -Copy league-copy       a seeded run and one from nothing side by side instead, see there
 #
 # Every checkpoint is played by the workers on its most likely action, in one fight in ten, and the best so far is kept
 # as runs\<run>\best.mbw, with the history in runs\<run>\eval.csv. The run stops on its own once evaluation says it has

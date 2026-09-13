@@ -60,8 +60,9 @@ to copy a hand-written fighter first, then improve the copy with reinforcement l
      workers. Tried: a second imitation started beside one already cloning took free memory to nothing and the build
      stopped the first one's workers to protect the machine. Two *training* runs are fine; two imitations are not.
 3. **Reinforcement learning from the copy**, with `scripts\train.ps1 -Run <run> -FromCopy` (start by copying the copy's
-   `state.pt`, `schema.json`, `weights\000000.mbw` and a link to its `demos` into the new run; `scripts\compare.ps1` does
-   this). It's PPO with safeguards, because plain PPO made a good copy worse twice:
+   `state.pt`, `schema.json` and `weights\000000.mbw` into the new run, and naming the copy's record with `-Demos`;
+   `scripts\train.ps1 -Seed <copy> -Demos <copy>` does all of it). It's PPO with safeguards, because plain PPO made a good
+   copy worse twice:
    - four times the experience per update (65,536 steps);
    - smaller, bounded steps: learning rate 5e-5, clip 0.1, target KL 0.01;
    - 30 iterations where only the critic learns;
@@ -448,16 +449,27 @@ something in the league already answers to it (a mob, a squad, a rung, `scripted
 in), or when the network was trained for **another body** — the message names both bodies, since a beast's network cannot
 drive a humanoid at all; see [species.md](species.md).
 
-### `scripts\compare.ps1`: from the copy and from nothing, side by side
+### `scripts\compare.ps1`: seeded from a copy and from nothing, side by side
 
 ```
-scripts\compare.ps1                                  copy of runs\vindicator4 vs from nothing, runs vs-copy / vs-scratch
-scripts\compare.ps1 -CopyWorkers 4 -ScratchWorkers 2
+scripts\imitate.ps1 -Run league-copy -Suite league    the copy first
+scripts\compare.ps1 -Copy league-copy                 both arms on the league, runs vs-copy / vs-scratch
+scripts\compare.ps1 -Copy league-copy -CopyWorkers 4 -ScratchWorkers 2
+scripts\compare.ps1 -Copy vindicator -Suite terrain   the one on one fight instead
 ```
 
-This sets up `runs\<prefix>-copy` from the copy the first time (state, weights, a junction to its demos) and starts both
-runs in the background, with output going to each run's `console.log`. The copy's run stops when evaluation says done;
-the run from nothing only stops at `-ScratchBattles` (3,000,000).
+It starts both runs in the background, output going to each run's `console.log`. The seeded run is `train.ps1 -Seed <copy>
+-Demos <copy> -TeacherWeight 0.5`, which takes the copy's state and leaves the copy alone; the other is the same suite from
+nothing. The seeded one stops when evaluation says done; the run from nothing only stops at `-ScratchBattles` (3,000,000).
+
+`-Copy` has to be named. It used to default to `runs\vindicator4`, a copy trained against the humanoid's old 634-float
+observation whose weights load nowhere, so the default could only fail. It also used to link the copy's `demos` in as a
+junction, and now names it with `-Demos`: a link under `runs\` is one more thing for a recursive delete to follow, which
+has cost this repository a trainer environment and half an hour of generated ground; see
+[findings.md](findings.md#throughput-and-stability).
+
+**This compares two lineages, not two networks.** For "which of these two is better" the answer is `scripts\bench.ps1`,
+which puts both on one bench in one sitting with the scripted fighter beside them.
 
 ### `scripts\dagger.ps1`: correct a run that is already training
 
@@ -483,11 +495,13 @@ against one vindicator is not.
 | `-Workers`, `-Slots`, `-Heap`, `-StudentNoise` | 8, 25, 1280M, 0.05 | as for `imitate.ps1` |
 
 Records are named after the suite they were made on: `demos\league-round-1` beside `demos\round-1`, so a league record
-never lands on top of a vindicator one and a run can keep both. `runs\vindicator4`'s melee record stays exactly as
-usable as it was, and `train.py imitate` and `--teacher-weight` both read every folder under `demos`.
+never lands on top of a vindicator one and a run can keep both: a melee record made before the naming stays exactly as
+usable as it was, and `train.py imitate` and `--teacher-weight` both read every folder under `demos`. A record of an older
+*layout* is a different matter — a shard carries its schema id and the trainer refuses a mismatch by name.
 
-The script refuses to write into a `demos` folder that is a junction to another run's, which `compare.ps1` makes: a round
-recorded there would put this run's corrections into the other run's record.
+The script refuses to write into a `demos` folder that is a junction to another run's: a round recorded there would put this
+run's corrections into the other run's record. Nothing makes such a junction any more — `compare.ps1` used to, and names
+the record with `-Demos` instead — but a run started before that change still carries one.
 
 Then train pulled back towards it:
 
