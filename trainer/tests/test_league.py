@@ -10,7 +10,6 @@ import math
 import tempfile
 import unittest
 from dataclasses import replace
-from pathlib import Path
 
 from mmai.league import (League, Ratings, base, capped, checkpoint_name, expected, pair_guess, pool, shares,
                          win_chance)

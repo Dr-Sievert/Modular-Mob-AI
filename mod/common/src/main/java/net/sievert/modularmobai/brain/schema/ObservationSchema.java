@@ -318,12 +318,6 @@ public final class ObservationSchema {
 
     public static final int OBS_DIM = RAY_OFFSET + RAY_SIZE;
 
-    /** Where one ray's three numbers start, counting from the start of the rays. */
-    public static int rayOffset(int ray) {
-
-        return RAY_OFFSET + ray * RAY_STRIDE;
-    }
-
     public static int enemyOffset(int slot) {
 
         return ENEMY_OFFSET + slot * ENEMY_STRIDE;
@@ -344,5 +338,4 @@ public final class ObservationSchema {
 
         return TERRAIN_OFFSET + gridOffset(x, y, z);
     }
-
 }
