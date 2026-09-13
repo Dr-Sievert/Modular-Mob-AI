@@ -1968,6 +1968,47 @@ public class AgentMechanicsGameTest {
         helper.succeed();
     }
 
+    /**
+     * Lava that a pool fed but never held is swept up too, and draining says that it happened.
+     *
+     * <p>This is the case blast3 paid for. A pool is only flush if the ground beside it is level with it, and that was
+     * checked at the middle column alone: one block of step at the rim puts a lava block over open air, from where it runs
+     * three blocks and falls, out of the box the fight swept afterwards. Over 929,311 fights, 97.6% of the surface lava
+     * beside a fight on ground labelled {@code flat} and all of it on {@code water} was flowing lava with no source anywhere
+     * near — a spill from an earlier fight on the same site, which hosts a hundred of them — while ground labelled
+     * {@code drop}, the one kind never poured on, had none at all. It cost 4.2% of every flat-ground fight against 0.014%
+     * on drop ground.
+     *
+     * <p>What this arena can check is the sweep and what it reports: a block of lava three from the pool, which is as far as
+     * lava spreads on land and was outside the old box. What it cannot check is either of the other two halves of the fix —
+     * that a pool is only laid where the five by five under it is level, and that putting the ground back notifies the
+     * neighbours so a flow works out its source has gone. The first needs open ground with a heightmap, and the second needs
+     * room for a flow to run past the sweep; this is a bedrock box seven blocks across. The live run is what exercises both.
+     * See {@link PouredHazards}.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 100)
+    public static void pouredLavaSweepsUpWhatItFedOutsideItself(GameTestHelper helper) {
+
+        ServerLevel level = helper.getLevel();
+
+        BlockPos ground = helper.absolutePos(new BlockPos(4, 1, 4));
+        BlockPos spilled = ground.offset(PouredHazards.spread(), 1, 0);
+        BlockState was = level.getBlockState(spilled);
+
+        PouredHazards.Pool pool = PouredHazards.pourAt(level, ground);
+
+        level.setBlock(spilled, Blocks.LAVA.defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.assertTrue(PouredHazards.drain(level, pool),
+                "Draining did not report that it had swept up lava the pool's own list never held");
+
+        helper.assertTrue(level.getBlockState(spilled) == was,
+                "Draining left " + level.getBlockState(spilled) + " at " + spilled + ", " + PouredHazards.spread()
+                        + " blocks from the pool, where there had been " + was);
+
+        helper.succeed();
+    }
+
     // ---------------------------------------------------------------------------------------------------------------
     // Getting out of something that hurts
     // ---------------------------------------------------------------------------------------------------------------

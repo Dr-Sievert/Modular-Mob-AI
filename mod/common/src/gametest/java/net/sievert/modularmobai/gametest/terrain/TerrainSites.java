@@ -699,7 +699,14 @@ public final class TerrainSites {
         // The ground goes back before the next fight is given this site, pool and everything the pool set alight.
         if (poured[index] != null) {
 
-            PouredHazards.drain(level, poured[index]);
+            // A pool that got out of its box has changed what is on this site, so what the site was labelled is no longer
+            // true and every later fight on it would be recorded as the ground it used to be. Forget the label and let the
+            // next fight work it out again: honest ground beats a cached answer, and the scan is four hundred lookups.
+            if (PouredHazards.drain(level, poured[index])) {
+
+                kinds[index] = null;
+            }
+
             poured[index] = null;
         }
 

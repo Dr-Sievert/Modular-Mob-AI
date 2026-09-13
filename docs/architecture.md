@@ -361,10 +361,20 @@ different opponent every time, with a different loadout:
   `lava` fight, which is what it is. That takes lava from 2% of fights to the whole hazard share.
   - The pool is **flush** with the ground it replaces, not a pit: a body knocked onto it is in it, and lava level with
     solid ground on every side cannot flow. What is under it is made solid first, or a pool over a cave empties into the
-    cave.
-  - Every block it changes is remembered and **put back when the fight ends**, and the box is swept for fire and lava that
-    were not there before. This matters more than it sounds: a site hosts a hundred fights and the ground is a hard-linked
-    library shared between workers, so one pool left behind would be there for the other ninety-nine.
+    cave. Flush is checked over the whole five by five the pool and its ring occupy, not just the middle column: one block
+    of step at the rim puts a lava block over open air, and from there it runs and falls. A spot that is not level is
+    passed over, and over 1,500 league fights that cost a fifth of the poured pools — 103 `lava` fights against 129 with no
+    check at all. **What stands on the ring is not asked about, only how high its ground is**: the pour pulls every plant in
+    the five by five up before a drop of lava goes in, and demanding clear ground in the ring as well passed over most of
+    the overworld's flat grass, a single fern in any of twenty-five columns being enough. That cost two thirds of the pools,
+    57 fights against 162, which is the whole hazard share the pour exists to fill.
+  - Every block it changes is remembered and **put back when the fight ends**, with a neighbour update, and a box wide
+    enough to hold what lava can reach is swept for fire and lava that were not there before. This matters more than it
+    sounds: a site hosts a hundred fights and the ground is a hard-linked library shared between workers, so one pool left
+    behind would be there for the other ninety-nine. The neighbour update is what makes a leak last a fight rather than the
+    site's whole life — a flow only works out that its source has gone on a scheduled fluid tick, and nothing but a
+    neighbour update schedules one — and a drain that had to sweep anything up forgets the site's label, so the next fight
+    works out again what is on the ground rather than reporting the ground it used to be.
   - League fights also run with **`doFireTick` off**, so fire never spreads. One pool beside a birch forest, left for a
     minute, would burn a library site down for good. Nothing that makes lava lethal depends on that rule.
 - League fights happen at midnight, clear and with mob griefing off: no undead burn, spiders stay hostile, rain neither

@@ -335,6 +335,40 @@ are deliberate.
   per kind of ground, in `league/ground.csv`.
 - **A quarter, not all of it.** Plain melee on plain ground is still the fight the agent has to be able to win, and a run
   that only ever fought beside lava would learn to go looking for lava rather than to fight.
+- **The poured pool leaked, and the leak outlived the fight.** Over blast3's 929,311 fights, lava was the largest cause of
+  death that was not the opponent: 31,696 against 162,890, 3.4% of every fight. Three quarters of it was on ground the
+  results call flat or water, which by definition has no lava on it. Where it came from:
+  - `drop` sites are hazardous already and so are never poured on, and of 216 sampled `drop` replays **not one** had any
+    surface lava within nine blocks of the fight. Of 137 `flat` replays 42 did, and of 93 `water` replays 30 — and 97.6%
+    of that lava on flat ground and **100% of it on water was flowing lava with no source anywhere near it**. Eighty-one of
+    the eighty-one sampled lava deaths on that ground were into flowing lava. Lava-labelled sites, by contrast, were 57.5%
+    source blocks, and 53.5% of them carried the clean three by three the pour lays.
+  - Flowing lava with no source is lava whose source was taken away without telling it. Two things did that. A pool was
+    laid flush by checking the **middle column only**, so any step at the rim left a lava block over open air, and it ran
+    the three blocks lava spreads on land and fell, out of the five by five the drain swept. And the drain put every block
+    back with clients-only flags: a flow only works out that its source is gone on a scheduled fluid tick, and the only
+    thing that schedules one is a neighbour update. So the spill was permanent, and a site hosts a hundred fights.
+  - A site's label is worked out once and kept until the site moves on, so all ninety-nine later fights were recorded as
+    the ground the site used to be. `ground.csv`, every `site` column and the hazard draw were wrong for them.
+  - The bill, taking drop ground as the clean baseline (0.014% lava, 0.066% burning): 26,741 fights, **2.7% of the run**,
+    lost to lava and fire on ground that was supposed to have none — about two and a half points of evaluated win rate,
+    which is more than the whole remaining gap to the teacher.
+  - **Measured before and after, 1,500 league fights of the scripted fighter each on the same pinned ground**
+    (`-PterrainSeed`, one worker, a replay every second fight, every replay's blocks searched for surface lava within nine
+    blocks of the middle of the fight): `flat` and `water` replays carrying flowing lava with no source went from **22.3%,
+    62 of 278, to 0 of 292**, and lava deaths on that ground from **20.0 per 1,000 fights to 0.00**. `drop` had none either
+    way. Lava sites still carry their pools: 28 of 41 lava replays have nine or more source blocks beside the fight.
+  - **The neighbour update is nearly the whole of it, and the flush check is the last 0.7%.** With `UPDATE_ALL` and the
+    wider sweep alone, flat and water came to 0.7% (2 of 269) and no lava deaths at all; the flush check takes those last
+    two, at a fifth of the pools. Worth knowing which half is load-bearing before either is touched again.
+- **The agent does also walk into real lava, and it is not blind and not knocked.** Of 107 sampled lava deaths, the grid
+  marked a hazard **continuously for ten ticks or more** before the step in 94, and a ray reported one in 93; only two had
+  nothing on a ray the tick before. Nineteen were knocked in (hurt in the six ticks before), eleven backed in retreating,
+  and fifty-eight walked in forward while closing on the opponent, most of them sprinting. So there is no perception gap
+  and no pricing gap either — the reward already charges the full loss, the full health bar, and the lava damage tick by
+  tick as it lands. What the agent lacks is the teacher's hard rule: its planner never steps onto a hazard cell, and it
+  loses 6 fights in 20,000 to causes that are not the opponent. Do not price or gate anything on the numbers above until
+  the leak is fixed and the run re-measured: three quarters of them are the harness, not the policy.
 - **Labelling a site belongs where the site is handed out, not in the library index.** A site's ground is loaded and
   ticking by then, so the scan costs no disk; it is about 400 block lookups once per site and a site hosts a hundred
   fights; it works on a library that is already built rather than needing gigabytes generated again; and it leaves the

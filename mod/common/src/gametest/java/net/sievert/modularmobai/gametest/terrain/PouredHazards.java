@@ -39,10 +39,24 @@ import net.minecraft.world.phys.AABB;
  *
  * <h2>Putting it back</h2>
  *
- * <p>Every block this changes is remembered with the state it had, and restoring walks the list backwards. Fire is the one
- * thing that can escape the list, so the plants and the loose flammables in a five by five around the pool go first, and
- * the restore sweeps the same box for any fire or lava that was not there before. A site hosts a hundred fights, and a
- * pool left behind by one of them would still be there for the other ninety nine.
+ * <p>Every block this changes is remembered with the state it had, and restoring walks the list backwards. Fire and lava are
+ * the two things that can escape the list, so the plants and the loose flammables in a five by five around the pool go
+ * first, and the restore sweeps for any fire or lava that was not there before. A site hosts a hundred fights, and a pool
+ * left behind by one of them would still be there for the other ninety nine.
+ *
+ * <p><b>Restoring notifies the neighbours</b>, which is what makes a leak temporary rather than permanent. Flowing lava
+ * only works out that its source is gone on a scheduled fluid tick, and the only thing that schedules one is a neighbour
+ * update: a block put back with clients-only flags leaves any flow it fed standing for good. Measured over blast3, 929,311
+ * fights: 97.6% of the surface lava beside a fight on ground labelled {@code flat} and 100% of it on {@code water} was
+ * flowing lava with no source anywhere near it, and 81 of the 81 sampled lava deaths on that ground were into flowing lava,
+ * while sites labelled {@code drop} — the one kind that is hazardous already and so never poured on — had none at all in
+ * 216 sampled fights. That orphaned flow was 4.2% of every flat-ground fight lost and 3.9% of every water one, against
+ * 0.014% on drop ground.
+ *
+ * <p>Measured again after the fix, 1,500 league fights of the scripted fighter either side of it on the same pinned ground:
+ * flat and water replays carrying flowing lava with no source went from 22.3%, 62 of 278, to 0 of 292, and lava deaths on
+ * that ground from 20.0 per 1,000 fights to none. The neighbour update is nearly all of that — with it and the wider sweep
+ * alone the share came to 0.7% — and {@link #walledIn} takes the rest.
  */
 public final class PouredHazards {
 
@@ -63,6 +77,18 @@ public final class PouredHazards {
 
     /** How many places are tried before giving the fight ordinary ground. */
     private static final int TRIES = 24;
+
+    /**
+     * How far lava spreads from a source on land, which is what the sweep after a fight has to cover: the rim of a pool that
+     * turns out not to be walled in feeds a flow that goes this far and then falls.
+     */
+    private static final int SPREAD = 3;
+
+    /** How far a spill can get, which the mechanics suite puts a block of lava at to check the sweep reaches it. */
+    public static int spread() {
+
+        return SPREAD;
+    }
 
     /** One block as it was before the pool went in. */
     private record Was(BlockPos at, BlockState state) {}
@@ -93,7 +119,8 @@ public final class PouredHazards {
 
             BlockPos spot = surface(level, x, z);
 
-            if (spot == null || Math.abs(spot.getY() - middle.getY()) > LEVEL || tooClose(spot, fighters)) {
+            if (spot == null || Math.abs(spot.getY() - middle.getY()) > LEVEL || tooClose(spot, fighters)
+                    || !walledIn(level, spot)) {
 
                 continue;
             }
@@ -116,26 +143,46 @@ public final class PouredHazards {
         return fill(level, ground);
     }
 
-    /** Puts back every block the pool replaced, and anything the lava set alight on its way. */
-    public static void drain(ServerLevel level, Pool pool) {
+    /**
+     * Puts back every block the pool replaced, and anything the lava set alight or fed on its way.
+     *
+     * <p>Every block goes back with a neighbour update, {@link Block#UPDATE_ALL}. That is the whole of the difference
+     * between a leak that lasts a fight and one that lasts the site's remaining ninety nine: a flow whose source has gone
+     * only notices on a scheduled fluid tick, and nothing but a neighbour update schedules one. Drops are still suppressed,
+     * so putting the ground back does not litter the site with items.
+     *
+     * <p>The pool's own blocks are last in the list and so go back first, which means there is no lava left in the pool by
+     * the time the ring around it is restored, and the ground is back under the plants before the plants are.
+     *
+     * @return whether the sweep found fire or lava that was not on the list, which means the pool got out of its box and
+     *         this site's ground is no longer what it was labelled
+     */
+    public static boolean drain(ServerLevel level, Pool pool) {
 
         for (int i = pool.was().size() - 1; i >= 0; i--) {
 
             Was was = pool.was().get(i);
-            level.setBlock(was.at(), was.state(), Block.UPDATE_CLIENTS | Block.UPDATE_SUPPRESS_DROPS);
+            level.setBlock(was.at(), was.state(), Block.UPDATE_ALL | Block.UPDATE_SUPPRESS_DROPS);
         }
 
-        // Fire is the one thing that gets out of the list: it spreads to whatever it likes while the fight runs. Anything
-        // burning or molten left in the box after the list has been put back was not there before.
+        // Fire and lava are what get out of the list: fire spreads to whatever it likes while the fight runs, and a pool
+        // whose rim turned out not to be walled in feeds a flow that runs three blocks and falls. Anything burning or
+        // molten left in the box after the list has been put back was not there before.
+        boolean[] escaped = {false};
+
         BlockPos.betweenClosedStream(pool.box()).forEach(at -> {
 
             BlockState state = level.getBlockState(at);
 
             if (state.is(Blocks.FIRE) || state.is(Blocks.LAVA)) {
 
-                level.setBlock(at, Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS | Block.UPDATE_SUPPRESS_DROPS);
+                level.setBlock(at.immutable(), Blocks.AIR.defaultBlockState(),
+                        Block.UPDATE_ALL | Block.UPDATE_SUPPRESS_DROPS);
+                escaped[0] = true;
             }
         });
+
+        return escaped[0];
     }
 
     /**
@@ -145,15 +192,63 @@ public final class PouredHazards {
     @Nullable
     private static BlockPos surface(ServerLevel level, int x, int z) {
 
+        BlockPos ground = ground(level, x, z);
+
+        return ground != null && level.getBlockState(ground.above()).isAir() ? ground : null;
+    }
+
+    /**
+     * The top solid block of a column, whatever stands on it, or null where the top of the ground is not something a pool
+     * could rest on or be walled in by.
+     *
+     * <p>Kept apart from {@link #surface} because the two questions are not the same one. Where the pool itself goes, the
+     * column has to be clear: a body is knocked onto it and has to land in the lava, not on a fence post. Whether the ring
+     * around it is level does not care what grows there, because {@link #fill} pulls every plant in the five by five up
+     * before a drop of lava goes in. Asking for clear ground in the ring as well passed over most of the overworld's flat
+     * grass — a single fern in any of twenty five columns was enough — and measured at two thirds of every pool the league
+     * used to pour.
+     */
+    @Nullable
+    private static BlockPos ground(ServerLevel level, int x, int z) {
+
         int top = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
         BlockPos ground = new BlockPos(x, top - 1, z);
 
-        if (!level.getBlockState(ground).isCollisionShapeFullBlock(level, ground)) {
+        return level.getBlockState(ground).isCollisionShapeFullBlock(level, ground) ? ground : null;
+    }
 
-            return null;
+    /**
+     * Whether a pool laid on this block would really be flush: every column of the five by five it and its ring occupy has
+     * its ground at the same height, so each of the nine lava blocks has solid ground beside it at its own level and the lava
+     * has nowhere to go.
+     *
+     * <p>Flush is what the whole design rests on and it was only ever checked at the middle column. One block of step at the
+     * rim — which is most of any patch of overworld, {@code flat} label or not — puts a lava block over open air, and from
+     * there it runs three blocks and falls, out of the box the fight sweeps afterwards. The cost of being wrong is not one
+     * fight: the site hosts a hundred and its label is worked out once, so every later fight on it is fought beside lava and
+     * recorded as flat ground. The cost of being too careful is that this fight gets ordinary ground, which is a fight the
+     * hazard share does not get and nothing worse.
+     *
+     * <p>What stands on the ring is not asked about, only how high its ground is: see {@link #ground}.
+     */
+    private static boolean walledIn(ServerLevel level, BlockPos spot) {
+
+        int ring = WIDTH / 2 + 1;
+
+        for (int dx = -ring; dx <= ring; dx++) {
+
+            for (int dz = -ring; dz <= ring; dz++) {
+
+                BlockPos ground = ground(level, spot.getX() + dx, spot.getZ() + dz);
+
+                if (ground == null || ground.getY() != spot.getY()) {
+
+                    return false;
+                }
+            }
         }
 
-        return level.getBlockState(ground.above()).isAir() ? ground : null;
+        return true;
     }
 
     private static boolean tooClose(BlockPos spot, List<BlockPos> fighters) {
@@ -180,7 +275,12 @@ public final class PouredHazards {
         int reach = WIDTH / 2;
         int margin = reach + 1;
 
-        AABB box = new AABB(spot.offset(-margin, -1, -margin)).minmax(new AABB(spot.offset(margin, 2, margin)));
+        // What the sweep after the fight has to cover, which is wider than what this touches: a rim that is not walled in
+        // after all feeds a flow that runs SPREAD blocks and then falls, and fire spreads to whatever it likes. Reaching far
+        // enough costs a few hundred block reads once a fight; reaching too little costs the site.
+        int sweep = reach + SPREAD;
+
+        AABB box = new AABB(spot.offset(-sweep, -1 - SPREAD, -sweep)).minmax(new AABB(spot.offset(sweep, 2, sweep)));
 
         // Anything that burns, and anything a fighter would rather not be standing in, out of the way first: a flower next
         // to lava is a fire, and fire spreads where this cannot follow it.
