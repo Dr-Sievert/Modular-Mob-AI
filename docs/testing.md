@@ -204,7 +204,13 @@ mod\gradlew.bat -p mod :fabric:runGametestParallel -Psuite=terrain -Parenas=2000
 | `arenas`, `workers`, `batchSize` | fights, worker processes, fights at once per worker |
 | `sites`, `siteRadius` | fight sites laid out, and chunks either side of each one's centre (2 = 80 blocks across) |
 | `brain`, `brainWeights` | `scripted` (default) or `neural` with a `.mbw` file |
+| `species` | which body the run trains and parity checks, `humanoid` by default. Naming one also narrows `brainParity` to that body instead of going round every body the build has; see [species.md](species.md) |
+| `opponent` | who the agents fight, for trying them against something other than a vindicator: `-Popponent=minecraft:skeleton`, any entity type id. The `arena` and `terrain` suites only — the league draws its own |
+| `demonstrations` | a folder, relative to the repository, to write shards of whatever drives the agents into: `-Pdemonstrations=runs/x/looked-at`. Any brain, any suite, for looking at a policy's own answers afterwards. It is not how a teacher record is made — that is the `recordDemonstrations` task, which `imitate.ps1` and `dagger.ps1` call |
 | `replayEvery`, `replayRun` | record one fight in N, into `runs\<replayRun>\replays` |
+| `capture` | a CSV of every tick of the `baseline` suite's fights — both fighters' positions and health, relative to each arena's own corner — written into each worker's folder. Only that suite records it (`ArenaRecorder`); for the agent's fights the replays are the record |
+| `reusePlots` | whether a batch keeps the plots it has instead of clearing them and placing the structures again. `true` or `false` overrides the default, which is to reuse on natural terrain and in the play suite — out there a plot is only bookkeeping underground, and a fresh one means generating real chunks, which is far dearer than clearing |
+| `workerJvmArgs` | anything else a worker's virtual machine should start with, split on spaces: a profiler, or a collector to try, without editing the build. A relative filename lands in the worker's own folder, which the next run clears. `-PworkerJvmArgs="-XX:StartFlightRecording=delay=60s,duration=120s,filename=worker.jfr,settings=profile"` |
 | `workerHeap` | heap per worker; the build picks 1G on the terrain library and 2G otherwise when this is absent |
 | `workerCores` | `all` lets the workers run on every core; by default they are confined to the performance cores, which doubles a worker's throughput on a chip that has two kinds |
 | `serverThreadCores` | `performance` confines the server thread instead of the whole worker, leaving the rest of the process every core; off by default, because it measured no faster |

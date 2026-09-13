@@ -33,6 +33,13 @@
 # the rest of its round. Starting workers takes about half a minute and a worker fights some seventy battles a second, so
 # a round is large enough to make that a small share of it.
 #
+# -Extra reaches every field of Config in trainer\mmai\ppo.py, as '--field-name value'. The rule for which settings are
+# parameters here instead: a setting is first-class when a documented workflow asks for it by name -- -Suite, -Seed,
+# -TeacherWeight, -LeagueModels, -Workers -- and everything else goes through -Extra. Otherwise this file becomes a second
+# copy of Config to be kept in step with it, and it would have to grow a parameter every time the trainer grows a knob.
+# The one exception is a setting this script has to act on rather than pass on: -FromCopy and -Seed set several trainer
+# options between them, and -Species and -LeagueModels are the build's rather than the trainer's.
+#
 # Each worker fights -Slots battles at once, on a quarter again as many terrain sites, in a -Heap sized heap. A worker
 # is bound by its one server thread, so the machine's memory, not its cores, decides how many run. Twenty five slots
 # measured the same throughput per worker as fifty, in half the memory. Nearly all of a heap is the ground under and

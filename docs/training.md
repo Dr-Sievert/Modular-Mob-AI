@@ -289,23 +289,39 @@ minute: iteration, ticks/s, fights/s, training win rate, fight length; plus eval
 
 ### Trainer options (`-Extra`)
 
-Every field of `Config` in `trainer/mmai/ppo.py` is an option, as `--field-name value`. The useful ones:
+Every field of `Config` in `trainer/mmai/ppo.py` is an option, as `--field-name value`. The useful ones below; each field's
+own comment in `ppo.py` is where the reasoning and the measurements are.
+
+**Why some of these are `train.ps1` parameters and the rest are not.** A setting is first-class — its own named parameter —
+when a documented workflow asks for it by name: `-Suite`, `-Seed`, `-TeacherWeight`, `-LeagueModels`, `-Workers`. Anything
+else goes through `-Extra`, which reaches every field of `Config` without the script having to know it exists. That keeps
+`train.ps1` a list of the ways a run is actually started rather than a second copy of `Config` to be kept in step, and it is
+why a new knob in the trainer needs no change here at all.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--learning-rate` | 3e-4 | Adam step size |
 | `--clip` | 0.2 | PPO clip range |
 | `--target-kl` | 0.02 | stop an update early past this KL |
+| `--kl-adapt` | 1.5 | the learning rate moves against the KL each update produced, by this factor, so `--target-kl` is a step size rather than a trip switch. It was firing after the damage: on league768, 251 of 300 updates ran a single epoch at a KL of 0.013 against a target of 0.010 — 65,536 steps of collected fighting used once, and the policy 30% past the step it asked for anyway. The rate is in the run's state, so resuming keeps what it found; 0 turns it off |
+| `--kl-adapt-band` | 2.0 | how far either side of the target counts as on target, as a factor: inside it the rate is left alone |
+| `--kl-adapt-range` | 10.0 | how far the rate may wander from the configured one, as a factor either way |
 | `--epochs` | 4 | passes over each iteration's data |
 | `--entropy-coef` | 0.01 | exploration bonus |
 | `--critic-warmup` | 0 | iterations where only the critic learns |
 | `--critic-gru` | true | the critic runs its own GRU and reads the fourteen privileged inputs; `false` is the plain feed-forward critic. Decides what a new run builds, and what a run seeded from a copy builds; a resume keeps the critic its state holds, see [the critic](#the-critic) |
 | `--critic-gru-width` | 0 = `--hidden` | how wide that memory is |
 | `--teacher-weight` | 0 | pull towards the run's demos; needs `runs\<run>\demos` |
+| `--teacher-decay` | 1500 | iterations over which that pull falls to nothing, from the first one this run ever pulled; 0 holds it for ever. A pull held at full strength is a ceiling and not a floor, see [the pipeline](#the-pipeline-that-works) |
+| `--teacher-release` | 6 | judged checkpoints in a row that fail to beat the best, while the pull is still on, before the rest of it is let go without waiting for the horizon: a run that is still being pulled and has stopped improving is the shape of a ceiling. 0 waits for the horizon |
+| `--teacher-release-over` | 200 | iterations that release takes. Gradual, because an imitation term removed between two updates moves the policy on its own |
+| `--teacher-rows` | 262144 | steps of the record a pull is scored on per update |
 | `--aux-coef` | 0.05 | how hard the auxiliary predictions pull on the memory; 0 turns them off, see below |
 | `--aux-horizon` | 32 | ticks ahead that "the fight ends soon" looks |
 | `--seq-len` | 32 | ticks of GRU unrolled per training chunk |
 | `--h1 --hidden --h3` | 256, 128, 128 | network widths; only for a new run, and the game needs no change |
+| `--slot-enc` | 0 | width of one shared encoder over the ten enemy slots, or 0 for a first layer that takes every slot's numbers on its own. Ten slots of the same shape, learned once instead of ten times, which was the difference between beating one skeleton 84% of the time and two of them 9%. It is part of the network's shape and not a setting: a state trained with it cannot be read into a network without it, which is why `-Seed` reads it out of the state it is seeding from |
+| `--scale-rewards` | true | divide rewards by the running spread of the return, so the value loss is the same size whatever the reward is measured in |
 | `--eval-fights` | 500 | fights per judged checkpoint (2,000 tells 99.6% from 99.9%) |
 | `--eval-patience` | 10 | judged checkpoints without a new best before done |
 | `--eval-target` | 0.995 | win rate at which the run is done at once |
