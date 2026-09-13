@@ -875,6 +875,12 @@ are deliberate.
     → 80.5 for the teacher), which is the cross-sitting drift above: one ran on an idle machine, the other beside eight
     training workers. Only the numbers inside a sitting are comparable, and "level with the teacher" reads as "within a
     few points of" once both sittings are counted.
+  - A third time, and this time the rule missed eight points again: `blast5` judged its best at 11050 (85.0% by its own
+    evaluation) and ended on patience at 12407. One sitting, `bench.ps1 -Teacher`: **12407 at 84.7%, the scripted
+    fighter 82.3%, the published `blast4` 77.2%, 11050 at 76.7%**. The judged best was the weakest of the four. So the
+    standing rule is now firm: **a run's last checkpoint is benched against its judged best before anything is published**,
+    and the one that wins the sitting is the one that ships — which is how `blast6` (12450, carried on from 12407) came to
+    be published over both.
   - And the third sitting says the run has stopped: `blast3` carried on to 8312 (judged best 6275), and one bench of its
     last, its best and the published 3100 read **80.8, 79.0 and 79.7%** against the teacher's 81.5% — 5,200 iterations of
     pure RL inside 1.8 points of each other. That is a plateau one to two points under the teacher, not a run still
