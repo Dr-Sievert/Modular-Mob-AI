@@ -504,6 +504,12 @@ are deliberate.
   ignore it is a shape no network has ever seen. It is a curriculum hole, not a body or an allegiance fault, and
   `theCrowdedViewOfARealWorldIsTheWorldsOwn` in the play suite holds the innocent half — the slots and the numbers being the
   world's own — so nobody has to investigate it twice. What was done about it is the two entries below.
+  - **That check flakes about one run in six, by one tick.** Seen once on 2026-09-14 in six runs of the play suite, reported
+    under whichever test the solo plot happened to be on: "forward is 1.8451 where the world says 2.4848", a zombie two and
+    a half blocks off read where it stood the tick before. The observation is written at the top of the tick and the zombie
+    then moves inside it, and a blow's knockback moves it more than the tolerance allows. The rule is right and the reading
+    is a tick old, which is what a slot is; the assertion wants a tolerance of a tick's movement, and it has not been given
+    one yet. Not the memory and not the wall rule: the same run passed the next time round with nothing changed.
 - **Most of that crowd was never a crowd: the view had no line of sight in it, and a wall was all it took.** A slot went to
   any hostile within thirty two blocks, full stop, so at night a real world put the monsters behind the rock, across the
   valley and in the caves below into the agent's ten slots. A candidate now also has to be in sight of the agent's eyes,
