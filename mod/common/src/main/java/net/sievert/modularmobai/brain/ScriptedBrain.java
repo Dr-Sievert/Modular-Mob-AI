@@ -399,6 +399,47 @@ public final class ScriptedBrain implements Brain {
     private static final float PACK_STANDOFF = 4.0F;
 
     /**
+     * How far a body walking backwards covers in a tick, which is the one number the whole kite turns on. A zombie, a husk,
+     * a drowned and a zombie villager all walk 0.154; a vindicator and a piglin brute cover 0.24 and a spider more. So
+     * against the first four a fighter that never lets one inside its own reach is never touched, and against the rest the
+     * same rule is a fighter walking slowly backwards into whatever is behind it.
+     */
+    private static final double BACKPEDAL = 0.216D;
+
+    /**
+     * Under this, in blocks a tick, everything in the pack is slower than a backpedal and the standoff below is worth
+     * holding. It is the backpedal with a margin taken off it rather than the backpedal itself: the gap between the two
+     * kinds of body is wide — 0.154 against 0.24 — and a threshold in the middle of that gap cannot be crossed by a body
+     * sliding downhill or knocked along the ground.
+     *
+     * <p>Read off the slot's own {@code ENEMY_SPEED} and not off the velocity in it. The attribute is the same number every
+     * tick, so the fighter cannot change its mind about which fight it is in twice a second, and the things in the league
+     * that close faster than they walk — an enderman's teleport, a ravager's charge, a wolf's sprint — all carry an
+     * attribute far above this anyway, so nothing is let through by reading the steady number.
+     */
+    private static final double KITE_PACE = BACKPEDAL - 0.026D;
+
+    /**
+     * Where the nearest of a slow pack is held. Inside this the fighter gives ground whether or not its swing is ready;
+     * outside it, with the swing ready, it stands still and lets the body walk into {@link #SWING_RANGE}.
+     *
+     * <p>It is a little outside a mob's own reach — anything man sized strikes from a block and a half head on and two
+     * across a diagonal — and a little inside a sword's, so the band between this and {@link #SWING_RANGE} is ground the
+     * fighter can strike from and nothing in the pack can strike back from.
+     */
+    private static final float KITE_EDGE = 2.6F;
+
+    /**
+     * How many ticks the nearest of a slow pack may go without closing before the fighter stops waiting and walks up to it.
+     * Holding ground is only worth anything against a pack that is coming; against one that has stopped — stuck on a ledge,
+     * sliding backwards from the blow that just landed, or simply not pathing — it is the retreat that was measured at
+     * {@link #PACK_STANDOFF} and turned 6.1% timeouts into 23.4%.
+     *
+     * <p>Twenty ticks, which is a second, and comfortably longer than the dozen a body spends sliding away from a blow.
+     */
+    private static final int KITE_PATIENCE = 20;
+
+    /**
      * How far the second nearest has to be for a sprint blow to be worth its step forward. A sprint is forward only, so the
      * blow is thrown from about a block nearer than the agent stands, and anything man sized strikes from a block and a half,
      * two across a diagonal: four and a half blocks leaves the spot the blow is thrown from outside the second body's reach.
@@ -435,6 +476,12 @@ public final class ScriptedBrain implements Brain {
     private float secondNearest;
     private float packHealth;
     private float packDamage;
+
+    /** The fastest thing in the pack, in blocks a tick, which is what says whether a kite is possible at all. */
+    private double packPace;
+
+    /** Which slot the nearest of the pack is in, so what it is doing can be asked of what was watched about it. */
+    private int nearestSlot;
 
     // ---------------------------------------------------------------------------------------------------------------
     // Creepers
@@ -721,7 +768,13 @@ public final class ScriptedBrain implements Brain {
         int melee = meleeSlot(o, obs);
         int ranged = me.spent ? -1 : slotHolding(o, obs, AgentObservation.ITEM_RANGED);
 
-        boolean shooting = shoots(me, o, target, ranged, melee, distance, clear);
+        // How many bodies are actually in this fight, read before anything decides what to do about them: a drawn weapon
+        // is one of the things a pack changes, and the count used to be taken after the fighter had already committed to
+        // standing still for twenty ticks.
+        int inFight = this.sizeUp(me, o, obs);
+        boolean crowded = inFight >= PACK_FIGHTERS;
+
+        boolean shooting = shoots(me, o, target, ranged, melee, distance, clear, crowded);
 
         // Which slot is about to go off, which need not be the one being fought: two creepers, and the fighter walks away
         // from the lit one while the other is still its target.
@@ -735,6 +788,13 @@ public final class ScriptedBrain implements Brain {
         boolean mayExplode = emptyHanded(o, target) && !me.hasSwung(slot);
         float backOff = mayExplode && strength < FULL_STRENGTH ? FUSE_RANGE : BACK_OFF_RANGE;
 
+        // Where the pack lies, as one direction, back in the world's frame the grid is written in. Worked out before the
+        // shot as well as before the swing, because the feet answer to the pack whichever the hands are doing.
+        double threatX = -sin * this.threatForward - cos * this.threatRight;
+        double threatZ = cos * this.threatForward - sin * this.threatRight;
+
+        int start = state(CENTRE, 0, CENTRE);
+
         // Where to look. A swing goes where the eyes are; a shot has to be thrown ahead of the target and above it, by
         // whatever the arrow falls over the ground it has to cover and whatever the target covers while it flies.
         if (shooting) {
@@ -744,7 +804,16 @@ public final class ScriptedBrain implements Brain {
             // A drawn weapon takes the movement keys down to a fifth, so there is no walking out of trouble while it is
             // up: it holds its ground, steps away from anything already on top of it, and walks up to find a line when
             // the one it has is blocked.
-            if (distance < BACK_OFF_RANGE) {
+            //
+            // In a pack the step away is the pack's and not the target's, which is the same rule the swinging fighter
+            // already has and for the same reason: the way the nearest of several lies is rarely the way they all do, and
+            // backing away from the one being shot at walks into the one that is not.
+            if (crowded && this.nearestInFight <= PACK_STANDOFF) {
+
+                this.walkTowards(this.giveGround(o, obs, threatX, threatZ, false), a, act, sin, cos, grounded);
+            }
+
+            else if (distance < BACK_OFF_RANGE) {
 
                 this.walkTowards(this.retreat(o, obs, targetX, targetZ), a, act, sin, cos, grounded);
             }
@@ -761,12 +830,7 @@ public final class ScriptedBrain implements Brain {
         // used to stand in the middle of and trade in. Everything that follows from it is gated on there being two of them
         // in the fight, so a fight against one opponent reaches none of it. Never while walking away from a lit fuse: that
         // already has the feet and is already the right answer, whatever else is standing there.
-        int start = state(CENTRE, 0, CENTRE);
-        boolean pack = !fleeing && this.sizeUp(me, o, obs) >= PACK_FIGHTERS;
-
-        // Where the pack lies, as one direction, back in the world's frame the grid is written in.
-        double threatX = -sin * this.threatForward - cos * this.threatRight;
-        double threatZ = cos * this.threatForward - sin * this.threatRight;
+        boolean pack = !fleeing && crowded;
 
         // The step away is worked out before the aim rather than down with the rest of the footwork, because a fight being
         // run from is a fight the agent has to look the way it is running: a sprint is forward only.
@@ -777,10 +841,25 @@ public final class ScriptedBrain implements Brain {
         // spot with its back to the pack.
         running = running && packStep != start;
 
+        // Whether this pack can be kited at all, which is one number: everything in it slower than a backpedal. Against
+        // four zombies it is, and a fighter that holds the band between a mob's reach and a sword's is never touched; against
+        // two vindicators it is not, and the same rule would be walking slowly backwards while being hit. Never while the
+        // fight is being run from, which has the feet already, and never against a pack that has stopped coming, which is
+        // the retreat that ran the clock out at PACK_STANDOFF wearing a different hat. See KITE_PACE.
+        boolean kiting = pack && !running && this.packPace < KITE_PACE && this.nearestSlot >= 0
+                && me.holdingBack[this.nearestSlot] < KITE_PATIENCE;
+
         // The cycle: ground is given while the swing is cooling and something is near enough to be worth giving it from,
         // and the moment the swing is ready the fighter closes and takes it. See PACK_STANDOFF for what happens to a
         // fighter that simply backs away instead, which is the first thing this was and the wrong thing.
-        boolean giving = pack && (running || !stepsIn(me, strength) && this.nearestInFight <= PACK_STANDOFF);
+        //
+        // Against a pack it can outwalk there is one more reason to give ground and it does not wait for the cooldown: a
+        // body inside KITE_EDGE is a body that can strike, and the whole of the kite is never letting one get there. So the
+        // fighter backs off whenever one does, holds where it is while the swing is ready and the body walks in, and swings
+        // the tick that body crosses a sword's own reach.
+        boolean giving = pack && (running
+                || !stepsIn(me, strength) && this.nearestInFight <= PACK_STANDOFF
+                || kiting && this.nearestInFight <= KITE_EDGE);
 
         // Turning right is a rising yaw, and a target off to the right has a positive right component, so the error and
         // the control share a sign and no correction is needed.
@@ -854,7 +933,7 @@ public final class ScriptedBrain implements Brain {
             next = shove;
         }
 
-        else if (distance > CLOSE_IN_RANGE || !clear) {
+        else if (!kiting && distance > CLOSE_IN_RANGE || !clear) {
 
             float targetSpeed = Math.abs(o[target + ObservationSchema.ENEMY_VELOCITY_FORWARD])
                     + Math.abs(o[target + ObservationSchema.ENEMY_VELOCITY_RIGHT]);
@@ -1334,7 +1413,8 @@ public final class ScriptedBrain implements Brain {
      * twenty ticks: a fighter with nothing to swing shoots at any distance, since punching with a bow is worth one damage
      * against an arrow's six.
      */
-    private static boolean shoots(Fighter me, float[] o, int target, int ranged, int melee, float distance, boolean clear) {
+    private static boolean shoots(Fighter me, float[] o, int target, int ranged, int melee, float distance, boolean clear,
+            boolean crowded) {
 
         if (ranged < 0) {
 
@@ -1347,7 +1427,14 @@ public final class ScriptedBrain implements Brain {
 
         if (melee < 0) {
 
-            return clear || holding;
+            // Nothing to swing, so a shot is worth taking at any distance: punching with a bow is one damage against an
+            // arrow's six. But a pack is the one thing that answers that, and it was the widest hole in this fighter:
+            // over 300 pack fights on the harness a bow landed 0.0 blows a fight and took 2.5, and a crossbow 0.0 and 3.0,
+            // against a sword's 8.7 and 0.5. It was standing still at a fifth of walking pace, twenty ticks at a time,
+            // while four bodies walked onto it. So in a pack a draw is begun only where it can be finished — the same
+            // question finishesInTime already asks of a fighter that has a sword to fall back on — and what it does with
+            // the ticks it no longer spends drawing is give ground, which is what the rest of this fighter would do.
+            return holding || clear && (!crowded || finishesInTime(me, o, target, distance));
         }
 
         if (holding) {
@@ -1542,6 +1629,8 @@ public final class ScriptedBrain implements Brain {
         this.secondNearest = Float.MAX_VALUE;
         this.packHealth = 0.0F;
         this.packDamage = 0.0F;
+        this.packPace = 0.0D;
+        this.nearestSlot = -1;
 
         float nearestForward = 0.0F;
         float nearestRight = 0.0F;
@@ -1576,6 +1665,11 @@ public final class ScriptedBrain implements Brain {
             this.packHealth += o[at + ObservationSchema.ENEMY_HEALTH_LEFT] * ObservationSchema.HEALTH_SCALE;
             this.packDamage += o[at + ObservationSchema.ENEMY_DAMAGE] * ObservationSchema.DAMAGE_SCALE;
 
+            // The fastest of them, which is what decides whether the ground the fighter gives can ever be got back. One
+            // body quicker than a backpedal is enough to settle it, so this is a maximum and not an average.
+            this.packPace = Math.max(this.packPace,
+                    o[at + ObservationSchema.ENEMY_SPEED] * ObservationSchema.SPEED_SCALE * BLOCKS_A_TICK_PER_SPEED);
+
             float forward = o[at + ObservationSchema.ENEMY_FORWARD];
             float right = o[at + ObservationSchema.ENEMY_RIGHT];
 
@@ -1583,6 +1677,7 @@ public final class ScriptedBrain implements Brain {
 
                 this.secondNearest = this.nearestInFight;
                 this.nearestInFight = distance;
+                this.nearestSlot = slot;
                 nearestForward = forward;
                 nearestRight = right;
             }

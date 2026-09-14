@@ -357,6 +357,14 @@ public class AgentTeacherGameTest {
     private static final double ON_TOP = 2.0D;
 
     /**
+     * Either side of {@code ScriptedBrain#PACK_SPRINT_CLEAR}, the four and a half blocks a second body has to be past for
+     * the step into a sprint blow to be worth taking. Half a block is left out of each, which is more than anything in the
+     * league covers in the one tick between the observation the rule read and the blow that followed it.
+     */
+    private static final double SECOND_IN_REACH = 4.0D;
+    private static final double SECOND_CLEAR = 5.0D;
+
+    /**
      * Three bodies in the fight at once, spread over a right angle, and the teacher gives ground and keeps all three where it
      * can see them instead of standing among them and facing one.
      *
@@ -388,6 +396,8 @@ public class AgentTeacherGameTest {
     public static void theTeacherGivesGroundToAPackInsteadOfStandingInIt(GameTestHelper helper) {
 
         fightAPack(helper, true, watched -> {
+
+            helper.assertFalse(watched.died, "The teacher died to three zombies, having landed " + watched.landed);
 
             helper.assertTrue(watched.inFront() > 1.9D,
                     "Only " + round(watched.inFront()) + " of the three were inside the agent's own view cone on an average "
@@ -422,6 +432,8 @@ public class AgentTeacherGameTest {
 
         fightAPack(helper, false, watched -> {
 
+            helper.assertFalse(watched.died, "The teacher died to three zombies, having landed " + watched.landed);
+
             helper.assertTrue(watched.swings >= 7,
                     "The teacher swung " + watched.swings + " times at three zombies walking in, well short of the 12 it swings "
                             + "with the pack rule turned off and the 9 it swings with it on");
@@ -430,6 +442,96 @@ public class AgentTeacherGameTest {
                     "The teacher landed " + watched.landed + " blows on three zombies walking in, well short of the 12 it lands "
                             + "with the pack rule turned off and the 9 it lands with it on");
         });
+    }
+
+    /**
+     * And against a pack it can outwalk it holds the edge of its own reach: the blows land out where a zombie cannot answer
+     * them, and next to nothing comes back.
+     *
+     * <p>This is the half of the pack rule that the standoff above cannot say. A fighter that keeps the nearest of three at
+     * a good average distance can still be doing it by walking in, trading at arm's length and walking out again, and the
+     * average would read the same. Where a blow <b>lands</b> cannot be averaged away: a sword reaches three blocks from the
+     * eyes and anything man sized reaches a block and a half head on, two across a diagonal, so a blow landed at two and a
+     * half blocks or more is one thrown from ground the zombie could not have struck from.
+     *
+     * <p>Measured on the pack harness over 900 fights, five packs and ten loadouts
+     * ({@code scripts	est.ps1 -Pack}, see docs/testing.md): against three hard zombies the teacher's blows landed a mean
+     * <b>2.86</b> blocks off before the kite and <b>2.98</b> after, and it took <b>0.7</b> blows a fight and then
+     * <b>0.9</b>. In this arena, three plain zombies walking in, the same two numbers are 2.80 and 0. The thresholds are
+     * set under both, so a tuning that gives a little of it back does not fail this; what they catch is a fighter that has
+     * gone back to standing in the middle of a pack, where a blow lands at two blocks and several come back.
+     */
+    @GameTest(template = Mechanics.ARENA, timeoutTicks = 400)
+    public static void theTeacherStrikesAPackFromTheEdgeOfItsReach(GameTestHelper helper) {
+
+        fightAPack(helper, false, watched -> {
+
+            helper.assertFalse(watched.died, "The teacher died to three zombies, having landed " + watched.landed);
+
+            helper.assertTrue(watched.landed >= 5,
+                    "The teacher landed only " + watched.landed + " blows on three zombies walking in, too few for where "
+                            + "they landed to mean anything");
+
+            helper.assertTrue(watched.blowAt() >= 2.4D,
+                    "The teacher's blows landed a mean " + round(watched.blowAt()) + " blocks off, inside the two and a "
+                            + "half a zombie's own reach ends at: it is trading in the band rather than holding the edge "
+                            + "of its reach");
+
+            helper.assertTrue(watched.taken < 3,
+                    "The teacher was hit " + watched.taken + " times by three zombies it walks faster than, against the "
+                            + "none it takes when the kite is working");
+        });
+    }
+
+    /**
+     * A blow thrown at a pack carries the knockback when the second nearest body is far enough off that the step into the
+     * blow is not a step into a second set of hands, and does not when it is near.
+     *
+     * <p>A sprint is forward only, so a sprint blow is thrown from about a block nearer than the fighter stands. That is
+     * what it costs and it is the whole of the rule: past {@code ScriptedBrain#PACK_SPRINT_CLEAR} the spot the blow is
+     * thrown from is outside the second body's own reach, and inside it the extra point of knockback is bought by walking
+     * into something that swings. The two tests are one rule read both ways round, which is the only way to tell the rule
+     * from a fighter that simply always sprints.
+     *
+     * <p>Vindicators rather than zombies, and held where they are put: this is about which shape the blow is thrown in, and
+     * a pack that walks would move the second one across the threshold mid fight and make the answer a matter of timing.
+     */
+    @GameTest(template = Mechanics.ARENA, timeoutTicks = 400)
+    public static void aClearSecondBodyBuysTheKnockbackBlowInAPack(GameTestHelper helper) {
+
+        // Three blocks due north, and the second seven blocks off to the east: well past the four and a half the rule asks
+        // for, so every blow thrown at the first should carry the knockback.
+        fightAPack(helper, true, EntityType.VINDICATOR,
+                new BlockPos[] {new BlockPos(4, 2, 7), new BlockPos(11, 2, 4)}, watched -> {
+
+                    helper.assertTrue(watched.landed >= 3,
+                            "The teacher landed only " + watched.landed + " blows on the near vindicator, too few to say "
+                                    + "anything about how they were thrown");
+
+                    helper.assertTrue(watched.knockedWithSecondClear >= 3,
+                            "Only " + watched.knockedWithSecondClear + " of the teacher's " + watched.landed + " blows "
+                                    + "carried the sprint knockback with the second body five blocks or more clear: the "
+                                    + "opener is not being thrown");
+                });
+    }
+
+    @GameTest(template = Mechanics.ARENA, timeoutTicks = 400)
+    public static void aSecondBodyInReachTakesTheKnockbackBlowAway(GameTestHelper helper) {
+
+        // The same near body, with the second one three blocks the other side of the agent: inside the four and a half, so
+        // the step forward would be a step into its reach and the knockback is given up for it.
+        fightAPack(helper, true, EntityType.VINDICATOR,
+                new BlockPos[] {new BlockPos(4, 2, 7), new BlockPos(4, 2, 1)}, watched -> {
+
+                    helper.assertTrue(watched.landed >= 3,
+                            "The teacher landed only " + watched.landed + " blows on the near vindicator, too few to say "
+                                    + "anything about how they were thrown");
+
+                    helper.assertTrue(watched.knockedWithSecondInReach == 0,
+                            "The teacher threw " + watched.knockedWithSecondInReach + " of its " + watched.landed
+                                    + " blows sprinting while a second body stood inside four blocks of it, which is a "
+                                    + "step into that body's reach");
+                });
     }
 
     /**
@@ -443,16 +545,27 @@ public class AgentTeacherGameTest {
      */
     private static void fightAPack(GameTestHelper helper, boolean held, Consumer<Watched> verdict) {
 
-        AgentMob agent = Mechanics.agent(helper, new BlockPos(4, 2, 4), 0.0F, 0.0F);
-
         // Due north of the agent, off to the north east, and due east: three blocks, three and a sixth, and four and a
         // quarter. The nearest is the one straight ahead, so a fighter reading the nearest slot alone faces north.
-        BlockPos[] where = {new BlockPos(4, 2, 7), new BlockPos(7, 2, 5), new BlockPos(7, 2, 7)};
+        fightAPack(helper, held, EntityType.ZOMBIE,
+                new BlockPos[] {new BlockPos(4, 2, 7), new BlockPos(7, 2, 5), new BlockPos(7, 2, 7)}, verdict);
+    }
+
+    /**
+     * The same fight against whatever is named, standing wherever it is put. The three zombies above are one arrangement of
+     * it; a pair of vindicators with one of them well clear is another, and that one is about which shape a blow is thrown
+     * in rather than about the footwork.
+     */
+    private static void fightAPack(GameTestHelper helper, boolean held, EntityType<? extends Mob> type, BlockPos[] where,
+            Consumer<Watched> verdict) {
+
+        AgentMob agent = Mechanics.agent(helper, new BlockPos(4, 2, 4), 0.0F, 0.0F);
+
         List<Mob> pack = new ArrayList<>(where.length);
 
         for (BlockPos feet : where) {
 
-            pack.add(held ? helper.spawnWithNoFreeWill(EntityType.ZOMBIE, feet) : helper.spawn(EntityType.ZOMBIE, feet));
+            pack.add(held ? helper.spawnWithNoFreeWill(type, feet) : helper.spawn(type, feet));
         }
 
         agent.startEpisode(new Episode(Mechanics.FIGHT_TICKS, Mechanics.bounds(helper), List.copyOf(pack)));
@@ -477,17 +590,15 @@ public class AgentTeacherGameTest {
 
             if (tick == PACK_TICKS || !agent.isAlive()) {
 
-                helper.assertTrue(agent.isAlive(),
-                        "The teacher died to three zombies on tick " + tick + ", having landed " + watched.landed);
-
                 // Said out loud, because every threshold above is measured off this line with the rule on and off, and a
                 // threshold whose measurement cannot be repeated is a threshold nobody can move.
                 Constants.LOG.info(String.format(Locale.ROOT,
-                        "A %s pack of three: %d ticks, %.2f of them in front on an average tick, two inside %.1f blocks on "
-                                + "%s, the nearest %.2f blocks off, from the middle of them %.2f to %.2f, %d swings, %d landed",
-                        held ? "held" : "walking", watched.ticks, watched.inFront(), ON_TOP,
+                        "A %s pack of %d: %d ticks, %.2f of them in front on an average tick, two inside %.1f blocks on "
+                                + "%s, the nearest %.2f blocks off, from the middle of them %.2f to %.2f, %d swings, "
+                                + "%d landed at %.2f blocks, %d of them knocking back, %d blows taken",
+                        held ? "held" : "walking", pack.size(), watched.ticks, watched.inFront(), ON_TOP,
                         percent(watched.share(watched.twoOnTop)), watched.standoff(), watched.opened, watched.ended,
-                        watched.swings, watched.landed));
+                        watched.swings, watched.landed, watched.blowAt(), watched.knocked, watched.taken));
 
                 verdict.accept(watched);
                 return true;
@@ -528,7 +639,33 @@ public class AgentTeacherGameTest {
         private int swings;
         private int landed;
 
+        /** How far off each blow landed, added up, which is the whole of what holding the edge of the reach means. */
+        private double landedAtSum;
+
+        /** Blows that carried the sprint knockback, which in a pack is the opener a clear second body buys. */
+        private int knocked;
+
+        /**
+         * The same blows split by where the second nearest body actually stood when each landed, which is what the rule
+         * turns on and what the arrangement of a test cannot promise on its own: both bodies are held where they are put,
+         * but the agent walks, so which of them is second and how far off it is are things that change during the fight.
+         *
+         * <p>The band between the two leaves a blow's worth of movement out of both: the brain decides on the tick before
+         * the blow lands and nothing in the league covers half a block in a tick.
+         */
+        private int knockedWithSecondInReach;
+        private int knockedWithSecondClear;
+
+        /** Blows taken, seen as health that went down, and the health the tick before, which is how they are seen. */
+        private int taken;
+        private float health;
+
+        /** Whether the pack put the agent down, which the arrangements that claim survival ask about themselves. */
+        private boolean died;
+
         private void tick(AgentMob agent, List<Mob> pack) {
+
+            this.died |= !agent.isAlive();
 
             int alive = 0;
             int inFront = 0;
@@ -556,6 +693,23 @@ public class AgentTeacherGameTest {
 
             this.swings += agent.executed().attacked ? 1 : 0;
             this.landed += agent.executed().attackHit ? 1 : 0;
+            this.knocked += agent.executed().attackSprintKnockback ? 1 : 0;
+
+            if (agent.executed().attackSprintKnockback) {
+
+                double second = secondNearest(agent, pack);
+
+                this.knockedWithSecondInReach += second <= SECOND_IN_REACH ? 1 : 0;
+                this.knockedWithSecondClear += second >= SECOND_CLEAR ? 1 : 0;
+            }
+
+            if (agent.executed().attackHit && agent.getLastHurtMob() != null) {
+
+                this.landedAtSum += agent.distanceTo(agent.getLastHurtMob());
+            }
+
+            this.taken += this.health > 0.0F && agent.getHealth() < this.health ? 1 : 0;
+            this.health = agent.getHealth();
 
             if (alive == 0) {
 
@@ -582,10 +736,46 @@ public class AgentTeacherGameTest {
             return of / (double) Math.max(1, this.ticks);
         }
 
+        /** How far off the second nearest body still standing is, or a number past anything the rule looks at. */
+        private static double secondNearest(AgentMob agent, List<Mob> pack) {
+
+            double nearest = Double.MAX_VALUE;
+            double second = Double.MAX_VALUE;
+
+            for (Mob mob : pack) {
+
+                if (!mob.isAlive()) {
+
+                    continue;
+                }
+
+                double away = agent.distanceTo(mob);
+
+                if (away < nearest) {
+
+                    second = nearest;
+                    nearest = away;
+                }
+
+                else if (away < second) {
+
+                    second = away;
+                }
+            }
+
+            return second;
+        }
+
         /** How far the nearest of the pack was on an average tick, which is the whole of what a standoff is. */
         private double standoff() {
 
             return this.nearestSum / Math.max(1, this.ticks);
+        }
+
+        /** How far off its blows landed on average: the edge of its own reach, or the middle of the pack. */
+        private double blowAt() {
+
+            return this.landedAtSum / Math.max(1, this.landed);
         }
     }
 }
