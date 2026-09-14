@@ -17,11 +17,13 @@ import net.sievert.modularmobai.brain.schema.AgentObservation;
 import net.sievert.modularmobai.brain.schema.ObservationSchema;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 import net.sievert.modularmobai.gametest.GameTestGroup;
+import net.sievert.modularmobai.gametest.league.Bystanders;
 import net.sievert.modularmobai.gametest.league.Loadouts;
 
 /**
- * What the agent sees of all of it: how far its own use has charged, which of the arrows in the air take an enemy slot, the
- * clock and the arrows left, and what a slot says about the mob in it.
+ * What the agent sees of all of it: how far its own use has charged, which of the arrows in the air take an enemy slot, how
+ * many of the bodies in the view are actually in the fight, the clock and the arrows left, and what a slot says about the mob
+ * in it.
  *
  * <p>Four of these readings are held against the same numbers the critic's privileged facts carry, field by field
  * ({@code FightFacts}). They are worked out from different calls on purpose, so the test is that the two agree where they
@@ -127,6 +129,10 @@ public class AgentPerceptionGameTest {
         AgentMob agent = Mechanics.agent(helper, new BlockPos(4, 2, 2), 0.0F, 0.0F);
         Mob shooter = helper.spawnWithNoFreeWill(EntityType.SKELETON, new BlockPos(4, 2, 6));
 
+        // Coming for the agent, so that the count below is a claim about the arrows rather than about the skeleton: only
+        // what is in the fight is counted, and a skeleton standing about would read nought with or without its arrows.
+        shooter.setTarget(agent);
+
         // Bounded, so the arenas either side of this one are not in the agent's view; see AgentVindicatorGameTest.
         agent.startEpisode(new Episode(Mechanics.FIGHT_TICKS, Mechanics.bounds(helper), shooter));
         Loadout.BOW.equip(agent);
@@ -134,6 +140,8 @@ public class AgentPerceptionGameTest {
         Arrow[] arrows = new Arrow[4];
 
         Mechanics.run(helper, tick -> {
+
+            shooter.setTarget(agent);
 
             if (tick == 2) {
 
@@ -166,7 +174,8 @@ public class AgentPerceptionGameTest {
                             "An arrow that was crossing, still or the agent's own took slot " + Mechanics.slotOf(agent, arrows[other]));
                 }
 
-                helper.assertValueEqual(agent.brain().enemySlots().inRangeCount(), 1, "bodies in range");
+                helper.assertValueEqual(agent.brain().enemySlots().inRangeCount(), 1,
+                        "bodies in the fight, with an arrow of its own in a slot beside the skeleton");
 
                 float[] observation = new float[ObservationSchema.OBS_DIM];
                 AgentObservation.write(agent, agent.brain().enemySlots(), observation, 0);
@@ -184,6 +193,83 @@ public class AgentPerceptionGameTest {
 
                 helper.assertTrue(observation[mob + ObservationSchema.ENEMY_KIND] == AgentObservation.KIND_MONSTER,
                         "The skeleton stopped reading as a monster");
+                return true;
+            }
+
+            return false;
+        });
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // How many of them are in the fight
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * {@code SELF_ENEMIES_IN_RANGE} counts the bodies that are <b>in the fight</b> and not the bodies in the view. One zombie
+     * coming for the agent and two standing beside it reads 0.1, not 0.3, with all three holding slots; the moment one of the
+     * two is struck and fights back it reads 0.2.
+     *
+     * <p>This is the field's half of the same change the attention over the slots is the other half of, and it is pinned here
+     * rather than left to the crowd suite because it is a rule and not a measurement. The field used to count everything the
+     * agent was aware of, which every fight a network ever trained on agreed with — in a plain, squad or self-play fight every
+     * body in the view is engaged — and which a crowd of idle monsters broke: nine bystanders read 1.0 against a training mean
+     * of 0.11 and a spread of 0.11, so a trained network was handed, on the tick it most needed its wits, a number it had only
+     * ever seen while it was dying. Counting the fight leaves every training distribution exactly where it was and makes an
+     * idle crowd read what it is worth, which is nothing.
+     *
+     * <p>Struck, a bystander is a body in the fight in fact, whatever the results call it, and the count says so on the tick
+     * its own mind does; that half is what stops "in the fight" quietly meaning "on the other team".
+     */
+    @GameTest(template = Mechanics.ARENA, timeoutTicks = 120)
+    public static void onlyTheBodiesInTheFightAreCounted(GameTestHelper helper) {
+
+        AgentMob agent = Mechanics.agent(helper, new BlockPos(4, 2, 1), 0.0F, 0.0F);
+
+        // Three blocks in front, and coming: a league opponent is handed the agent on every tick of its fight, and so is this.
+        Mob opponent = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new BlockPos(4, 2, 4));
+
+        // Two with all their own free will, four and a half blocks off — inside the hearing radius, so nothing here turns on
+        // where the agent is looking — and unprovoked every tick, exactly as a league crowd is kept.
+        Mob left = helper.spawn(EntityType.ZOMBIE, new BlockPos(2, 2, 5));
+        Mob right = helper.spawn(EntityType.ZOMBIE, new BlockPos(6, 2, 5));
+
+        boolean[] hit = {false};
+
+        Mechanics.run(helper, tick -> {
+
+            Bystanders.leaveAlone(left, agent);
+            Bystanders.leaveAlone(right, agent);
+            opponent.setTarget(agent);
+
+            // Ten ticks in, so everyone has finished the block they fall when they are put a block above the floor.
+            if (tick < 10) {
+
+                return false;
+            }
+
+            float counted = Mechanics.selfField(agent, ObservationSchema.SELF_ENEMIES_IN_RANGE);
+
+            if (!hit[0]) {
+
+                // All three in the view, which is what makes the reading mean anything: without this the test could pass on a
+                // crowd the agent had simply lost track of.
+                helper.assertTrue(Mechanics.slotOf(agent, opponent) >= 0, "The zombie fighting the agent holds no slot");
+                helper.assertTrue(Mechanics.slotOf(agent, left) >= 0, "A bystander four blocks off holds no slot");
+                helper.assertTrue(Mechanics.slotOf(agent, right) >= 0, "A bystander four blocks off holds no slot");
+
+                helper.assertValueEqual(counted, 0.1F, "how many are in the fight, with two bystanders in the view");
+            }
+
+            if (tick == 40) {
+
+                hit[0] = left.hurt(helper.getLevel().damageSources().mobAttack(agent), 2.0F);
+                helper.assertTrue(hit[0], "The bystander took no damage from the agent");
+            }
+
+            if (tick == 60) {
+
+                helper.assertTrue(left.getTarget() == agent, "A struck bystander is still being kept off the agent");
+                helper.assertValueEqual(counted, 0.2F, "how many are in the fight once a bystander has come for the agent");
                 return true;
             }
 

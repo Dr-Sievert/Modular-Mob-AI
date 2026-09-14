@@ -433,11 +433,12 @@ public final class AgentCommands {
                         .append(String.format(Locale.ROOT, ", health %.1f", agent.getHealth()));
 
                 // What it cost this agent to perceive on its last tick, which is the number to look at when a world with a
-                // thousand mobs in it starts to feel slow: how many bodies it is aware of, how many clips through the world it
-                // asked for, and how long the whole of it took. See EnemySlots.
+                // thousand mobs in it starts to feel slow: how many clips through the world it asked for and how long the
+                // whole of it took. Beside them, how many bodies are in its fight — coming for it or on a side against it,
+                // which is what the observation counts and so not the same as how many it can see. See EnemySlots.
                 EnemySlots view = agent.brain().enemySlots();
 
-                line.append(String.format(Locale.ROOT, ", sees %d, %d clips in %.0f us", view.inRangeCount(),
+                line.append(String.format(Locale.ROOT, ", %d in the fight, %d clips in %.0f us", view.inRangeCount(),
                         view.lastClips(), view.lastMicros()));
             }
 

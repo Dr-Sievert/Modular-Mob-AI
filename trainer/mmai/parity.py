@@ -26,7 +26,7 @@ MAGIC = b"MBP1"
 
 
 def generate(directory: str | Path, schema: Schema, h1: int, hidden: int, h3: int, obs_clip: float = 10.0,
-             count: int = 67, seed: int = 12345, slot_enc: int = 0) -> Path:
+             count: int = 67, seed: int = 12345, slot_heads: int = 0) -> Path:
     """Writes ``weights.mbw`` and ``fixture.bin`` into the directory, and returns it."""
 
     directory = Path(directory)
@@ -35,7 +35,7 @@ def generate(directory: str | Path, schema: Schema, h1: int, hidden: int, h3: in
     torch.manual_seed(seed)
     generator = np.random.default_rng(seed)
 
-    actor = Actor.for_schema(schema, h1, hidden, h3, obs_clip, slot_enc)
+    actor = Actor.for_schema(schema, h1, hidden, h3, obs_clip, slot_heads)
     heads = PolicyHeads(schema.heads)
 
     with torch.no_grad():
@@ -46,6 +46,14 @@ def generate(directory: str | Path, schema: Schema, h1: int, hidden: int, h3: in
         actor.norm_mean.copy_(torch.randn(schema.obs_dim) * 0.2)
         actor.norm_std.copy_(torch.rand(schema.obs_dim) * 0.8 + 0.6)
         actor.log_std.copy_(torch.randn(schema.std_dim) * 0.3 - 0.7)
+
+        # Scores worth checking: spread wide enough that the heads disagree about which slot to read, and an empty token
+        # that wins on some rows and loses on others, so the fixture exercises the token, the exclusion and the tie rule
+        # rather than one head reading slot 0 on every row.
+        if actor.topology.attended():
+            actor.attention.score_w.copy_(torch.randn(actor.attention.score_w.shape) * 0.8)
+            actor.attention.score_b.copy_(torch.randn(actor.attention.score_b.shape) * 0.5)
+            actor.attention.score_empty.copy_(torch.randn(actor.attention.score_empty.shape) * 0.5)
 
     actor.eval()
 

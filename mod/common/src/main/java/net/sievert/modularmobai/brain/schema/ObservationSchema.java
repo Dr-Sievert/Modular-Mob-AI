@@ -228,11 +228,18 @@ public final class ObservationSchema {
     public static final int SELF_HURT_TIME = 18;
 
     /**
-     * How many enemies the agent is aware of: everything it perceived this tick, whether it won a slot or not, and everything
-     * it is still remembering, over {@link #ENEMY_SLOTS}. See {@code EnemySlots#inRangeCount}. How something comes to be
-     * perceived is three rules and not one — in the cone and in sight, within hearing, or having just hit the agent — which is
-     * what took this from 1.5 on a real night, counting the monsters through the wall and in the caves below, to a number about
-     * what is actually on the agent.
+     * How many bodies are <b>in the fight</b>: of everything the agent perceived this tick, whether it won a slot or not, and
+     * everything it is still remembering, the ones coming for it or on a team set against it, over {@link #ENEMY_SLOTS}. See
+     * {@code EnemySlots#inRangeCount} and {@code EnemySlots#engaged}. How something comes to be perceived is three rules and
+     * not one — in the cone and in sight, within hearing, or having just hit the agent — which is what took this from 1.5 on a
+     * real night, counting the monsters through the wall and in the caves below, to a number about what is actually on the
+     * agent.
+     *
+     * <p><b>An idle bystander counts nought</b>, and that is the same fix as the attention over the slots. Every plain, squad
+     * and self-play fight had every body in the view engaged, so on the fights every network learned from this field reads what
+     * it always read and blast7's weights for it stay valid; what it no longer does is read 1.0 in a crowd of nine idle
+     * monsters, seven standard deviations off a training mean of 0.11, and hand a trained network a number it has only ever
+     * seen when it was about to die.
      *
      * <p><b>Clamped at {@link #ENEMIES_IN_RANGE_CLAMP}.</b> The agent is meant for worlds with thousands of mobs in them, where
      * an unclamped count would hand this field a two hundred and put every weight reading it into a range no training fight
@@ -244,9 +251,10 @@ public final class ObservationSchema {
      * <p>There is deliberately no second count of <i>the side</i> beside it. The critic gets one ({@code FightFacts#FOES}),
      * and the difference between the two is exactly the part a real game cannot supply: the side is the arena's roster,
      * known whether anything is perceived or not, so an opponent that walks behind a hill lowers this and not that. Counted
-     * instead over the radius the agent actually perceives, a count of the side is this number again, because the rule for
-     * who is an enemy is already the one rule ({@code Allegiance#isEnemy}) in both. So nothing was added: a field that
-     * duplicates its neighbour costs a network weights and teaches it nothing.
+     * instead over the radius the agent actually perceives, a count of the side is this number again — more nearly so since
+     * this one counts the engaged, and a fight's side is engaged to a body — because who is an enemy and who is in the fight
+     * are each already one rule ({@code Allegiance#isEnemy}, {@code EnemySlots#engaged}) asked in both. So nothing was added:
+     * a field that duplicates its neighbour costs a network weights and teaches it nothing.
      */
     public static final int SELF_ENEMIES_IN_RANGE = 19;
 

@@ -301,10 +301,19 @@ public final class EnemySlots {
 
         this.see(owner);
 
-        // What the agent is aware of: everything perceived this tick, including the ones no slot was left for, and the bodies
-        // it is still remembering. This is what SELF_ENEMIES_IN_RANGE reads, and it agrees with the slots by construction — a
-        // count that said nothing about a body the view is still describing would be two answers to one question.
-        this.awareCount = this.bodies.size();
+        // How many are in this fight: everything perceived this tick that is {@link #engaged}, the ones no slot was left for
+        // included, and further down the bodies still being remembered. This is what SELF_ENEMIES_IN_RANGE reads. One call of
+        // engaged per body, against the log of them the sort below already pays, and it is the same reading the order uses so
+        // the count and the slots cannot come to different answers about who is fighting.
+        this.awareCount = 0;
+
+        for (LivingEntity body : this.bodies) {
+
+            if (engaged(owner, body)) {
+
+                this.awareCount++;
+            }
+        }
 
         // Whose view the order is ranking, for the rest of this call: the sort below and the eviction further down both read
         // it, and both have to rank by the same rule or eviction would undo what the sort decided.
@@ -530,8 +539,9 @@ public final class EnemySlots {
 
     /**
      * Whether that body is in this fight rather than merely in the view: it has come for the agent, or it is on a team set
-     * against the agent's. This is what decides which slot it gets, see the class comment, and both halves are read off
-     * {@link Allegiance} so that the order and the slot's own {@code ENEMY_TARGETS_ME} cannot come to different answers.
+     * against the agent's. This is what decides which slot it gets, see the class comment, and it is also the whole of what
+     * {@link #inRangeCount} counts; both halves are read off {@link Allegiance} so that the order, the count and the slot's
+     * own {@code ENEMY_TARGETS_ME} cannot come to different answers.
      *
      * <p>The team half is not redundant. A squad member whose path is blocked, or one whose own mind has just let the agent
      * go for a tick, still belongs to the side the fight is against; and an agent opponent holds no target at all, which is
@@ -679,7 +689,9 @@ public final class EnemySlots {
                 this.release(slot);
             }
 
-            else {
+            // A body the agent is remembering counts in the fight if it is still in the fight, asked of the body now rather
+            // than of the memory: what is remembered is where it was, never whose side it is on.
+            else if (occupant instanceof LivingEntity remembered && engaged(owner, remembered)) {
 
                 this.awareCount++;
             }
@@ -853,9 +865,18 @@ public final class EnemySlots {
     }
 
     /**
-     * How many enemies the agent is aware of: everything it perceived this tick, the ones no slot was left for included, and
-     * every body it is still remembering. Arrows are not counted — a count that grew with every shot in the air would tell a
-     * network trained on it that it was outnumbered whenever a skeleton opened fire.
+     * How many bodies are <b>in this fight</b>: of everything the agent perceived this tick, the ones no slot was left for
+     * included, and every body it is still remembering, the ones that are {@link #engaged} — coming for the agent, or on a
+     * team set against it. An idle bystander counts nought however close it stands.
+     *
+     * <p>It used to count everything the agent was aware of, and that was the same fault as the slots by another door. In
+     * every plain, squad and self-play fight every body in the view was engaged, so on the fights every network learned from
+     * this reads exactly what it always did — the field's own distribution is untouched and the weights that read it stay
+     * valid. What changes is the case none of those fights had: a crowd of idle monsters used to push the field seven
+     * standard deviations out of anything training had ever shown it, nine bystanders reading 1.0 against a mean of 0.11.
+     *
+     * <p>Arrows are not counted either — a count that grew with every shot in the air would tell a network that it was
+     * outnumbered whenever a skeleton opened fire.
      */
     public int inRangeCount() {
 

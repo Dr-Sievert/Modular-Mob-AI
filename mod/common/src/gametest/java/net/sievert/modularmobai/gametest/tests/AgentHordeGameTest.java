@@ -88,8 +88,9 @@ public class AgentHordeGameTest {
      * measure this rather than a shortcut: what is being timed is the <b>agent's</b> perception, which does not care whether a
      * body it is looking at is thinking, and two thousand pathfinding zombies would time the server's own tick instead.
      *
-     * <p>Asserted: the clips never go over the ceiling on any tick, and the mean time to perceive stays well under half a
-     * millisecond. Both numbers are printed either way.
+     * <p>Asserted: the clips never go over the ceiling on any tick, the mean time to perceive stays well under half a
+     * millisecond, and — since not one of the two thousand is coming for this agent — the count of what is in the fight reads
+     * nought throughout, with the slots full the whole time. Both numbers are printed either way.
      */
     @GameTest(template = ARENA, timeoutTicks = 4000)
     public static void theCostOfPerceivingDoesNotGrowWithTheHorde(GameTestHelper helper) {
@@ -152,10 +153,12 @@ public class AgentHordeGameTest {
                     + "average, where %.0f is the ceiling: something is doing per-mob work it should not be",
                     horde.size(), mean, CEILING_MICROS));
 
-            // And the clamp doing its job: the count of what the agent is aware of is well over the ten slots here, and the
-            // field the network reads is held at two. Twenty bodies, where a league fight's worst crowd is twelve.
-            helper.assertTrue(mostAware[0] > ObservationSchema.ENEMY_SLOTS, "Only " + mostAware[0] + " bodies were ever "
-                    + "perceived at once, so the clamp is not being exercised");
+            // And the invariance, at the largest size anything here fields: not one of two thousand bodies is coming for this
+            // agent or on a side against it, so the field that says how outnumbered it is reads nought on every tick of it.
+            // The slots are full the whole time — that is what the clips above are measuring — which is exactly the point: an
+            // idle crowd fills the view and is worth nothing to the count. The clamp is exercised by the sided hordes below.
+            helper.assertValueEqual(mostAware[0], 0, "bodies ever counted in the fight, of " + horde.size()
+                    + " standing about that are in none");
 
             discard(horde);
             agent.discard();
@@ -279,6 +282,7 @@ public class AgentHordeGameTest {
 
         private int ticks;
         private int mostClips;
+        private int mostAware;
         private double totalMicros;
         private int churn;
         private int presses;
@@ -319,6 +323,7 @@ public class AgentHordeGameTest {
 
             this.ticks++;
             this.mostClips = Math.max(this.mostClips, view.lastClips());
+            this.mostAware = Math.max(this.mostAware, view.inRangeCount());
             this.totalMicros += view.lastMicros();
             this.presses += this.agent.executed().attacked ? 1 : 0;
             this.blows += this.agent.executed().attacked && this.agent.executed().attackHit ? 1 : 0;
@@ -382,6 +387,17 @@ public class AgentHordeGameTest {
 
                 this.helper.assertTrue(this.engagedTicks > 0, "Not one of " + this.horde.size() + " mobs on the other side was "
                         + "ever in the agent's view, so nothing here was a fight");
+
+                // And where the horde is big enough to be certain of it, the count of what is in the fight goes past the ten
+                // slots, which is what the clamp on that field is for. Asked from a hundred up: at twenty the horde stands on
+                // one ring and how many of it crowds in at once is the horde's business, and a gate on that would fail for
+                // nothing a fortnight from now.
+                if (this.horde.size() >= 100) {
+
+                    this.helper.assertTrue(this.mostAware > ObservationSchema.ENEMY_SLOTS, "Only " + this.mostAware
+                            + " of " + this.horde.size() + " mobs on the other side were ever counted in the fight at once, "
+                            + "so the clamp on that field is not being exercised");
+                }
             }
 
             this.helper.assertValueEqual(this.slotZeroWrong, 0, "ticks where a body not in the fight held slot 0 while one "

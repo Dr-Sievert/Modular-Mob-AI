@@ -199,14 +199,15 @@ if ($Seed) {
     # seeded from a wider copy without it got as far as loading the state and then threw a wall of shape mismatches. Given
     # here, it can still be overridden by naming a width in -Extra, which is checked for below.
     #
-    # The slot encoder is part of the shape and not a setting, which is the same lesson a second time: a pooled state read
-    # into an unpooled network is the same wall of mismatches, since pooling is what decides the first layer's width.
+    # The attention heads over the enemy slots are part of the shape and not a setting, which is the same lesson a second
+    # time: an attended state read into a plain network is the same wall of mismatches, since how many heads there are is
+    # what decides the first layer's width.
     #
     # And it is read on every start, not only the first, from whichever state is about to be loaded -- the run's own once it
     # has one. A seeded run resuming without this builds the default network around a state of another shape, which is the
     # third time the same lesson would have cost a run.
     $ErrorActionPreference = 'Continue'
-    $read = & $Python -c "import sys, torch; s = torch.load(sys.argv[1], map_location='cpu', weights_only=False); c = s.get('config') or {}; print(s['iteration'], c.get('h1', 0), c.get('hidden', 0), c.get('h3', 0), c.get('slot_enc', 0))" $shapeFrom 2>$null
+    $read = & $Python -c "import sys, torch; s = torch.load(sys.argv[1], map_location='cpu', weights_only=False); c = s.get('config') or {}; print(s['iteration'], c.get('h1', 0), c.get('hidden', 0), c.get('h3', 0), c.get('slot_heads', 0))" $shapeFrom 2>$null
     $ErrorActionPreference = 'Stop'
 
     $fields = "$read".Trim() -split '\s+'
@@ -219,7 +220,7 @@ if ($Seed) {
     $iteration = [int] $fields[0]
     $widths = ''
 
-    foreach ($width in @(@('--h1', $fields[1]), @('--hidden', $fields[2]), @('--h3', $fields[3]), @('--slot-enc', $fields[4]))) {
+    foreach ($width in @(@('--h1', $fields[1]), @('--hidden', $fields[2]), @('--h3', $fields[3]), @('--slot-heads', $fields[4]))) {
 
         if ([int] $width[1] -gt 0 -and $Extra -notmatch [Regex]::Escape($width[0])) {
 

@@ -95,7 +95,10 @@ public class AgentEnemyOrderGameTest {
                 return false;
             }
 
-            helper.assertValueEqual(view.inRangeCount(), 1 + idle.size(), "bodies in sight");
+            // One of the four in the view is in this fight, and that is the whole of what the count says now: the crowd
+            // takes slots and adds nothing to the number the network reads off its own block.
+            helper.assertValueEqual(view.inRangeCount(), 1,
+                    "bodies in the fight, with " + idle.size() + " idle ones in the view");
 
             helper.assertTrue(Allegiance.goesFor(opponent, agent), "The opponent is not being counted as coming for the agent");
             helper.assertValueEqual(slotOf(view, opponent), 0, "the slot the one fighting the agent holds");
@@ -226,7 +229,8 @@ public class AgentEnemyOrderGameTest {
             // this the test could pass on a slot that was free all along.
             if (tick == 10) {
 
-                helper.assertValueEqual(view(agent).inRangeCount(), idle.size() + 1, "bodies in sight");
+                helper.assertValueEqual(view(agent).inRangeCount(), 0,
+                        "bodies in the fight while every slot is held by a body that is in none");
 
                 for (Mob standing : idle) {
 
@@ -304,7 +308,8 @@ public class AgentEnemyOrderGameTest {
             // Nobody is in this fight yet, so the slots are the distances: the one that will engage is last of the five.
             if (tick == 10) {
 
-                helper.assertValueEqual(view.inRangeCount(), idle.size() + 1, "bodies in sight");
+                helper.assertValueEqual(view.inRangeCount(), 0,
+                        "bodies in the fight while nobody in the crowd is fighting");
 
                 held[0] = slotOf(view, engages);
 

@@ -320,7 +320,7 @@ why a new knob in the trainer needs no change here at all.
 | `--aux-horizon` | 32 | ticks ahead that "the fight ends soon" looks |
 | `--seq-len` | 32 | ticks of GRU unrolled per training chunk |
 | `--h1 --hidden --h3` | 256, 128, 128 | network widths; only for a new run, and the game needs no change |
-| `--slot-enc` | 0 | width of one shared encoder over the ten enemy slots, or 0 for a first layer that takes every slot's numbers on its own. Ten slots of the same shape, learned once instead of ten times, which was the difference between beating one skeleton 84% of the time and two of them 9%. It is part of the network's shape and not a setting: a state trained with it cannot be read into a network without it, which is why `-Seed` reads it out of the state it is seeding from |
+| `--slot-heads` | 0 | how many heads read the ten enemy slots, or 0 for a first layer that takes every slot's numbers where they sit. Each head picks one occupied slot out by a learned score and hands the first layer that slot, with the slot it chose taken away from the heads after it, so what the layer sees does not depend on which slot a body is in or on how many idle bodies stand about — which is worth 22 degrees of aim a tick per bystander, see [`train.py attend`](#trainpy-attend-carry-a-plain-run-into-attention-over-the-slots). It is part of the network's shape and not a setting: a state trained with heads cannot be read into a network without them, which is why `-Seed` reads the count out of the state it is seeding from. A run already training is converted rather than reconfigured |
 | `--scale-rewards` | true | divide rewards by the running spread of the return, so the value loss is the same size whatever the reward is measured in |
 | `--skip-limit` | 3 | updates in a row that may go non-finite before the run stops. One such update is abandoned whole — every parameter and every one of Adam's moments back where it was, the iteration reported as `NOT LEARNED FROM`, the same weights out again under the next number — and the run carries on; three in a row stops it **without writing a state**, so the last good one stays on disk. Rows that are not finite are dropped before any of that, with a line naming the field they came from. See [findings.md](findings.md) for the breeze that made this necessary |
 | `--eval-fights` | 500 | fights per judged checkpoint (2,000 tells 99.6% from 99.9%) |
@@ -577,6 +577,51 @@ owner's second report, "he still gets massively overwhelmed". It is filled by `g
   is in the fight, so the fight ends sooner or the agent does. What it also moves is a checkpoint's evaluated win rate, and
   deliberately: a network that cannot fight a pack should not be a run's best weights. That number is therefore not comparable
   with a run from before this.
+
+### `train.py attend`: carry a plain run into attention over the slots
+
+A network that reads its ten enemy slots where they sit cannot be trained out of doing so. In every one-on-one fight the
+opponent is in slot 0 and slots 1..9 are all zeros, so the first layer's columns for the late slots never receive a gradient
+worth the name and their normaliser statistics sit on the floor — and then the first idle bystander to stand in slot 5
+arrives as inputs of magnitude 5 to 10 against weights still near their initialisation. Measured on blast7 over 60 real
+one-on-one segments: **one** idle body written into slot 1 moved its deterministic aim by 22 degrees of yaw and 13 of pitch
+a tick, the attack logit by 2.4, and flipped the chosen hotbar slot on 32% of ticks; nine of them, 12 / 16 degrees and 3.0.
+The first layer's pre-activation shift from that one idle zombie was 1.0 in slot 0, the real signal, and 8.3 in slot 8.
+
+`--slot-heads K` is the answer, and this is how a run that has already learned to fight gets it without starting again:
+
+```
+python train.py attend --from runs\blast7 --into runs\blast8 --heads 3      from trainer\, with its .venv
+scripts\train.ps1 -Run blast8 -Suite league -Seed blast8                    then carry on training it
+```
+
+`--from` reads that run's `state.pt` and `schema.json` and touches nothing; `--into` is written whole — `state.pt`,
+`schema.json` and the weight file for the iteration it converted, which is the one the workers are handed. `-Seed <itself>`
+is what makes `train.ps1` read the widths **and the head count** out of the state it is about to load, exactly as it always
+read them: the shape is a property of the weights and not a setting, and a run resuming without it builds the default
+network around a state of another shape and dies on the load.
+
+**Where the old network's slot k held what head k now reads, the conversion is exact.** Head k keeps slot k's columns,
+rescaled per column to the statistics the attended network normalises every slot with, and the first layer's bias folds in
+what the old one always received from its empty slots and takes back out what the new heads receive from the empty token.
+Measured on blast7's own weights over 60 real one-on-one segments: **7.6e-05** at most in the logits one-on-one, and
+**5.7e-04** with nine idle bodies written into slots 1..9 — where blast7 itself moves by **36.7** on those very rows. Two
+engaged bodies at once is the one case that is not exact and cannot be: each head's softmax leaves a little of the other
+body in, and the old network read the second one through columns it had never trained and a spread on the floor. Everything
+behind the first layer — both GRUs, fc2, the output, the value head — keeps its weights and Adam's moments; the layers whose
+columns moved start their moments again.
+
+**The starting scores** rank a slot engaged first, then nearest, then bodies before shots, and the empty token sits between
+"engaged" and "idle" for every head after the first, so such a head reads another body only if that body is in the fight
+too. They are written in raw field units and converted into the normalised space the network reads slots in, so they go on
+meaning what they say as the statistics move. They are a starting point: the scores are learned from there like anything
+else.
+
+**The normaliser's statistics for the slots are tied** from the conversion on: one set of `stride` means and spreads shared
+by all ten slots, taken over **occupied** slots only, and written into every slot's entries of the weight file, so nothing
+about the file or the game's normalise step changes. Per slot they are useless to an attended network, which reads a slot
+for what is in it rather than for where it sits; the tied ones are the statistics of a body. A run that carries on plain
+keeps the untied statistics it has always had.
 
 ### `scripts\compare.ps1`: seeded from a copy and from nothing, side by side
 

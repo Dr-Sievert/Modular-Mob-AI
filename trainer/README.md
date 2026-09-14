@@ -79,7 +79,7 @@ two sides disagree about the network, which makes every ratio in the update wron
 
 | File | Holds |
 | --- | --- |
-| `train.py` | Entry point: `loop`, `init`, `parity`. |
+| `train.py` | Entry point: `loop`, `init`, `imitate`, `attend`, `parity`. |
 | `mmai/schema.py` | The observation and action layout, parsed from what the game wrote. Nothing is hardcoded. |
 | `mmai/model.py` | The exported actor, the critic that never leaves this side, the normaliser and the reward scaler. |
 | `mmai/weights.py` | The `.mbw` weight file and the flat parameter layout both sides agree on. |
@@ -89,6 +89,7 @@ two sides disagree about the network, which makes every ratio in the update wron
 | `mmai/evaluate.py` | Evaluation of checkpoints, the best weights, and when a run is done. |
 | `mmai/league.py` | A league run's matchmaking, Elo ratings and tables; turned on by the build for `-Psuite=league`. |
 | `mmai/parity.py` | The fixture the game checks its own forward pass against. |
+| `mmai/attend.py` | Carrying a plain run's weights into attention over the enemy slots, exactly; `train.py attend`. |
 | `tests/` | Unit tests, `python -m unittest discover -s tests` from here, or `scripts\league.ps1 -Test`. |
 
 The file formats themselves are written down once, in [`../docs/architecture.md`](../docs/architecture.md#files).

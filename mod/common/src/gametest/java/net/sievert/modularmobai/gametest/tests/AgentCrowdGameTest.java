@@ -102,6 +102,10 @@ public class AgentCrowdGameTest {
      *
      * <p>Which two is worked out from where they actually are rather than from where they were put, so this says what it
      * means to say — the slots go by distance — instead of restating the arrangement.
+     *
+     * <p>None of the twelve is in a fight with anything, so the count the observation carries reads <b>nought</b> while all
+     * ten slots are full. The two are different questions and are meant to be: the slots describe what the agent can see,
+     * and {@code SELF_ENEMIES_IN_RANGE} says how many of them are actually on it.
      */
     @GameTest(template = ARENA, timeoutTicks = 100)
     public static void theNearestOfWhatIsInSightTakeTheSlots(GameTestHelper helper) {
@@ -124,7 +128,8 @@ public class AgentCrowdGameTest {
                 return false;
             }
 
-            helper.assertValueEqual(view.inRangeCount(), CROWD.length, "bodies in sight");
+            helper.assertValueEqual(view.inRangeCount(), 0,
+                    "bodies in the fight, of " + CROWD.length + " standing about that are in no fight at all");
 
             List<Mob> byDistance = new ArrayList<>(crowd);
             byDistance.sort(Comparator.comparingDouble(agent::distanceToSqr));
@@ -166,6 +171,12 @@ public class AgentCrowdGameTest {
         AgentMob agent = still(helper, new BlockPos(4, 2, 1));
         Mob standing = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new BlockPos(7, 2, 7));
 
+        // It comes for the agent, and that is what makes the count below say anything: a body the agent is aware of counts in
+        // SELF_ENEMIES_IN_RANGE only while it is in the fight, so a zombie standing about would read nought whether it were
+        // remembered or forgotten and the count would prove nothing about the memory. Handed back on every tick rather than
+        // once, the way the order tests do it, because a mob's mind is its own.
+        standing.setTarget(agent);
+
         EnemySlots view = agent.brain().enemySlots();
         int[] held = {-1};
         float[] seenForward = {0.0F};
@@ -173,12 +184,14 @@ public class AgentCrowdGameTest {
 
         run(helper, tick -> {
 
+            standing.setTarget(agent);
+
             if (tick == 5) {
 
                 held[0] = slotOf(view, standing);
 
                 helper.assertTrue(held[0] >= 0, "The zombie across an empty room took no slot");
-                helper.assertValueEqual(view.inRangeCount(), 1, "bodies the agent is aware of");
+                helper.assertValueEqual(view.inRangeCount(), 1, "bodies in the fight");
                 helper.assertFalse(view.remembering(held[0]), "A zombie in plain sight is being remembered rather than seen");
 
                 seenForward[0] = field(agent, held[0], ObservationSchema.ENEMY_FORWARD);
@@ -196,7 +209,7 @@ public class AgentCrowdGameTest {
                 // Still there, still counted, and still being read — from memory now, which is what the flag says.
                 helper.assertTrue(view.occupant(held[0]) == standing, "The zombie behind a wall lost its slot at once");
                 helper.assertTrue(view.remembering(held[0]), "A zombie behind a wall is being read as perceived");
-                helper.assertValueEqual(view.inRangeCount(), 1, "bodies the agent is aware of through a wall");
+                helper.assertValueEqual(view.inRangeCount(), 1, "bodies in the fight, remembered through a wall");
                 helper.assertValueEqual(present(agent, held[0]), 1.0F, "the present flag of a remembered slot");
                 helper.assertValueEqual(field(agent, held[0], ObservationSchema.ENEMY_FORWARD), seenForward[0],
                         "how far ahead the slot says the zombie is, a moment after the wall went up");
@@ -246,7 +259,7 @@ public class AgentCrowdGameTest {
 
                 helper.assertTrue(view.occupant(held[0]) == null, "The slot is still held for a zombie unperceived for "
                         + (ObservationSchema.MEMORY_TICKS + 20) + " ticks");
-                helper.assertValueEqual(view.inRangeCount(), 0, "bodies the agent is aware of once the memory is out");
+                helper.assertValueEqual(view.inRangeCount(), 0, "bodies in the fight once the memory is out");
                 helper.assertValueEqual(present(agent, held[0]), 0.0F, "the present flag once the memory is out");
                 return true;
             }
@@ -264,6 +277,10 @@ public class AgentCrowdGameTest {
      * paid for would turn a crowd into a reward for farming it; and one that took no slot would make the number in a crowded
      * fight's name a number about nothing. All three would be invisible in a run's results.
      *
+     * <p>What a bystander does <b>not</b> do is count: {@code SELF_ENEMIES_IN_RANGE} reads one here with three of them in the
+     * view, and two the moment one is struck and comes for the agent. A body in a slot is not by itself a fight, and the field
+     * that says how outnumbered the agent is has to agree with that or a crowd would tell a trained network it was dying.
+     *
      * <p>The last claim is the one that had to be built rather than assumed, and this is where it is held. Three plain zombies
      * on no team, with nothing having touched them, all take the agent as their target on tick seven at six blocks — vanilla
      * looks for players and an agent is none, so that should not happen and it does. So the crowd is unprovoked every tick,
@@ -275,6 +292,10 @@ public class AgentCrowdGameTest {
 
         AgentMob agent = still(helper, new BlockPos(4, 2, 1));
         Mob opponent = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new BlockPos(4, 2, 3));
+
+        // Coming for the agent, as a league opponent is on every tick of its fight: that is what the count below is counting,
+        // and what tells it apart from the three that are merely standing there.
+        opponent.setTarget(agent);
 
         agent.startEpisode(new Episode(FIGHT_TICKS, bounds(helper), List.of(opponent)));
 
@@ -298,6 +319,8 @@ public class AgentCrowdGameTest {
 
                 Bystanders.leaveAlone(standing, agent);
             }
+
+            opponent.setTarget(agent);
 
             if (tick < 5) {
 
@@ -326,7 +349,13 @@ public class AgentCrowdGameTest {
                 }
             }
 
-            helper.assertValueEqual(view.inRangeCount(), 1 + idle.size(), "bodies in sight");
+            // Four bodies in the view and one of them in the fight, which is the whole of what the count now says: the crowd
+            // fills the slots and adds nothing to the number the network reads off the self block.
+            if (!hit[0]) {
+
+                helper.assertValueEqual(view.inRangeCount(), 1,
+                        "bodies in the fight, with " + idle.size() + " bystanders standing in the view");
+            }
 
             // The opponent is still the opponent: a fight with bystanders in it is the fight it was.
             helper.assertTrue(agent.episode().pays(opponent), "The fight stopped paying for its own opponent");
@@ -343,6 +372,9 @@ public class AgentCrowdGameTest {
 
                 helper.assertTrue(struck.getLastHurtByMob() == agent, "The agent's blow did not land on the bystander");
                 helper.assertTrue(struck.getTarget() == agent, "A struck bystander is still being kept off the agent");
+
+                // And the count follows it in: a bystander that fights back is in the fight, whatever the results call it.
+                helper.assertValueEqual(view.inRangeCount(), 2, "bodies in the fight once a bystander has been struck");
                 return true;
             }
 
@@ -627,7 +659,9 @@ public class AgentCrowdGameTest {
             }
 
             helper.assertValueEqual(agent.episode().opponents().size(), PACK_SIZE, "how many the other side is");
-            helper.assertValueEqual(view.inRangeCount(), PACK_SIZE + 1, "bodies in sight");
+
+            // The pack, and not the body standing beside them: the count is of the fight and the slots are of the view.
+            helper.assertValueEqual(view.inRangeCount(), PACK_SIZE, "bodies in the fight, with one idle body in the view too");
 
             // The whole side in front of the body that is not fighting, however near that one stands: it is two blocks off and
             // the pack is five, so distance alone would have put it first.
