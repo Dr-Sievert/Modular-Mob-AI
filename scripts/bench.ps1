@@ -184,6 +184,12 @@ try {
         }
 
         $output = & "$PSScriptRoot\eval.ps1" @arguments 2>&1
+
+        # The whole of what the evaluation printed, kept beside the copies: the table of how it went against each opponent
+        # is the part a win rate cannot say, and a sitting whose only record was one number per fighter had to be run again.
+        $kept = Join-Path $scratch (($entry.name -replace '[^\w.-]', '_') + '.txt')
+        $output | ForEach-Object { "$_" } | Set-Content $kept -Encoding utf8
+
         $line = $output | Select-String '^\s+won\s+\d+' | Select-Object -First 1
 
         if (-not $line) {
@@ -199,7 +205,7 @@ try {
     }
 
     Write-Host ''
-    Write-Host "Best first, over $Arenas fights each:"
+    Write-Host "Best first, over $Arenas fights each (each fighter's whole table is kept under $scratch):"
 
     $results | Sort-Object Won -Descending | ForEach-Object { Write-Host ('  {0,-34} {1,6:N1}%' -f $_.Network, $_.Won) }
 
