@@ -72,14 +72,18 @@ import net.sievert.modularmobai.entity.agent.MobControls;
  * opponent never is. It is four rules and they are all the same rule:
  *
  * <ul>
- *   <li><b>Give ground instead of trading.</b> A body walking backwards covers 0.216 blocks a tick and a zombie covers
- *       0.154, so backing away keeps a pack in front of the agent and strings it out into the one-on-one fight it already
- *       wins. It backs away from the pack as <i>one direction</i> — the sum of the ways to each of them, weighted by how
- *       near each is — rather than from any one of them, strikes whichever arrives inside reach with the swing at full
- *       strength, and backs off again while it cools. See {@link #sizeUp} and {@link #giveGround}.</li>
+ *   <li><b>Give ground instead of trading, in a cycle.</b> A body walking backwards covers 0.216 blocks a tick and a zombie
+ *       covers 0.154, so backing away keeps a pack in front of the agent and strings it out into the one-on-one fight it
+ *       already wins. It backs away from the pack as <i>one direction</i> — the sum of the ways to each of them, weighted by
+ *       how near each is — rather than from any one of them. But only <b>while the swing is cooling</b>: a fighter that backs
+ *       away for as long as there is a pack outpaces it, never lets anything arrive and never lands anything, which is
+ *       measured and written down at {@link #PACK_STANDOFF}. So it steps back in a few ticks before the cooldown fills, since
+ *       the ground given up has to be covered before a blow can land, and gives it again once the blow has gone. See
+ *       {@link #sizeUp}, {@link #giveGround} and {@link #stepsIn}.</li>
  *   <li><b>Keep them in front.</b> The agent perceives through a hundred degree cone about its aim, so a body it turns its
- *       back on is one it stops seeing; the aim goes on the middle of the pack while nothing is in reach, and on the body
- *       itself the moment one is, since a swing goes where the eyes are.</li>
+ *       back on is one it stops seeing. The aim goes on the middle of the pack for as long as the feet are giving ground, and
+ *       on the body only while the fighter is stepping in to strike, since a swing goes where the eyes are: the eyes and the
+ *       feet say the same thing on every tick.</li>
  *   <li><b>Run when it is hopeless.</b> Not as despair but as arithmetic: what the pack takes off it in the time it would
  *       take to cut the pack down, against the health it has left. See {@link #hopeless}. It then sprints along the clearest
  *       way out rather than dying in the middle, and the pack strings out behind it, which is the same string-out the
