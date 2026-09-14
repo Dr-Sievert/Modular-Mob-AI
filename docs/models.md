@@ -34,7 +34,7 @@ without it against `blast6`, inside what a sitting resolves. Its final weights a
 And every number here is one bench in the older sense too: `blast8` fights the whole league roster, wardens and evokers
 included, where the retired networks below fought a vindicator. The two are not comparable, and **nothing in `models\` is
 comparable to anything measured in another sitting**, since each run judges against the opponents its own matchmaking drew.
-See the win rate section below, and `scriptsench.ps1` in
+See the win rate section below, and `scripts\bench.ps1` in
 [testing.md](testing.md) for the only way to put two networks on one scale.
 
 ## What was retired, and why
