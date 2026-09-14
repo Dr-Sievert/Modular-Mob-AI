@@ -426,7 +426,7 @@ hold a copied policy still and a loss that moves the memory moves the policy wit
 
 ### The league: `-Suite league` and `scripts\league.ps1`
 
-A league run fights 37 mobs, 11 squads of several mobs at once, the scripted fighter, any published networks it was told
+A league run fights 48 mobs, 11 squads of several mobs at once, 2 jockeys, the scripted fighter, any published networks it was told
 to field, and frozen checkpoints of itself, with a loadout drawn every fight; see
 [architecture.md](architecture.md#the-league). Matchmaking sends training fights where the agent wins about half the
 time, and what it draws is a **pairing** of one loadout with one opponent rather than the opponent alone, so a bow is handed
@@ -464,14 +464,27 @@ far more. Pairing them puts the fights where a loadout can still learn something
 the matchups it is losing. A pairing near an even result gets the most fights, a floor keeps every one of them coming round,
 and a cap is the opponent's: the warden's two thousandths cover every loadout against it between them.
 
-The table is loadouts times opponents: 490 pairings at the start of a run (10 loadouts against 48 mobs and squads plus the
-scripted fighter), 1,450 once every rung of the ladder is open, and 80 more for the self-play pool. A pairing's own record is
+The table is loadouts times opponents: 620 pairings at the start of a run (10 loadouts against 61 mobs, squads and jockeys
+plus the scripted fighter), 1,840 once every rung of the ladder is open, and 80 more for the self-play pool. A pairing's own record is
 thin at that size — a couple of thousand fights fade through the whole table, so single figures each and plenty with none — so
 **a pairing's chance is never asked to stand on its own**: it is the pairing's own record over a prior worth `--league-prior`
 fights, and that prior is the opponent's chance moved by how the loadout does over all of its fights, which is a tenth of the
 run's and dense enough to mean something. With nothing recorded anywhere the prior is exactly the opponent's chance, so a
 fresh run draws as it always did and only separates as the fights say it should. Evaluation fights are not paired: they draw
 the opponent evenly and the loadout evenly, since every rating is measured on them.
+
+**One pairing is never drawn at all**: a loadout that carries nothing that shoots against a flyer that never comes within
+reach, the ghast and the phantom, on any rung, packed, crowded, or on a squad with one of them on it. A ghast drifts and
+fires, a phantom swoops past and climbs away, and a deflected fireball kills a ghast only for a real player, so there is
+nothing there to win or to lose: every one of those fights was 2,400 ticks of timeout, dragging a rating with a number that
+means nothing and spending a worker's minute on a question with one answer. It gets no share, which is also what keeps the
+frontier probe off it — the probe holds a hopeless pairing down to a trickle rather than to nothing, and a pairing that is
+never in the table is never probed. The workers say which rows those are in the `reach` column of `roster.csv`, and the game
+side refuses the same pairing in its own draw. **It changes what a checkpoint's evaluated win rate is averaged over**: an
+evaluation fight draws its opponent evenly and its loadout evenly, so those hopeless fights were about one evaluation fight
+in seventy and every one of them a timeout. So this belongs at a **run boundary** — a run that crossed it could not compare
+its best weights before with its best weights after — and the orchestrator restarts the run when it lands. The plain bench
+(`scripts\bench.ps1`) is untouched either way and is still the number to compare across runs.
 
 `pairs.csv` is `loadout,opponent,share,chance,fights,wins`, largest share first, and `matchmaking.csv` is the same shares
 added up per opponent. Both are rewritten every iteration, and the log says `the pairings with the most: bow against ghast

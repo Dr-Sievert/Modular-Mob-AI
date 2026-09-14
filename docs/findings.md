@@ -854,11 +854,36 @@ are deliberate.
   fights, the ranged loadouts won about 40% and the melee ones far more. The unit of matchmaking is now the pairing, and on 150
   fights drawn from a table where a sword cannot touch a ghast, the sword's ghast fights fell from the 17 the independent draw
   would have spent on them to 4 while the bow's rose to 30. What made it cheap is that a pairing's chance is never asked to
-  stand on its own: the table is 490 pairings and a run's faded record is a couple of thousand fights, so the estimate is the
+  stand on its own: the table is hundreds of pairings and a run's faded record is a couple of thousand fights, so the estimate is the
   pairing's own record over a prior built from the opponent's chance and the loadout's own record, which is ten times denser.
 - **Pairing costs nothing in coverage.** The floor is spread over the pairings rather than the opponents, which is the same
   share per pairing as before: an opponent's even floor was already being split between the ten loadouts by the even loadout
   draw.
+- **A sword never meets a ghast, and the evaluation draw was where most of them were.** Pairing fixed the *training* draw:
+  the trainer weighs a hopeless pairing down and the frontier probe keeps only a trickle. What it could not fix is the
+  **evaluation** draw, which is deliberately even — the opponent evenly and the loadout evenly, because every rating in the
+  league is measured on it — so a melee loadout met a ghast or a phantom as often as it met a zombie. There is nothing in
+  that fight either way: a ghast drifts out of reach, a phantom swoops past and climbs away, and a swing at a fireball sends
+  it back but does not kill the ghast, because vanilla forgives a ghast's own fire only for a `Player`'s fireball (see
+  Mechanics, below). So all 2,400 ticks of it are a timeout — a rating dragged by a number that means nothing, and a worker's
+  two minutes on a question with one answer. Seven melee loadouts in ten against two of about fifty opponents is about one
+  evaluation fight in seventy, every one of them a timeout.
+  - **The property belongs to the mob, not to flying.** `Roster.Member.unreachable` is true for the ghast and the phantom
+    and false for the vex, the bee, the blaze and the breeze, which all come to the agent; a rule that read "flies" would
+    have taken four real opponents away from seven loadouts. An `Opposition` is unreachable if **any** mob on it is, so
+    `phantom+zombie` goes with them: one left standing is the clock running out however well the rest of it went. The
+    `+N_idle` and `+N_pack` variants follow without a word, since both are the same opposition under another name.
+  - **Both sides refuse it, and in different ways.** The game side narrows the *loadout* draw and leaves the opponent draw
+    even (`Loadouts.against`), so a checkpoint is still measured against every opponent alike and a ghast is still met —
+    with something that can shoot it. The trainer side leaves the pairing out of the table altogether (`League.pairable`),
+    which is what keeps the probe off it: the probe holds a hopeless pairing down to a trickle rather than to nothing, and a
+    pairing that is never in the table is never probed. The trainer cannot work out either half for itself, so the workers
+    say so in a fourth column of `roster.csv`, `reach`; a build too old to write it bars nothing, which is what the league
+    did before.
+  - **It moves the average an evaluated win rate is over**, which is the objection that held two other curriculum changes
+    back, so it is written down rather than dodged: a checkpoint's evaluated rate before and after this is not the same
+    number. It belongs at a **run boundary**, and unlike the crowd's skew there is no "the mix is fixed" defence to make —
+    the mix itself changes. The plain bench is untouched and is still what to compare across runs.
 - **A bigger fight site costs throughput and disk, not memory.** Going from a radius of 2 (80 blocks across) to 3 (112),
   measured on 320 library sites and one worker fighting 300 league fights off them: 0.84 MB a site on disk becomes 1.38 MB,
   so 4,096 sites go from 3.1 GB to about 5.5 GB; 128 sites take 208 s to build rather than 272 s; the worker still runs in a
@@ -1086,6 +1111,58 @@ are deliberate.
   - Its strength was never flat across the seven that are left, though: 96.1% in iron armour, 88.8% and 88.5% with a shield
     or a diamond sword, 76.3% with stone, 71.6% with iron, and **59.5% with an axe**, whose twenty tick cooldown it handles
     worst. A rating measured against "the scripted fighter" is measured against that spread.
+- **A big slime's death was a win the agent never earned, and nothing in a run's results said so.** Vanilla makes a slime's
+  children inside `Slime#remove`, which runs at the end of its twenty ticks of death animation, not when its health reaches
+  nought. The league's other side was the one body it spawned, so the tick the big slime stopped being alive every opponent
+  was dead and the fight was written down as a **win** — with the children standing on ground the agent had never touched.
+  Measured, one big slime killed in a bedrock room: **3 and 4 bodies left behind in two runs, 20 ticks after death, with the
+  fight's other side still holding exactly 1 — all of it dead.** They carried no fight tag, so the sweep for wildlife took
+  them within the second; the reward paid nothing for them and the win condition never looked at them. Every `slime` and
+  `magma_cube` rating in the league was of a fight that stopped at the first body, and so was every `+N_pack` and `+N_idle`
+  of one. `AgentCrowdGameTest.aSlimeThatSplitsLeavesTheFightUnwon` is the measurement, and it fails on that build.
+  - **The children are the fight now** (`league/Splits`), which is the answer an evoker's vexes already got and for the same
+    reason: a body a fight makes is the fight's to own. Each is tagged as it appears, put on the side's team where there is
+    one, joined to the episode so the reward pays for hurting it exactly once, filed under its parent's member so it is
+    provoked, and waited for before the fight can be won.
+  - **Dead is not gone.** The other half of the fix is in the win condition: in a fight that can split, an opponent that is
+    dead but not yet removed keeps the fight open, because what it leaves has not appeared yet. Without that the fight ends
+    twenty ticks before there is anything to take in, and none of the rest of it ever runs.
+  - **It needed a longer clock, and that was measured rather than guessed.** A big slime is as many as twenty bodies once
+    both generations have split. On the minute the scripted fighter won 87.5% of the plain slime and 58.3% of the hard one,
+    every fight it did not win being the clock running out with bodies still standing; at 1,800 ticks, 94.4% and 82.4%, with
+    the timeouts falling from 12.5% and 41.7% to 5.6% and 17.6%. 160 fights a row, one worker, `-Bystanders 0`. The smallest
+    size keeps the minute, having nothing to split into.
+  - **It changes what `slime` and `magma_cube` mean**, with their rungs, packs and crowded names, so like the flyer rule it
+    belongs at a run boundary. A replay is the one thing not fixed: what a replay holds is settled when the fight starts, so
+    a slime replay shows a body that vanishes and children that are not there.
+- **Three of the new roster's mobs needed something the roster had never needed, and one of them did not.**
+  - **A goat cannot be handed a target at all.** Its brain has no `ATTACK_TARGET` memory: its only attack is a ram, lined up
+    by its own `PrepareRamNearestTarget` from four to seven blocks, and then not again for between thirty seconds and five
+    minutes. Erasing `RAM_COOLDOWN_TICKS` every tick — which is also what a failed search sets — makes the ram its active
+    state for the whole fight and lets its own mind do the walking. **Pushing a walk target at the agent breaks exactly
+    that**: the push overwrote the walk to the ram position, so the goat trotted up and never once rammed in forty fights.
+    It also has to be given `setTarget`, not for its own mind, which ignores it, but for the agent's — a body only takes an
+    enemy slot if it is a monster, on a side against the agent, or coming for it, and a goat is none of the first two.
+    Without it, **48 fights, every one of them the clock running out with the goat never touched**.
+  - **A goat's panic was left in, because the measurement said to.** A hurt goat bolts at twice its walking speed, which
+    looked like the bee's and the snow golem's trouble, so it was measured both ways over forty fights each: 90% and 100%
+    won with the panic in, 95% and 100% with it erased. The agent catches it either way. An unmeasured deviation refused.
+  - **A goat and an aggressive panda are the two weakest players in the league, and honestly so.** Neither landed much on the
+    scripted fighter: the goat 0 of 40 fights (its ram wants four to seven blocks, and a fighter that closes never leaves it
+    any), the panda 1 of 48 (20 health, slower than the agent, and vanilla's own panic takes it away for 40 ticks after
+    every blow it takes). Both come, both are killed, both resolve. They are weak opponents rather than broken ones, and the
+    tier list will say so.
+  - **A llama is a real one.** It spits through a `RangedAttackGoal` the moment it has a target, and hurt the scripted
+    fighter in 12 of 18 fights on the ranged clock and room.
+- **Both jockeys are two bodies on one side, and that is the decision.** A chicken jockey and a spider jockey go through the
+  squad machinery with the rider put on its mount once both are in the world. The alternative — one body in the fight and the
+  other a prop — gets the spider jockey plainly wrong: the skeleton on top is the half that shoots, and a fight that ended
+  when the spider died would pay nothing for the archer and call it a win. Taking both means each is paid for exactly once
+  and the fight is won only when both are down, which is also the right answer for the chicken: killing it out from under the
+  baby zombie wins nothing. Measured on the scripted fighter, 32 fights each: both 100% won with no timeouts, the spider
+  jockey hurting it in 25 of 32 and the chicken jockey in 2. Neither is ever packed — `+N_pack` is drawn over one-mob
+  opponents only — which is the wanted answer rather than an accident: four spider jockeys is eight bodies and four archers,
+  a different question nobody asked to rate.
 - **Some mobs kill themselves, and the agent was paid for it.** Each of these hands over a win nobody fought for, and a
   rating built on those says nothing:
   - a **bee** dies of its own sting: after stinging once its aiStep rolls for death every five ticks, which over a minute

@@ -1,7 +1,11 @@
 package net.sievert.modularmobai.gametest.tests;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+
+import org.jetbrains.annotations.Nullable;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
@@ -13,7 +17,9 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.MobSpawnType;
+import net.minecraft.world.entity.monster.Slime;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.PlayerTeam;
 import net.sievert.modularmobai.allegiance.Allegiance;
 import net.sievert.modularmobai.arena.Episode;
@@ -29,6 +35,7 @@ import net.sievert.modularmobai.gametest.league.Bystanders;
 import net.sievert.modularmobai.gametest.league.League;
 import net.sievert.modularmobai.gametest.league.Opposition;
 import net.sievert.modularmobai.gametest.league.Roster;
+import net.sievert.modularmobai.gametest.league.Splits;
 import net.sievert.modularmobai.gametest.replay.FightRecorder;
 import net.sievert.modularmobai.gametest.terrain.TerrainSites;
 import net.sievert.modularmobai.gametest.util.DeathCauses;
@@ -55,6 +62,12 @@ import net.sievert.modularmobai.gametest.util.TestDurationStats;
  * enemy whatever kind of mob it is. The teams live on the server's scoreboard, so they are taken down again the moment the
  * fight is over. A fight against one mob is set up with no teams at all, exactly as it always was.
  *
+ * <p>Two of those sides are a <b>jockey</b>, one mob riding another: a baby zombie on a chicken and a skeleton on a spider,
+ * as the game spawns them. They are set up as any other side of two, each body placed on a spot of its own and armed by its
+ * own finalizeSpawn, and then the rider is put on its mount once both are in the world
+ * ({@link net.sievert.modularmobai.gametest.league.Opposition#mount}). Both bodies are on the other side, so each is paid for
+ * exactly once and the fight is won only when both are down.
+ *
  * <p>A share of the fights against a mob or a squad also stands a crowd of monsters about the fight, 8 to 30 blocks off, on
  * no team and never provoked: the shape a real world has and no league fight had, see
  * {@link net.sievert.modularmobai.gametest.league.Bystanders}. Nothing about the fight itself moves for them — the episode is
@@ -73,6 +86,20 @@ public class AgentLeagueGameTest {
 
     /** The framework's own limit on a whole slot, only there to catch a slot that has stopped working. */
     private static final int SLOT_TIMEOUT_TICKS = 50_000_000;
+
+    /**
+     * How far outside a site's own box a body it made is still the fight's, for the children a dying slime leaves: the same
+     * eight blocks {@code TerrainSites#release} sweeps for leftovers, which is already this build's answer to how much room
+     * around a site belongs to the fight on it.
+     */
+    private static final double SPLIT_REACH = 8.0D;
+
+    /**
+     * And how near where a body of the fight fell a new one has to be to be its child. Vanilla puts a child within half the
+     * parent's width of it, which is a block at the largest size; this is room for the body sliding as it dies and for
+     * nothing else, since the whole point of the test is to tell a fighter's children from a bystander's.
+     */
+    private static final double SPLIT_NEAR = 4.0D;
 
     private static final TestDurationStats TIME_TO_RESOLVE =
             new TestDurationStats("League fight length", GameTestTuning.arenasInShard(GameTestTuning.arenaCount()));
@@ -123,8 +150,39 @@ public class AgentLeagueGameTest {
         private Evaluation.Assignment evaluation;
         private AgentMob agent;
 
-        /** Everyone on the other side: one mob, one agent, or a whole squad. */
+        /**
+         * Everyone on the other side: one mob, one agent, a whole squad, or a jockey. It can <b>grow while the fight runs</b>,
+         * which nothing but a slime does: the copies one leaves behind when it dies join it, see {@link Splits}. So everything
+         * that walks it asks for its size each time round rather than keeping one.
+         */
         private final List<LivingEntity> opponents = new ArrayList<>();
+
+        /**
+         * What each of them is, beside {@link #opponents} and in step with it. The opposition's own list would do until a
+         * slime split: a child is a body the fight did not spawn and has no member of its own, so it is filed under its
+         * parent's, whose provocation — touching the agent as a slime touches a player — is the one it wants.
+         */
+        private final List<Roster.Member> members = new ArrayList<>();
+
+        /**
+         * The mob on this side that can leave bodies behind when it dies, which only a slime does, and null in every other
+         * fight in the league. It is both the question "is there anything to look for" and the member a child is filed
+         * under; see {@link Splits}.
+         */
+        @Nullable
+        private Roster.Member splitting;
+
+        /** The team the other side is on, for a body that joins it mid fight; null where the fight uses no teams. */
+        @Nullable
+        private PlayerTeam side;
+
+        /**
+         * Where each body of this fight that can split was standing as it died, and the ones already written down. A child
+         * appears at its parent's feet, and this is what tells one from a bystander slime the agent happened to kill: see
+         * {@link Splits#taken}.
+         */
+        private final List<Vec3> fell = new ArrayList<>();
+        private final Set<Integer> fallen = new HashSet<>();
 
         /**
          * The monsters standing about this fight taking no interest in it, and nothing to do with who wins it. Kept only so
@@ -219,6 +277,16 @@ public class AgentLeagueGameTest {
                     // with a loadout is worth counting over all of them, not the one in two hundred with a replay.
                     this.did.tick(this.agent);
 
+                    // A slime that has died has already left two to four copies of itself standing, before anything here
+                    // is asked. They are the fight as much as the body that left them, so they are taken into it: tagged,
+                    // put on the side's team, paid for, waited for. Looked for before the walk below, so a child is provoked
+                    // on the very tick it appears. See Splits.
+                    if (this.splitting != null) {
+
+                        this.fallen();
+                        this.adopt();
+                    }
+
                     for (int on = 0; on < this.opponents.size(); on++) {
 
                         LivingEntity opponent = this.opponents.get(on);
@@ -228,7 +296,7 @@ public class AgentLeagueGameTest {
                             // Asked before the target is made the agent again, so it says whether the mob's own mind kept it
                             // through a tick of its own.
                             this.targeted |= mob.getTarget() == this.agent;
-                            this.matchup.opposition().mobs().get(on).provoke(mob, this.agent);
+                            this.members.get(on).provoke(mob, this.agent);
                         }
 
                         this.landed |= this.agent.getLastHurtByMob() == opponent;
@@ -262,6 +330,7 @@ public class AgentLeagueGameTest {
                         // would end with thousands on the scoreboard.
                         this.teams.forEach(Allegiance::disband);
                         this.teams = List.of();
+                        this.side = null;
 
                         // The release above swept them: they carry the fight's own tag and are not among the fighters handed
                         // back, which is the same rule that takes away an evoker's vexes. Nothing here has to discard them.
@@ -287,6 +356,10 @@ public class AgentLeagueGameTest {
             // mob an arena can fight in is refused here, by name, before a fight is set up.
             this.agent = ModEntities.training(Species.trained()).create(this.level);
             this.opponents.clear();
+            this.members.clear();
+            this.fell.clear();
+            this.fallen.clear();
+            this.splitting = Splits.splitting(opposition);
 
             if (this.agent == null) {
 
@@ -329,6 +402,15 @@ public class AgentLeagueGameTest {
 
                 this.level.addFreshEntity(opponent);
                 this.opponents.add(opponent);
+                this.members.add(member);
+            }
+
+            // A jockey is two bodies and one of them rides the other, which nothing else in the league is. Here rather than
+            // in a preparation because a preparation is handed one mob and cannot see the other, and because both have to be
+            // in the world before either can ride anything. Nothing happens for anyone else.
+            if (opposition != null) {
+
+                opposition.mount(this.opponents);
             }
 
             this.level.addFreshEntity(this.agent);
@@ -339,6 +421,9 @@ public class AgentLeagueGameTest {
             this.teams = this.opponents.size() > 1
                     ? List.copyOf(Allegiance.enemy(List.of(this.agent), this.opponents))
                     : List.of();
+
+            // The second of the two is the other side's, which is what a body joining the fight late is put on.
+            this.side = this.teams.isEmpty() ? null : this.teams.get(1);
 
             this.matchup.loadout().equip(this.agent);
             this.agent.startEpisode(new Episode(this.matchup.ticks(), bounds, this.opponents));
@@ -363,7 +448,7 @@ public class AgentLeagueGameTest {
 
                 else if (opponent instanceof Mob mob && opposition != null) {
 
-                    opposition.mobs().get(on).provoke(mob, this.agent);
+                    this.members.get(on).provoke(mob, this.agent);
                 }
             }
 
@@ -388,12 +473,67 @@ public class AgentLeagueGameTest {
             return Phase.FIGHTING;
         }
 
+        /**
+         * Takes into the fight whatever a slime that has just died left standing. It is already in the world by the time
+         * anything here runs — vanilla makes the children inside {@code Slime#remove} — so this is a look for bodies of a
+         * slime's kind on this fight's own ground that carry no fight tag, and every one it finds becomes an opponent like
+         * any other: on the side's team where there is one, on the other side of the episode so the reward pays for hurting
+         * it exactly once, filed under its parent's member so it is provoked every tick, and waited for before the fight can
+         * be won. See {@link Splits}, which also says what this cost before it existed.
+         *
+         * <p>The box is the site's own with the same eight blocks of slack the site's cleanup sweeps, so a slime knocked to
+         * the edge still leaves its children inside the fight and no fight ever reaches into the next one's.
+         *
+         * <p>What a replay holds is settled when the fight starts, so a child is not in one. A replay of a slime fight is
+         * therefore a fight against a body that vanishes and bodies that are not there; it is worth knowing before watching
+         * one, and worth nothing else.
+         */
+        private void adopt() {
+
+            for (Slime child : Splits.taken(this.level, this.site.bounds().inflate(SPLIT_REACH), this.fell, SPLIT_NEAR)) {
+
+                if (this.side != null) {
+
+                    Allegiance.join(child, this.side);
+                }
+
+                this.opponents.add(child);
+                this.members.add(this.splitting);
+                this.episode.join(child);
+            }
+        }
+
+        /**
+         * Writes down where each body of the fight that can split was standing when it died, once each. Recorded while it is
+         * dying rather than when it is gone, because by the time its children exist the body has been removed and there is
+         * nothing left to ask.
+         */
+        private void fallen() {
+
+            for (LivingEntity opponent : this.opponents) {
+
+                if (opponent.isDeadOrDying() && this.fallen.add(opponent.getId())) {
+
+                    this.fell.add(opponent.position());
+                }
+            }
+        }
+
         /** Whether nothing on the other side is still standing, which is when there is nothing left to fight. */
         private boolean beaten() {
 
             for (LivingEntity opponent : this.opponents) {
 
                 if (opponent.isAlive()) {
+
+                    return false;
+                }
+
+                // A slime that has died is not yet gone. Vanilla makes its children in Slime#remove, which is twenty ticks
+                // of death animation after its health reaches nought, so a fight decided the moment the last body stopped
+                // being alive would be won before the bodies it left had appeared at all — which is exactly what the league
+                // used to do. So in a fight that can split, dead is not enough: the body has to be gone.
+                if (this.splitting != null && !opponent.isRemoved()) {
 
                     return false;
                 }

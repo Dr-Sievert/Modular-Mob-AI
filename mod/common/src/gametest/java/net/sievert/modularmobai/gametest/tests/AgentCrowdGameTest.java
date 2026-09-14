@@ -14,10 +14,12 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.monster.Slime;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.PlayerTeam;
+import net.sievert.modularmobai.Constants;
 import net.sievert.modularmobai.allegiance.Allegiance;
 import net.sievert.modularmobai.arena.Episode;
 import net.sievert.modularmobai.brain.Brain;
@@ -34,6 +36,8 @@ import net.sievert.modularmobai.gametest.league.Bystanders;
 import net.sievert.modularmobai.gametest.league.HostilePacks;
 import net.sievert.modularmobai.gametest.league.Opposition;
 import net.sievert.modularmobai.gametest.league.Roster;
+import net.sievert.modularmobai.gametest.league.Splits;
+import net.sievert.modularmobai.gametest.terrain.TerrainSites;
 import net.sievert.modularmobai.gametest.util.TestTicks;
 
 /**
@@ -83,6 +87,18 @@ public class AgentCrowdGameTest {
      * costs the same there.
      */
     private static final int PACKS_WANTED = 2_500;
+
+    /**
+     * How long a killed slime is given to leave its children behind: vanilla makes them when the body is finally removed,
+     * which is twenty ticks of death animation after its health reaches nought, and this is generous room around that.
+     */
+    private static final int SPLIT_WAIT_TICKS = 120;
+
+    /** And how long after they appear before the agent's view is asked about them: it is worked out when the agent is stepped. */
+    private static final int SPLIT_SETTLE_TICKS = 5;
+
+    /** How near where a body of the fight fell a new one has to be to be its child; the arena's own {@code SPLIT_NEAR}. */
+    private static final double SPLIT_NEAR = 4.0D;
 
     /** The largest pack the draw fields, and the size the arrangement below is held on: four, which is ten slots half full. */
     private static final int HOSTILE_MOST = 6;
@@ -674,6 +690,252 @@ public class AgentCrowdGameTest {
             // Teams outlive the entities on them and are saved with the world. Taken down on the last tick rather than in a
             // finally: run only schedules the ticks and returns at once.
             teams.forEach(Allegiance::disband);
+
+            return true;
+        });
+    }
+
+    /**
+     * A jockey: one mob riding another, which the game spawns on its own and which the league fields as two bodies on one
+     * side. What is held is the arrangement and what winning means, because both are invisible in a run's results and both
+     * are easy to get wrong for a mount.
+     *
+     * <p><b>The rider is really on its mount</b> — two bodies standing a block apart would fight and win and look the same in
+     * every column the league prints. <b>Both are on the other side</b>, each paid for exactly once and each in the agent's
+     * view, since the skeleton on top is the half that shoots and a fight that ended when the spider died would pay nothing
+     * for the archer and call it a win. And <b>killing the mount is not winning</b>: the rider comes off it alive, still an
+     * opponent, still paid for, so the fight goes on until it is down too.
+     *
+     * <p>The room and the clock are the rider's as well, which follows from a side taking whatever the mob on it that wants
+     * most asks for: a spider jockey is a shooting match at twenty blocks, not a spider's minute at eight.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 120)
+    public static void aJockeyRidesItsMountAndIsNotBeatenUntilBothAreDown(GameTestHelper helper) {
+
+        Opposition jockey = Opposition.named("spider_jockey");
+
+        if (jockey == null) {
+
+            throw new GameTestAssertException("This build fields no spider jockey");
+        }
+
+        helper.assertValueEqual(jockey.mobs().size(), 2, "how many bodies a spider jockey is");
+        helper.assertValueEqual(jockey.kind(), "squad", "what kind of opponent a jockey is to the trainer");
+        helper.assertValueEqual(jockey.ticks(), Opposition.named("skeleton").ticks(), "a spider jockey's clock");
+        helper.assertValueEqual(jockey.start(), Opposition.named("skeleton").start(), "how far off a spider jockey starts");
+
+        // The other jockey is a melee fight, and its chicken is not a player of the league at all: a mount the roster fields
+        // on its own would take a rating for a body that has no attack of any kind.
+        Opposition chickenJockey = Opposition.named("chicken_jockey");
+
+        helper.assertTrue(chickenJockey != null && chickenJockey.mobs().size() == 2, "A chicken jockey is not two bodies");
+        helper.assertValueEqual(chickenJockey.ticks(), Roster.MELEE_TICKS, "a chicken jockey's clock");
+        helper.assertTrue(Opposition.named("chicken") == null, "The league fields a chicken as an opponent of its own");
+
+        AgentMob agent = still(helper, new BlockPos(4, 2, 1));
+        List<Mob> side = new ArrayList<>();
+
+        for (int on = 0; on < jockey.mobs().size(); on++) {
+
+            side.add(helper.spawnWithNoFreeWill(jockey.mobs().get(on).type(), new BlockPos(2 + on * 2, 2, 6)));
+        }
+
+        // Exactly as a fight does it: the bodies go in first and the rider is put on its mount afterwards, since startRiding
+        // wants both of them in the world.
+        jockey.mount(List.copyOf(side));
+
+        Mob mount = side.get(0);
+        Mob rider = side.get(1);
+
+        List<PlayerTeam> teams = List.copyOf(Allegiance.enemy(List.of(agent), List.copyOf(side)));
+
+        agent.startEpisode(new Episode(FIGHT_TICKS, bounds(helper), List.copyOf(side)));
+
+        EnemySlots view = agent.brain().enemySlots();
+
+        run(helper, tick -> {
+
+            // Ten ticks in, so both have finished the block they fall when they are put a block above the floor.
+            if (tick < 10) {
+
+                return false;
+            }
+
+            if (tick == 10) {
+
+                helper.assertTrue(rider.getVehicle() == mount, "The rider is not on its mount");
+                helper.assertTrue(mount.getPassengers().contains(rider), "The mount is not carrying its rider");
+
+                for (Mob body : side) {
+
+                    helper.assertTrue(agent.episode().pays(body), "The fight does not pay for hurting a jockey's " + body.getName().getString());
+                    helper.assertValueEqual(occurrences(agent.episode().opponents(), body), 1,
+                            "how many times a jockey's " + body.getName().getString() + " is on the other side");
+                    helper.assertTrue(occupies(view, body), "A jockey's " + body.getName().getString() + " holds no slot");
+                }
+
+                helper.assertValueEqual(agent.episode().opponents().size(), 2, "how many the other side is");
+
+                // And the claim the mount exists for: taking the mount down leaves the fight unwon.
+                mount.kill();
+
+                return false;
+            }
+
+            // A body that has just died is dead but not gone: vanilla keeps it for its twenty ticks of death animation and
+            // only ejects what is riding it when it is finally removed. So the rider comes off a little after the mount dies,
+            // not on the tick it does.
+            if (tick < 40) {
+
+                return false;
+            }
+
+            helper.assertTrue(!mount.isAlive(), "The mount was not killed");
+            helper.assertTrue(rider.isAlive(), "Killing the mount killed the rider with it, so a jockey would be one body");
+            helper.assertTrue(rider.getVehicle() == null, "The rider is still riding a mount that is dead");
+            helper.assertTrue(agent.episode().pays(rider), "The fight stopped paying for the rider when its mount died");
+
+            teams.forEach(Allegiance::disband);
+
+            return true;
+        });
+    }
+
+    /**
+     * A slime that dies leaves two to four copies of itself standing, and they are the fight too.
+     *
+     * <p>This is the test that measured what the league used to do, and its failure message is the measurement: on the build
+     * before {@link Splits} the other side was still the one body the fight spawned, so the tick the big slime died every
+     * opponent was dead and the arena wrote the fight down as a <b>win</b> — with two to four middling slimes standing on
+     * ground the agent had never touched, each of which would have split again. Nothing said so in a run's results, because
+     * the children carried no fight tag and the sweep for wildlife took them within the second.
+     *
+     * <p>Three claims, and they are the three halves of taking a body into a fight. The <b>split happens at all</b> and is
+     * more than one body, so there is something to take. Taking them <b>pays for each exactly once</b> and puts each in the
+     * agent's view, which is what makes killing them worth doing. And the <b>fight is not won</b> while they stand: the other
+     * side is no longer all dead, which is the condition {@code AgentLeagueGameTest} waits on.
+     *
+     * <p>Built the way a fight builds it — {@link Splits#taken} and {@link Episode#join}, the two calls the arena's own
+     * {@code adopt} makes — so what is held is what the league actually fields.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 200)
+    public static void aSlimeThatSplitsLeavesTheFightUnwon(GameTestHelper helper) {
+
+        Opposition big = Opposition.named("slime");
+
+        if (big == null) {
+
+            throw new GameTestAssertException("This build fields no slime, so there is nothing to split");
+        }
+
+        helper.assertTrue(Splits.splitting(big) != null, "A slime is not a mob the fight expects to split");
+        helper.assertTrue(Splits.splitting(Opposition.named("zombie")) == null, "A zombie is expected to split");
+
+        AgentMob agent = still(helper, new BlockPos(4, 2, 1));
+        Mob slime = helper.spawnWithNoFreeWill(big.mobs().get(0).type(), new BlockPos(4, 2, 6));
+
+        // Its own preparation, so it is the biggest a natural one comes, which is the one the league fields.
+        big.mobs().get(0).prepare(slime, helper.getLevel().getRandom());
+        slime.addTag(TerrainSites.TAG);
+
+        agent.startEpisode(new Episode(FIGHT_TICKS, bounds(helper), List.of(slime)));
+
+        EnemySlots view = agent.brain().enemySlots();
+
+        // What the split leaves, the tick it was taken in, and whether the fight would have been called won that tick.
+        List<Slime> left = new ArrayList<>();
+        int[] taken = {-1};
+        boolean[] everyoneDead = {false};
+
+        run(helper, tick -> {
+
+            if (tick < 10) {
+
+                return false;
+            }
+
+            if (tick == 10) {
+
+                slime.kill();
+                return false;
+            }
+
+            if (taken[0] < 0) {
+
+                left.addAll(Splits.taken(helper.getLevel(), bounds(helper), List.of(slime.position()), SPLIT_NEAR));
+
+                // A slime's children are made in Slime#remove, which is the end of the twenty ticks of death animation and
+                // not the tick its health reached nought. That gap is the whole reason the arena cannot call a fight over as
+                // soon as the last body stops being alive; see AgentLeagueGameTest#beaten.
+                if (left.isEmpty()) {
+
+                    helper.assertTrue(tick < SPLIT_WAIT_TICKS, "A big slime left nothing behind in " + tick + " ticks");
+
+                    return false;
+                }
+
+                // Asked before they are taken in, because this is the measurement: on the build before Splits the fight's
+                // other side was still the one body it spawned, so every opponent was dead and the arena wrote down a win.
+                everyoneDead[0] = agent.episode().opponents().stream().noneMatch(LivingEntity::isAlive);
+                taken[0] = tick;
+
+                Constants.LOG.info("A big slime killed at tick 10 left {} bodies behind by tick {}; the fight it was the "
+                        + "whole of had {} on the other side, every one of them dead: {}", left.size(), tick,
+                        agent.episode().opponents().size(), everyoneDead[0]);
+
+                for (Slime child : left) {
+
+                    agent.episode().join(child);
+                }
+
+                return false;
+            }
+
+            // A few ticks on, so the agent has had a tick of its own to take them into its view: the slots are worked out
+            // when the agent is stepped, and a body that appeared this tick has not been looked at yet.
+            if (tick < taken[0] + SPLIT_SETTLE_TICKS) {
+
+                return false;
+            }
+
+            helper.assertTrue(!slime.isAlive(), "The slime the fight spawned was not killed");
+            helper.assertTrue(left.size() >= 2, "A big slime left " + left.size() + " bodies behind, where vanilla leaves "
+                    + "two to four; there is nothing here to take into the fight");
+            helper.assertTrue(everyoneDead[0], "The fight's own other side was not all dead when the slime split, so this "
+                    + "says nothing about what the league used to do with one");
+
+            for (Slime child : left) {
+
+                helper.assertTrue(agent.episode().pays(child), "The fight does not pay for hurting what the slime left");
+                helper.assertValueEqual(occurrences(agent.episode().opponents(), child), 1,
+                        "how many times one of the slime's children is on the other side");
+                helper.assertTrue(child.getTags().contains(TerrainSites.TAG), "A child of the fight's slime carries no "
+                        + "fight tag, so the sweep for wildlife would take it away mid fight");
+                helper.assertTrue(occupies(view, child), "A child of the fight's slime, " + blocks(Math.sqrt(agent.distanceToSqr(child)))
+                        + " blocks off and in plain sight, holds no slot");
+            }
+
+            // Taken once and not again: a second look finds nothing, since the first tagged them.
+            helper.assertValueEqual(Splits.taken(helper.getLevel(), bounds(helper), List.of(slime.position()), SPLIT_NEAR).size(),
+                    0, "how many more children a second look finds");
+
+            // And what the second half of the rule is for: a slime standing where nothing of the fight fell is not the
+            // fight's, however untagged it is. A crowd of bystanders can hold slimes, and one the agent has struck and
+            // killed leaves children exactly as an opponent does.
+            Mob stranger = helper.spawnWithNoFreeWill(EntityType.SLIME, new BlockPos(8, 2, 8));
+
+            helper.assertValueEqual(Splits.taken(helper.getLevel(), bounds(helper), List.of(slime.position()), SPLIT_NEAR).size(),
+                    0, "how many bodies a look takes from where nothing of the fight fell");
+            helper.assertTrue(!stranger.getTags().contains(TerrainSites.TAG), "A slime nothing of the fight left behind was "
+                    + "taken into it");
+
+            stranger.discard();
+
+            helper.assertValueEqual(agent.episode().opponents().size(), left.size() + 1, "how many the other side is now");
+
+            // And the point of the whole thing: the fight is not won, because not everything on the other side is dead.
+            helper.assertTrue(agent.episode().opponents().stream().anyMatch(LivingEntity::isAlive),
+                    "The fight counts as beaten with " + left.size() + " of the slime still standing");
 
             return true;
         });

@@ -143,4 +143,59 @@ public final class Loadouts {
 
         return loadout.hotbar().stream().noneMatch(stack -> stack.getItem() instanceof ProjectileWeaponItem);
     }
+
+    /**
+     * Whether that loadout may be drawn against that opposition at all. One rule, and only one: <b>a loadout that carries
+     * nothing to shoot with is never drawn against something it can never reach</b>, a ghast or a phantom, on their own or
+     * on a squad, packed or with a crowd standing about.
+     *
+     * <p>There is nothing in such a fight to win or to lose. A ghast drifts out of reach and a phantom climbs away again;
+     * a swing at a fireball sends it back but does not kill the ghast, because vanilla forgives a ghast's own fire only for
+     * a {@link net.minecraft.world.entity.player.Player}'s fireball (see findings.md). So every one of them is 2,400 ticks
+     * of timeout: it drags the pairing's rating with a number that means nothing, and it spends a worker's minute on a
+     * question with one answer. The evaluation draw used to hand out as many of them as of anything else, since it is even,
+     * and the frontier probe kept a trickle of them in training.
+     *
+     * <p>Barring it moves what a checkpoint's evaluated win rate is averaged over, so it belongs at a run boundary; see
+     * docs/training.md and findings.md. The mirror of this rule on the trainer's side is in trainer/mmai/league.py, which
+     * gives such a pairing no share at all and so never probes it; the {@code reach} column of {@code roster.csv} is how it
+     * is told which loadouts and which opponents these are, see {@link League#writeRoster}.
+     *
+     * @param opposition the mob or squad, or null for a fight against another agent, which is always reachable
+     */
+    public static boolean fights(Loadout loadout, @Nullable Opposition opposition) {
+
+        return opposition == null || !opposition.unreachable() || !melee(loadout);
+    }
+
+    /**
+     * The same rule asked by name, which is the shape a pairing from the trainer comes in: {@code sword} against
+     * {@code ghast(hard)}. A loadout this process does not field, and a name that is no opposition at all — the scripted
+     * fighter, a published network, a checkpoint — pass, since they are refused or allowed elsewhere on their own grounds;
+     * this asks only about the one pairing the league will not draw.
+     */
+    public static boolean fields(String loadout, String opponent) {
+
+        Loadout carried = named(loadout);
+
+        return carried == null || fights(carried, Opposition.named(opponent));
+    }
+
+    /**
+     * The ones of those that may be drawn against it. Where the rule leaves nothing at all — a run told
+     * {@code -PleagueLoadouts=sword} meeting a ghast — the whole list is handed back rather than the fight being lost: a run
+     * is allowed to field one loadout, and an opponent with nobody to fight it would drop out of the rotation and out of the
+     * ratings with it.
+     */
+    public static List<Loadout> against(@Nullable Opposition opposition, List<Loadout> from) {
+
+        if (opposition == null || !opposition.unreachable()) {
+
+            return from;
+        }
+
+        List<Loadout> allowed = from.stream().filter(loadout -> fights(loadout, opposition)).toList();
+
+        return allowed.isEmpty() ? from : allowed;
+    }
 }

@@ -6,7 +6,7 @@
 #   scripts\test.ps1 -Arenas 200
 #   scripts\test.ps1 -Terrain -Replays  every fight written down for watching, in runs\gametest\replays
 #   scripts\test.ps1 -Mechanics         no fights: the agent's bows, shields, blocks and the rest against a player's rules
-#   scripts\test.ps1 -League            194 fights on terrain, twice round every league opponent, then how each went
+#   scripts\test.ps1 -League            246 fights on terrain, twice round every league opponent, then how each went
 #   scripts\test.ps1 -League -Weights runs\x\best.mbw
 #                                       a network drives the agents instead, and fights a frozen copy of itself as well
 #   scripts\test.ps1 -League -LeagueModels blast
@@ -52,13 +52,13 @@ param(
 $suite = if ($Play) { 'play' } elseif ($Mechanics) { 'mechanics' } elseif ($League) { 'league' } elseif ($Crowd) { 'crowd' } elseif ($Pack) { 'pack' } elseif ($Horde) { 'horde' } elseif ($Terrain) { 'terrain' } else { 'arena' }
 $replayEvery = if ($Replays) { 1 } else { 0 }
 
-# Twice round the league's thirty seven mobs and eleven squads, each on normal and on hard, and the scripted fighter,
-# unless asked for another number. Twice, so an opponent that only fails on some ground is not written off as working, and
-# every one gets a second loadout. Add easy with -PleagueDifficulties=easy,normal,hard, and count it in: the rungs are the
-# trainer's to open in a real run, and this is the only place they are all fought.
+# Twice round the league's forty eight mobs, eleven squads and two jockeys, each on normal and on hard, and the scripted
+# fighter, unless asked for another number. Twice, so an opponent that only fails on some ground is not written off as
+# working, and every one gets a second loadout. Add easy with -PleagueDifficulties=easy,normal,hard, and count it in: the
+# rungs are the trainer's to open in a real run, and this is the only place they are all fought.
 if ($League -and -not $PSBoundParameters.ContainsKey('Arenas')) {
 
-    $Arenas = 194
+    $Arenas = 246
 }
 
 # Four crowds, three fights each: enough for the four numbers to mean something and few enough to read every tick of one

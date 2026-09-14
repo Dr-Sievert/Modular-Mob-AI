@@ -300,6 +300,29 @@ class LadderTest(unittest.TestCase):
         self.assertEqual(base("zombie+skeleton+2_pack"), "zombie+skeleton")
         self.assertEqual(base("zombie+3_idle"), "zombie")
 
+    def test_every_name_the_roster_grew_reads_as_the_opponent_it_is(self):
+        """The names added when the roster grew up, folded away or left out the mobs it was missing: the babies of the
+        zombie family, the three sizes of slime and magma cube, the neutral animals and the two jockeys.
+
+        Nothing here needed new code — a rung, a crowd and a pack come off any name the same way — and that is the claim: an
+        underscore in a name is not a suffix, `_small` is not `_pack`, and a jockey is one player and not two mobs added
+        together. A name that read wrong would arrive as a player of kind "mob" with no cap and could have a rung opened on it
+        that the workers cannot field."""
+
+        grown = ["baby_zombie", "baby_husk", "baby_drowned", "baby_zombie_villager",
+                 "slime_medium", "slime_small", "magma_cube_medium", "magma_cube_small",
+                 "llama", "goat", "panda", "chicken_jockey", "spider_jockey"]
+
+        for name in grown:
+            self.assertEqual(base(name), name)
+
+            for rung in ("(hard)", "(easy)"):
+                self.assertEqual(base(name + rung), name)
+
+            for variation in ("+1_idle", "+9_idle", "+2_pack", "+5_pack"):
+                self.assertEqual(base(name + variation), name)
+                self.assertEqual(base(name + "(hard)" + variation), name)
+
     def test_a_pack_is_a_player_of_its_own_and_is_never_matchmade_over(self):
         # The same claim a crowd gets, and the one thing that could go wrong if the suffix were not known here: a pack would
         # arrive as a player of kind "mob" with no cap and could have a rung opened on it, and the workers field no such
@@ -740,6 +763,99 @@ class LeagueTest(unittest.TestCase):
         league.update(51)
 
         self.assertFalse((self.run.path / "league" / "pairs.csv").is_file())
+
+    def test_a_melee_loadout_is_never_paired_with_a_flyer_it_cannot_reach(self):
+        """The one pairing that gets no share at all: something with nothing to shoot with against something nothing but a
+        shot can reach. Every such fight is 2,400 ticks of timeout, so it drags a rating with a number that means nothing and
+        spends a worker's minute on a question with one answer.
+
+        Getting no share is also what keeps the frontier probe off it: the probe holds a hopeless pairing down to a trickle
+        rather than to nothing, and a pairing that is never in the table is never probed."""
+
+        (self.run.path / "league" / "roster.csv").write_text(
+            "opponent,kind,cap,reach\n"
+            "zombie,mob,1.00000,-\n"
+            "ghast,mob,1.00000,unreachable\n"
+            "phantom+zombie,squad,1.00000,unreachable\n"
+            "scripted,scripted,1.00000,-\n"
+            "sword,loadout,1.00000,melee\n"
+            "bow,loadout,1.00000,-\n", encoding="utf-8")
+
+        league = League(self.run, self.config)
+        league.update(50)
+
+        pairs = {(row[0], row[1]): float(row[2]) for row in self.read("pairs.csv")}
+        shares = {row[0]: float(row[1]) for row in self.read("matchmaking.csv")}
+
+        self.assertNotIn(("sword", "ghast"), pairs)
+        self.assertNotIn(("sword", "phantom+zombie"), pairs)
+
+        # And nothing else has gone with them: the bow still meets both, the sword still meets everything it can reach, and
+        # the two unreachable opponents are still met and still rated.
+        self.assertIn(("bow", "ghast"), pairs)
+        self.assertIn(("bow", "phantom+zombie"), pairs)
+        self.assertIn(("sword", "zombie"), pairs)
+        self.assertIn(("sword", "scripted"), pairs)
+        self.assertGreater(shares["ghast"], 0.0)
+
+        # A ghast's whole share is the bow's, since the sword has none of it.
+        self.assertAlmostEqual(shares["ghast"], pairs[("bow", "ghast")], places=4)
+        self.assertAlmostEqual(sum(pairs.values()), 1.0, places=4)
+
+        # A rung is not a different question: how hard a mob spawns has nothing to do with whether a sword can get at it.
+        self.assertFalse(league.pairable("sword", "ghast(hard)"))
+        self.assertFalse(league.pairable("sword", "ghast(easy)"))
+        self.assertTrue(league.pairable("bow", "ghast(hard)"))
+        self.assertTrue(league.pairable("sword", "zombie(hard)"))
+
+    def test_a_build_too_old_to_say_what_is_out_of_reach_pairs_everything_as_before(self):
+        """The `reach` column is newer than some workers. Without it nothing is barred, which is exactly what the league did
+        before the rule, so a run resumed across the change keeps drawing what it was drawing."""
+
+        self.armed("sword", "bow")
+
+        league = League(self.run, self.config)
+        league.update(50)
+
+        pairs = {(row[0], row[1]): float(row[2]) for row in self.read("pairs.csv")}
+
+        self.assertEqual(league.melee, set())
+        self.assertEqual(league.unreachable, set())
+        self.assertIn(("sword", "ghast"), pairs)
+
+    def test_the_results_reader_takes_the_names_the_roster_grew(self):
+        """And the other half of the same claim: a fight written down against one of them is read, rated and tallied under
+        the name the workers wrote, with its kind and its cap taken from the opponent it is a variation on."""
+
+        (self.run.path / "league" / "roster.csv").write_text(
+            "opponent,kind,cap,reach\n"
+            "baby_zombie,mob,1.00000,-\n"
+            "slime_small,mob,1.00000,-\n"
+            "spider_jockey,squad,1.00000,-\n"
+            "scripted,scripted,1.00000,-\n", encoding="utf-8")
+
+        self.results(0,
+                     "50,eval,baby_zombie,sword,-,loss,300,opponent,flat,agent",
+                     "50,eval,baby_zombie+3_pack,sword,-,loss,400,opponent,flat,-",
+                     "50,eval,slime_small(hard),axe,-,win,200,-,flat,agent",
+                     "50,eval,spider_jockey(hard)+2_idle,bow,-,timeout,1800,-,drop,-",
+                     "50,train,magma_cube_medium,sword,-,win,250,-,lava,lava")
+
+        league = League(self.run, self.config)
+        league.update(50)
+
+        ratings = {row[0]: row for row in self.read("ratings.csv")}
+
+        self.assertEqual(league.rated, 4)
+        self.assertEqual(ratings["baby_zombie"][1], "mob")
+        self.assertEqual(ratings["baby_zombie+3_pack"][1], "mob")
+        self.assertEqual(ratings["slime_small(hard)"][1], "mob")
+
+        # A jockey is a side of two, so its rung and its crowded name are a squad's, taken off the name it is a variation on.
+        self.assertEqual(ratings["spider_jockey(hard)+2_idle"][1], "squad")
+
+        self.assertEqual(league.training["magma_cube_medium"], [1.0, 1.0])
+        self.assertEqual(league.eval_windows.tally("baby_zombie").losses, 1)
 
     def test_the_tables_hold_every_opponent_and_loadout(self):
         self.results(0, "50,eval,zombie,sword,-,win,200", "50,train,creeper,bow,-,loss,300", "50,eval,iteration-000025,axe,bow,win,500")

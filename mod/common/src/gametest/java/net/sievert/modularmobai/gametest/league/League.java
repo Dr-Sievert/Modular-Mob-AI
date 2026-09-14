@@ -45,8 +45,8 @@ import net.sievert.modularmobai.gametest.util.DeathCauses;
  * worked out over there.
  *
  * <pre>
- *   runs/RUN/league/roster.csv        written here: opponent,kind,cap for every opponent this build fields that is not a
- *                                     checkpoint, and every loadout it arms the agent with
+ *   runs/RUN/league/roster.csv        written here: opponent,kind,cap,reach for every opponent this build fields that is
+ *                                     not a checkpoint, and every loadout it arms the agent with
  *   runs/RUN/league/pairs.csv         written by the trainer: loadout,opponent,share and more, what a training fight is drawn from
  *   runs/RUN/league/matchmaking.csv   written by the trainer: opponent,share and more, which is the same table added up per
  *                                     opponent; what the checkpoints in the pool are read from, and what a run whose trainer
@@ -92,6 +92,16 @@ public final class League {
 
     /** How a checkpoint is named in the files: iteration-000125. */
     private static final String CHECKPOINT = "iteration-";
+
+    /**
+     * What the {@code reach} column of roster.csv says about a row: that this loadout carries nothing to shoot with, that
+     * nothing but a shot can ever touch this opponent, or neither. The two together are the one pairing the league refuses
+     * to draw, and this column is how the trainer is told which rows they are; see {@link #writeRoster} and
+     * {@link Loadouts#fights}.
+     */
+    private static final String MELEE = "melee";
+    private static final String UNREACHABLE = "unreachable";
+    private static final String REACHED = "-";
 
     /**
      * What share of the fights ask for ground with something on it worth knocking an opponent into: lava, an edge, a
@@ -471,18 +481,23 @@ public final class League {
                                    RandomSource random, long fight) {
 
         List<Loadout> loadouts = Loadouts.enabled();
+        Opposition opposition = Opposition.named(name);
 
-        // Whatever drives the agent gets every loadout there is. The scripted fighter draws a bow and raises a shield now,
-        // so a run of it that left those out would not be a measurement of the teacher the network copies.
+        // Whatever drives the agent gets every loadout there is, bar one pairing: nothing that carries no shot is drawn
+        // against a ghast or a phantom, which it could neither kill nor be killed by. See Loadouts#fights. The rotation
+        // counts through what is left rather than through all of them, so a run with no trainer still meets every loadout
+        // that has a fight here, and an evaluation still draws its opponent evenly and its loadout evenly within that.
+        List<Loadout> drawn = Loadouts.against(opposition, loadouts);
+
+        // The scripted fighter draws a bow and raises a shield now, so a run of it that left those out would not be a
+        // measurement of the teacher the network copies.
         Loadout loadout = carried;
 
         if (loadout == null) {
 
-            loadout = directory == null ? loadouts.get((int) (fight % loadouts.size()))
-                    : loadouts.get(random.nextInt(loadouts.size()));
+            loadout = directory == null ? drawn.get((int) (fight % drawn.size()))
+                    : drawn.get(random.nextInt(drawn.size()));
         }
-
-        Opposition opposition = Opposition.named(name);
 
         if (opposition != null) {
 
@@ -655,27 +670,34 @@ public final class League {
      * as a pairing of one of them with an opponent and the trainer has no other way of knowing which this build fields: a run
      * told {@code -PleagueLoadouts=bow,crossbow} draws from two. They carry no cap: a cap is on an opponent, and holds down
      * everything the agent might carry against it at once.
+     *
+     * <p>The last column, {@code reach}, is the other thing only the game knows: which loadouts carry nothing that shoots
+     * ({@code melee}) and which opponents nothing but a shot can ever touch ({@code unreachable}), so that the trainer can
+     * refuse to pair the two. A trainer too old to read it pairs them as it always did; a build too old to write it leaves
+     * the column off and the trainer bars nothing. See {@link Loadouts#fights} and trainer/mmai/league.py.
      */
     private static void writeRoster() throws IOException {
 
-        StringBuilder out = new StringBuilder("opponent,kind,cap\n");
+        StringBuilder out = new StringBuilder("opponent,kind,cap,reach\n");
 
         for (String name : Opposition.fielded()) {
 
             Opposition opposition = Opposition.named(name);
-            out.append(String.format(Locale.ROOT, "%s,%s,%.5f\n", name, opposition.kind(), opposition.trainingCap()));
+            out.append(String.format(Locale.ROOT, "%s,%s,%.5f,%s\n", name, opposition.kind(), opposition.trainingCap(),
+                    opposition.unreachable() ? UNREACHABLE : REACHED));
         }
 
-        out.append(SCRIPTED).append(",scripted,1.00000\n");
+        out.append(SCRIPTED).append(",scripted,1.00000,").append(REACHED).append('\n');
 
         for (String name : Published.fielded()) {
 
-            out.append(String.format(Locale.ROOT, "%s,%s,1.00000\n", name, Published.KIND));
+            out.append(String.format(Locale.ROOT, "%s,%s,1.00000,%s\n", name, Published.KIND, REACHED));
         }
 
         for (Loadout loadout : Loadouts.enabled()) {
 
-            out.append(String.format(Locale.ROOT, "%s,%s,1.00000\n", loadout.name(), Loadouts.KIND));
+            out.append(String.format(Locale.ROOT, "%s,%s,1.00000,%s\n", loadout.name(), Loadouts.KIND,
+                    Loadouts.melee(loadout) ? MELEE : REACHED));
         }
 
         Path target = directory.resolve("roster.csv");
@@ -727,7 +749,7 @@ public final class League {
             }
 
             pairings = Pairings.parse(Files.readAllLines(file, StandardCharsets.UTF_8), League::fieldsOpponent,
-                    name -> Loadouts.named(name) != null);
+                    name -> Loadouts.named(name) != null, Loadouts::fields);
 
             pairsModified = modified;
         }
