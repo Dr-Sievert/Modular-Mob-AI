@@ -1165,6 +1165,21 @@ are deliberate.
 
 ## Learning
 
+- **A teacher pull that was configured but never applied, for 1,654 iterations, and the log said it was on.** `blast8`'s
+  `state.pt` carried `teacher_from = 0` — inherited through `blast7` and `blast6` from the imitation copy the lineage
+  began with, whose first pull really was at iteration 0, thousands of iterations ago. Started with `-TeacherWeight 0.3`
+  at iteration 34840 and again at 36493 after a fresh DAgger record, every update computed
+  `0.3 * max(0, 1 - 36494/1500)` = **0**: the pull was dead on arrival both times. Nothing caught it, because the only
+  line ever printed about the pull was the startup `pulling towards the teacher with weight 0.30`, which reports the
+  *configured* weight and never was the effective one — and the per-iteration teacher line only prints when a teacher
+  loss was actually computed, so a pull of exactly zero is the one case that says nothing at all. The live state was
+  patched by hand, and the clock is now a run's own: **a pull is only charged for the iterations it was actually on**. A
+  seeded run (a state loaded under a run name other than the one it was written for) and a run converted by
+  `train.py attend` start with no clock; a state saved with `--teacher-weight 0` and resumed with a pull starts the fall
+  afresh; a run resumed with the pull it was saved under still cannot restart its own fall by being restarted. And the
+  effective weight is said: a `teacher 0.15` field beside `drift` wherever it has left the configured weight, and a
+  WARNING at startup naming `teacher_from`, the iteration and the decay when the fall has already run out. **A number
+  that is configured is not a number that is applied, and only the applied one is worth printing.**
 - **blast7's judged best is under two points above the published network, so nothing was published.** blast7 judged its
   best at iteration 27100 (75.9% and a rating of 1652 by its own evaluation, which is the run's highest). Benched against
   the published `blast6` and the scripted fighter, one worker, `bench.ps1 -Teacher`, two sittings an hour apart on

@@ -117,6 +117,19 @@ to copy a hand-written fighter first, then improve the copy with reinforcement l
      holds it where it is for ever, which is what the old behaviour was. Where the fall counts from is kept in the run's
      state, so resuming does not start it over and a run cannot hold itself at full pull by being restarted.
 
+     **A pull is only charged for the iterations it was actually on**, which is the rule in one sentence: a run seeded from
+     another and a run converted by `train.py attend` start with no clock and begin their fall at the first iteration
+     *they* pull, and a state saved with `--teacher-weight 0` that is resumed with a pull starts the fall afresh, while a
+     run resumed with the pull it was saved under keeps the clock it had however little is left of it. Measured on
+     `blast8`: its state carried `teacher_from = 0`, inherited through `blast7` and `blast6` from the imitation copy the
+     lineage began with, so `--teacher-weight 0.3` at iteration 34840 computed `0.3 * max(0, 1 - 34841/1500)` = **0** on
+     every update and the pull was dead on arrival for 1,654 iterations. Nothing said so: the only line about the pull was
+     the startup `pulling towards the teacher with weight 0.30`, which is the configured weight and never was the
+     effective one. Now **the effective weight is said** — a `teacher 0.15` field beside `drift` on the iteration line
+     wherever it has left the configured weight, and a WARNING at startup naming `teacher_from`, the iteration and the
+     decay when a run is configured to pull and the fall has already run out. A state written before either was recorded
+     says nothing about where it came from or whether it was pulling, and keeps the clock it has.
+
      **The fall also has to finish inside the run's own life**, which a horizon of 6,000 did not. Measured on `league768`:
      the pull started at 0.5, the run stopped improving at iteration 925, had still not beaten that checkpoint 1,200
      iterations later — 54.5% against the best candidate's 54.3% over the 84 opponents they both met — and at iteration
@@ -318,8 +331,8 @@ scripts\train.ps1 -Run league -Suite league -Seed blast       the league, from r
 | `-LeagueModels` | | league only: published networks in `models\` to field as rated players, `blast`, or several separated by commas; see the league below |
 | `-ReplayEvery` | 200 | record one fight in this many per worker, for the viewer; 0 for none |
 | `-FromCopy` | off | the safeguarded settings for a run that starts from a copy |
-| `-Seed` | | start a new run from another's best checkpoint state: `runs\<seed>`, else `models\<seed>\state.pt`, else a folder by path; gentle settings as `-FromCopy` but no teacher pull, the critic alone for 30 iterations, 65536 steps and no battle limit by default. A seed whose critic never learned anything gets the critic this run configured rather than that one, see [the critic](#the-critic) |
-| `-TeacherWeight` | 0 | pull every update back towards the teacher's recorded answers in `runs\<run>\demos`; see `scripts\dagger.ps1` below |
+| `-Seed` | | start a new run from another's best checkpoint state: `runs\<seed>`, else `models\<seed>\state.pt`, else a folder by path; gentle settings as `-FromCopy` but no teacher pull, the critic alone for 30 iterations, 65536 steps and no battle limit by default. A seed whose critic never learned anything gets the critic this run configured rather than that one, see [the critic](#the-critic). **The teacher's clock is not seeded**: a seeded run's pull falls from the first iteration it itself pulls, not from whenever the run it came from first did, see [the pipeline](#the-pipeline-that-works) |
+| `-TeacherWeight` | 0 | pull every update back towards the teacher's recorded answers in `runs\<run>\demos`; see `scripts\dagger.ps1` below. A run given a pull it was not saved with starts the fall afresh, and says the effective weight beside `drift` wherever it differs from this one |
 | `-Full` | off | the whole build output |
 | `-Extra` | | options passed to the trainer |
 
@@ -351,7 +364,7 @@ why a new knob in the trainer needs no change here at all.
 | `--critic-gru` | true | the critic runs its own GRU and reads the fourteen privileged inputs; `false` is the plain feed-forward critic. Decides what a new run builds, and what a run seeded from a copy builds; a resume keeps the critic its state holds, see [the critic](#the-critic) |
 | `--critic-gru-width` | 0 = `--hidden` | how wide that memory is |
 | `--teacher-weight` | 0 | pull towards the run's demos; needs `runs\<run>\demos` |
-| `--teacher-decay` | 1500 | iterations over which that pull falls to nothing, from the first one this run ever pulled; 0 holds it for ever. A pull held at full strength is a ceiling and not a floor, see [the pipeline](#the-pipeline-that-works) |
+| `--teacher-decay` | 1500 | iterations over which that pull falls to nothing, from the first one this run ever pulled — a seeded or converted run's clock is its own, and a pull is not charged for iterations it was off for; 0 holds it for ever. A pull held at full strength is a ceiling and not a floor, see [the pipeline](#the-pipeline-that-works) |
 | `--teacher-release` | 6 | judged checkpoints in a row that fail to beat the best, while the pull is still on, before the rest of it is let go without waiting for the horizon: a run that is still being pulled and has stopped improving is the shape of a ceiling. 0 waits for the horizon |
 | `--teacher-release-over` | 200 | iterations that release takes. Gradual, because an imitation term removed between two updates moves the policy on its own |
 | `--teacher-rows` | 262144 | steps of the record a pull is scored on per update |
