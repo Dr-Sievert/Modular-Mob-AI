@@ -969,6 +969,113 @@ are deliberate.
     fuse still comes first. And the hazard shove, standing where agent, target and lava fall on one line, is given up in a
     pack, because lining one up means standing still and standing still is what the whole rule is against.
 
+- **The kite: against a pack it can outwalk, the fighter never steps in, and a drawn weapon's feet answer to the pack.**
+  A body walking backwards covers 0.216 blocks a tick and a zombie covers 0.154; a sword reaches three blocks from the eyes
+  and anything man sized strikes from a block and a half, two across a diagonal. So against slow walkers there is a band the
+  fighter can strike from and nothing in the pack can strike back from, and holding it is not a tactic that needs judging —
+  it is one number off the slots, the fastest `ENEMY_SPEED` in the fight against a backpedal. Where it holds, the
+  fighter now gives ground the moment one comes inside 2.6 blocks whether or not its swing is ready, stands still while the
+  swing is ready and lets the body walk into reach, and **does not close**. A vindicator covers 0.24 and reaches none of it.
+  - **It only holds while they are coming.** A pack that has stopped — stuck on a ledge, sliding away from the blow that just
+    landed, or not pathing — is walked up to after twenty ticks of not closing, because holding ground against a pack that is
+    not arriving is precisely the retreat measured above that turned 6.1% timeouts into 23.4%. With that guard the timeouts
+    barely move: 2.1% to 3.0% on the slow half of the roster, 2.5% to 2.7% on the fast half.
+  - **The widest thing wrong with this fighter in a pack was its bow, and nothing about packs had ever been asked of it.**
+    The count of the fight was read *after* the hands had committed, so a bow in a pack was a fighter standing still at a
+    fifth of walking pace, twenty ticks at a time, while four bodies walked onto it. Over 900 harness fights a bow landed
+    **0.0 blows a fight and took 2.3**, and a crossbow 0.0 and 3.2, against a sword's 8.6 and 0.5. The pack is sized up before
+    the weapon is chosen now, a draw in a pack is begun only where `finishesInTime` says it will be full before the nearest
+    arrives, and the step away while drawing is `giveGround` and not `retreat`. Those two rows went to **68.9% and 73.3%**,
+    taking 0.8 and 0.9.
+
+  On the pack bench, every one-mob fight a pack and no bystanders, one worker, 600 fights a row, all in one sitting, by how
+  many bodies fought:
+
+  | Fighter | 2 | 3 | 4 | 5 | 6 | every pack | timed out |
+  | --- | --- | --- | --- | --- | --- | --- | --- |
+  | slow walkers, before | 94.7% | 94.6% | 82.9% | 77.8% | 74.0% | **89.5%** | 2.1% |
+  | slow walkers, after | 95.9% | 95.2% | 91.0% | 78.1% | 86.0% | **92.1%** | 3.0% |
+  | slow walkers, `blast8` 035575, unchanged by any of this | 97.9% | 84.9% | 91.1% | 64.7% | 59.5% | 87.1% | 5.2% |
+  | fast melee, before | 64.0% | 50.5% | 51.0% | 43.1% | 25.0% | **53.2%** | 2.5% |
+  | fast melee, after | 78.2% | 61.1% | 54.2% | 48.8% | 43.7% | **64.2%** | 2.7% |
+  | fast melee, `blast8` 035575 | 73.0% | 35.4% | 28.3% | 5.6% | 19.2% | 45.8% | 6.9% |
+
+  Slow walkers are `zombie,husk,drowned,zombie_villager` and fast melee `vindicator,spider,wolf,piglin_brute`, of which the
+  wolf never makes a pack at all — it is not a monster, and `HostilePacks` only packs monsters. Eleven points at the fast
+  half is the surprise: none of the kite is reached there, and all of it is the bow and the crossbow, which are two loadouts
+  in ten of every row in the table.
+
+- **The pack harness said the sword was never the problem, which is the whole reason it exists.** `scripts	est.ps1 -Pack`
+  fights packs of two, three and four zombies and of two and three vindicators tick by tick and prints what a win rate leaves
+  out. Its first sitting was a plain sword on the normal rung and the teacher won **every one of ninety zombie fights**; on
+  the hard rung it won 93%, 100% and 100%. A column that cannot go up says nothing, so the suite was put on the hard rung and
+  on all ten loadouts, and the second table — the same fights by what the agent was carrying — is where the fight actually
+  was. Over 900 fights, five packs and ten loadouts each:
+
+  | | 2x zombie | 3x zombie | 4x zombie | 2x vindicator | 3x vindicator | sword | axe | bow | crossbow |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | before | 99.4% | 98.3% | 90.6% | 61.1% | 45.0% | 83.3% | 81.1% | 57.8% | 43.3% |
+  | after | 99.4% | 99.4% | **99.4%** | 67.8% | 46.7% | 85.6% | 78.9% | **68.9%** | **73.3%** |
+  | blows taken a fight, before | 0.4 | 0.8 | 1.1 | 1.1 | 1.3 | 0.5 | 0.6 | 2.3 | 3.2 |
+  | blows taken a fight, after | 0.1 | 0.1 | 0.2 | 1.0 | 1.3 | 0.3 | 0.6 | 0.8 | 0.9 |
+
+  The column that says the kite is a kite rather than a longer fight is **where the blows land**: against zombies they went
+  from a mean 2.82, 2.84 and 2.85 blocks to 2.95, 2.98 and 2.96, which is out past the two and a half a zombie's own reach
+  ends at, and the share of ticks the fighter's feet were going *towards* the pack fell from 23 to 29% to 9 to 14%. Four
+  zombies used to land 1.1 blows a fight on it and now land 0.2.
+
+- **What the kite costs the plain one-on-one bench is somewhere between nothing and three points, and the fairest single
+  reading of it is 1.3.** Every rule above is gated on two or more bodies being in the fight, which one opponent never is,
+  and the arena check reads 20 of 20 at exactly 54.0 ticks as it always has — so there is no path by which a fight against
+  one body can have changed. What did change is that a pack fight is now about half again as long, and a slower fighter
+  releases its sites later, so it draws a different sample of the terrain library. Three reads, one worker, `-Bystanders 0`:
+
+  | Bench | before | after |
+  | --- | --- | --- |
+  | 600 fights | 83.0% | 77.7% |
+  | 2,000 fights | 82.9% | 79.3% |
+  | 2,000 fights, `-Ground 7` | **82.7%** | **81.4%** |
+
+  The before column repeating to three tenths of a point across three sittings is the thing worth keeping: it is the
+  tightest this fighter has ever read, and it is what makes the after column's three and a half point spread visible at all.
+  **The ground is most of it.** The unpinned pair fought 752 drop sites against 424 and 787 water against 1,039, and drop is
+  the ground both fighters do worst on; reweighting the after run to the before run's mix takes a point off the gap on its
+  own. Pinning the library's start point takes it to 1.3 — and even pinned the two do not fight the same sites, because
+  which site is free when a fight asks for one depends on how long the fights before it ran, which is exactly what this
+  change alters. Splitting the rows by whether any pack rule can reach them at all says the same thing from the other side:
+  the 81 rows it cannot reach moved by 3.4 points and the 55 it can by 2.9, which is not the shape of a real effect in the
+  reachable half.
+  - **Where a real cost would be, if there is one, is a fight held open.** A kite that works is a fight about half again as
+    long — 175 ticks to 240 against two zombies on the harness, 283 to 433 against four — and a fight held open is a fight
+    that can run the clock out. It does not, much: timeouts across the pack bench went 2.1% to 3.0% on the slow half of the
+    roster and 2.5% to 2.7% on the fast half. But `3x_silverfish(hard)` went from no timeouts to 10% and `2x_wither_skeleton`
+    lost two of twenty, and both are named below as things left undone rather than measured away.
+
+- **What is deliberately left out of the kite.**
+  - **The standoff does not ask how far the body it is holding off can reach.** `KITE_EDGE` is 2.6 blocks, which is
+    outside what anything man sized strikes from; a wither skeleton is over two blocks tall and a ravager strikes from four,
+    and against those the kite holds the fighter inside the reach it is trying to stay out of. The fighter already knows
+    which slots have struck from further than a man can — it is the same bit the shield rule reads, `Fighter#reachesFar` —
+    so the fix is to refuse the kite on one of them, and it is not in because it was thought of after the benches were run
+    and an unmeasured rule is worth less than a written-down one.
+  - **Nothing was added for fast melee beyond what the kite's own gate left alone.** The knockback opener, the shield while
+    the swing cools and the run when the arithmetic is hopeless were all already there and all were measured when they were
+    written; the eleven points the fast half of the roster gained came from the drawn weapon, not from anything aimed at a
+    vindicator. A sidestep along the pack's front rather than straight back from it is the obvious next thing and it is not
+    in: against a vindicator a backpedal loses only 0.024 blocks a tick, which is a third of a block over a sword's whole
+    cooldown, so what is killing the fighter against three of them is not the ground it loses but that two of their blows
+    take it from full health to dead. That is an argument for the shield and the knockback, both of which it already has.
+  - **The kite does not stop when the fight is won.** Nothing in it asks whether the pack is nearly down or whether the
+    fighter has taken a scratch, so it will hold off two silverfish at the edge of its reach for as long as the clock runs.
+
+- **The pack numbers this work was started from do not reproduce, and it matters which way they were wrong.** The brief it
+  began with had the teacher at 68.6% of small packs of slow walkers and 44.1% of large ones, against 66.1% and 41.5% of fast
+  melee, and concluded that the fighter was doing no better against a zombie than against a vindicator and so was not using
+  the one advantage a kite has. Measured on this build, one sitting, the same flags and the same two opponent lists, it reads
+  **92.5% and 75.8% against 58.1% and 35.6%** — thirty points better against the walkers, not level with them. So the premise
+  was the wrong way round: the kite was worth having, but the hole was fast melee and the two loadouts that draw. Both were
+  found by the harness rather than by the bench, which is the argument for having built the harness first.
+
 - **The 1500-rated anchor was drawing a bow.** Every rating in the league is measured against the scripted fighter, so its
   strength has to stay put, and it is held to something to swing for exactly that reason. But `Loadouts.melee` asked only
   whether hotbar slot zero was a sword or an axe, and `sword_and_bow` leads with an iron sword and keeps the bow behind it:
