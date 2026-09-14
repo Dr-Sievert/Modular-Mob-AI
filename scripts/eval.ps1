@@ -10,6 +10,7 @@
 #                                                           for it to come round in the rotation
 #   scripts\eval.ps1 -Suite league -Opponents ravager -ReplayEvery 1   one matchup, every fight of it written down: what
 #                                                           the league page offers when a row has no recorded fight to show
+#   scripts\eval.ps1 -Weights models\blast6\best.mbw -Suite league -Bystanders 0   the plain one-on-one league, no crowds
 #
 # Two evaluations do NOT fight the same sites: without -Ground a worker starts somewhere random in the terrain library
 # (TerrainSites.startLibrary, "anywhere otherwise"), so the ground under a comparison is a fresh sample every time. It is
@@ -61,6 +62,11 @@ param(
     # one sample's worth of ground. For "is this build better than that one" the answer is more fights, not a seed; see
     # docs\findings.md, and bench.ps1 for why two numbers from two sittings cannot be subtracted at all.
     [int] $Ground = 0,
+
+    # What share of league fights stands a crowd of monsters about it that take no interest in it, as the build's
+    # -PleagueBystanders; empty for whatever the build's own default is, which is a quarter. `-Bystanders 0` asks the plain
+    # one-on-one question, which is how a network trained before the crowd landed can be read beside one trained with it.
+    [string] $Bystanders = '',
 
     # The scripted fighter instead of a network, which is the reference every other number here wants. A copy that wins 27%
     # of the league says nothing on its own: the roster holds wardens and evokers, and the question is always how much of
@@ -125,4 +131,5 @@ Invoke-Gradle (@(':fabric:runGametestParallel', "-Pbrain=$(if ($Teacher) { 'scri
         @(if (-not $Teacher) { "-PbrainWeights=$file" }) +
         @(if ($Loadouts.Count -gt 0) { "-PleagueLoadouts=$($Loadouts -join ',')" }) +
         @(if ($Opponents.Count -gt 0) { "-PleagueOpponents=$($Opponents -join ',')" }) +
+        @(if ($Bystanders -ne '') { "-PleagueBystanders=$Bystanders" }) +
         @(if ($Ground -ne 0) { "-PterrainSeed=$Ground" }))

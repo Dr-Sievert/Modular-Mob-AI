@@ -6,6 +6,7 @@
 #   scripts\bench.ps1 -Run blast -Last 3 -Arenas 2000    tighter, four times as long
 #   scripts\bench.ps1 -Run blast -Last 2 -Teacher        and the scripted fighter as one more row, in the same sitting
 #   scripts\bench.ps1 -Weights models\blast6\best.mbw -Teacher -Heap 1G    beside a live run, which needs the memory
+#   scripts\bench.ps1 -Weights models\blast6\best.mbw -Teacher -Bystanders 0   the plain one-on-one league, no crowds
 #
 # Why this exists rather than reading a run's own eval.csv: a league run's win rate and rating are measured against
 # opponents the matchmaking keeps changing, so the same network scores differently as the run goes on, and a rating wanders
@@ -47,6 +48,10 @@ param(
     [ValidateSet('terrain', 'arena', 'league')] [string] $Suite = 'league',
     [string[]] $Loadouts = @(),
     [int] $Ground = 0,
+
+    # What share of the fights stands a crowd about them, forwarded to eval.ps1; empty for the build's own default of a
+    # quarter. `-Bystanders 0` is the plain one-on-one bench, which is how to ask whether a gap is the crowd or the fight.
+    [string] $Bystanders = '',
 
     # The scripted fighter as one more row of this bench, measured first so the live lines have their scale from the start.
     [switch] $Teacher
@@ -157,6 +162,11 @@ try {
         if ($Loadouts.Count -gt 0) {
 
             $arguments.Loadouts = $Loadouts
+        }
+
+        if ($Bystanders -ne '') {
+
+            $arguments.Bystanders = $Bystanders
         }
 
         if ($Ground -ne 0) {
