@@ -31,6 +31,11 @@ Read these before changing anything:
   network outputs) are fixed: every trained network depends on them, and a schema id stamped into every weight file refuses a
   mismatch. Don't change them without the owner's agreement. Another body brings its own layout instead of bending that one;
   see [docs/species.md](docs/species.md).
+- **The agent perceives like a player, not like a radar.** A body is in its view if it is in a 100° cone about its aim with a
+  line of sight, or within 6 blocks all round, or if it just hit the agent; a body it stops perceiving is remembered at its last
+  known place for 3 seconds and then forgotten. One mechanism, `EnemySlots`, and the cost of it is one spatial query and a dot
+  product per body in range — never a clip per body. Measured at 2,000 mobs: 230 to 410 µs a tick. Don't put the full circle
+  back; see [docs/architecture.md](docs/architecture.md) and findings.md.
 - **Everything runs from `scripts\*.ps1`**, set up once by `scripts\setup.ps1`. Nothing is hardcoded to a machine; paths
   are found relative to the repository.
 - **Never commit Mojang assets.** Textures come from the local Gradle cache at runtime, or the game jar.
@@ -75,7 +80,8 @@ scripts\setup.ps1                      once per machine: Java 21, Python + PyTor
 scripts\test.ps1                       20 arena fights with the scripted fighter: expect 20/20, 54 ticks each
 scripts\test.ps1 -Mechanics            the item and block rules against a player's numbers: expect 57 passed
 scripts\test.ps1 -Crowd -Weights models\blast6\best.mbw    one fight with 0, 1, 3 and 9 monsters standing about it, tick by tick
-scripts\test.ps1 -Play                 the agent in a real game (jar networks, /mmai, sides, Infinity loadouts): expect 20 passed
+scripts\test.ps1 -Horde                20, 100, 500 and 2,000 mobs round one agent: clips a tick, time to perceive, ticks lived
+scripts\test.ps1 -Play                 the agent in a real game (jar networks, /mmai, sides, Infinity loadouts): expect 24 passed
 scripts\play.ps1                       the dev client, agents on the best network in models\; -Model, -Weights, -Loader
 scripts\terrain.ps1                    once per machine before any training: the terrain library a run fights on
 scripts\terrain.ps1 -Add 2048          more ground appended to it, without regenerating what is already there

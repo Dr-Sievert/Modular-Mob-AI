@@ -134,6 +134,16 @@ public final class AgentObservation {
 
     // -----------------------------------------------------------------------------------------------------------
 
+    /**
+     * How many enemies the agent is aware of, over the ten slots and clamped; see
+     * {@link ObservationSchema#ENEMIES_IN_RANGE_CLAMP}. Shared by every body, because the field means the same thing to all of
+     * them and a second copy of the clamp is a second place for it to drift.
+     */
+    static float enemiesInRange(EnemySlots slots) {
+
+        return Math.min(slots.inRangeCount() / (float) ObservationSchema.ENEMY_SLOTS, ObservationSchema.ENEMIES_IN_RANGE_CLAMP);
+    }
+
     private static void writeSelf(AgentMob agent, EnemySlots slots, float[] out, int base, float sin, float cos) {
 
         int at = base + ObservationSchema.SELF_OFFSET;
@@ -162,7 +172,7 @@ public final class AgentObservation {
         out[at + ObservationSchema.SELF_AIM_SIN] = sin;
         out[at + ObservationSchema.SELF_AIM_COS] = cos;
         out[at + ObservationSchema.SELF_HURT_TIME] = agent.hurtTime / 10.0F;
-        out[at + ObservationSchema.SELF_ENEMIES_IN_RANGE] = slots.inRangeCount() / (float) ObservationSchema.ENEMY_SLOTS;
+        out[at + ObservationSchema.SELF_ENEMIES_IN_RANGE] = enemiesInRange(slots);
         out[at + ObservationSchema.SELF_CLOCK] = clock(agent);
         out[at + ObservationSchema.SELF_ARROWS] = arrows(agent);
         out[at + ObservationSchema.SELF_ARMOUR] = armour(agent);
@@ -359,6 +369,11 @@ public final class AgentObservation {
      * frame. The block's shape is shared because an opponent looks the same whoever is looking at it; what a species
      * chooses is whether it has one and where it sits.
      *
+     * <p>Where each one is comes from the <b>slot</b> and not from the entity, {@link EnemySlots#seenAt}: on a tick the agent
+     * perceives the body that is this tick's own reading, and on a tick it does not it is the last one the agent had, which is
+     * the memory the slots keep. Reading the entity here instead would be reading a body's position through the wall it went
+     * behind, which is the one thing the perception model may not do; see {@link EnemySlots}.
+     *
      * @param block where this body's enemy block starts in the row, not where the row starts
      */
     static void writeEnemies(AgentMob agent, EnemySlots slots, float[] out, int block, float sin, float cos) {
@@ -377,7 +392,7 @@ public final class AgentObservation {
 
             int at = block + slot * ObservationSchema.ENEMY_STRIDE;
 
-            Vec3 delta = enemy.getEyePosition().subtract(eye);
+            Vec3 delta = slots.seenAt(slot).subtract(eye);
             double distance = Math.sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
 
             out[at + ObservationSchema.ENEMY_PRESENT] = 1.0F;
@@ -386,20 +401,20 @@ public final class AgentObservation {
             out[at + ObservationSchema.ENEMY_RIGHT] = (float) (right(delta.x, delta.z, sin, cos) / ObservationSchema.VIEW_DISTANCE);
             out[at + ObservationSchema.ENEMY_DISTANCE] = (float) (distance / ObservationSchema.VIEW_DISTANCE);
 
-            Vec3 velocity = enemy.getDeltaMovement();
+            Vec3 velocity = slots.seenMoving(slot);
             out[at + ObservationSchema.ENEMY_VELOCITY_FORWARD] = (float) (forward(velocity.x, velocity.z, sin, cos) / VELOCITY_SCALE);
             out[at + ObservationSchema.ENEMY_VELOCITY_UP] = (float) (velocity.y / VELOCITY_SCALE);
             out[at + ObservationSchema.ENEMY_VELOCITY_RIGHT] = (float) (right(velocity.x, velocity.z, sin, cos) / VELOCITY_SCALE);
 
             // Where the enemy is looking relative to the line between us, so that facing away and facing straight at the
             // agent are told apart without the network having to work out world directions. An arrow has no head to turn,
-            // and its own rotation is the way it is flying, which is exactly as useful in the same slot.
-            float heading = enemy instanceof LivingEntity looking ? looking.getYHeadRot() : enemy.getYRot();
+            // and its own rotation is the way it is flying, which is exactly as useful in the same slot. Remembered with the
+            // position, so a slot the agent is only remembering is a whole picture of one moment rather than half of two.
             float bearing = (float) Mth.atan2(-delta.x, delta.z);
-            float facing = Mth.wrapDegrees(heading) * DEGREES_TO_RADIANS - bearing;
+            float facing = Mth.wrapDegrees(slots.seenYaw(slot)) * DEGREES_TO_RADIANS - bearing;
             out[at + ObservationSchema.ENEMY_FACING_SIN] = Mth.sin(facing);
             out[at + ObservationSchema.ENEMY_FACING_COS] = Mth.cos(facing);
-            out[at + ObservationSchema.ENEMY_PITCH] = enemy.getXRot() / 90.0F;
+            out[at + ObservationSchema.ENEMY_PITCH] = slots.seenPitch(slot) / 90.0F;
 
             out[at + ObservationSchema.ENEMY_KIND] = entityKind(enemy);
             out[at + ObservationSchema.ENEMY_SPRINTING] = enemy.isSprinting() ? 1.0F : 0.0F;

@@ -57,18 +57,46 @@ public final class ObservationSchema {
     public static final int ENEMY_SIZE = ENEMY_SLOTS * ENEMY_STRIDE;
 
     /**
-     * How far an enemy can be and still hold a slot. Beyond this it is nothing to the agent at all — not even part of the in
-     * range count, which is over what it can see. Distance is not the whole rule: a slot also wants a line of sight from the
-     * agent's eyes, see {@code EnemySlots}.
+     * How far an enemy can be and still be perceived at all. Beyond this it is nothing to the agent — not even part of the
+     * count of what it is aware of. Distance is only the outer bound of three ways of noticing something, see
+     * {@code EnemySlots}: in front and in sight, near enough to hear, or having just hit the agent.
      */
     public static final double VIEW_DISTANCE = 32.0D;
 
     /**
-     * How long a slot stays reserved for an enemy that has left the view or gone behind cover. Without this an opponent that
-     * steps out and back can return in a different slot, which is exactly the reshuffling the leases exist to prevent. The
-     * slot reads empty while the lease runs on grace: it is the slot that is kept, not the reading.
+     * How wide the agent looks, in degrees, measured across the whole cone and about its aim: fifty degrees either side of
+     * where it is looking. Something outside it is <b>behind the agent</b> and is not seen, however close and however lit,
+     * which is the thing a player has always had to deal with and the agent never did — its view used to be the full circle,
+     * so a body at its back read exactly like one in front of it and no amount of turning was ever worth anything.
+     *
+     * <p>A hundred degrees is a person's, near enough: a human's binocular field is about 120 and what is usable at the edge
+     * of it is less. It is the one number this cone has, and it is read against the <b>aim</b> — the same yaw the whole
+     * observation is written in, so "forward" in a slot and the middle of the cone are the same direction by construction.
+     *
+     * <p>It is a cone on the yaw alone and so is <b>generous vertically</b>: a body straight above or below the agent is
+     * inside it whatever the pitch, which is deliberate. Pitch is the agent's aim for a bow and for a block, it moves far more
+     * than a head does, and a model that blinded the agent upwards every time it looked at the ground would be a worse
+     * likeness of a player than none at all.
      */
-    public static final int LEASE_GRACE_TICKS = 40;
+    public static final double VIEW_CONE_DEGREES = 100.0D;
+
+    /**
+     * How far the agent notices something all round it, whatever it is looking at: six blocks. A player hears the zombie
+     * behind them, and something a stride and a half away is touching them. It is what keeps the cone from being a blindfold
+     * at melee range, where being surrounded is the whole difficulty — with sight alone, a body that walked round the agent
+     * would drop out of the observation exactly as it became the thing most likely to kill it.
+     */
+    public static final double HEARING_DISTANCE = 6.0D;
+
+    /**
+     * How long the agent keeps a body it has stopped perceiving: three seconds. This is the <b>memory</b>, and it is the same
+     * mechanism that used to be the lease — one, not two. A slot goes on reading the body's last known place and heading for
+     * the window, and the window starts again on every tick the body is seen, heard or felt; when it runs out the slot is let
+     * go. So an opponent that steps behind a tree, or walks round the agent's back, is still in the fight and still in the
+     * same slot, which is what a lease was always for, and the reading no longer goes blank while it is out of sight, which is
+     * what a memory adds.
+     */
+    public static final int MEMORY_TICKS = 60;
 
     // Offsets within one enemy slot.
     public static final int ENEMY_PRESENT = 0;
@@ -200,10 +228,18 @@ public final class ObservationSchema {
     public static final int SELF_HURT_TIME = 18;
 
     /**
-     * How many enemies the agent can see: everything alive that counts as one within {@link #VIEW_DISTANCE} and in sight of
-     * its eyes, whether it won a slot or not, over {@link #ENEMY_SLOTS}. See {@code EnemySlots#inRangeCount}. Sight is part
-     * of it because without it a night in a real world read 1.5 here where no training fight ever put it over 0.3, counting
-     * the monsters through the wall and in the caves below; see findings.md.
+     * How many enemies the agent is aware of: everything it perceived this tick, whether it won a slot or not, and everything
+     * it is still remembering, over {@link #ENEMY_SLOTS}. See {@code EnemySlots#inRangeCount}. How something comes to be
+     * perceived is three rules and not one — in the cone and in sight, within hearing, or having just hit the agent — which is
+     * what took this from 1.5 on a real night, counting the monsters through the wall and in the caves below, to a number about
+     * what is actually on the agent.
+     *
+     * <p><b>Clamped at {@link #ENEMIES_IN_RANGE_CLAMP}.</b> The agent is meant for worlds with thousands of mobs in them, where
+     * an unclamped count would hand this field a two hundred and put every weight reading it into a range no training fight
+     * ever produced — a league fight runs from nought to about 1.2, and the earlier decision not to clamp was taken when ten
+     * bodies was the most the view could hold. Two is twenty bodies, which is twice the slots and twice anything the league
+     * fields, so <b>nothing any trained network has ever seen changes</b>: the clamp only bites where the old number was
+     * meaningless anyway. See findings.md, where the decision it reverses is written down.
      *
      * <p>There is deliberately no second count of <i>the side</i> beside it. The critic gets one ({@code FightFacts#FOES}),
      * and the difference between the two is exactly the part a real game cannot supply: the side is the arena's roster,
@@ -213,6 +249,14 @@ public final class ObservationSchema {
      * duplicates its neighbour costs a network weights and teaches it nothing.
      */
     public static final int SELF_ENEMIES_IN_RANGE = 19;
+
+    /**
+     * The most {@link #SELF_ENEMIES_IN_RANGE} may read, which is twenty bodies: twice the ten slots, and well above the 1.2 a
+     * league fight's worst crowd comes to. A field with no ceiling is fine while the view can hold ten bodies and absurd in a
+     * world with a thousand, and the number a network is asked to act on is not more useful for saying two hundred than for
+     * saying twenty — by then the answer is the same whatever it is.
+     */
+    public static final float ENEMIES_IN_RANGE_CLAMP = 2.0F;
 
     /**
      * How much of this fight's clock has run: nought at the first tick, one once the arena's time is up. Written from the

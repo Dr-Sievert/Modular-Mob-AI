@@ -9,6 +9,7 @@ import java.util.stream.Collectors;
 import org.jetbrains.annotations.Nullable;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
@@ -20,12 +21,18 @@ import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.commands.arguments.coordinates.Vec3Argument;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.MobSpawnType;
 import net.minecraft.world.level.entity.EntityTypeTest;
+import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.PlayerTeam;
 import net.minecraft.world.scores.Team;
@@ -36,6 +43,7 @@ import net.sievert.modularmobai.arena.Loadouts;
 import net.sievert.modularmobai.brain.Brain;
 import net.sievert.modularmobai.brain.Brains;
 import net.sievert.modularmobai.brain.Models;
+import net.sievert.modularmobai.brain.schema.EnemySlots;
 import net.sievert.modularmobai.brain.schema.Species;
 import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.entity.agent.AgentMob;
@@ -49,7 +57,8 @@ import net.sievert.modularmobai.entity.agent.AgentMob;
  *   /mmai brain TARGETS BRAIN               give agents a brain of their own, or default to hand them back
  *   /mmai ally TARGETS TARGETS              put them all on one side
  *   /mmai enemy TARGETS TARGETS             put the first on one side and the second on another
- *   /mmai info [TARGETS]                    what each agent runs on, carries and sides with; every agent without targets
+ *   /mmai horde MOB COUNT [RADIUS]          that many of one mob in a ring round you, set against every agent near them
+ *   /mmai info [TARGETS]                    what each agent runs on, carries and sides with, and what it last cost to see
  *   /mmai models                            the networks the game can find, and what agents default to
  *   /mmai loadouts                          every loadout by name
  * </pre>
@@ -68,8 +77,31 @@ public final class AgentCommands {
     /** More lines than this in one answer would only scroll the ones that matter off the screen. */
     private static final int MAX_LINES = 20;
 
+    /**
+     * How far from the caller a horde stands by default, and the most of it there may be. Twenty four blocks is inside the
+     * thirty two an agent perceives and far enough to watch the whole thing walk in. Two thousand is the ceiling because that is
+     * the size the horde suite measures the cost at, and because a command that can hang a server on a typo is a bad command.
+     */
+    private static final int HORDE_RADIUS = 24;
+    private static final int MOST_OF_A_HORDE = 2_000;
+
+    private static final SimpleCommandExceptionType HORDE_WANTS_A_MOB =
+            new SimpleCommandExceptionType(Component.literal("A horde has to be made of mobs, and that is not one"));
+
+    private static final SimpleCommandExceptionType HORDE_FOUND_NO_GROUND =
+            new SimpleCommandExceptionType(Component.literal("Nowhere round here to stand a horde on"));
+
     private static final SuggestionProvider<CommandSourceStack> LOADOUTS =
             (context, builder) -> SharedSuggestionProvider.suggest(Loadouts.names(), builder);
+
+    /**
+     * Every entity kind the game knows, for the horde. Vanilla's own are offered by their short name, since that is what
+     * anybody types, and a mod's by the whole id; the command takes either. Whether one is a mob at all is settled when one is
+     * made rather than guessed from the name, so nothing here has to keep a list of what fights.
+     */
+    private static final SuggestionProvider<CommandSourceStack> MOBS = (context, builder) -> SharedSuggestionProvider.suggest(
+            BuiltInRegistries.ENTITY_TYPE.keySet().stream()
+                    .map(id -> "minecraft".equals(id.getNamespace()) ? id.getPath() : id.toString()).sorted().toList(), builder);
 
     private static final SuggestionProvider<CommandSourceStack> BRAINS = (context, builder) -> {
 
@@ -120,6 +152,16 @@ public final class AgentCommands {
                                         .executes(context -> enemy(context.getSource(),
                                                 EntityArgument.getEntities(context, "targets"),
                                                 EntityArgument.getEntities(context, "others"))))))
+
+                .then(Commands.literal("horde")
+                        .then(Commands.argument("mob", StringArgumentType.string()).suggests(MOBS)
+                                .then(Commands.argument("count", IntegerArgumentType.integer(1, MOST_OF_A_HORDE))
+                                        .executes(context -> horde(context.getSource(), string(context, "mob"),
+                                                IntegerArgumentType.getInteger(context, "count"), HORDE_RADIUS))
+                                        .then(Commands.argument("radius", IntegerArgumentType.integer(2, HORDE_RADIUS * 4))
+                                                .executes(context -> horde(context.getSource(), string(context, "mob"),
+                                                        IntegerArgumentType.getInteger(context, "count"),
+                                                        IntegerArgumentType.getInteger(context, "radius")))))))
 
                 .then(Commands.literal("info")
                         .executes(context -> info(context.getSource(), context.getSource().getLevel()
@@ -274,6 +316,93 @@ public final class AgentCommands {
         return targets.size() + others.size();
     }
 
+    /**
+     * A horde: that many of one mob, standing in a ring round whoever ran the command, on the ground, with their own minds, and
+     * set against every agent in sight of them as {@code /mmai enemy} would.
+     *
+     * <p>There to make the thing the agent is being built for reachable by hand. A player who wants to see what a network does
+     * when it is surrounded should not have to write a hundred {@code /summon}s and a {@code /team join} for each; and the same
+     * arrangement is what {@code scripts\test.ps1 -Horde} measures, so what is seen on screen and what is measured are the same
+     * fight. The sides are set outright rather than left to the mobs noticing, because a horde that trickles in a few at a time
+     * is a different thing from a horde, and the default rules bring them along anyway.
+     *
+     * <p>Each one is placed on the highest ground at its spot, so a ring on a hillside follows the hill, and any that finds
+     * nowhere to stand is not spawned rather than dropped inside rock — the count in the answer is what really stood up.
+     */
+    private static int horde(CommandSourceStack source, String mobName, int count, int radius) throws CommandSyntaxException {
+
+        ServerLevel level = source.getLevel();
+        Vec3 middle = source.getPosition();
+
+        ResourceLocation id = ResourceLocation.tryParse(mobName.contains(":") ? mobName : "minecraft:" + mobName);
+        EntityType<?> type = id == null ? null : BuiltInRegistries.ENTITY_TYPE.getOptional(id).orElse(null);
+
+        if (type == null) {
+
+            throw HORDE_WANTS_A_MOB.create();
+        }
+
+        // Made once to find out whether it is a mob at all, rather than trusting the name: a horde of item frames is not a
+        // thing this can do anything with, and finding out on the first of a thousand is better than on the last.
+        if (!(type.create(level) instanceof Mob probe)) {
+
+            throw HORDE_WANTS_A_MOB.create();
+        }
+
+        probe.discard();
+
+        List<Mob> horde = new ArrayList<>(count);
+        double spacing = Math.max(1.0D, 2.0D * Math.PI * radius / Math.max(1, count));
+
+        for (int at = 0; at < count; at++) {
+
+            // Round the caller, and out onto further rings once one is full, so a big horde is a crowd and not a stack.
+            int perRing = Math.max(1, (int) (2.0D * Math.PI * radius / spacing));
+            double ring = radius + (at / perRing) * 2.0D;
+            double angle = (at % perRing) * (Math.PI * 2.0D / perRing);
+
+            BlockPos spot = level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                    BlockPos.containing(middle.x + Math.cos(angle) * ring, middle.y, middle.z + Math.sin(angle) * ring));
+
+            if (!(type.create(level) instanceof Mob mob)) {
+
+                continue;
+            }
+
+            mob.moveTo(spot.getX() + 0.5D, spot.getY(), spot.getZ() + 0.5D, (float) Math.toDegrees(angle) + 90.0F, 0.0F);
+            mob.finalizeSpawn(level, level.getCurrentDifficultyAt(spot), MobSpawnType.COMMAND, null);
+            mob.setPersistenceRequired();
+
+            level.addFreshEntity(mob);
+            horde.add(mob);
+        }
+
+        if (horde.isEmpty()) {
+
+            throw HORDE_FOUND_NO_GROUND.create();
+        }
+
+        // Set against every agent near enough to be in the fight, which is what makes it a horde rather than scenery. An agent
+        // already on a team keeps it and the horde goes on another, which is what Allegiance#enemy does.
+        double reach = radius * 2.0D;
+        List<AgentMob> agents = level.getEntities(EntityTypeTest.forClass(AgentMob.class),
+                new AABB(middle, middle).inflate(reach), agent -> agent.isAlive());
+
+        if (!agents.isEmpty()) {
+
+            Allegiance.enemy(agents, horde);
+        }
+
+        final int stood = horde.size();
+        final int sided = agents.size();
+
+        source.sendSuccess(() -> Component.literal("Stood up " + stood + " " + id.getPath()
+                + (sided == 0 ? " and found no agent to set them against" : " against " + sided + " agent"
+                + (sided == 1 ? "" : "s"))), true);
+
+        return stood;
+    }
+
     private static int info(CommandSourceStack source, Collection<? extends Entity> targets) {
 
         if (targets.isEmpty()) {
@@ -302,6 +431,14 @@ public final class AgentCommands {
                         .append(agent.brainName() == null ? " (the default)" : " (its own)")
                         .append(", carries ").append(agent.loadoutName() == null ? "what it was given" : agent.loadoutName())
                         .append(String.format(Locale.ROOT, ", health %.1f", agent.getHealth()));
+
+                // What it cost this agent to perceive on its last tick, which is the number to look at when a world with a
+                // thousand mobs in it starts to feel slow: how many bodies it is aware of, how many clips through the world it
+                // asked for, and how long the whole of it took. See EnemySlots.
+                EnemySlots view = agent.brain().enemySlots();
+
+                line.append(String.format(Locale.ROOT, ", sees %d, %d clips in %.0f us", view.inRangeCount(),
+                        view.lastClips(), view.lastMicros()));
             }
 
             Team team = target.getTeam();

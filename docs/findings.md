@@ -532,6 +532,43 @@ are deliberate.
     promises that it has not taken *this* agent, and the mechanics suite's plots sit a few blocks apart, so three more plots
     with agents on them was enough for a bystander with its wits about it to pick a neighbour's and fail the suite about one run
     in three. The assertion now says what the rule says.
+- **The view was the full circle, and that cost twice: nothing to turn for, and a bill that grew with the world.** A slot went
+  to any hostile within thirty two blocks in any direction that the agent had a line of sight to. Two things follow from the
+  circle and both are wrong. **A body at the agent's back read exactly like one in front of it**, so turning was worth nothing,
+  the aim had nothing to do but point at what it was already fighting, and "look around" was never a thing the agent could be
+  rewarded for learning. And **the work grew with the world**: a clip through the world for every hostile candidate, every tick,
+  which on flat ground with a thousand mobs on it is a thousand clips a tick for an agent that is looking at one zombie.
+  - **The model is now a player's**: a body is perceived if it is inside a hundred-degree cone about the agent's own aim *and*
+    in sight; or within six blocks, all round and through anything, which is hearing; or if it is what last hurt the agent. Any
+    one is enough. The cone is on the yaw alone, so overhead and underfoot are inside it — pitch is the aim for a bow and for a
+    block and moves far more than a head does, and blinding the agent upwards whenever it looked at the ground would be a worse
+    likeness than none. Hearing is what keeps the cone from being a blindfold in the melee, which is the one place being
+    surrounded decides everything.
+  - **The lease became the memory, which reverses an earlier decision on purpose.** A lease used to keep the slot and blank the
+    reading, on the argument — written down here — that a position two seconds old is a lie and remembering is the GRU's job.
+    That was right for a circle, where the only way out of the view was to go behind something. With a cone the commonest way to
+    stop perceiving a body is that **the agent turned its head**, and a view where looking away deletes the zombie in front of
+    you is not a player's. So a slot the agent has stopped perceiving now reads the body's last known position, velocity and
+    heading, present flag on, for three seconds, and the window restarts on every tick it is perceived again. The wall test was
+    rewritten to hold the new rule the hard way: the zombie is **moved** while it is hidden, and the slot goes on reading the
+    corner it was last seen in, which is the thing wall vision could not do.
+  - **What is remembered is the geometry and not the whole block.** Health, hands, swinging and whether it has the agent as its
+    target read live even for a remembered body. That is a line drawn deliberately rather than an oversight: the geometry is what
+    the agent aims and steps by, and a second snapshot of a mob's hands is a second thing to keep in step for no gain anybody
+    could measure. It is written here so that the next person to notice does not take it for a bug.
+  - **Measured on two thousand mobs**, one agent on flat ground, `scripts\test.ps1 -Horde`: **230 to 410 µs a tick** to perceive,
+    with the clips pinned at their ceiling of twenty, where the old rule would have asked for a clip per body. The cost is the
+    one query of the range's box and a dot product each; nothing in it is per-mob beyond that. `/mmai info` prints the same three
+    numbers per agent in a live game, which is what to look at when a full world starts to feel slow.
+  - **`SELF_ENEMIES_IN_RANGE` is now clamped at 2.0, reversing the "no clamp" decision above.** That decision was taken when ten
+    bodies was the most the view could hold and the clamp would only have cost the network the difference between ten and twelve.
+    In a world with a thousand mobs the same field reads a two hundred, which is a number no training fight ever produced — a
+    league fight runs from nought to about 1.2 — so every weight reading it would be out in a range it has never seen. Two is
+    twenty bodies: twice the slots, twice anything the league fields, so **nothing any trained network has ever seen changes**,
+    and the clamp bites only where the number was meaningless anyway.
+  - **The arena did not move**, which is the check that says the cone is narrow: 20 of 20 at exactly 54.0 ticks. The agent starts
+    facing its opponent and closes on it, so the cone never comes into it, and the whole mechanics suite passed unchanged but for
+    the wall test and two bodies that had been placed within a degree or two of the cone's edge.
 - **Nothing in a real game ever came for an agent, so there was no fight to fight, and the spawn order only decided when the
   agent noticed.** Reported from a flat world: "if I spawn the agent after the mobs are already there, it doesn't seem to
   work" — it wanders — while "walking away from a crowd, spawning him, then zombies, then `/mmai enemy` somewhat works". Both
@@ -576,6 +613,40 @@ are deliberate.
   - **It does not make the agent win.** Both orders above end with the agent dead, on 7 and 6 blows landed. Six hostiles all
     coming at once is a shape no league fight ever fielded, and making them come is what turned it from "no fight" into "a
     fight it loses" — which is the curriculum hole the packs below were added to close.
+  - **Every kind of mind, by one mechanism, with one exception.** The audit behind `HuntAgentsGoal`: goal-driven hostiles acquire
+    a player through a `NearestAttackableTargetGoal<Player>`, and this class *is* that goal with the agent in the player's place,
+    so they are covered by existing. Being hurt was already type blind on both sides — `HurtByTargetGoal` and a brain's
+    `HURT_BY` take whatever hit them — so nothing was needed for retaliation at all. Brain-driven hostiles, the piglins, hoglins,
+    zoglin, breeze and warden, read `MemoryModuleType.ATTACK_TARGET`, and **the memories vanilla fills from a sensor are typed to
+    `Player`**: `NEAREST_VISIBLE_ATTACKABLE_PLAYER` is a `MemoryModuleType<Player>` filled from the level's player list, so there
+    is no "make the sensor see the agent" to be had — an agent in one would fail every behaviour that reads it back as a player.
+    What there is, and what the goal does, is write the target the brain actually reads, plus the anger a piglin needs to keep
+    one. Goal selectors tick for a brain mob exactly as for any other, so one goal covers both kinds of mind.
+    `aBrainDrivenHostileComesForAnAgentWithNoTeamsSet` holds it on a piglin with no teams: it comes, and the agent kills it.
+    **The warden stays the exception** — it picks by anger rather than by sight and its anger drains, so a target handed to it is
+    dropped again; angering it over and over is a thing to do to an opponent in an arena and not a thing a mod should do to a
+    player's world unasked, so a warden ignores an agent until something wakes it, exactly as it ignores a player standing still.
+  - **A horde is a bounded cost and an unwon fight, and both were measured rather than assumed.** `scripts\test.ps1 -Horde`, one
+    agent on `best` with a sword, zombies on rings from six blocks out, all of them sided against it:
+
+    | Mobs | Driving | Clips a tick | µs a tick | Slots changing hands a tick | Blows | Slot 0 held by the fight | Ticks lived |
+    | --- | --- | --- | --- | --- | --- | --- | --- |
+    | 20 | `best` | 11 | 187 | 0.25 | 1 | 100% | 163 |
+    | 20 | nothing pressed | 11 | 35 | 0.14 | 0 | 100% | 152 |
+    | 100 | `best` | 20 | 97 | 0.38 | 0 | 100% | 188 |
+    | 100 | nothing pressed | 20 | 54 | 0.28 | 0 | 100% | 151 |
+    | 500 | `best` | 20 | 171 | 0.48 | 0 | 100% | 126 |
+    | 2,000 | no AI, cost only | 20 | 287 | — | — | — | 121 |
+
+    Four things to read off it. The **clips never pass twenty** at any size, which is the ceiling doing its job. The **time to
+    perceive does not grow with the horde** in any way that matters — the 187 µs on the first row is the just-in-time compiler
+    warming up on the first agent of the run, and the two thousand row is the honest steady number. **Slot 0 holds the fight on
+    every tick of every row**, which is the one thing that has to keep being true for a trained network to have a chance, and the
+    slots barely churn: half a slot changing hands per tick with five hundred bodies around. And the agent **does not win, and
+    barely lands a blow**: one at twenty, none at a hundred. Against a body that presses nothing the survival numbers are noise —
+    163 against 152 at twenty on this run, 155 against 151 and 148 against 165 on two others — so the suite deliberately does not
+    assert them; it asserts that the network acts where the control does not, and reports the rest. A horde is the curriculum's
+    problem, not the perception's, and the packs are the first payment on it.
 
 ## The league's curriculum
 

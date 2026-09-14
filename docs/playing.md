@@ -89,6 +89,12 @@ mod\gradlew.bat -p mod :neoforge:build     mod\neoforge\build\libs\modular_mob_a
 What an agent does in the world:
 - **It fights** monsters, players in survival or adventure mode, other agents, and anything that targets it, within 32
   blocks. It ignores animals, villagers, and creative or spectator players. Sides change this; see below.
+- **It perceives like a player, not like a radar.** Something is in its view if it is in front of it — a 100° cone about where it
+  is aiming, with a clear line of sight — or within 6 blocks in any direction, which is hearing, or if it is what last hit it. A
+  body it stops perceiving stays in its view for 3 seconds at the place it was last seen, and is then forgotten: it remembers
+  what walked behind it, and it cannot see through rock. So turning matters, getting behind it works, and a horde on the far side
+  of a hill is not in its head. `/mmai info` prints what each agent last spent perceiving — how many bodies it is aware of, how
+  many sight checks it made, and how long it took — which is the number to look at in a world with thousands of mobs in it.
 - **With nobody in view it stands still** (swimming up in water), whatever its brain says, and meets the next opponent
   with a fresh memory, the way every training fight started. A network was never trained with nobody there.
 - **It is saved with the world.** It keeps its hotbar as it stands (arrows spent, shield worn), its brain's name
@@ -203,6 +209,7 @@ targeting already never picks an ally. The mod adds what vanilla lacks:
 | --- | --- |
 | `/mmai ally <targets> <others>` | puts everyone on one team: the first existing team among them, else a new one |
 | `/mmai enemy <targets> <others>` | puts the first group on one team and the second on another |
+| `/mmai horde <mob> <count> [radius]` | stands `count` of that mob in a ring round you, on the ground, with their own minds, and sets them against every agent within twice the radius — a hundred zombies without writing a hundred `/summon`s. `radius` is 24 by default and the count is capped at 2,000 |
 | `/team leave <targets>` | takes them off their team: back to the default rules |
 | `/team remove <team>` | removes a team and every membership in it |
 
@@ -219,7 +226,10 @@ fire off. A player's own team is kept: allying an agent with a player on team `r
 
 Limits:
 - Mobs that vanilla drives with its newer Brain system rather than goals (piglins, hoglins, wardens, villagers, goats,
-  axolotls and a few others) keep their own targeting.
+  axolotls and a few others) keep their own targeting for everything else, but a **hostile** one does come for an agent: the goal
+  writes the attack target its brain actually reads, and the anger a piglin needs to keep one. The **warden** is the exception
+  and stays one — it picks what to fight by how angry it is rather than by seeing anything, and its anger drains, so it ignores
+  an agent until something wakes it, exactly as it ignores a player standing still.
 - Teams are saved with the world. Remove the ones you're done with.
 - A team is one side. Two teams are always opposed; vanilla has no alliances between teams.
 
@@ -234,7 +244,8 @@ All need operator level 2, like `/summon`.
 | `/mmai brain <targets> <brain>` | gives agents a brain of their own, or `default` |
 | `/mmai ally <targets> <others>` | puts them all on one side |
 | `/mmai enemy <targets> <others>` | sets the two groups against each other |
-| `/mmai info [targets]` | brain, loadout, health and team of each; every agent in the dimension without targets |
+| `/mmai horde <mob> <count> [radius]` | stands a horde of one mob round you and sets it against every agent near them |
+| `/mmai info [targets]` | brain, loadout, health, team and last-tick perception cost of each; every agent in the dimension without targets |
 | `/mmai models` | every brain by name, the jar's networks, the folders searched, and what the default runs on |
 | `/mmai loadouts` | every loadout by name |
 

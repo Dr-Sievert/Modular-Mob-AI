@@ -144,25 +144,32 @@ public class AgentCrowdGameTest {
     }
 
     /**
-     * A wall between the agent and a body takes the reading away and leaves the slot: while it cannot be seen its slot is
-     * empty and it is not counted, and the moment the wall comes down it is back in the slot it had.
+     * A wall between the agent and a body leaves the slot reading **where the body was when the agent last saw it**, and
+     * forgets it once the memory runs out. The body is moved while it is hidden, and the slot goes on saying the old place: the
+     * agent remembers, and it does not see through rock.
      *
-     * <p>This is the whole of the decision that came with the sight rule, in one test. The body never moves, so the only
-     * thing that changes between one reading and the next is the block in the way — distance, side and everything else are
-     * held still. What the agent may not do is read a position through rock: that was the fault. What it may not be told
-     * either is a position from two seconds ago, so the slot reads plainly empty rather than stale, and remembering is left
-     * to the GRU, which is what a recurrence is for. The lease is kept all the same, for the grace, so an opponent that
-     * steps behind a tree comes back to the slot it left instead of reshuffling the view; once the grace is out, the lease
-     * goes with it.
+     * <p>This is the whole of the memory in one test, and it is the decision the sight rule used to make the other way round.
+     * The slot used to read plainly **empty** behind a wall, on the argument that a stale position is a lie and remembering is
+     * the GRU's job. That was right while the view was the full circle, because going behind something was the only way to
+     * leave it. With a cone the commonest way to stop perceiving a body is that the agent turned its head, and a model where
+     * looking away deletes the zombie in front of you is not a player's; so the lease and the memory are one mechanism now and
+     * the slot keeps the last reading. What has not changed is the thing the sight rule was added for: the reading is where the
+     * body **was**, never where it is, which is what moving it behind the wall proves.
      */
-    @GameTest(template = ARENA, timeoutTicks = 200)
-    public static void aWallTakesTheReadingAndLeavesTheSlot(GameTestHelper helper) {
+    @GameTest(template = ARENA, timeoutTicks = 300)
+    public static void aWallKeepsTheLastKnownPlaceAndThenForgetsIt(GameTestHelper helper) {
 
+        // Across the far corner of the room, six and three quarter blocks: further than the agent can hear, so sight is the
+        // only thing perceiving it and the wall can take that away, and well inside the cone at twenty seven degrees. It is
+        // then moved to the other corner, which is the same distance and the other side: a move the slot can only follow by
+        // seeing through rock.
         AgentMob agent = still(helper, new BlockPos(4, 2, 1));
-        Mob standing = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new BlockPos(4, 2, 7));
+        Mob standing = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new BlockPos(7, 2, 7));
 
         EnemySlots view = agent.brain().enemySlots();
         int[] held = {-1};
+        float[] seenForward = {0.0F};
+        float[] seenRight = {0.0F};
 
         run(helper, tick -> {
 
@@ -171,7 +178,14 @@ public class AgentCrowdGameTest {
                 held[0] = slotOf(view, standing);
 
                 helper.assertTrue(held[0] >= 0, "The zombie across an empty room took no slot");
-                helper.assertValueEqual(view.inRangeCount(), 1, "bodies in sight");
+                helper.assertValueEqual(view.inRangeCount(), 1, "bodies the agent is aware of");
+                helper.assertFalse(view.remembering(held[0]), "A zombie in plain sight is being remembered rather than seen");
+
+                seenForward[0] = field(agent, held[0], ObservationSchema.ENEMY_FORWARD);
+                seenRight[0] = field(agent, held[0], ObservationSchema.ENEMY_RIGHT);
+
+                helper.assertTrue(Math.abs(seenRight[0]) > 0.05F, "The zombie is straight ahead, so moving it across would "
+                        + "prove nothing: the slot reads " + seenRight[0] + " to the right");
 
                 wall(helper, true);
                 return false;
@@ -179,37 +193,61 @@ public class AgentCrowdGameTest {
 
             if (tick == 15) {
 
-                helper.assertValueEqual(view.inRangeCount(), 0, "bodies in sight through a wall");
-                helper.assertTrue(view.occupant(held[0]) == null, "A zombie behind a wall is still being read");
-                helper.assertTrue(view.leaseholder(held[0]) == standing, "The zombie lost the slot it will come back to");
-                helper.assertValueEqual(present(agent, held[0]), 0.0F, "the present flag of a slot behind a wall");
+                // Still there, still counted, and still being read — from memory now, which is what the flag says.
+                helper.assertTrue(view.occupant(held[0]) == standing, "The zombie behind a wall lost its slot at once");
+                helper.assertTrue(view.remembering(held[0]), "A zombie behind a wall is being read as perceived");
+                helper.assertValueEqual(view.inRangeCount(), 1, "bodies the agent is aware of through a wall");
+                helper.assertValueEqual(present(agent, held[0]), 1.0F, "the present flag of a remembered slot");
+                helper.assertValueEqual(field(agent, held[0], ObservationSchema.ENEMY_FORWARD), seenForward[0],
+                        "how far ahead the slot says the zombie is, a moment after the wall went up");
 
-                wall(helper, false);
+                // And the part that says this is a memory and not wall vision: it is moved six blocks sideways while hidden.
+                standing.moveTo(helper.absolutePos(new BlockPos(1, 2, 7)).getCenter().subtract(0.0D, 0.5D, 0.0D));
                 return false;
             }
 
             if (tick == 25) {
 
+                helper.assertValueEqual(field(agent, held[0], ObservationSchema.ENEMY_FORWARD), seenForward[0],
+                        "how far ahead the slot says the zombie is after it moved behind the wall");
+                helper.assertValueEqual(field(agent, held[0], ObservationSchema.ENEMY_RIGHT), seenRight[0],
+                        "how far to the side the slot says the zombie is after it moved six blocks across");
+
+                // Said the other way round, which is the claim itself: the slot is describing a place the zombie is not in.
+                helper.assertTrue(view.seenAt(held[0]).distanceTo(standing.getEyePosition()) > 4.0D,
+                        "The remembered place followed the zombie, so the agent is reading it through the wall");
+
+                // Put back where it was and shown again: the same slot, and the reading is this tick's own once more.
+                standing.moveTo(helper.absolutePos(new BlockPos(7, 2, 7)).getCenter().subtract(0.0D, 0.5D, 0.0D));
+                wall(helper, false);
+                return false;
+            }
+
+            if (tick == 35) {
+
                 helper.assertTrue(view.occupant(held[0]) == standing,
                         "The zombie came back to slot " + slotOf(view, standing) + " rather than the " + held[0] + " it left");
-                helper.assertValueEqual(present(agent, held[0]), 1.0F, "the present flag once the wall is down");
+                helper.assertFalse(view.remembering(held[0]), "A zombie in plain sight again is still being remembered");
 
                 wall(helper, true);
                 return false;
             }
 
-            // Half the grace after the wall went back up, the slot is still being kept.
-            if (tick == 45) {
+            // Half the memory after the wall went back up, the slot is still held and still reading.
+            if (tick == 35 + ObservationSchema.MEMORY_TICKS / 2) {
 
-                helper.assertTrue(view.leaseholder(held[0]) == standing, "The slot was given up inside its own grace");
+                helper.assertTrue(view.occupant(held[0]) == standing, "The slot was given up inside the memory's own window");
+                helper.assertValueEqual(present(agent, held[0]), 1.0F, "the present flag halfway through the memory");
                 return false;
             }
 
-            // And a good way past it, the lease is gone: a body nothing has seen for two seconds is not being waited for.
-            if (tick == 25 + ObservationSchema.LEASE_GRACE_TICKS + 20) {
+            // And past it, the memory is gone: a body the agent has not perceived for three seconds is one it has lost.
+            if (tick == 35 + ObservationSchema.MEMORY_TICKS + 20) {
 
-                helper.assertTrue(view.leaseholder(held[0]) == null, "The slot is still held for a zombie out of sight for "
-                        + (ObservationSchema.LEASE_GRACE_TICKS + 20) + " ticks");
+                helper.assertTrue(view.occupant(held[0]) == null, "The slot is still held for a zombie unperceived for "
+                        + (ObservationSchema.MEMORY_TICKS + 20) + " ticks");
+                helper.assertValueEqual(view.inRangeCount(), 0, "bodies the agent is aware of once the memory is out");
+                helper.assertValueEqual(present(agent, held[0]), 0.0F, "the present flag once the memory is out");
                 return true;
             }
 

@@ -24,8 +24,10 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.goal.WrappedGoal;
 import net.minecraft.world.entity.animal.Cow;
 import net.minecraft.world.entity.animal.IronGolem;
+import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.monster.Vindicator;
 import net.minecraft.world.entity.monster.Zombie;
+import net.minecraft.world.entity.monster.piglin.Piglin;
 import net.minecraft.world.entity.projectile.AbstractArrow;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -207,9 +209,10 @@ public class PlayGameTest {
      * nothing landed and the agent dead; with nine, attack never pressed at all. See findings.md.
      *
      * <p>Everything the body and the observation did was already right, which this still holds them to on every tick: the
-     * zombie's place in its slot is the world's own delta in the agent's own frame, to a hundredth of a block, with nothing
+     * zombie's place in its slot is the world's own delta in the agent's own frame, to within a step, with nothing
      * measured against a fight site, an episode or an arena's origin, none of which a real world has; and
-     * {@code ENEMY_TARGETS_ME} follows the zombie's own target, tick for tick.
+     * {@code ENEMY_TARGETS_ME} follows the zombie's own target, tick for tick. See {@link #near} for why a step and not a
+     * hundredth of a block, which is what a slot reading the agent's own last perception rather than the entity costs.
      *
      * <p>What was wrong was the view, and this is where it is proved. The crowd stands outside the box, which is where a
      * real night's monsters are: on the other side of a wall, eleven of them at twelve and twenty blocks, well inside the
@@ -256,6 +259,8 @@ public class PlayGameTest {
                     helper.assertTrue(agent.brain().brain() == Brains.named("best"), "The agent is not on best");
                     helper.assertValueEqual(view.inRangeCount(), 1, "monsters in view");
                     helper.assertTrue(occupies(view, zombie), "The zombie beside the agent has no slot");
+                    helper.assertFalse(view.remembering(slotOf(view, zombie)), "The agent has lost sight of the zombie two "
+                            + "blocks in front of it, which nothing in a seven block box should let it do");
 
                     for (Mob standing : crowd) {
 
@@ -497,6 +502,229 @@ public class PlayGameTest {
     /** How long each of the two arrangements above is watched for. */
     private static final int WATCHED_TICKS = 200;
 
+    /** How long a mob is given to notice the agent on its own: a target search comes round every ten ticks or so. */
+    private static final int NOTICED_BY = 60;
+
+    /**
+     * {@code /mmai horde} stands up the count asked for and sets every one of them against the agent standing there.
+     *
+     * <p>The command is there so that the thing the agent is built for can be reached by hand: a player who wants to watch a
+     * network be surrounded should not have to write a hundred {@code /summon}s and a team join for each. What is held here is
+     * the two halves that make it a horde rather than scenery — the number that actually stood up, and the sides.
+     *
+     * <p>Twelve of them at four blocks, which is a horde the plot's own floor can hold; the suite's job is the command, and
+     * what a hundred of them does to a network is the horde suite's, {@code scripts\test.ps1 -Horde}.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 120)
+    public static void hordeCommandStandsThemUpAndSetsThemAgainstTheAgent(GameTestHelper helper) {
+
+        AgentMob agent = worldAgent(helper, new BlockPos(4, 2, 4), 0.0F);
+        agent.equip(Loadout.SWORD);
+
+        int wanted = 12;
+        int stood = command(helper, "mmai horde zombie " + wanted + " 4");
+
+        helper.assertValueEqual(stood, wanted, "zombies the horde stood up");
+
+        List<Zombie> horde = helper.getLevel().getEntitiesOfClass(Zombie.class,
+                agent.getBoundingBox().inflate(24.0D), zombie -> true);
+
+        helper.assertValueEqual(horde.size(), wanted, "zombies in the world round the agent");
+
+        helper.assertTrue(agent.getTeam() != null, "The agent was left on no team, so nothing was set against it");
+
+        for (Zombie zombie : horde) {
+
+            helper.assertTrue(Allegiance.opposed(agent, zombie), "A zombie the horde stood up is not on a side against the agent");
+            helper.assertTrue(zombie.getTeam() == horde.get(0).getTeam(), "The horde is on more than one team");
+        }
+
+        // Taken down again: the teams live on the scoreboard and outlive the test, and the zombies are outside the plot the
+        // framework clears.
+        PlayerTeam[] sides = {agent.getTeam() instanceof PlayerTeam mine ? mine : null,
+                horde.get(0).getTeam() instanceof PlayerTeam theirs ? theirs : null};
+
+        for (Zombie zombie : horde) {
+
+            zombie.discard();
+        }
+
+        for (PlayerTeam side : sides) {
+
+            if (side != null) {
+
+                Allegiance.disband(side);
+            }
+        }
+
+        helper.succeed();
+    }
+
+    /**
+     * One zombie and one agent, no teams, no commands, and they fight — whichever of the two was put down first.
+     *
+     * <p>The plainest statement of what a real game has to do, and it is here because it did not: vanilla's hostiles look for
+     * players, villagers, golems and turtles, so a zombie beside an agent walked past it for ever. Both orders are tried in one
+     * test because the report was about the order, and the point is that the order decides nothing: what decides it is that
+     * something comes.
+     *
+     * <p>Three claims per order. The mob takes the agent as its target on its own, inside {@code NOTICED_BY} ticks; the agent's
+     * view says so, which means the fight is in slot 0 with its targets-me flag up, since that is the shape every network was
+     * trained on; and the fight <b>resolves</b> — one of the two is dead inside a fight's length, rather than the two of them
+     * circling for ever.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 1200)
+    public static void aZombieAndAnAgentFightWhicheverWasPutDownFirst(GameTestHelper helper) {
+
+        AgentMob[] agent = {null};
+        Mob[] zombie = {null};
+        int[] order = {0};
+        int[] began = {0};
+        boolean[] noticed = {false};
+        boolean[] inFirstSlot = {false};
+        boolean[] flagUp = {false};
+
+        // The zombie first this time, and the agent into the room with it.
+        zombie[0] = helper.spawn(EntityType.ZOMBIE, new BlockPos(4, 2, 6));
+
+        run(helper, tick -> {
+
+            if (agent[0] == null) {
+
+                if (tick < 5) {
+
+                    return false;
+                }
+
+                agent[0] = spawnFighter(helper, new BlockPos(4, 2, 2));
+                began[0] = tick;
+                return false;
+            }
+
+            AgentMob fighter = agent[0];
+            Mob mob = zombie[0];
+            int watched = tick - began[0];
+
+            helper.assertTrue(fighter.getTeam() == null && mob.getTeam() == null,
+                    "A side was set, so this says nothing about the default rules");
+
+            EnemySlots view = fighter.brain().enemySlots();
+
+            // Measured over the ticks rather than on one of them, because the fight can be over well inside the window a mob
+            // is given to notice: on a dead body every reading is -1 and would say the wrong thing about a test that passed.
+            if (mob.isAlive() && fighter.isAlive() && mob.getTarget() == fighter) {
+
+                noticed[0] = true;
+
+                if (view.occupant(0) == mob) {
+
+                    inFirstSlot[0] = true;
+                }
+
+                if (targetsMeSomewhere(fighter, view)) {
+
+                    flagUp[0] = true;
+                }
+            }
+
+            if (watched < NOTICED_BY || fighter.isAlive() && mob.isAlive()) {
+
+                return false;
+            }
+
+            Constants.LOG.info("the {} first: the fight was over on tick {}, the agent {}", order[0] == 0 ? "zombie" : "agent",
+                    watched, fighter.isAlive() ? "standing" : "dead");
+
+            helper.assertTrue(noticed[0], "The zombie never came for the agent on its own in " + watched + " ticks, with the "
+                    + (order[0] == 0 ? "zombie" : "agent") + " put down first");
+            helper.assertTrue(inFirstSlot[0], "The zombie fighting the agent never held slot 0, which is the slot every fight "
+                    + "a network was trained on put its opponent in");
+            helper.assertTrue(flagUp[0], "No slot ever said the zombie had the agent as its target");
+            helper.assertFalse(fighter.isAlive() && mob.isAlive(), "Neither of them was beaten, so the fight did not resolve");
+
+            if (order[0] == 1) {
+
+                return true;
+            }
+
+            // And the other way round: the agent first, then a zombie put down beside it. Both are cleared away, since the
+            // suite's plot is reused and a corpse is a body in the view.
+            mob.discard();
+            fighter.discard();
+
+            agent[0] = spawnFighter(helper, new BlockPos(4, 2, 2));
+            zombie[0] = helper.spawn(EntityType.ZOMBIE, new BlockPos(4, 2, 6));
+
+            order[0] = 1;
+            began[0] = tick;
+            noticed[0] = false;
+            inFirstSlot[0] = false;
+            flagUp[0] = false;
+
+            return false;
+        });
+    }
+
+    /**
+     * A hostile that thinks with a brain rather than with goals comes for an agent too, with no teams set: a piglin.
+     *
+     * <p>Its own kind of mind is the reason this is a test of its own. A piglin reads
+     * {@code MemoryModuleType.ATTACK_TARGET}, and the memories vanilla fills from a sensor are typed to {@code Player} — an
+     * agent cannot be put in one — so "make the sensor see the agent" is not a thing that exists. What does is writing the
+     * target the brain actually reads, which {@code HuntAgentsGoal} does for every mob whose brain has that memory at all,
+     * along with the anger a piglin needs to keep a target; see that class for the audit this comes out of.
+     *
+     * <p>It is made immune to zombification first, as the league's own piglin is: out of the Nether a piglin turns into a
+     * zombified piglin after fifteen seconds, which would end the test as a different mob.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 1200)
+    public static void aBrainDrivenHostileComesForAnAgentWithNoTeamsSet(GameTestHelper helper) {
+
+        AgentMob agent = spawnFighter(helper, new BlockPos(4, 2, 2));
+        Piglin piglin = helper.spawn(EntityType.PIGLIN, new BlockPos(4, 2, 6));
+
+        piglin.setImmuneToZombification(true);
+        piglin.setBaby(false);
+
+        boolean[] noticed = {false};
+        boolean[] inFirstSlot = {false};
+        boolean[] flagUp = {false};
+        boolean[] hurt = {false};
+
+        run(helper, tick -> {
+
+            helper.assertTrue(agent.getTeam() == null && piglin.getTeam() == null,
+                    "A side was set, so this says nothing about the default rules");
+
+            EnemySlots view = agent.brain().enemySlots();
+
+            hurt[0] |= agent.getHealth() < agent.getMaxHealth() || piglin.getHealth() < piglin.getMaxHealth();
+
+            if (piglin.isAlive() && agent.isAlive() && piglin.getTarget() == agent) {
+
+                noticed[0] = true;
+                inFirstSlot[0] |= view.occupant(0) == piglin;
+                flagUp[0] |= targetsMeSomewhere(agent, view);
+            }
+
+            if (tick < NOTICED_BY || agent.isAlive() && piglin.isAlive()) {
+
+                return false;
+            }
+
+            Constants.LOG.info("the piglin fight was over on tick {}, the agent {}", tick, agent.isAlive() ? "standing" : "dead");
+
+            helper.assertTrue(noticed[0], "The piglin never came for the agent on its own in " + tick + " ticks: its target is "
+                    + piglin.getTarget() + " and its attack memory "
+                    + piglin.getBrain().getMemory(MemoryModuleType.ATTACK_TARGET).orElse(null));
+            helper.assertTrue(inFirstSlot[0], "The piglin fighting the agent never held slot 0");
+            helper.assertTrue(flagUp[0], "No slot ever said the piglin had the agent as its target");
+            helper.assertTrue(hurt[0], "Neither of them was ever hurt, so nothing was a fight");
+
+            return true;
+        });
+    }
+
     /** The playable agent both arrangements are fought by: a sword, and the network the jar calls best. */
     private static AgentMob spawnFighter(GameTestHelper helper, BlockPos feet) {
 
@@ -651,9 +879,19 @@ public class PlayGameTest {
         return row[index] * ObservationSchema.VIEW_DISTANCE;
     }
 
+    /**
+     * A reading against what the world says, to within a step.
+     *
+     * <p>It used to be a hundredth of a block, because the observation read the entity as the test did, in the same call. A
+     * slot now reads what the agent perceived <b>on its own tick</b>, which is the memory the slots keep, and a test looking in
+     * from outside the driver is up to one tick of movement ahead of it — measured, three hundredths of a block on a zombie
+     * walking up. So the tolerance is half a block, which is loose against a step and hopelessly tight against the thing this
+     * is here to catch: a position measured from a fight site, an episode or the plot's own origin is out by hundreds of
+     * thousands of blocks, not by a fraction of one.
+     */
     private static void near(GameTestHelper helper, double seen, double expected, String what) {
 
-        helper.assertTrue(Math.abs(seen - expected) < 0.01D, String.format(java.util.Locale.ROOT,
+        helper.assertTrue(Math.abs(seen - expected) < 0.5D, String.format(java.util.Locale.ROOT,
                 "The agent's view of the mob beside it says %s is %.4f where the world says %.4f", what, seen, expected));
     }
 
@@ -1509,7 +1747,11 @@ public class PlayGameTest {
         return -1;
     }
 
-    /** Whether any slot is reserved for it at all, seen this tick or not: the lease rather than the reading. */
+    /**
+     * Whether any slot is held for it at all, perceived this tick or remembered: which since the lease and the memory became
+     * one mechanism is the same question {@link #slotOf} asks, and is kept as a name of its own because what the crowd tests
+     * mean by it is "the agent has not noticed this at all", which is the stronger claim.
+     */
     private static boolean leases(EnemySlots view, LivingEntity entity) {
 
         return leasedSlot(view, entity) >= 0;
@@ -1519,7 +1761,7 @@ public class PlayGameTest {
 
         for (int slot = 0; slot < ObservationSchema.ENEMY_SLOTS; slot++) {
 
-            if (view.leaseholder(slot) == entity) {
+            if (view.occupant(slot) == entity) {
 
                 return slot;
             }

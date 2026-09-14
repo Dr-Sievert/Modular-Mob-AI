@@ -8,6 +8,7 @@ import net.sievert.modularmobai.gametest.tests.AgentCrowdGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentCrowdedFightGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentDrawnWeaponGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentEnemyOrderGameTest;
+import net.sievert.modularmobai.gametest.tests.AgentHordeGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentLeagueGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentMeleeGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentPerceptionGameTest;
@@ -53,6 +54,11 @@ public class ModularMobAiGameTests {
 
             // The agent in a real game: networks by name, /mmai, sides and the loadouts that keep a bow firing.
             case "play" -> new Class<?>[] {PlayGameTest.class};
+
+            // Twenty, a hundred, five hundred and two thousand mobs round one agent on flat ground: what perceiving a horde
+            // costs, and whether the network is worth anything in one. A suite of its own because two thousand bodies is not
+            // something to put in a suite that has to boot in seconds.
+            case "horde" -> new Class<?>[] {AgentHordeGameTest.class};
 
             // No fights either: generates the terrain library the terrain suite reads its sites from.
             case "library" -> new Class<?>[] {TerrainLibraryGameTest.class};

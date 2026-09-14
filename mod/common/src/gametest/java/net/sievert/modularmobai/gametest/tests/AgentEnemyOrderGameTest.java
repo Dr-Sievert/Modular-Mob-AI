@@ -138,7 +138,7 @@ public class AgentEnemyOrderGameTest {
         // The side: further off than the crowd and, again, last in the world's own order. Their targets are taken away on
         // every tick below, so the only thing that can be making them the fight is the team.
         Mob far = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new BlockPos(7, 2, 7));
-        Mob near = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new BlockPos(6, 2, 5));
+        Mob near = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new BlockPos(6, 2, 6));
 
         List<PlayerTeam> teams = List.copyOf(Allegiance.enemy(List.of(agent), List.of(far, near)));
 
@@ -272,18 +272,18 @@ public class AgentEnemyOrderGameTest {
     @GameTest(template = ARENA, timeoutTicks = 100)
     public static void engagingAfterTakingASlotMovesTheFightToTheFront(GameTestHelper helper) {
 
-        AgentMob agent = still(helper, new BlockPos(1, 2, 1));
+        AgentMob agent = still(helper, new BlockPos(4, 2, 1));
 
-        // Four idle bodies at 2, 3, 4 and 5 blocks, and the one that will engage at 6: the last slot by distance, and last in
-        // the world's own walk as well, so neither order can be giving it slot 0 by accident.
+        // Four idle bodies in front of the agent at about 1, 2, 3 and 4 blocks, and the one that will engage six blocks out:
+        // the last slot of the five by distance, which is the only thing ordering them while none of them is fighting.
         List<Mob> idle = new ArrayList<>();
 
-        for (int at = 3; at <= 6; at++) {
+        for (int[] at : new int[][] {{4, 2}, {3, 3}, {5, 4}, {3, 5}}) {
 
-            idle.add(helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new BlockPos(at, 2, 1)));
+            idle.add(helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new BlockPos(at[0], 2, at[1])));
         }
 
-        Mob engages = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new BlockPos(7, 2, 1));
+        Mob engages = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new BlockPos(4, 2, 7));
 
         EnemySlots view = agent.brain().enemySlots();
         int[] held = {-1};

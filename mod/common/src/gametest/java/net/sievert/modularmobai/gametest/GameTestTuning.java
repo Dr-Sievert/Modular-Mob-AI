@@ -128,14 +128,15 @@ public final class GameTestTuning {
     }
 
     /**
-     * Whether each test has the world to itself: the play suite's do. Its agents are the ones met in a real game, with no
-     * arena bounding what they see, and a view of 32 blocks reaches across the five block gaps between plots into the
-     * tests either side, where the zombie next door would be the enemy an agent goes for. So its tests run one at a time,
-     * each on the plot the one before it had, cleared first, which takes everything that test left behind with it.
+     * Whether each test has the world to itself: the play suite's do, and the horde suite's, which stands up to two thousand
+     * mobs round one agent. Their agents are the ones met in a real game, with no arena bounding what they see, and a view of
+     * 32 blocks reaches across the five block gaps between plots into the tests either side, where the zombie next door would
+     * be the enemy an agent goes for. So their tests run one at a time, each on the plot the one before it had, cleared first,
+     * which takes everything that test left behind with it.
      */
     public static boolean soloTests() {
 
-        return "play".equals(suite());
+        return "play".equals(suite()) || "horde".equals(suite());
     }
 
     /** How many tests the framework runs at once: the batch size when one is set, fifty, vanilla's own, when not. */

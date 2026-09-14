@@ -12,8 +12,8 @@ scripts\parity.ps1               Java forward pass against PyTorch's, after touc
 | Check | Pass looks like | Proves |
 | --- | --- | --- |
 | `test.ps1` | `All 20 required tests passed`; every fight 54 ticks | the observation, the body and the scripted fighter still work; the 54 ticks are deterministic, so any change in them is a behaviour change |
-| `test.ps1 -Mechanics` | `All 54 required tests passed` | bows, crossbows, shields, axes, mining, placing, use slowdown and damage payment follow a player's rules, what a press of attack costs and what holding it down costs, that a swing sends a ghast's fireball back and nothing else, that a hand keeps the slot it started a draw in, what the observation says about a use, about the clock and the quiver, about what is shot at the agent, about the armour on either side of the fight, about whether the other side has engaged and about what the weapon in the agent's hand takes off — the last three against the same numbers the critic's privileged facts carry — the teacher getting itself out of powder snow and starting no draw it cannot finish, what an enemy slot goes to and what a wall between takes away from it, **which slot each body gets — the fight first, then the nearest** — that the league's bystanders stand aside unpaid until struck and that the size of a crowd is drawn small far more often than large, and how a league training fight is drawn from the trainer's shares |
-| `test.ps1 -Play` | `All 21 required tests passed`, and a `Loaded the mod's jar, modular_mob_ai/models/<name>.mbw from iteration N` line per network the jar carries | what [playing.md](playing.md) promises: the bundled networks load and drive an agent, the commands, saving, sides and friendly fire, the Infinity loadouts, and that nothing a suite tunes reaches a real game |
+| `test.ps1 -Mechanics` | `All 57 required tests passed` | bows, crossbows, shields, axes, mining, placing, use slowdown and damage payment follow a player's rules, what a press of attack costs and what holding it down costs, that a swing sends a ghast's fireball back and nothing else, that a hand keeps the slot it started a draw in, what the observation says about a use, about the clock and the quiver, about what is shot at the agent, about the armour on either side of the fight, about whether the other side has engaged and about what the weapon in the agent's hand takes off — the last three against the same numbers the critic's privileged facts carry — the teacher getting itself out of powder snow and starting no draw it cannot finish, what an enemy slot goes to and what a wall between leaves of it, **which slot each body gets — the fight first, then the nearest, and the fight moved to the front when it engages late** — that the league's bystanders stand aside unpaid until struck, that the size of a crowd is drawn small far more often than large and that a pack of one mob all comes for the agent and is paid for once, and how a league training fight is drawn from the trainer's shares |
+| `test.ps1 -Play` | `All 24 required tests passed`, and a `Loaded the mod's jar, modular_mob_ai/models/<name>.mbw from iteration N` line per network the jar carries | what [playing.md](playing.md) promises: the bundled networks load and drive an agent, the commands, saving, sides and friendly fire, the Infinity loadouts, and that nothing a suite tunes reaches a real game |
 | `parity.ps1` | `parity ok` once per body, logits agreeing to about 1e-6, and `the plain ones agree to the bit at batches 1 to 64` | the game runs exactly the network PyTorch trained, **for every body this build has**, and the forward pass's explicit vector loops give the same bits as its plain ones |
 
 The network the `-Play` line names is whatever is published: the suite asks the jar what it carries and holds every network
@@ -167,7 +167,7 @@ a number and boots in seconds:
 | Test | Checks |
 | --- | --- |
 | `theNearestOfWhatIsInSightTakeTheSlots` | in `AgentCrowdGameTest`: twelve standing about in the box with nothing between them, and the ten nearest are the ones described, worked out from where they actually are rather than from where they were put |
-| `aWallTakesTheReadingAndLeavesTheSlot` | the sight rule and the whole of the decision behind it, on a body that never moves: a wall built between agent and zombie takes the count to nought and the slot's present flag to nought, and **leaves the lease** so the zombie is back in the same slot the tick the wall comes down; a grace later with the wall up, the lease is gone |
+| `aWallKeepsTheLastKnownPlaceAndThenForgetsIt` | the memory, and the whole of the decision behind it: a wall between agent and zombie leaves the slot reading **where the body was**, present flag up and counted, and the zombie is then **moved** while hidden and the slot goes on saying the old corner — which is the claim, since wall vision would have followed it. Shown again it is in the same slot and read live again; three seconds unperceived and the slot is gone |
 | `leagueBystandersStandAsideUntilStruck` | the league's crowd is a crowd: on no team, never the other side of the fight, never paid for by `Episode#pays`, holding slots in the view all the same, kept off the agent every tick — and free to fight back once the agent has hit one |
 | `aCrowdedFightIsNamedForItsOpponentAndItsCrowd` | `zombie+3_idle`, the share drawn 1 to 9 and at the rate this build was told |
 | `aCrowdIsDrawnSmallFarMoreOftenThanLarge` | **how big the crowd is**: 5,000 crowds drawn, each count within four standard deviations of its own weight (one over the count, taken from `Bystanders#chance` rather than copied), none drawn more often than the count below it, nine still drawn at all, and two thirds or more of the crowds four or fewer — the curriculum's answer to a crowded rate that sat at 44% while every count above four was a fight it mostly lost |
@@ -211,6 +211,32 @@ rule the suite measured is held as a rule by `AgentEnemyOrderGameTest` in the me
 It is a suite of its own rather than a class in the league's because it fields a fixed schedule of crowds where the league
 draws them, and because the league suite is what a training run runs.
 
+## The horde suite (`gametest/tests/AgentHordeGameTest`, `-Psuite=horde`)
+
+Twenty, a hundred, five hundred and two thousand mobs round one agent on flat ground. It is a **cost** suite before it is a fight
+suite: the agent is meant for worlds with thousands of mobs in them, and the old view — the full circle, a clip through the world
+per hostile — would have put a thousand clips a tick into a night that a player would have walked through. The plot's box is
+opened first, walls and roof to air, because a wall is a perfect answer to a crowd and a horde fought from inside one would be
+measuring the box.
+
+```
+scripts\test.ps1 -Horde
+scripts\test.ps1 -Horde -Weights models\blast6\best.mbw     a network of your own driving the agent
+```
+
+| Test | Checks |
+| --- | --- |
+| `theCostOfPerceivingDoesNotGrowWithTheHorde` | two thousand mobs, no minds, a hundred and twenty ticks after a warm-up: the clips never pass twenty on any tick, and the mean time to perceive is under a millisecond — 230 to 410 µs measured, with half a millisecond as the target it warns about missing rather than failing on. They have no AI deliberately: what is timed is the **agent's** perception, and two thousand pathfinding zombies would time the server instead |
+| `inAHordeOfTwentyTheAgentFightsBackWhereAnIdleBodyDoesNot` | the same horde fought by the network and by a body that presses nothing. The network presses and the control does not, which is the floor; blows landed and ticks lived are reported |
+| `inAHordeOfAHundredTheCostStaysBoundedAndTheFightHoldsSlotZero` | the same at a hundred, where nothing is asked of the outcome |
+| `aHordeOfFiveHundredIsStillBounded` | five hundred, reported: the clips bounded, and slot 0 holding a body that is in the fight on every tick one is in the view |
+
+It prints a row per fight — mobs, what drove the agent, clips a tick, µs a tick, slots changing hands a tick, blows, the share of
+ticks slot 0 held the fight, ticks lived — and the whole table grows as the tests finish. **Winning is not the criterion and is
+not asserted**: a network trained on one opponent and a crowd of nine does not beat five hundred zombies, and the survival
+comparison against an idle body is noise run to run (163 against 152 one run, 148 against 165 another). The numbers and what they
+say are in [findings.md](findings.md#perception).
+
 ## The play suite (`gametest/tests/PlayGameTest`)
 
 The agent as a player meets it, one test at a time: its agents have no arena bounding their view, and 32 blocks reach
@@ -234,7 +260,13 @@ into the tests either side, so the suite runs its tests one after another on one
 | `friendlyFireOffSparesTheSide` | an agent's blow on an ally does nothing with friendly fire off, and lands with it on |
 | `infinityBowNeverRunsOut`, `infinityCrossbowNeverRunsOut` | three shots, two bolts, the one arrow still there; the training loadouts keep 64 |
 | `aSecondBodyIsDrivenAndARefusedBrainIsNamed` | a beast, the body with no hands, is spawned, sees the enemy slots every body shares, and walks on its own seven-wide action vector; and a humanoid's brain offered to it is refused with both bodies named |
+<<<<<<< HEAD
 | `aRealGameKeepsItsLightEngine` | **nothing a suite tunes reaches a real game.** A suite that keeps its light has one, read as full sky light above its plot; and with the suite property taken away — which is what a client passes — `GameTestTuning` answers as a real game needs, `lighting` included. A world made with `play.ps1` was pitch dark because it did not; see [findings.md](findings.md). What a suite gets is pinned in the same test, since the value of that fix was that it changed no fight |
+=======
+| `aZombieAndAnAgentFightWhicheverWasPutDownFirst` | the plainest default: one zombie, one agent, no teams and no commands, and they fight whichever was put down first. The mob takes the agent on its own inside 60 ticks, the fight is in slot 0 with its targets-me flag up, and one of the two is dead inside a fight's length |
+| `aBrainDrivenHostileComesForAnAgentWithNoTeamsSet` | the same for a mob vanilla drives with a brain rather than goals: a piglin, immune to zombification as the league's own is, comes for the agent with no teams set and the fight resolves. Its kind of mind reads `ATTACK_TARGET`, and the memories vanilla fills from a sensor are typed to `Player`, so the goal writes the one the brain reads; see `HuntAgentsGoal` |
+| `hordeCommandStandsThemUpAndSetsThemAgainstTheAgent` | `/mmai horde zombie 12 4`: twelve stood up, twelve in the world, and every one of them on one team set against the agent's |
+>>>>>>> 0f28877 (Perceive like a player: a cone, a hearing radius, and a memory instead of the full circle)
 | `aCrowdIsFoughtWhicheverWayRoundItWasSpawned` | the owner's own two orders, in one test: six zombies on the floor and an agent spawned into them with **no teams anywhere**, then the agent first with `/mmai enemy` set on them after. Something comes for the agent in both, the slot reading it says so, and whoever is fighting holds slot 0. It logs a line per tick — who holds which slot, which are engaged, the aim off slot 0, presses, health — and names the goal that handed out the first target, which is what settled the "a vanilla mob goes after an agent on its own" question. Winning is not asserted: six at once is what the packs are for. See [findings.md](findings.md#perception) |
 
 ## Game tests directly
@@ -250,7 +282,7 @@ mod\gradlew.bat -p mod :fabric:runGametestParallel -Psuite=terrain -Parenas=2000
 
 | Property | What it does |
 | --- | --- |
-| `suite` | `arena` (closed box), `terrain` (natural ground, what training uses), `league` (terrain, a new opponent every fight), `crowd` (the same fight with 0, 1, 3 and 9 standing about it, watched tick by tick), `mechanics`, `play`, `baseline` (villager against vindicator, no agent), `library` (no fights: builds the terrain library, see `scripts\terrain.ps1`) |
+| `suite` | `arena` (closed box), `terrain` (natural ground, what training uses), `league` (terrain, a new opponent every fight), `crowd` (the same fight with 0, 1, 3 and 9 standing about it, watched tick by tick), `horde` (20 to 2,000 mobs round one agent: what perceiving them costs), `mechanics`, `play`, `baseline` (villager against vindicator, no agent), `library` (no fights: builds the terrain library, see `scripts\terrain.ps1`) |
 | `terrainLibrary`, `librarySites` | `false` makes terrain workers generate their own ground even when a library exists; how many sites a library build generates |
 | `addSites` | how many sites to append to the library that is already there, instead of building a new one; only the new ones are generated |
 | `leagueOpponents`, `leagueLoadouts`, `leagueDifficulties` | league only: fewer opponents (`zombie,2x_zombie`), fewer loadouts, which rungs of the ladder a run with no trainer goes round (`easy,normal,hard`) |

@@ -14,6 +14,8 @@
 #   scripts\test.ps1 -Crowd -Weights models\blast6\best.mbw
 #                                       the same fight with nobody standing about it and with 1, 3 and 9, tick by tick:
 #                                       which slot the opponent is in, where the aim is, who a press lands on
+#   scripts\test.ps1 -Horde             20, 100, 500 and 2,000 mobs round one agent on flat ground: clips a tick, time to
+#                                       perceive, slot churn, blows, ticks lived against an idle body
 #   scripts\test.ps1 -Play              the agent in a real game: networks in the jar, /mmai, sides, Infinity loadouts
 #   scripts\test.ps1 -Play -Loader neoforge   any suite on NeoForge rather than Fabric
 
@@ -25,6 +27,10 @@ param(
 
     # The crowd diagnosis: one fight, fought with 0, 1, 3 and 9 monsters standing about it, watched tick by tick.
     [switch] $Crowd,
+
+    # Twenty, a hundred, five hundred and two thousand mobs round one agent: what perceiving a horde costs, and whether
+    # the network is worth anything in one. Prints a table; see docs\testing.md.
+    [switch] $Horde,
     [switch] $Play,
     [string] $Weights = '',
 
@@ -36,7 +42,7 @@ param(
 
 . "$PSScriptRoot\_common.ps1"
 
-$suite = if ($Play) { 'play' } elseif ($Mechanics) { 'mechanics' } elseif ($League) { 'league' } elseif ($Crowd) { 'crowd' } elseif ($Terrain) { 'terrain' } else { 'arena' }
+$suite = if ($Play) { 'play' } elseif ($Mechanics) { 'mechanics' } elseif ($League) { 'league' } elseif ($Crowd) { 'crowd' } elseif ($Horde) { 'horde' } elseif ($Terrain) { 'terrain' } else { 'arena' }
 $replayEvery = if ($Replays) { 1 } else { 0 }
 
 # Twice round the league's thirty seven mobs and eleven squads, each on normal and on hard, and the scripted fighter,

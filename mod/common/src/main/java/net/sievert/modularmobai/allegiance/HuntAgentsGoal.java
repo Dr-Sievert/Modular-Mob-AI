@@ -1,7 +1,12 @@
 package net.sievert.modularmobai.allegiance;
 
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.ai.Brain;
 import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
+import net.minecraft.world.entity.ai.memory.MemoryModuleType;
+import net.minecraft.world.entity.ai.memory.MemoryStatus;
+import net.minecraft.world.entity.monster.piglin.AbstractPiglin;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 
 /**
@@ -49,8 +54,66 @@ public final class HuntAgentsGoal extends NearestAttackableTargetGoal<AgentMob> 
     /** Beside vanilla's own goal for players, which is where a mob's interest in a player-shaped body belongs. */
     public static final int PRIORITY = 2;
 
+    /**
+     * How long a piglin's anger at the agent lasts once this goal picks it. A piglin keeps only a target it is angry at and
+     * lets any other go on the next tick, so handing it the target without the anger is handing it nothing; the league found
+     * that out first and does the same thing, see its Roster. Half a minute, and the goal comes round again long before that.
+     */
+    private static final int ANGER_TICKS = 600;
+
     public HuntAgentsGoal(Mob mob) {
 
         super(mob, AgentMob.class, true, agent -> agent instanceof AgentMob playable && !playable.isTraining());
+    }
+
+    /**
+     * Takes the agent as the target, and for a mob that thinks with a brain rather than with goals, puts it where that mob
+     * actually looks for one.
+     *
+     * <p>This is the whole of what the audit of "how does each hostile acquire a player" found, and it is why this is one goal
+     * and not a mixin per mob:
+     *
+     * <ul>
+     *   <li><b>Goals</b> — the great majority of the roster, zombies to pillagers — acquire a player through a
+     *       {@code NearestAttackableTargetGoal<Player>} and act on {@code Mob#getTarget}. This class <em>is</em> that goal with
+     *       the agent in the player's place, so they are covered by existing beside vanilla's own.</li>
+     *   <li><b>Being hurt</b> is already type blind on both sides: {@code HurtByTargetGoal} and a brain's {@code HURT_BY} take
+     *       whatever hit them, so anything the agent strikes fights back, and a goal mob's alert brings its own kind with it.
+     *       Nothing was needed for that at all.</li>
+     *   <li><b>Brains</b> — the piglins, the hoglins, the zoglin, the breeze, the warden — read
+     *       {@code MemoryModuleType.ATTACK_TARGET}, and the memories vanilla fills from a sensor are <b>typed to
+     *       {@code Player}</b>: {@code NEAREST_VISIBLE_ATTACKABLE_PLAYER} is a {@code MemoryModuleType<Player>} filled from the
+     *       level's player list. An agent cannot be put in one without every behaviour that reads it back as a player failing,
+     *       so there is no "make the sensor see the agent" to be had. What there is, and what this does, is to write the target
+     *       the brain reads. The goal selector ticks for a brain mob exactly as for any other, so one goal still covers both
+     *       kinds of mind.</li>
+     * </ul>
+     *
+     * <p><b>The warden is the exception and stays one.</b> It picks what to fight by how angry it is rather than by seeing
+     * anything, and its anger drains, so a target handed to it is dropped again; it has to be angered and angered again, which
+     * is a thing to do to an opponent in an arena and not a thing a mod should do to a player's world on its own. A warden left
+     * alone will therefore ignore an agent until something wakes it, which is what it does to a player standing still.
+     */
+    @Override
+    public void start() {
+
+        super.start();
+
+        LivingEntity taken = this.target;
+        Brain<?> brain = this.mob.getBrain();
+
+        if (taken == null || !brain.checkMemory(MemoryModuleType.ATTACK_TARGET, MemoryStatus.REGISTERED)) {
+
+            return;
+        }
+
+        // A piglin decides a target it is not angry at is not worth it, and drops it on the next tick.
+        if (this.mob instanceof AbstractPiglin) {
+
+            brain.setMemoryWithExpiry(MemoryModuleType.ANGRY_AT, taken.getUUID(), ANGER_TICKS);
+        }
+
+        brain.eraseMemory(MemoryModuleType.CANT_REACH_WALK_TARGET_SINCE);
+        brain.setMemory(MemoryModuleType.ATTACK_TARGET, taken);
     }
 }

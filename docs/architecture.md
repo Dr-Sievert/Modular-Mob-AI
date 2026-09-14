@@ -80,7 +80,7 @@ that would quietly make every trained network worse the moment it left the arena
 | self | 24 | health, velocity (forward/up/right), on ground, in water, attack strength, use cooldown, using (main/off hand), sprinting, crouching, fall distance, body offset (sin/cos), pitch, aim (sin/cos), hurt time, enemies in range, **the clock**, **arrows left**, **its own armour**, **what its weapon takes off** |
 | hotbar | 9 | what each hotbar slot holds |
 | echo | 20 | what the body actually did last tick: moved (forward/strafe), jumped, sprinted, sneaked, turned (yaw/pitch), attacked, hit, attack strength and damage, crit, sweep, sprint knockback, used (main/off hand/on a block), selected slot, swapped weapon, **how far the use has charged** |
-| enemies | 10 × 31 | every hostile within 32 blocks **and in sight of the agent's eyes**, and anything shot at the agent, in ten stable slots, in its own frame. Where it is and what it is doing: present, position (forward/up/right), distance, velocity, health as a fraction, facing (sin/cos), pitch, **kind**, main and off hand item, swinging, using, sprinting, **whether it has the agent as its target**. **What it is**: max health and health left in hearts, attack damage, speed, width, height, knockback resistance, **armour**, a creeper's fuse, and whether it explodes, shoots or flies |
+| enemies | 10 × 31 | every hostile the agent **perceives** within 32 blocks — in the cone and in sight, within hearing, or having just hit it — and anything shot at the agent, in ten stable slots, in its own frame. A slot it has stopped perceiving reads the last known place for three seconds. Where it is and what it is doing: present, position (forward/up/right), distance, velocity, health as a fraction, facing (sin/cos), pitch, **kind**, main and off hand item, swinging, using, sprinting, **whether it has the agent as its target**. **What it is**: max health and health left in hearts, attack damage, speed, width, height, knockback resistance, **armour**, a creeper's fuse, and whether it explodes, shoots or flies |
 | terrain | 9 × 5 × 9 = 405 | the blocks around it, from 2 below the feet to 2 above: 0 empty, 0.5 fluid, 1 solid by collision, 1.5 hazard. A hazard hurts or kills a body in it or on it: lava, fire, magma, cactus, lit campfires, wither roses, pointed dripstone, powder snow, berry bushes, cobwebs. An empty cell in the bottom layer reads as a hazard when the fall below it would be more than 8 blocks, or would end in a hazard |
 | rays | 8 × 3 = 24 | eight rays out from the feet, one every 45° and world aligned as the grid is: how far to a wall, to something that hurts, and to a drop of more than 4, each a fraction of 32 blocks and 1 where that ray found none. The grid is a block a cell and reaches four, so this is the agent's only sight of the lava lake, the ravine lip or the wall at its back; widening the grid to the same distance would be 1,445 cells against 405 |
 
@@ -88,16 +88,43 @@ Animals and villagers never take an enemy slot. The enemy's `kind` says what sor
 player, a monster, something else alive, or, below zero, something shot at the agent. The layout is fixed: every trained
 network depends on it, and the schema id refuses a mismatch.
 
-**A slot goes only to what the agent could see.** Distance was once the whole rule, and out in a real world it was wrong:
-thirty two blocks with no sight test in it hands the slots to the monsters through the wall, across the valley and in the
-caves below, so a night filled all ten with bodies that could not reach the agent and were not coming, and the published
-network stopped fighting the zombie beside it. A candidate now also wants a line of sight from the agent's eyes to its own,
-vanilla's `hasLineOfSight`, which is the test every mob's targeting already makes; one clip per hostile candidate per tick,
-asked last of the three so distance and sides rule most of them out first. Something that goes behind cover **keeps its
-slot and loses its reading**: the lease runs on for its grace, so an opponent stepping behind a tree comes back to the slot
-it left, but while it cannot be seen the slot reads plainly empty rather than either a position through rock or a stale one,
-and remembering is the GRU's job. `EnemySlots` is the one place all of that lives; the numbers this cost and bought are in
-[findings.md](findings.md#perception).
+**The agent perceives like a player: in front, near, or having just been hit.** Distance was once the whole rule and a line of
+sight was added to it, and both were the full circle — every hostile within thirty two blocks in every direction at once. That
+is not a player's view and it cost twice over: a body at the agent's back read exactly like one in front of it, so **turning was
+never worth anything** and there was nothing for the aim to be for, and a flat world with a thousand mobs on it put a slot's
+worth of work into everything within thirty two blocks whatever the agent was doing. A body is now perceived three ways and any
+one of them is enough:
+
+- **Seen**: inside a cone of `VIEW_CONE_DEGREES` (100°, fifty either side) about the agent's **aim** — the same yaw the whole
+  observation is written in, so "forward" in a slot and the middle of the cone are the same direction — *and* with a line of
+  sight from its eyes, vanilla's own `hasLineOfSight`. The cone is on the yaw alone, so anything overhead or below is in it:
+  pitch is the agent's aim for a bow and for a block, and blinding it upwards every time it looked at the ground would be a
+  worse likeness of a player than none.
+- **Heard**: within `HEARING_DISTANCE` (6 blocks), all round, through anything. A player hears the zombie behind them, and this
+  is what keeps the cone from blinding the agent in the melee where being surrounded is the whole difficulty.
+- **Felt**: it is what last hurt the agent. Whoever hits you, you know about.
+
+**The lease is the memory.** There used to be two mechanisms with one shape: a lease kept the slot for a grace after a body left
+the view, and the slot read **empty** the whole time, on the argument that a two-second-old position is a lie and remembering is
+the GRU's job. That was right while the view was a full circle, because going behind something was the only way to leave it.
+With a cone the commonest way to stop perceiving a body is that **the agent turned its head**, and a model where looking away
+deletes the zombie in front of you is not a player's either. So they are one thing now, `MEMORY_TICKS` (60, three seconds): a
+slot the agent has stopped perceiving goes on reading the body's **last known** position, velocity and heading with the present
+flag still on, and every tick it is seen, heard or felt starts the window again. The slot is let go when the window runs out,
+when the body dies, or when it stops being an enemy.
+
+What that costs, plainly: for up to three seconds a slot can describe a body that has moved. It cannot describe one **through a
+wall**, which was the fault the sight rule was added for — a hidden body's reading is frozen where it was last perceived, never
+where it is, which `aWallKeepsTheLastKnownPlaceAndThenForgetsIt` holds by moving the body while it is hidden. What is not frozen
+is the rest of the block: health, hands, swinging and targets-me read live, which is a deliberate line — the geometry is what
+the agent aims and steps by, and a second snapshot of a mob's hands is a second thing to keep in step for no measured gain.
+
+**What it costs, and why it does not grow with the world.** Per agent per tick: one query of the level over the range's box,
+which is proportional to what is near the agent and not to what is on the map; a side test and a dot product for each of those;
+and a clip through the world for at most twice the ten slots, nearest first. A body heard or felt needs no clip at all. Measured
+on **two thousand** mobs round one agent on flat ground, 230 to 410 µs a tick with the clips pinned at their ceiling of 20;
+`scripts\test.ps1 -Horde` is where that is measured and `/mmai info` prints it per agent in a live game. `EnemySlots` is the one
+place all of it lives; the numbers this cost and bought are in [findings.md](findings.md#perception).
 
 **Which slot it goes to is the fight's business, not the world's: whoever is fighting the agent first, then the nearest.**
 Fighting the agent means it has taken the agent as its target or it is on a team set against the agent's, which is a squad;
