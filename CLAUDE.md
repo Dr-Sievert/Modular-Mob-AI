@@ -2,11 +2,14 @@
 
 A neural-network brain for Minecraft mobs. A player-shaped mob, the **agent**, is driven every tick by a small network
 running inside the game in plain Java. The network is trained offline with PyTorch PPO from what the game recorded.
-Today its published network wins about 83 to 86% of a league of every vanilla mob that fights fair, about five points more
-than the hand-written fighter it was copied from on the same bench (see docs/models.md). Bows, crossbows, shields, axes, mining and
-placing work under a player's rules. That league is an Elo one and it is what a run trains and is judged on: 37 mobs, 11
-squads, a difficulty ladder, the hand-written fighter held at 1500 as the anchor, published networks and the run's own
-checkpoints.
+Today its published network wins **82.7%** of one-on-one fights against a league of every vanilla mob that fights fair,
+two points more than the hand-written fighter it was copied from on the same bench (80.3%), and **71.8%** of the same
+league once a quarter of its fights have a crowd of monsters standing about them, six and a half points *behind* that
+fighter (78.3%) — 1,000 and 2,000 fights a row, one worker, measured on this build on 2026-09-14; see docs/models.md. The
+crowd is the open problem and it is where the next points are, not in more iterations of the same. Bows, crossbows,
+shields, axes, mining and placing work under a player's rules. That league is an Elo one and it is what a run trains and is
+judged on: 37 mobs, 11 squads, a difficulty ladder, the hand-written fighter held at 1500 as the anchor, published networks
+and the run's own checkpoints.
 
 Read these before changing anything:
 

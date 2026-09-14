@@ -18,12 +18,27 @@ One lineage, each carried on from the one before it: `blast` → `blast2` → `b
 
 | Model | What | Evaluated |
 | --- | --- | --- |
-| `blast6` | PPO on the league, from the teacher, carried on across five runs, on ground the lava leak no longer spoils | 83.1% won (iteration 12450, 1019 league fights); its parent checkpoint benched in one sitting at 84.7% against the scripted fighter's 82.3% and the retired `blast4`'s 77.2% |
+| `blast6` | PPO on the league, from the teacher, carried on across five runs, on ground the lava leak no longer spoils | 83.1% won by its own run (iteration 12450, 1019 league fights). Benched on this build, 2026-09-14: **82.7% of plain one-on-one league fights against the scripted fighter's 80.3%**, and **71.8% of the crowded league against that fighter's 78.3%** (1,000 and 2,000 fights a row, one worker, `bench.ps1 -Teacher`) |
 
-That is one number on one bench: `blast6` fights the whole league roster, wardens and evokers included, where the retired
-networks below fought a vindicator. The two are not comparable, and **nothing in `models\` is comparable to anything
-measured in another sitting**, since each run judges against the opponents its own matchmaking drew. See the win rate
-section below, and `scripts\bench.ps1` in
+**The crowd is the whole difference, and it is where the network's weakness is.** Those two rows are one network on one
+build an hour apart, and the only thing changed between them is `-PleagueBystanders`: a quarter of fights against none.
+They are two sittings, so the win rates themselves cannot be subtracted from each other — what can be is each row's
+distance from the scripted fighter, which is in both sittings and is the anchor the bench exists to provide. **Without the
+crowd `blast6` stands 2.4 points above the fighter it was copied from, and with it 6.5 points below: a swing of nearly nine
+points against the anchor.** The fighter reads every slot it is given and does not care what else is standing there; a
+network trained almost entirely on empty ground has to spend its slots on monsters that are not fighting it. So any single
+number about this network is a statement about which of the two benches it came from, and the crowded one is what a run
+trains and is judged on today.
+
+The `blast7` run, carried on from `blast6`, was benched against it and **not** published. Its judged best read 73.5% in the
+crowded sitting against `blast6`'s 71.8%, and 81.0% in the plain one against `blast6`'s 82.7%: 1.7 points up on the crowd
+and 1.7 points down without it, which is inside what a sitting resolves and is no reason to replace a published network.
+See [findings.md](findings.md).
+
+And it is one number on one bench in the older sense too: `blast6` fights the whole league roster, wardens and evokers
+included, where the retired networks below fought a vindicator. The two are not comparable, and **nothing in `models\` is
+comparable to anything measured in another sitting**, since each run judges against the opponents its own matchmaking drew.
+See the win rate section below, and `scripts\bench.ps1` in
 [testing.md](testing.md) for the only way to put two networks on one scale.
 
 ## What was retired, and why

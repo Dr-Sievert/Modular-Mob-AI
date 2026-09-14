@@ -5,8 +5,11 @@ inputs, a GRU memory, 11 controls) that runs inside the game in plain Java, one 
 the same weights. It's trained offline with PyTorch PPO from what the game recorded, and new weights swap in without the
 game restarting.
 
-Its published network wins about 83 to 86% of a league of every vanilla mob that fights fair, about five points more than
-the hand-written fighter it was copied from on the same bench. It uses swords, axes, bows, crossbows and shields, and mines
+Its published network wins 82.7% of one-on-one fights against a league of every vanilla mob that fights fair, two points
+more than the hand-written fighter it was copied from on the same bench (80.3%). Stand a crowd of monsters around a quarter
+of those fights, which is what the league does today, and it wins 71.8% where that same fighter wins 78.3%: the crowd is
+the open problem, and it is a training one — the curriculum landed after every published network was trained. It uses
+swords, axes, bows, crossbows and shields, and mines
 and places blocks, under the same rules as a player. The league it is measured on is an Elo one: 37 mobs, 11 squads of
 several at once, a difficulty ladder, the hand-written fighter as the anchor, published networks and the run's own past
 checkpoints, with a loadout drawn every fight.

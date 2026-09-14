@@ -795,13 +795,33 @@ are deliberate.
   other; each is read on its own, and both put the same four fighters in the same order.
   - **The last checkpoint did not beat the judged best this time**, which is the third check of the paired rule below to go
     the best's way: 027100 read 73.5% twice and the newest 74.2% and then 72.2%, all within a sitting's noise of each other.
-  - **Every network on this bench is now below the scripted fighter, where `blast6` was published 2.4 points above it.**
-    `blast6` benched 84.7% against the fighter's 82.3% when it was published; on this build it reads 4.8 to 11.0 points
-    *under* the same fighter, whose own reads held (82.3 → 78.3 and 82.2). The fighter is the anchor and it did not move,
-    so what moved is what a network is asked to do — the crowd of bystanders in a quarter of the league's fights, and the
-    sight rule that fills a slot only with what the agent could see, both of which landed after `blast6` was trained. Until
-    that is chased, **the headline "about five points more than the hand-written fighter" is a statement about a bench that
-    no longer exists**, and no network in `models\` has been measured above the fighter on the current build.
+  - **Every network on this bench is below the scripted fighter, and the crowd is the whole of it.** `blast6` was published
+    at 84.7% against the fighter's 82.3%; in the crowded sitting above it reads 6.5 points *under* the same fighter, whose
+    own reads held. The anchor did not move, so what moved is what a network is asked to do. Asking the same three fighters
+    the plain one-on-one question settled which change did it — `bench.ps1 -Teacher -Bystanders 0`, 1,000 fights each, one
+    worker, an hour after the sitting above:
+
+    | Fighter | plain, 1,000 fights | crowded, 2,000 fights |
+    | --- | --- | --- |
+    | `blast6`, published | **82.7%** | 71.8% |
+    | `blast7` 027100 | 81.0% | 73.5% |
+    | the scripted fighter | 80.3% | 78.3% |
+
+    Two sittings, so read each column on its own and compare only each row's distance from the fighter, which is in both.
+    **Without the crowd `blast6` stands 2.4 points above the fighter — the very margin it was published for — and with it
+    6.5 points below: a swing of nearly nine points against the anchor, and the networks and the fighter change places.**
+    So there is no one-on-one regression on this build and nothing to hunt in the body or the observation: the crowd of
+    bystanders in a quarter of the league's fights is the entire gap, it costs a network about nine points *relative to the
+    fighter*, and `blast6` is exactly as good a one-on-one fighter as the day it was published. How much the crowd costs the
+    fighter in its own right is not a thing these two sittings can say — that would be subtracting across them, and the
+    fighter's own reads span five points with nothing changed at all. The fighter reads every slot it
+    is given and does not care what else stands there; a network trained almost entirely on empty ground spends its slots on
+    monsters that are not fighting it. **That is where the next points are**, and it is a training problem — the curriculum
+    landed after every published network was trained. CLAUDE.md and [models.md](models.md) now carry both numbers rather
+    than the one bench that no longer exists.
+    - `blast7` is the first network trained *with* the crowd and it is 1.7 points up on the crowded bench and 1.7 points
+      down on the plain one, both inside a sitting's noise. So the curriculum has not yet bought anything measurable, which
+      is the thing to watch as the run carries on rather than a verdict on it at 27,100 iterations.
   - **The scripted fighter read 77.3%, 82.2% and 78.3% inside one hour**, on one machine, one build, three sittings of the
     same 600 or 2,000 league fights. The recorded span was 78.2 to 81.5; this widens it to 77.3 to 82.2, or **4.9 points of
     drift with nothing at all changed**. It is the sharpest measurement yet of why a number from one sitting cannot be
