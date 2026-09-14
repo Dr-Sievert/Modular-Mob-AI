@@ -3,6 +3,7 @@ package net.sievert.modularmobai;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
 import net.neoforged.api.distmarker.Dist;
@@ -13,8 +14,10 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
+import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 import net.neoforged.neoforge.common.DeferredSpawnEggItem;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.common.extensions.IMenuTypeExtension;
 import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent;
@@ -29,6 +32,9 @@ import net.sievert.modularmobai.entity.agent.AgentMobRenderer;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.item.ModItems;
+import net.sievert.modularmobai.menu.AgentMenu;
+import net.sievert.modularmobai.menu.AgentScreen;
+import net.sievert.modularmobai.menu.ModMenus;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -40,6 +46,17 @@ public class ModularMobAiMod {
     private static final DeferredRegister<EntityType<?>> ENTITY_TYPES = DeferredRegister.create(Registries.ENTITY_TYPE, Constants.MOD_ID);
 
     private static final DeferredRegister<Item> ITEMS = DeferredRegister.create(Registries.ITEM, Constants.MOD_ID);
+
+    private static final DeferredRegister<MenuType<?>> MENUS = DeferredRegister.create(Registries.MENU, Constants.MOD_ID);
+
+    /**
+     * The screen a player opens by right clicking an agent. Vanilla keeps MenuType's constructor to itself and each loader
+     * opens it its own way; this is NeoForge's, and Fabric's is one line in its own initialiser. Everything the menu is
+     * lives in common; see {@link ModMenus}.
+     */
+    private static final Supplier<MenuType<AgentMenu>> AGENT_MENU = MENUS.register(ModMenus.AGENT_MENU_ID.getPath(),
+            () -> IMenuTypeExtension.create((containerId, playerInventory, ignored) ->
+                    new AgentMenu(containerId, playerInventory)));
 
     /**
      * Every mob every body declares, and nothing named here: see ModEntities and docs/species.md. Deferred, as NeoForge
@@ -81,6 +98,7 @@ public class ModularMobAiMod {
 
         ENTITY_TYPES.register(eventBus);
         ITEMS.register(eventBus);
+        MENUS.register(eventBus);
 
         eventBus.addListener(ModularMobAiMod::registerAttributes);
         eventBus.addListener(ModularMobAiMod::addToCreativeTab);
@@ -117,6 +135,7 @@ public class ModularMobAiMod {
 
         AGENTS.forEach((registration, type) -> ModEntities.accept(registration, type.get()));
         ModItems.setAgentMobSpawnEgg(AGENT_MOB_SPAWN_EGG.get());
+        ModMenus.acceptAgentMenu(AGENT_MENU.get());
     }
 
     private static void registerAttributes(EntityAttributeCreationEvent event) {
@@ -143,6 +162,13 @@ public class ModularMobAiMod {
             // Every body's mob, on the player model. A renderer is a client class and so cannot be named in a body's own
             // declaration; see the Fabric client, which says the same.
             AGENTS.values().forEach(type -> event.registerEntityRenderer(type.get(), AgentMobRenderer::new));
+        }
+
+        /** What the agent's menu looks like; the Fabric client says the same through MenuScreens. */
+        @SubscribeEvent
+        public static void registerScreens(RegisterMenuScreensEvent event) {
+
+            event.register(AGENT_MENU.get(), AgentScreen::new);
         }
     }
 }

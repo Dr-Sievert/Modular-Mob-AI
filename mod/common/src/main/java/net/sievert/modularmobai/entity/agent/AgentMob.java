@@ -11,13 +11,17 @@ import net.minecraft.core.NonNullList;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.tags.EntityTypeTags;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.util.Mth;
+import net.minecraft.world.Container;
 import net.minecraft.world.ContainerHelper;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.DifficultyInstance;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.damagesource.DamageSource;
@@ -39,6 +43,8 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.control.LookControl;
 import net.minecraft.world.entity.ai.control.MoveControl;
 import net.minecraft.world.entity.decoration.ArmorStand;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.entity.projectile.ProjectileDeflection;
 import net.minecraft.world.entity.projectile.ProjectileUtil;
@@ -78,6 +84,7 @@ import net.sievert.modularmobai.brain.BrainState;
 import net.sievert.modularmobai.brain.Brains;
 import net.sievert.modularmobai.brain.schema.Species;
 import net.sievert.modularmobai.entity.ModEntities;
+import net.sievert.modularmobai.menu.AgentMenu;
 import net.sievert.modularmobai.mixin.ProjectileWeaponItemInvoker;
 
 /**
@@ -102,6 +109,8 @@ public class AgentMob extends PathfinderMob {
 
     private static final String TAG_HOTBAR = "Hotbar";
     private static final String TAG_SELECTED_SLOT = "SelectedSlot";
+    private static final String TAG_INVENTORY = "Inventory";
+    private static final String TAG_PICKS_UP_ITEMS = "PicksUpItems";
 
     // Not "Brain": vanilla already saves every living entity's own Brain, its memories, under that key.
     private static final String TAG_BRAIN_NAME = "BrainName";
@@ -154,6 +163,30 @@ public class AgentMob extends PathfinderMob {
     private final NonNullList<ItemStack> hotbar = NonNullList.withSize(MobControls.HOTBAR_SIZE, ItemStack.EMPTY);
     private int selectedSlot;
 
+    /**
+     * What it carries beyond the hotbar: a pocket of three rows a player reaches through its screen, and the overflow a
+     * pickup goes to once the hotbar is full.
+     *
+     * <p>It is <b>storage and nothing else</b>, on purpose. The hotbar is what the observation reads slot by slot and what a
+     * bow and a crossbow find their arrows in, {@link #getProjectile}, and neither of those may change: every trained
+     * network depends on the humanoid's 792 floats and a body that fired from a pocket the network cannot see would be
+     * firing from nowhere. So a pickup fills the hotbar first (see {@link #stow}), a picked up arrow lands where the quiver
+     * is counted, and what ends up back here is out of the fight until a player moves it forward.
+     */
+    public static final int INVENTORY_SIZE = 27;
+
+    private final NonNullList<ItemStack> inventory = NonNullList.withSize(INVENTORY_SIZE, ItemStack.EMPTY);
+
+    /** Whether it takes the drops it walks over. Never true in training; see {@link #pickUpItem}. */
+    private boolean picksUpItems;
+
+    /**
+     * The game time it will take anything again at, so that a stack it has just been asked to hand over is not snatched
+     * straight back off the floor. Not saved: a world that reloads within three seconds of a hand over is not a case worth
+     * a tag.
+     */
+    private long takesNothingUntil;
+
     /** Counts up every tick and restarts on a swing or a change of weapon, exactly as a player's does. */
     private int attackStrengthTicker;
     private ItemStack lastItemInMainHand = ItemStack.EMPTY;
@@ -203,6 +236,12 @@ public class AgentMob extends PathfinderMob {
         // whenever it has nothing of its own to do.
         this.lookControl = new InertLookControl(this);
         this.moveControl = new InertMoveControl(this);
+
+        // What the world says a new agent does with the drops it walks over, which each agent then keeps its own answer to.
+        // Set here rather than in finalizeSpawn because not every way an agent arrives goes through one: a game test's
+        // spawn, an arena and the league all make one directly. A training agent never picks anything up and so never asks
+        // the config, which is also why the game tests' arenas pay nothing for this.
+        this.setPicksUpItems(!this.training && Config.pickup());
     }
 
     /**
@@ -1592,6 +1631,262 @@ public class AgentMob extends PathfinderMob {
     }
 
     // ---------------------------------------------------------------------------------------------------------------
+    // What it carries beyond the hotbar, and what it picks up
+    // ---------------------------------------------------------------------------------------------------------------
+
+    public ItemStack getInventoryItem(int slot) {
+
+        return this.inventory.get(Mth.clamp(slot, 0, INVENTORY_SIZE - 1));
+    }
+
+    public void setInventoryItem(int slot, ItemStack stack) {
+
+        this.inventory.set(Mth.clamp(slot, 0, INVENTORY_SIZE - 1), stack);
+    }
+
+    /** The hotbar, the pocket, the off hand and the four armour slots as one container, which is what its screen shows. */
+    public Container carried() {
+
+        return new AgentInventory(this);
+    }
+
+    /** Whether it takes the drops it walks over. Always false for a training agent; see {@link #pickUpItem}. */
+    public boolean picksUpItems() {
+
+        return this.picksUpItems;
+    }
+
+    /**
+     * Turns picking things up on or off for this agent alone, kept through saving. A training agent refuses either way:
+     * the flag is the world's business and an arena's loadout is not.
+     */
+    public void setPicksUpItems(boolean picksUp) {
+
+        this.picksUpItems = picksUp && !this.training;
+
+        // Vanilla's own loot scan in Mob#aiStep is what finds the drops, so this is the switch that runs it at all: an
+        // agent with it off costs not one entity query a tick, which is what keeps it out of a training worker.
+        this.setCanPickUpLoot(this.picksUpItems);
+    }
+
+    /**
+     * What the agent is prepared to take off the floor, which vanilla asks before it calls {@link #pickUpItem}.
+     *
+     * <p><b>A training agent never takes anything</b>, and that is the rule this is here for. An arena hands out every item
+     * in the fight and rates the result under the loadout's name, so a fight in which the agent walked over a dropped axe
+     * would be a fight rated as something it was not; the league's own dropped gear is scenery. It is the same reasoning
+     * that leaves a training agent out of {@code HuntAgentsGoal}: what the arenas set up is theirs alone.
+     */
+    @Override
+    public boolean wantsToPickUp(ItemStack stack) {
+
+        return this.picksUpItems && this.level().getGameTime() >= this.takesNothingUntil && this.roomFor(stack);
+    }
+
+    /**
+     * A drop the agent walked over, into <b>its own</b> hotbar and pocket rather than into vanilla's hands.
+     *
+     * <p>Vanilla's {@code Mob#pickUpItem} runs {@code equipItemIfPossible}, whose rule is a mob's: the better weapon goes
+     * into the hand and <b>the one that was there is thrown on the ground</b>. An agent's hotbar is nine slots a network
+     * chooses between every tick, so that rule would have an agent drop the sword it fights with because it walked over a
+     * shovel. Nothing already held is ever dropped by a pickup here. The written rule, in the order it is tried:
+     *
+     * <ol>
+     *   <li><b>armour</b> is worn, and only into a slot that is empty — a player would put on a helmet it is not wearing,
+     *       and would not swap one it is. Anything already worn stays on and the piece goes into the hotbar or the pocket
+     *       like anything else;
+     *   <li><b>a stack of the same thing</b>, the hotbar before the pocket. This is the branch arrows take, and it is why
+     *       they are counted: the quiver the observation reads and the stack a bow fires from are both the hotbar, see
+     *       {@code AgentObservation#arrows} and {@link #getProjectile};
+     *   <li><b>the first empty hotbar slot</b>, so a bow walked over by a bare handed agent is a bow it can draw, and the
+     *       hotbar block of the observation reads a ranged item in that slot on the very next tick;
+     *   <li><b>the first empty slot of the pocket</b>, which is storage and out of the fight until a player moves it
+     *       forward;
+     *   <li>and what will not fit is left lying, since {@link #wantsToPickUp} says so before vanilla ever gets here.
+     * </ol>
+     *
+     * <p>Vanilla gates the whole scan on the {@code mobGriefing} game rule, which is vanilla's business and is left alone:
+     * in a world with it off an agent picks nothing up, and {@code /mmai pickup} will say on and mean it the moment the rule
+     * comes back.
+     */
+    @Override
+    protected void pickUpItem(ItemEntity item) {
+
+        ItemStack dropped = item.getItem();
+        int taken = this.stow(dropped);
+
+        if (taken <= 0) {
+
+            return;
+        }
+
+        this.onItemPickup(item);
+        this.take(item, taken);
+
+        if (dropped.isEmpty()) {
+
+            item.discard();
+        }
+    }
+
+    /**
+     * Puts as much of the stack away as there is room for, by the rule {@link #pickUpItem} writes down, taking what it
+     * keeps out of the stack it was given.
+     *
+     * @return how many items were taken, which is nought for a stack there was no room for at all
+     */
+    public int stow(ItemStack stack) {
+
+        int before = stack.getCount();
+        EquipmentSlot worn = this.getEquipmentSlotForItem(stack);
+
+        if (worn.getType() == EquipmentSlot.Type.HUMANOID_ARMOR && this.getItemBySlot(worn).isEmpty()) {
+
+            this.setItemSlot(worn, stack.split(1));
+            return before - stack.getCount();
+        }
+
+        this.merge(stack, this.hotbar);
+        this.merge(stack, this.inventory);
+        this.fill(stack, this.hotbar);
+        this.fill(stack, this.inventory);
+
+        this.syncMainHand();
+
+        return before - stack.getCount();
+    }
+
+    /** Into stacks of the same thing that have room, which is what makes picked up arrows join the quiver. */
+    private void merge(ItemStack stack, NonNullList<ItemStack> where) {
+
+        for (int slot = 0; slot < where.size() && !stack.isEmpty(); slot++) {
+
+            ItemStack held = where.get(slot);
+
+            if (held.isEmpty() || !ItemStack.isSameItemSameComponents(held, stack)) {
+
+                continue;
+            }
+
+            int moved = Math.min(held.getMaxStackSize() - held.getCount(), stack.getCount());
+
+            if (moved > 0) {
+
+                held.grow(moved);
+                stack.shrink(moved);
+            }
+        }
+    }
+
+    /** Into the first empty slots, once there is nothing left of the same kind to join. */
+    private void fill(ItemStack stack, NonNullList<ItemStack> where) {
+
+        for (int slot = 0; slot < where.size() && !stack.isEmpty(); slot++) {
+
+            if (where.get(slot).isEmpty()) {
+
+                where.set(slot, stack.split(stack.getMaxStackSize()));
+            }
+        }
+    }
+
+    /** Whether anything at all could be put away, which is the question vanilla asks before it walks the agent over it. */
+    private boolean roomFor(ItemStack stack) {
+
+        EquipmentSlot worn = this.getEquipmentSlotForItem(stack);
+
+        return worn.getType() == EquipmentSlot.Type.HUMANOID_ARMOR && this.getItemBySlot(worn).isEmpty()
+                || roomIn(this.hotbar, stack) || roomIn(this.inventory, stack);
+    }
+
+    private static boolean roomIn(NonNullList<ItemStack> where, ItemStack stack) {
+
+        for (ItemStack held : where) {
+
+            if (held.isEmpty() || ItemStack.isSameItemSameComponents(held, stack)
+                    && held.getCount() < held.getMaxStackSize()) {
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * A player's empty handed right click on an agent: its inventory as a screen, or with a crouch, whatever is in its main
+     * hand dropped at the player's feet.
+     *
+     * <p>Only the mob a player meets, only with an empty main hand, and only on the server. An empty hand because a name
+     * tag, a lead, a bucket and a spawn egg are all vanilla's to answer and {@code Mob#interact} has already had its say by
+     * the time this runs; the main hand alone because the off hand would answer the same click a second time. A training
+     * agent is refused outright — there is no player in a game test to open one and an arena's loadout is the arena's.
+     */
+    @Override
+    protected InteractionResult mobInteract(Player player, InteractionHand hand) {
+
+        if (this.training || hand != InteractionHand.MAIN_HAND || player.isSpectator()
+                || !player.getItemInHand(hand).isEmpty()) {
+
+            return super.mobInteract(player, hand);
+        }
+
+        if (this.level().isClientSide) {
+
+            return InteractionResult.sidedSuccess(true);
+        }
+
+        if (player.isShiftKeyDown()) {
+
+            this.handOver(player);
+        }
+
+        else if (player instanceof ServerPlayer opener) {
+
+            opener.openMenu(new SimpleMenuProvider((containerId, playerInventory, ignored) ->
+                    new AgentMenu(containerId, playerInventory, this), this.menuTitle()));
+        }
+
+        return InteractionResult.CONSUME;
+    }
+
+    /** What its screen is called: the agent's own name, so a named one is told apart from the three beside it. */
+    private Component menuTitle() {
+
+        return this.hasCustomName() ? this.getCustomName() : Component.literal("Agent");
+    }
+
+    /**
+     * Drops what is in the agent's main hand at the player's feet, which is the quickest way to get one thing back off it
+     * without opening anything.
+     *
+     * <p>The drop is the agent's own for three seconds, in the sense that the agent will take nothing at all in that time:
+     * it is standing on the stack it just put down and would otherwise pick it straight back up on the next tick, which
+     * looks exactly like the hand over having failed. The item itself is free for the player to walk over at once.
+     */
+    private void handOver(Player player) {
+
+        ItemStack held = this.hotbar.get(this.selectedSlot);
+
+        if (held.isEmpty()) {
+
+            return;
+        }
+
+        this.hotbar.set(this.selectedSlot, ItemStack.EMPTY);
+        this.syncMainHand();
+
+        ItemEntity dropped = new ItemEntity(this.level(), player.getX(), player.getY() + 0.5D, player.getZ(), held);
+
+        dropped.setPickUpDelay(0);
+        this.level().addFreshEntity(dropped);
+        this.takesNothingUntil = this.level().getGameTime() + HAND_OVER_GRACE;
+    }
+
+    /** How long after handing something over the agent takes nothing off the floor, so the drop actually reaches a player. */
+    private static final int HAND_OVER_GRACE = 60;
+
+    // ---------------------------------------------------------------------------------------------------------------
     // Rotation
     // ---------------------------------------------------------------------------------------------------------------
 
@@ -1639,6 +1934,12 @@ public class AgentMob extends PathfinderMob {
         tag.put(TAG_HOTBAR, hotbarTag);
         tag.putInt(TAG_SELECTED_SLOT, this.selectedSlot);
 
+        CompoundTag inventoryTag = new CompoundTag();
+        ContainerHelper.saveAllItems(inventoryTag, this.inventory, this.registryAccess());
+
+        tag.put(TAG_INVENTORY, inventoryTag);
+        tag.putBoolean(TAG_PICKS_UP_ITEMS, this.picksUpItems);
+
         if (this.brainName != null) {
 
             tag.putString(TAG_BRAIN_NAME, this.brainName);
@@ -1664,6 +1965,17 @@ public class AgentMob extends PathfinderMob {
 
         this.selectedSlot = Mth.clamp(tag.getInt(TAG_SELECTED_SLOT), 0, MobControls.HOTBAR_SIZE - 1);
         this.syncMainHand();
+
+        if (tag.contains(TAG_INVENTORY, Tag.TAG_COMPOUND)) {
+
+            ContainerHelper.loadAllItems(tag.getCompound(TAG_INVENTORY), this.inventory, this.registryAccess());
+        }
+
+        // Its own answer wins over the world's; an agent saved before there was a flag to save keeps the world's, which is
+        // what the constructor already gave it. Applied either way rather than only when the tag is there, because
+        // Mob#readAdditionalSaveData has just set vanilla's own CanPickUpLoot from the save and the two have to agree.
+        this.setPicksUpItems(tag.contains(TAG_PICKS_UP_ITEMS, Tag.TAG_BYTE)
+                ? tag.getBoolean(TAG_PICKS_UP_ITEMS) : this.picksUpItems);
 
         // Kept as it was saved and not checked here: a world can name a network this game does not have, and the agent
         // should still have it back once the network is. The driver finds it by name, and falls back while it cannot.
@@ -1712,7 +2024,8 @@ public class AgentMob extends PathfinderMob {
 
     private boolean carriesNothing() {
 
-        return this.hotbar.stream().allMatch(ItemStack::isEmpty) && this.getOffhandItem().isEmpty();
+        return this.hotbar.stream().allMatch(ItemStack::isEmpty) && this.inventory.stream().allMatch(ItemStack::isEmpty)
+                && this.getOffhandItem().isEmpty();
     }
 
     private void armWith(String name, HolderLookup.Provider registries) {

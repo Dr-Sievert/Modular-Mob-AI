@@ -21,6 +21,9 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.ai.goal.WrappedGoal;
 import net.minecraft.world.entity.animal.Cow;
 import net.minecraft.world.entity.animal.IronGolem;
@@ -28,14 +31,19 @@ import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.monster.Vindicator;
 import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.entity.monster.piglin.Piglin;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.AbstractArrow;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.Enchantments;
+import net.minecraft.world.level.GameRules;
+import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.PlayerTeam;
+import net.sievert.modularmobai.Config;
 import net.sievert.modularmobai.Constants;
 import net.sievert.modularmobai.allegiance.Allegiance;
 import net.sievert.modularmobai.arena.Loadout;
@@ -54,8 +62,11 @@ import net.sievert.modularmobai.brain.schema.EnemySlots;
 import net.sievert.modularmobai.brain.schema.ObservationSchema;
 import net.sievert.modularmobai.brain.schema.Species;
 import net.sievert.modularmobai.entity.ModEntities;
+import net.sievert.modularmobai.entity.agent.AgentInventory;
 import net.sievert.modularmobai.entity.agent.AgentMob;
+import net.sievert.modularmobai.entity.agent.MobControls;
 import net.sievert.modularmobai.gametest.GameTestGroup;
+import net.sievert.modularmobai.menu.AgentMenu;
 import net.sievert.modularmobai.gametest.GameTestTuning;
 import net.sievert.modularmobai.gametest.mixin.MobTargetGoalsAccessor;
 import net.sievert.modularmobai.gametest.util.HeldControls;
@@ -1237,6 +1248,368 @@ public class PlayGameTest {
         helper.assertValueEqual(summoned.getHotbarItem(1).getCount(), 64, "the summoned agent's arrows");
         helper.assertValueEqual(summoned.brainName(), "scripted", "the summoned agent's brain name");
         helper.succeed();
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // What it carries
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * An agent out in the world takes the drops it stands on, into its own hotbar, and <b>the observation sees what it
+     * took on the next tick without a line of the layout changing</b>.
+     *
+     * <p>That last part is the whole point of the pickup rule being written the way it is. The humanoid's 792 floats are
+     * fixed and every trained network depends on them, so a picked up bow has to arrive somewhere a network already reads:
+     * the hotbar block, which reads a kind per slot, and {@code SELF_ARROWS}, which counts the quiver out of the hotbar and
+     * the hands. So the rule fills the hotbar before the pocket, and a network that has only ever trained with a bow
+     * loadout reads a bow it walked over as one. See {@code AgentMob#pickUpItem}.
+     *
+     * <p>Two things it also holds, both of them faults the obvious implementation has. <b>Nothing already held is
+     * dropped</b>: vanilla's own {@code Mob#pickUpItem} would compare the bow against the sword in the agent's hand and
+     * throw one of them on the floor. And <b>a stack joins its own kind</b>, which is what makes arrows count.
+     *
+     * <p>The drops are put where the agent stands rather than a few blocks off. Vanilla's scan reaches one block around a
+     * mob, so standing on it is the whole of what "walking over it" comes to, and walking the agent there would be a test
+     * of the network's feet instead.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 120)
+    public static void anAgentTakesWhatItStandsOnAndTheObservationSeesIt(GameTestHelper helper) {
+
+        mobGriefingIsOn(helper);
+
+        AgentMob agent = worldAgent(helper, new BlockPos(4, 2, 1), 0.0F);
+        agent.equip(Loadout.SWORD);
+
+        helper.assertTrue(agent.picksUpItems(), "A playable agent does not start out taking what it walks over, so the "
+                + "config's default never reached it");
+
+        float[] before = observed(agent);
+
+        helper.assertTrue(AgentObservation.isItem(before[ObservationSchema.HOTBAR_OFFSET + 1], AgentObservation.ITEM_NONE),
+                "The agent's second hotbar slot is not empty to start with, so this proves nothing");
+        reads(helper, before[ObservationSchema.SELF_ARROWS], 0.0D, "the quiver before it picks anything up");
+
+        drop(helper, agent, new ItemStack(Items.BOW));
+        drop(helper, agent, new ItemStack(Items.ARROW, 16));
+
+        run(helper, tick -> {
+
+            if (hotbarSlotOf(agent, Items.BOW) < 0 || hotbarSlotOf(agent, Items.ARROW) < 0) {
+
+                helper.assertTrue(tick < 100, "In " + tick + " ticks the agent standing on a bow and 16 arrows picked up "
+                        + "neither: it holds " + hotbarOf(agent));
+
+                return false;
+            }
+
+            int bow = hotbarSlotOf(agent, Items.BOW);
+            int arrows = hotbarSlotOf(agent, Items.ARROW);
+
+            helper.assertTrue(agent.getHotbarItem(0).is(Items.IRON_SWORD), "The sword the agent was already holding is gone "
+                    + "from its first slot, so a pickup threw something away: it holds " + hotbarOf(agent));
+            helper.assertTrue(bow > 0 && arrows > 0, "A pickup took the slot the sword was in");
+            helper.assertValueEqual(agent.getHotbarItem(arrows).getCount(), 16, "arrows picked up");
+            helper.assertTrue(agent.getMainHandItem().is(Items.IRON_SWORD), "The agent's hand is no longer the slot it holds");
+
+            float[] after = observed(agent);
+
+            helper.assertTrue(AgentObservation.isItem(after[ObservationSchema.HOTBAR_OFFSET + bow],
+                    AgentObservation.ITEM_RANGED), "The observation does not read a ranged item in slot " + bow
+                    + ", where the bow it picked up is");
+            helper.assertTrue(AgentObservation.isItem(after[ObservationSchema.HOTBAR_OFFSET], AgentObservation.ITEM_SWORD),
+                    "The observation lost the sword in slot 0");
+            reads(helper, after[ObservationSchema.SELF_ARROWS], 16.0D / ObservationSchema.ARROW_SCALE,
+                    "the quiver after 16 arrows were picked up");
+
+            helper.assertItemEntityNotPresent(Items.BOW);
+            helper.assertItemEntityNotPresent(Items.ARROW);
+
+            return true;
+        });
+    }
+
+    /**
+     * The two agents that take nothing off the floor, in one test because they are one rule read from both ends.
+     *
+     * <p><b>A training agent</b>, whatever the world says. An arena hands out every item in the fight and the league rates
+     * the result under the loadout's name, so a fight the agent changed its own loadout half way through would be a fight
+     * rated as something it was not — and the crowded fights have dropped gear lying in them. It is the same reasoning that
+     * keeps {@code HuntAgentsGoal} off a training agent: what an arena sets up is the arena's alone.
+     *
+     * <p><b>One a player has told not to</b>, through {@code /mmai pickup}, which is the per-agent flag the button in its
+     * screen flips and which is saved with it.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 120)
+    public static void aTrainingAgentTakesNothingAndNeitherDoesOneToldNotTo(GameTestHelper helper) {
+
+        mobGriefingIsOn(helper);
+
+        AgentMob arena = trainingAgent(helper, new BlockPos(2, 2, 2), null);
+        AgentMob told = worldAgent(helper, new BlockPos(6, 2, 6), 0.0F);
+
+        helper.assertFalse(arena.picksUpItems(), "A training agent starts out taking what it walks over");
+
+        command(helper, "mmai pickup " + told.getStringUUID() + " off");
+        helper.assertFalse(told.picksUpItems(), "/mmai pickup off left the agent taking things");
+
+        // And the command is refused on a training agent even if one is somehow reachable: the flag is the world's.
+        command(helper, "mmai pickup " + arena.getStringUUID() + " on");
+        helper.assertFalse(arena.picksUpItems(), "/mmai pickup on turned it on for a training agent");
+
+        drop(helper, arena, new ItemStack(Items.BOW));
+        drop(helper, told, new ItemStack(Items.BOW));
+
+        run(helper, tick -> {
+
+            helper.assertTrue(arena.getHotbarItem(0).isEmpty(), "The training agent picked a bow up on tick " + tick);
+            helper.assertTrue(told.getHotbarItem(0).isEmpty(), "An agent told not to pick things up picked a bow up on tick "
+                    + tick);
+
+            if (tick < 40) {
+
+                return false;
+            }
+
+            // Both bows still lying where they were dropped, rather than merely not in a hotbar.
+            helper.assertItemEntityCountIs(Items.BOW, new BlockPos(4, 2, 4), 6.0D, 2);
+
+            return true;
+        });
+    }
+
+    /**
+     * Whether an agent picks things up and what is in its pocket both survive being saved, and the pocket is a pocket: it
+     * is not where a bow finds its arrows and not something the observation reads.
+     *
+     * <p>The last half is the line this feature is not allowed to cross. The hotbar is what the network sees and what
+     * {@code AgentMob#getProjectile} takes ammunition from, and it stays that way: a stack in the pocket is storage a
+     * player can move forward, and until they do it is out of the fight. A pocket the quiver counted would tell a network
+     * it had arrows it cannot reach.
+     */
+    @GameTest(template = ARENA)
+    public static void whatItCarriesAndWhetherItPicksUpAreKeptThroughSaving(GameTestHelper helper) {
+
+        AgentMob agent = worldAgent(helper, new BlockPos(2, 2, 2), 0.0F);
+
+        agent.equip(Loadout.BOW);
+        agent.setPicksUpItems(false);
+        agent.setInventoryItem(3, new ItemStack(Items.ARROW, 32));
+
+        // The pocket is storage: the arrows in it are not the quiver, which still reads the 64 in the hotbar alone.
+        reads(helper, observed(agent)[ObservationSchema.SELF_ARROWS], 1.0D, "the quiver with 64 in the hotbar and 32 in "
+                + "the pocket, which reads full and would read full with the hotbar alone");
+
+        agent.setHotbarItem(1, new ItemStack(Items.ARROW, 8));
+        reads(helper, observed(agent)[ObservationSchema.SELF_ARROWS], 8.0D / ObservationSchema.ARROW_SCALE,
+                "the quiver with 8 arrows in the hotbar and 32 in the pocket, which would read 40 if the pocket counted");
+
+        CompoundTag saved = agent.saveWithoutId(new CompoundTag());
+        AgentMob loaded = ModEntities.agentMob().create(helper.getLevel());
+
+        loaded.load(saved);
+
+        helper.assertFalse(loaded.picksUpItems(), "The agent came back picking things up after being told not to");
+        helper.assertTrue(loaded.getInventoryItem(3).is(Items.ARROW), "The pocket was lost in saving");
+        helper.assertValueEqual(loaded.getInventoryItem(3).getCount(), 32, "arrows in the pocket after loading");
+        helper.assertTrue(loaded.getHotbarItem(0).is(Items.BOW), "The bow was lost in saving");
+
+        // An agent saved before there was a flag to save takes the world's default, which is what the config says.
+        CompoundTag older = agent.saveWithoutId(new CompoundTag());
+        older.remove("PicksUpItems");
+
+        AgentMob legacy = ModEntities.agentMob().create(helper.getLevel());
+        legacy.load(older);
+
+        helper.assertValueEqual(legacy.picksUpItems(), Config.pickup(), "what an agent saved before the flag existed does");
+
+        loaded.discard();
+        legacy.discard();
+        helper.succeed();
+    }
+
+    /**
+     * The screen, as far as it can be held without a client: a player's right click opens one on a playable agent and is
+     * refused by a training one, every slot of it reaches the mob, and the button flips the flag.
+     *
+     * <p>The screen itself is a picture; the menu behind it is the whole of the behaviour, and it is common code with the
+     * server as its only authority, so this is where it can be proved. What is not proved here is the drawing, which is
+     * what a client is for.
+     *
+     * <p>The player is a mock, which is not a {@code ServerPlayer} and so has no connection to be sent an open-screen
+     * packet down. That is why the interaction is checked by what it answers — {@code CONSUME} for an agent that would open
+     * one, {@code PASS} for a training agent, which hands the click back to vanilla — and the menu itself is built
+     * directly, exactly as the interaction would build it.
+     */
+    @GameTest(template = ARENA)
+    public static void theRightClickMenuReachesTheMobAndRefusesATrainingAgent(GameTestHelper helper) {
+
+        AgentMob agent = worldAgent(helper, new BlockPos(4, 2, 4), 0.0F);
+        AgentMob arena = trainingAgent(helper, new BlockPos(2, 2, 2), null);
+
+        agent.equip(Loadout.SWORD);
+
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        player.moveTo(agent.getX() + 1.0D, agent.getY(), agent.getZ(), 0.0F, 0.0F);
+
+        helper.assertValueEqual(agent.interact(player, InteractionHand.MAIN_HAND), InteractionResult.CONSUME,
+                "what an empty handed right click on a playable agent answers");
+        helper.assertValueEqual(arena.interact(player, InteractionHand.MAIN_HAND), InteractionResult.PASS,
+                "what an empty handed right click on a training agent answers");
+
+        // A hand with something in it is vanilla's business: a name tag, a lead, a bucket.
+        player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.STICK));
+        helper.assertValueEqual(agent.interact(player, InteractionHand.MAIN_HAND), InteractionResult.PASS,
+                "what a right click holding something answers");
+        player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+
+        AgentMenu menu = new AgentMenu(1, player.getInventory(), agent);
+
+        helper.assertTrue(menu.stillValid(player), "The screen will not stay open for a player standing next to the agent");
+        helper.assertTrue(menu.picksUpItems(), "The menu says the agent does not pick things up, and it does");
+
+        // The one button, which is vanilla's own button channel and not a packet of this mod's.
+        helper.assertTrue(menu.clickMenuButton(player, AgentMenu.TOGGLE_PICKUP), "The menu refused its own button");
+        helper.assertFalse(agent.picksUpItems(), "The button did not turn picking things up off");
+        helper.assertFalse(menu.picksUpItems(), "The menu did not follow the flag it had just flipped");
+
+        menu.clickMenuButton(player, AgentMenu.TOGGLE_PICKUP);
+        helper.assertTrue(agent.picksUpItems(), "The button does not turn picking things up back on");
+
+        // Every part of the mob is reachable, and a write lands on the mob rather than in a copy of it.
+        helper.assertTrue(menu.slots.size() == AgentInventory.SIZE + 36,
+                "The menu is " + menu.slots.size() + " slots, not the agent's " + AgentInventory.SIZE + " and a player's 36");
+        helper.assertTrue(menu.getSlot(AgentMenu.HOTBAR_AT).getItem().is(Items.IRON_SWORD),
+                "The menu's first hotbar slot is not the sword the agent is holding");
+
+        menu.getSlot(AgentMenu.ARMOUR_AT).set(new ItemStack(Items.IRON_HELMET));
+        menu.getSlot(AgentMenu.OFFHAND_AT).set(new ItemStack(Items.SHIELD));
+        menu.getSlot(AgentMenu.POCKET_AT + 2).set(new ItemStack(Items.ARROW, 5));
+
+        helper.assertTrue(agent.getItemBySlot(EquipmentSlot.HEAD).is(Items.IRON_HELMET), "The helmet never reached the mob");
+        helper.assertTrue(agent.getOffhandItem().is(Items.SHIELD), "The shield never reached the mob's off hand");
+        helper.assertTrue(agent.getInventoryItem(2).is(Items.ARROW), "The arrows never reached the mob's pocket");
+
+        // Armour only where armour goes, so a sword dropped on the helmet slot bounces.
+        helper.assertFalse(menu.getSlot(AgentMenu.ARMOUR_AT).mayPlace(new ItemStack(Items.IRON_SWORD)),
+                "The helmet slot takes a sword");
+
+        // The hotbar is the hand: a weapon put in the held slot is what the mob swings on the next tick.
+        menu.getSlot(AgentMenu.HOTBAR_AT + agent.getSelectedSlot()).set(new ItemStack(Items.IRON_AXE));
+        helper.assertTrue(agent.getMainHandItem().is(Items.IRON_AXE), "The menu wrote a slot the main hand never followed");
+
+        // And a shift click from the player's side lands in the agent's hotbar rather than in its pocket.
+        player.getInventory().setItem(0, new ItemStack(Items.BOW));
+        menu.quickMoveStack(player, AgentMenu.PLAYER_AT + 27);
+
+        helper.assertTrue(hotbarSlotOf(agent, Items.BOW) >= 0,
+                "A bow shift clicked at the agent is not in its hotbar: it holds " + hotbarOf(agent));
+
+        // Out of reach, or dead, and the screen is gone: the server closes it on its own; see Player#tick.
+        player.moveTo(agent.getX() + 20.0D, agent.getY(), agent.getZ(), 0.0F, 0.0F);
+        helper.assertFalse(menu.stillValid(player), "The screen stays open for a player twenty blocks away");
+
+        // A training agent's screen is refused whichever way it is asked for.
+        helper.assertFalse(new AgentMenu(2, player.getInventory(), arena).stillValid(player),
+                "A training agent's screen would stay open");
+
+        helper.succeed();
+    }
+
+    /** Sneak and right click, and the agent puts what is in its hand on the floor at the player's feet. */
+    @GameTest(template = ARENA, timeoutTicks = 120)
+    public static void aSneakingRightClickTakesTheAgentsWeaponBack(GameTestHelper helper) {
+
+        mobGriefingIsOn(helper);
+
+        AgentMob agent = worldAgent(helper, new BlockPos(4, 2, 4), 0.0F);
+        agent.equip(Loadout.SWORD);
+
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        player.moveTo(agent.getX() + 1.5D, agent.getY(), agent.getZ(), 0.0F, 0.0F);
+        player.setShiftKeyDown(true);
+
+        helper.assertValueEqual(agent.interact(player, InteractionHand.MAIN_HAND), InteractionResult.CONSUME,
+                "what a sneaking right click answers");
+
+        helper.assertTrue(agent.getMainHandItem().isEmpty(), "The agent is still holding the sword");
+        helper.assertTrue(agent.getHotbarItem(0).isEmpty(), "The sword is still in the agent's hotbar");
+        helper.assertItemEntityPresent(Items.IRON_SWORD, new BlockPos(4, 2, 4), 4.0D);
+
+        run(helper, tick -> {
+
+            // And it does not snatch it straight back off the floor, which standing on it would otherwise have it do on the
+            // very next tick; see AgentMob#handOver.
+            helper.assertTrue(agent.getHotbarItem(0).isEmpty(), "The agent picked the sword it handed over back up on tick "
+                    + tick);
+
+            return tick >= 40;
+        });
+    }
+
+    /** A reading of the observation against the number it is supposed to be, to a ten thousandth. */
+    private static void reads(GameTestHelper helper, double seen, double expected, String what) {
+
+        helper.assertTrue(Math.abs(seen - expected) < 1.0e-4D, String.format(java.util.Locale.ROOT,
+                "The observation says %s is %.4f where it should be %.4f", what, seen, expected));
+    }
+
+    /** Vanilla gates a mob's loot pickup on this rule, so a suite that turned it off would prove nothing about pickup. */
+    private static void mobGriefingIsOn(GameTestHelper helper) {
+
+        helper.assertTrue(helper.getLevel().getGameRules().getBoolean(GameRules.RULE_MOBGRIEFING),
+                "mobGriefing is off in this suite's world, and vanilla's own loot scan — which is what finds the drops an "
+                        + "agent walks over — never runs without it");
+    }
+
+    /** A stack on the ground where the agent stands, with nothing left of the toss a dropped item usually carries. */
+    private static void drop(GameTestHelper helper, AgentMob agent, ItemStack stack) {
+
+        ItemEntity item = new ItemEntity(helper.getLevel(), agent.getX(), agent.getY(), agent.getZ(), stack);
+
+        item.setPickUpDelay(0);
+        item.setDeltaMovement(Vec3.ZERO);
+        helper.getLevel().addFreshEntity(item);
+    }
+
+    /** Which hotbar slot holds that item, or -1 for none. */
+    private static int hotbarSlotOf(AgentMob agent, net.minecraft.world.item.Item item) {
+
+        for (int slot = 0; slot < MobControls.HOTBAR_SIZE; slot++) {
+
+            if (agent.getHotbarItem(slot).is(item)) {
+
+                return slot;
+            }
+        }
+
+        return -1;
+    }
+
+    /** The hotbar as a line, for a failure message: {@code [iron_sword, bow, 16 arrow, -, ...]}. */
+    private static String hotbarOf(AgentMob agent) {
+
+        StringBuilder said = new StringBuilder("[");
+
+        for (int slot = 0; slot < MobControls.HOTBAR_SIZE; slot++) {
+
+            ItemStack held = agent.getHotbarItem(slot);
+
+            said.append(slot == 0 ? "" : ", ");
+            said.append(held.isEmpty() ? "-" : (held.getCount() > 1 ? held.getCount() + " " : "")
+                    + held.getItem().toString());
+        }
+
+        return said.append(']').toString();
+    }
+
+    /** The agent's own observation, this tick, as its brain would be handed it. */
+    private static float[] observed(AgentMob agent) {
+
+        float[] row = new float[Species.HUMANOID.obsDim()];
+
+        Species.HUMANOID.observe(agent, agent.brain().enemySlots(), row, 0);
+
+        return row;
     }
 
     // ---------------------------------------------------------------------------------------------------------------

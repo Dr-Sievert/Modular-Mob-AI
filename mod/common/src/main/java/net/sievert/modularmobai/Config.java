@@ -38,6 +38,13 @@ public final class Config {
     /** Relative to the game directory, like everything else in the file. */
     public static final String DEFAULT_MODELS = Constants.MOD_ID + "/models";
 
+    /**
+     * Whether an agent a player meets takes the drops it walks over. On, because a body that can be handed a bow and cannot
+     * pick one up is a body a player has to use a command on; see {@code AgentMob#pickUpItem} for what it does with what it
+     * takes. A training agent never reads this and never picks anything up whatever it says.
+     */
+    public static final boolean DEFAULT_PICKUP = true;
+
     private static final String HEADER = """
             # Modular Mob AI
             #
@@ -52,6 +59,10 @@ public final class Config {
             #
             # models: a folder of trained networks, searched by name before the ones the jar carries. Relative to the game
             #         directory. A models\\<name> folder from the repository can be copied in as it is.
+            #
+            # pickup: whether a new agent takes the items it walks over, into its hotbar and then its own pocket. Each agent
+            #         keeps its own answer, saved with it: /mmai pickup <targets> on|off, or the button in its inventory
+            #         screen. An agent in training never picks anything up, whatever this says.
             """;
 
     private static Path gameDirectory = Path.of("");
@@ -81,7 +92,7 @@ public final class Config {
 
                 Files.createDirectories(configDir);
                 Files.writeString(file, HEADER + "brain=" + DEFAULT_BRAIN + "\nloadout=" + DEFAULT_LOADOUT
-                        + "\nmodels=" + DEFAULT_MODELS + "\n", StandardCharsets.UTF_8);
+                        + "\nmodels=" + DEFAULT_MODELS + "\npickup=" + DEFAULT_PICKUP + "\n", StandardCharsets.UTF_8);
             }
         }
 
@@ -108,6 +119,15 @@ public final class Config {
     public static synchronized String loadout() {
 
         return value("loadout", DEFAULT_LOADOUT);
+    }
+
+    /**
+     * Whether an agent a player meets starts out taking the drops it walks over. Only the world's default: each agent keeps
+     * its own answer from there on, saved with it, and a training agent is never asked.
+     */
+    public static synchronized boolean pickup() {
+
+        return Boolean.parseBoolean(value("pickup", String.valueOf(DEFAULT_PICKUP)));
     }
 
     /**
@@ -147,6 +167,7 @@ public final class Config {
         properties.setProperty("brain", DEFAULT_BRAIN);
         properties.setProperty("loadout", DEFAULT_LOADOUT);
         properties.setProperty("models", DEFAULT_MODELS);
+        properties.setProperty("pickup", String.valueOf(DEFAULT_PICKUP));
         return properties;
     }
 }

@@ -10,6 +10,8 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.flag.FeatureFlags;
+import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.SpawnEggItem;
@@ -19,6 +21,8 @@ import net.sievert.modularmobai.command.AgentCommands;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.item.ModItems;
+import net.sievert.modularmobai.menu.AgentMenu;
+import net.sievert.modularmobai.menu.ModMenus;
 
 public class ModularMobAiMod implements ModInitializer {
 
@@ -47,6 +51,11 @@ public class ModularMobAiMod implements ModInitializer {
         ));
 
         ItemGroupEvents.modifyEntriesEvent(CreativeModeTabs.SPAWN_EGGS).register(entries -> entries.accept(ModItems.agentMobSpawnEgg()));
+
+        // The screen a player opens by right clicking an agent. Vanilla keeps MenuType's constructor to itself; the Fabric
+        // API's transitive access widener opens it, which is the whole of what makes this one line rather than a wrapper.
+        ModMenus.acceptAgentMenu(Registry.register(BuiltInRegistries.MENU, ModMenus.AGENT_MENU_ID,
+                new MenuType<>(AgentMenu::new, FeatureFlags.DEFAULT_FLAGS)));
 
         // Every agent in a level gets its actions at the start of the level's tick, before any entity moves.
         ServerTickEvents.START_WORLD_TICK.register(AgentDriver::tick);

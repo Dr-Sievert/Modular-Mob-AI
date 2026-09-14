@@ -55,10 +55,12 @@ import net.sievert.modularmobai.entity.agent.AgentMob;
  *   /mmai spawn [loadout] [brain] [pos]     an agent where you stand, facing where you face
  *   /mmai loadout TARGETS LOADOUT           arm agents, or any mob, with a loadout
  *   /mmai brain TARGETS BRAIN               give agents a brain of their own, or default to hand them back
+ *   /mmai pickup TARGETS on|off             whether they take the items they walk over
  *   /mmai ally TARGETS TARGETS              put them all on one side
  *   /mmai enemy TARGETS TARGETS             put the first on one side and the second on another
  *   /mmai horde MOB COUNT [RADIUS]          that many of one mob in a ring round you, set against every agent near them
- *   /mmai info [TARGETS]                    what each agent runs on, carries and sides with, and what it last cost to see
+ *   /mmai info [TARGETS]                    what each agent runs on, carries, picks up and sides with, and what it last
+ *                                           cost to see
  *   /mmai models                            the networks the game can find, and what agents default to
  *   /mmai loadouts                          every loadout by name
  * </pre>
@@ -138,6 +140,15 @@ public final class AgentCommands {
                                 .then(Commands.argument("brain", StringArgumentType.string()).suggests(BRAINS)
                                         .executes(context -> brain(context.getSource(),
                                                 EntityArgument.getEntities(context, "targets"), string(context, "brain"))))))
+
+                .then(Commands.literal("pickup")
+                        .then(Commands.argument("targets", EntityArgument.entities())
+                                .then(Commands.literal("on")
+                                        .executes(context -> pickup(context.getSource(),
+                                                EntityArgument.getEntities(context, "targets"), true)))
+                                .then(Commands.literal("off")
+                                        .executes(context -> pickup(context.getSource(),
+                                                EntityArgument.getEntities(context, "targets"), false)))))
 
                 .then(Commands.literal("ally")
                         .then(Commands.argument("targets", EntityArgument.entities())
@@ -275,6 +286,34 @@ public final class AgentCommands {
         AgentMob first = agents.get(0);
         source.sendSuccess(() -> Component.literal(agents.size() + (agents.size() == 1 ? " agent runs" : " agents run")
                 + " on " + brainOf(first)), true);
+        return agents.size();
+    }
+
+    /**
+     * Whether these agents take the items they walk over, kept through saving. The same flag the button in an agent's
+     * inventory screen flips, and the world's default for a new one is the config's {@code pickup}.
+     *
+     * <p>A training agent would refuse it anyway (see {@code AgentMob#setPicksUpItems}), but none can be reached from here:
+     * an arena's agent is never in a world a command runs in.
+     */
+    private static int pickup(CommandSourceStack source, Collection<? extends Entity> targets, boolean picksUp)
+            throws CommandSyntaxException {
+
+        List<AgentMob> agents = agents(targets);
+
+        if (agents.isEmpty()) {
+
+            throw failure("None of those is an agent");
+        }
+
+        for (AgentMob agent : agents) {
+
+            agent.setPicksUpItems(picksUp);
+        }
+
+        source.sendSuccess(() -> Component.literal(agents.size() + (agents.size() == 1 ? " agent " : " agents ")
+                + (picksUp ? "now pick" : "no longer pick") + (agents.size() == 1 ? "s" : "") + " items up"), true);
+
         return agents.size();
     }
 
@@ -430,6 +469,7 @@ public final class AgentCommands {
                 line.append(": ").append(brainOf(agent))
                         .append(agent.brainName() == null ? " (the default)" : " (its own)")
                         .append(", carries ").append(agent.loadoutName() == null ? "what it was given" : agent.loadoutName())
+                        .append(agent.picksUpItems() ? " and picks up" : " and picks nothing up")
                         .append(String.format(Locale.ROOT, ", health %.1f", agent.getHealth()));
 
                 // What it cost this agent to perceive on its last tick, which is the number to look at when a world with a
