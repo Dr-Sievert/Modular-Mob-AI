@@ -34,6 +34,30 @@ to copy a hand-written fighter first, then improve the copy with reinforcement l
    - **backs away from a lit creeper**: empty hands, never seen to swing, and stopped coming within three blocks is a
      creeper with its fuse lit, and it walks clear to seven and a half blocks before coming back.
 
+   **Against a pack** — two or more bodies actually in the fight and within six blocks, which a fight against one opponent
+   never is — it fights a different fight, because a network never learns what the teacher never did and the teacher used to
+   take the nearest of a pack and trade with it as if alone:
+   - **gives ground from the pack as one direction**, the sum of the ways to each of them weighted by nearness, rather than
+     from whichever is nearest, since backing away from one body walks into another. It is a **cycle and not a retreat**:
+     ground while the swing cools, and it starts closing again a few ticks before the cooldown fills, because the ground
+     given up has to be covered before a blow can land. Backing away for as long as two bodies were in the fight was the
+     first rule written and is the wrong one — a body outpaces a zombie, so nothing arrives, nothing is landed and the clock
+     runs out; see [findings.md](findings.md);
+   - **keeps them in front.** The aim goes to the middle of the pack for as long as it is giving ground and onto the body
+     only while it is stepping in to strike, so the ones at the edges stay inside the hundred degree cone the agent perceives
+     through. A body outside that cone is not in the observation at all;
+   - **runs when the pack outlasts it**, which is arithmetic off the slots rather than despair: what one round of their blows
+     takes off it against the health it has left, and what their health costs in swings at its own cooldown. It then sprints
+     along the clearest ray away from them instead of dying in the middle of them;
+   - **throws the sprint blow for the knockback** whenever the second nearest is far enough that the step forward is not a
+     step into a second set of hands, and **never leaves the ground for a critical**, since a dozen ticks in the air is a
+     dozen ticks of footwork given up;
+   - and **changes nothing about the shield**, which was measured rather than assumed: narrowing it in a pack to a body with
+     its arm actually up is worse than the rule that was already there.
+
+   Nothing that shoots and nothing that flies counts towards a pack, so skeletons and flyers keep the ranged rules exactly as
+   they were: walking backwards from an archer is walking backwards while being shot.
+
    All of it is decided from the observation and a little state per agent, which the network has 128 numbers of memory
    for; see the class comment for what that state is and why every bit of it is checked against the body.
 

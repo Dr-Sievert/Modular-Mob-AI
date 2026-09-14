@@ -7,7 +7,9 @@ import net.minecraft.core.Holder;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.projectile.Arrow;
 import net.minecraft.world.item.ItemStack;
@@ -100,6 +102,22 @@ final class Mechanics {
         helper.getLevel().addFreshEntity(arrow);
 
         return arrow;
+    }
+
+    /**
+     * How far off that body the agent is looking, in degrees: the angle between where it looks and where the body is. It is
+     * what "in front of it" means, since the agent perceives through a cone about its aim rather than a full circle. Shared
+     * by the crowd suite and the teacher's pack tests, which both ask it of every body round the agent.
+     */
+    static double aimError(AgentMob agent, LivingEntity body) {
+
+        Vec3 look = agent.getViewVector(1.0F);
+        Vec3 towards = body.getEyePosition().subtract(agent.getEyePosition());
+
+        double length = towards.length();
+
+        return length < 1.0E-4D ? 0.0D
+                : Math.toDegrees(Math.acos(Mth.clamp(look.dot(towards) / length, -1.0D, 1.0D)));
     }
 
     /** Which of the agent's enemy slots this entity holds, or -1 for none. */

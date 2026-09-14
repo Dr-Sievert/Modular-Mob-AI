@@ -64,6 +64,40 @@ import net.sievert.modularmobai.entity.agent.MobControls;
  *       the cooldown's own rate off two ticks of the observation, so it holds for a sword and an axe alike.</li>
  * </ul>
  *
+ * <h2>Against a pack</h2>
+ *
+ * <p>Everything above is one fight against one body, and against several it was the whole of what this fighter did: it took
+ * the nearest, stood in the band, and traded, which is how a good player dies. So there is a second fight in here, and it is
+ * reached only when <b>two or more bodies are actually in the fight</b> and near enough to be in it, which a fight against one
+ * opponent never is. It is four rules and they are all the same rule:
+ *
+ * <ul>
+ *   <li><b>Give ground instead of trading, in a cycle.</b> A body walking backwards covers 0.216 blocks a tick and a zombie
+ *       covers 0.154, so backing away keeps a pack in front of the agent and strings it out into the one-on-one fight it
+ *       already wins. It backs away from the pack as <i>one direction</i> — the sum of the ways to each of them, weighted by
+ *       how near each is — rather than from any one of them. But only <b>while the swing is cooling</b>: a fighter that backs
+ *       away for as long as there is a pack outpaces it, never lets anything arrive and never lands anything, which is
+ *       measured and written down at {@link #PACK_STANDOFF}. So it steps back in a few ticks before the cooldown fills, since
+ *       the ground given up has to be covered before a blow can land, and gives it again once the blow has gone. See
+ *       {@link #sizeUp}, {@link #giveGround} and {@link #stepsIn}.</li>
+ *   <li><b>Keep them in front.</b> The agent perceives through a hundred degree cone about its aim, so a body it turns its
+ *       back on is one it stops seeing. The aim goes on the middle of the pack for as long as the feet are giving ground, and
+ *       on the body only while the fighter is stepping in to strike, since a swing goes where the eyes are: the eyes and the
+ *       feet say the same thing on every tick.</li>
+ *   <li><b>Run when it is hopeless.</b> Not as despair but as arithmetic: what the pack takes off it in the time it would
+ *       take to cut the pack down, against the health it has left. See {@link #hopeless}. It then sprints along the clearest
+ *       way out rather than dying in the middle, and the pack strings out behind it, which is the same string-out the
+ *       backing away buys, bought late.</li>
+ *   <li><b>And the shield needed nothing.</b> The rule that already raises it — inside reach, while the swing cools, in a
+ *       fight that has cost health — is the pack rule as well, and narrowing it there for the sake of the footwork is worse.
+ *       See {@link #hold}, where the numbers are.</li>
+ * </ul>
+ *
+ * <p>Two fights are deliberately left out of it. Nothing that shoots and nothing that flies counts towards a pack at all:
+ * walking backwards from an archer is walking backwards while being shot, and nothing swung reaches a flyer, so those are
+ * the ranged rules' fights and they are exactly what they were. And a lit fuse still comes first, since a creeper is the one
+ * body worth walking away from whatever else is standing there.
+ *
  * <h2>Everything else it carries</h2>
  *
  * <p>A drawn weapon and a shield each need something the observation does not carry: whether the weapon drawing is a bow or
@@ -203,6 +237,14 @@ public final class ScriptedBrain implements Brain {
      */
     private static final int CRIT_JUMP_COOLDOWN = 14;
 
+    /**
+     * How many ticks before the swing is ready the step back in begins. The ground given up has to be covered again before
+     * the blow can land, and a body walks 0.216 blocks a tick, so four ticks is most of the block between the standoff and
+     * the band a swing reaches from: start on the tick the cooldown fills and the fighter arrives four ticks late every
+     * cycle, which over a fight is blows not thrown and a clock that runs out.
+     */
+    private static final int PACK_STEP_IN_TICKS = 4;
+
     /** Below this a difference in the cooldown between two ticks is noise rather than the rate it recovers at. */
     private static final float STRENGTH_RATE_FLOOR = 0.01F;
 
@@ -315,6 +357,84 @@ public final class ScriptedBrain implements Brain {
      * a shield up for the whole flight of every shot is a fighter that never covers the ground to the archer.
      */
     private static final float BLOCK_SHOT_RANGE = 12.0F;
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // A pack: several bodies all coming at once
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * How many bodies in the fight make it a pack. Two, because two is already more than one blow can answer: the fighter
+     * trades with the nearest and the second walks round the back of it while the cooldown runs.
+     *
+     * <p>It is also what keeps a plain fight out of all of this. One opponent can never be two, so a fight against one body
+     * reaches none of the rules below however it goes, which is what the arena check's 54 ticks say every time it runs.
+     */
+    private static final int PACK_FIGHTERS = 2;
+
+    /**
+     * How near a body has to be to count towards that: six blocks, which is about two seconds of a zombie's walk and the
+     * same distance the agent hears at all round. Further off than that it is not in the fight yet, whatever it intends,
+     * and a fighter that backed away from a pack still crossing the ground would never close on anything.
+     */
+    private static final float PACK_RANGE = 6.0F;
+
+    /**
+     * How near the nearest has to come before the aim leaves the middle of the pack and goes on the body itself. A tick of
+     * a walk past a swing's own reach, so the aim is already there when the body arrives rather than swinging round after it.
+     */
+    private static final float PACK_AIM_RANGE = SWING_RANGE + 1.0F;
+
+    /**
+     * How far off the nearest of the pack has to be before giving ground stops being worth anything. It is the number that
+     * makes this a cycle rather than a retreat, and it was measured rather than chosen.
+     *
+     * <p>Backing away for as long as two bodies were in the fight was the first thing tried, and it is exactly wrong: a body
+     * walking backwards covers 0.216 blocks a tick against a zombie's 0.154, so it never lets anything arrive, never lands
+     * a blow, and runs the clock out instead. Over 342 pack fights on one bench it turned 6.1% timeouts into 23.4% and took
+     * the win rate from 59.4% to 43.6%. So ground is given while the swing is cooling and something is near enough to be
+     * worth giving it from, and the moment the swing is ready the fighter closes and takes it. Four blocks is a step and a
+     * half outside a swing's own reach: far enough that nothing can strike from there, near enough that one step in is a
+     * blow.
+     */
+    private static final float PACK_STANDOFF = 4.0F;
+
+    /**
+     * How far the second nearest has to be for a sprint blow to be worth its step forward. A sprint is forward only, so the
+     * blow is thrown from about a block nearer than the agent stands, and anything man sized strikes from a block and a half,
+     * two across a diagonal: four and a half blocks leaves the spot the blow is thrown from outside the second body's reach.
+     * Nearer than that the point of extra knockback is bought by walking into a second set of hands.
+     */
+    private static final float PACK_SPRINT_CLEAR = 4.5F;
+
+    /**
+     * How near a hazard or a drop along a ray makes a step that way a step to take only when there is nothing else. The
+     * grid already refuses to walk onto either inside its own four blocks; this is what the rays add out to thirty two, so
+     * that backing away from a pack towards a ravine turns into stepping sideways along it instead.
+     */
+    private static final float PACK_CLEAR_BEHIND = 6.0F;
+
+    /** Below this share of its health the fighter asks whether the fight is winnable at all; see {@link #hopeless}. */
+    private static final float PACK_HOPELESS_HEALTH = 0.5F;
+
+    /** A vanilla melee goal swings once every twenty ticks, which is what turns the pack's damage into a rate. */
+    private static final double MOB_BLOW_TICKS = 20.0D;
+
+    /** Twenty points of armour take four fifths off a blow, and the self block gives armour as a share of twenty. */
+    private static final double ARMOUR_SOAKS = 0.8D;
+
+    /** The humanoid's health when whole, which the self block's own health is a fraction of. */
+    private static final double AGENT_HEALTH = 20.0D;
+
+    // What the pack came to on this tick. Working space like the search's arrays above and for the same reason: it is
+    // written by sizeUp before anything reads it and never outlives the tick, so it is not the fighter's state and does not
+    // have to be checked against the body the way everything in Fighter does.
+    private int inTheFight;
+    private float threatForward;
+    private float threatRight;
+    private float nearestInFight;
+    private float secondNearest;
+    private float packHealth;
+    private float packDamage;
 
     // ---------------------------------------------------------------------------------------------------------------
     // Creepers
@@ -570,7 +690,7 @@ public final class ScriptedBrain implements Brain {
         }
 
         int target = obs + ObservationSchema.enemyOffset(slot);
-        watch(me, slot, o, target);
+        watch(me, o, obs);
 
         // Positions arrive in the agent's own frame, already scaled down by the view distance.
         float forward = o[target + ObservationSchema.ENEMY_FORWARD];
@@ -637,10 +757,52 @@ public final class ScriptedBrain implements Brain {
             return;
         }
 
+        // Several bodies all coming at once, which is a different fight from one body twice over and the one this fighter
+        // used to stand in the middle of and trade in. Everything that follows from it is gated on there being two of them
+        // in the fight, so a fight against one opponent reaches none of it. Never while walking away from a lit fuse: that
+        // already has the feet and is already the right answer, whatever else is standing there.
+        int start = state(CENTRE, 0, CENTRE);
+        boolean pack = !fleeing && this.sizeUp(me, o, obs) >= PACK_FIGHTERS;
+
+        // Where the pack lies, as one direction, back in the world's frame the grid is written in.
+        double threatX = -sin * this.threatForward - cos * this.threatRight;
+        double threatZ = cos * this.threatForward - sin * this.threatRight;
+
+        // The step away is worked out before the aim rather than down with the rest of the footwork, because a fight being
+        // run from is a fight the agent has to look the way it is running: a sprint is forward only.
+        boolean running = pack && this.hopeless(me, o, obs);
+        int packStep = pack ? this.giveGround(o, obs, threatX, threatZ, running) : start;
+
+        // Nowhere to go is not hopeless, it is cornered, and a cornered fighter turns and fights rather than running on the
+        // spot with its back to the pack.
+        running = running && packStep != start;
+
+        // The cycle: ground is given while the swing is cooling and something is near enough to be worth giving it from,
+        // and the moment the swing is ready the fighter closes and takes it. See PACK_STANDOFF for what happens to a
+        // fighter that simply backs away instead, which is the first thing this was and the wrong thing.
+        boolean giving = pack && (running || !stepsIn(me, strength) && this.nearestInFight <= PACK_STANDOFF);
+
         // Turning right is a rising yaw, and a target off to the right has a positive right component, so the error and
         // the control share a sign and no correction is needed.
         float yawError = (float) Math.toDegrees(Mth.atan2(right, forward));
-        a[act + ActionSchema.AIM_YAW] = Mth.clamp(yawError / MobControls.MAX_AIM_YAW_PER_TICK, -1.0F, 1.0F);
+
+        // Where the eyes actually go, which is the target's own bearing in every fight against one body. Against a pack it
+        // is the middle of them while none of them is in reach — the agent perceives through a hundred degree cone about its
+        // aim, so looking at the middle of a pack is what keeps the ones at its edges from walking round behind it and out of
+        // the observation altogether — and it is the way out while the fight is being run from.
+        float lookError = yawError;
+
+        if (running) {
+
+            lookError = bearing(packStep, sin, cos);
+        }
+
+        else if (pack && !(stepsIn(me, strength) && distance <= PACK_AIM_RANGE)) {
+
+            lookError = (float) Math.toDegrees(Mth.atan2(this.threatRight, this.threatForward));
+        }
+
+        a[act + ActionSchema.AIM_YAW] = Mth.clamp(lookError / MobControls.MAX_AIM_YAW_PER_TICK, -1.0F, 1.0F);
 
         float horizontal = (float) Math.sqrt(forward * forward + right * right) * (float) ObservationSchema.VIEW_DISTANCE;
         float wantedPitch = (float) -Math.toDegrees(Mth.atan2(up * (float) ObservationSchema.VIEW_DISTANCE, horizontal));
@@ -659,10 +821,9 @@ public final class ScriptedBrain implements Brain {
             me.asked = false;
         }
 
-        int start = state(CENTRE, 0, CENTRE);
         int next = start;
 
-        boolean retreating = fleeing || distance < backOff;
+        boolean retreating = giving || fleeing || distance < backOff;
 
         // Somewhere to stand that puts a hazard directly behind the target, which turns one blow into the whole fight.
         // Every such spot is already inside the band with a clear line, so wanting one never argues with the footwork.
@@ -671,11 +832,21 @@ public final class ScriptedBrain implements Brain {
 
         if (retreating) {
 
-            // Away from the lit one where there is one, and away from the target otherwise. The two are the same slot in
-            // every single-creeper fight and different in the one that used to be lost.
-            int from = fleeing ? obs + ObservationSchema.enemyOffset(lit) : target;
+            if (pack) {
 
-            next = this.retreat(o, obs, gridX(o, from, sin, cos), gridZ(o, from, sin, cos));
+                // Away from all of them at once, which is the one direction the two below cannot give: the way the nearest
+                // of a pack lies is rarely the way the pack does, and backing away from one body walks into another.
+                next = packStep;
+            }
+
+            else {
+
+                // Away from the lit one where there is one, and away from the target otherwise. The two are the same slot in
+                // every single-creeper fight and different in the one that used to be lost.
+                int from = fleeing ? obs + ObservationSchema.enemyOffset(lit) : target;
+
+                next = this.retreat(o, obs, gridX(o, from, sin, cos), gridZ(o, from, sin, cos));
+            }
         }
 
         else if (shove >= 0) {
@@ -695,7 +866,10 @@ public final class ScriptedBrain implements Brain {
 
             this.walkTowards(next, a, act, sin, cos, grounded);
 
-            if (distance > SPRINT_RANGE && a[act + ActionSchema.MOVE_FORWARD] >= MobControls.SPRINT_FORWARD_THRESHOLD) {
+            // A fight being run from is sprinted out of whatever the distance, which is the whole difference between
+            // running and backing away: backing away is done facing the pack and so at walking pace, and running is not.
+            if ((running || distance > SPRINT_RANGE)
+                    && a[act + ActionSchema.MOVE_FORWARD] >= MobControls.SPRINT_FORWARD_THRESHOLD) {
 
                 a[act + ActionSchema.SPRINT] = 1.0F;
             }
@@ -710,7 +884,8 @@ public final class ScriptedBrain implements Brain {
 
         // The shield goes up while there is nothing better to do with the hands, and comes down to strike. Nothing can be
         // swung while anything is in use, not even on the tick it is let go, so a fighter holding one up has no attack.
-        boolean busy = this.hold(me, o, a, obs, act, slot, target, distance, strength, incomingDistance(o, obs), fleeing);
+        boolean busy = this.hold(me, o, a, obs, act, slot, target, distance, strength, incomingDistance(o, obs),
+                fleeing || running);
 
         if (busy) {
 
@@ -721,8 +896,14 @@ public final class ScriptedBrain implements Brain {
         // the whole fight; a reach longer than a man's, empty hands that have not swung yet, and health already gone are
         // each a reason to want whatever is in front of the agent further away than it is. Never while backing away, since
         // a sprint is forward only: a player cannot sprint out of a fight either.
-        boolean shoving = !retreating
-                && (linedUp || me.reachesFar(slot) || mayExplode || o[self + ObservationSchema.SELF_HEALTH] < 1.0F);
+        //
+        // In a pack that last rule is inverted rather than dropped. The knockback is the whole point there — a body a blow
+        // puts a block and a half back is a body out of the ring for as long as it takes to walk in again — so the only
+        // question is what the step forward costs, and that is the second nearest body: see PACK_SPRINT_CLEAR.
+        boolean shoving = pack
+                ? !running && this.secondNearest > PACK_SPRINT_CLEAR
+                : !retreating
+                        && (linedUp || me.reachesFar(slot) || mayExplode || o[self + ObservationSchema.SELF_HEALTH] < 1.0F);
 
         // Swinging wide costs the whole cooldown, so the swing waits until the target is actually in front of it. It also
         // waits for the cooldown to come all the way back: damage goes with the square of it, so a swing at nine tenths
@@ -748,7 +929,11 @@ public final class ScriptedBrain implements Brain {
 
         // Not sprinting, not shoving, and the cooldown is a jump's fall away from full: leave the ground now and the swing
         // lands while falling, which is a critical. Nothing is given up for it, since the swing was not ready anyway.
-        if (!shoving && aimed && grounded && this.jumpsForCrit(me, strength)) {
+        //
+        // Never in a pack, where something is given up for it: a body in the air keeps the momentum it left the ground with
+        // for a dozen ticks and steers with a fortieth of a step, and the dozen ticks the footwork is given up for are the
+        // dozen the second and third bodies need to walk round the back of it.
+        if (!shoving && !pack && aimed && grounded && this.jumpsForCrit(me, strength)) {
 
             a[act + ActionSchema.JUMP] = 1.0F;
             a[act + ActionSchema.SPRINT] = 0.0F;
@@ -794,6 +979,17 @@ public final class ScriptedBrain implements Brain {
         double ticks = (1.0D - strength) / me.strengthRate;
 
         return ticks >= CRIT_JUMP_EARLIEST && ticks <= CRIT_JUMP_LATEST;
+    }
+
+    /**
+     * Whether the swing is near enough to ready for the fighter to start closing on the pack again. It is the cooldown's own
+     * rate that says how near, which {@link #time} already reads off two ticks of the observation, so this is as true of an
+     * axe's twenty ticks as of a sword's twelve and a half.
+     */
+    private static boolean stepsIn(Fighter me, float strength) {
+
+        return strength >= FULL_STRENGTH
+                || me.strengthRate > 0.0F && (1.0F - strength) / me.strengthRate <= PACK_STEP_IN_TICKS;
     }
 
     // ---------------------------------------------------------------------------------------------------------------
@@ -1089,28 +1285,47 @@ public final class ScriptedBrain implements Brain {
     }
 
     /**
-     * What the fighter has to remember about the thing in front of it: whether it has ever swung, whether it swung from
+     * What the fighter has to remember about the bodies round it: whether each has ever swung, whether it swung from
      * further off than anything man sized reaches, and how long it has gone without coming any closer.
      *
      * <p>Velocities arrive in the agent's own frame, and the agent is looking at what it is fighting, so the forward
      * component is how fast the thing is going the way the agent faces: negative is coming at it, positive is going away.
      * Knocked back by a blow, a mob slides away for a dozen ticks, and that counts as not coming rather than as movement.
+     *
+     * <p>Every slot, not only the one being fought. A swing is what says a body is in the fight before it has ever taken the
+     * agent as its target, and in a pack the one being fought is one of several; against a single opponent there is nothing
+     * in the other nine slots but arrows, which never swing, so this reads exactly as it always did. A slot that empties
+     * forgets what was in it, since the order the slots are handed out in is the fight's and not the bodies', so the next
+     * thing to hold that slot is a different body and none of this is true of it.
      */
-    private static void watch(Fighter me, int slot, float[] o, int target) {
+    private static void watch(Fighter me, float[] o, int obs) {
 
-        if (o[target + ObservationSchema.ENEMY_SWINGING] > 0.5F) {
+        for (int slot = 0; slot < ObservationSchema.ENEMY_SLOTS; slot++) {
 
-            me.swung |= 1 << slot;
+            int at = obs + ObservationSchema.enemyOffset(slot);
 
-            if (o[target + ObservationSchema.ENEMY_DISTANCE] * ObservationSchema.VIEW_DISTANCE > LONG_REACH_DISTANCE) {
+            if (o[at + ObservationSchema.ENEMY_PRESENT] < 0.5F) {
 
-                me.longReach |= 1 << slot;
+                me.swung &= ~(1 << slot);
+                me.longReach &= ~(1 << slot);
+                me.holdingBack[slot] = 0;
+                continue;
             }
+
+            if (o[at + ObservationSchema.ENEMY_SWINGING] > 0.5F) {
+
+                me.swung |= 1 << slot;
+
+                if (o[at + ObservationSchema.ENEMY_DISTANCE] * ObservationSchema.VIEW_DISTANCE > LONG_REACH_DISTANCE) {
+
+                    me.longReach |= 1 << slot;
+                }
+            }
+
+            boolean coming = o[at + ObservationSchema.ENEMY_VELOCITY_FORWARD] < -STILL_SPEED;
+
+            me.holdingBack[slot] = coming ? (byte) 0 : (byte) Math.min(Byte.MAX_VALUE, me.holdingBack[slot] + 1);
         }
-
-        boolean coming = o[target + ObservationSchema.ENEMY_VELOCITY_FORWARD] < -STILL_SPEED;
-
-        me.holdingBack[slot] = coming ? (byte) 0 : (byte) Math.min(Byte.MAX_VALUE, me.holdingBack[slot] + 1);
     }
 
     /**
@@ -1295,6 +1510,244 @@ public final class ScriptedBrain implements Brain {
     }
 
     // ---------------------------------------------------------------------------------------------------------------
+    // A pack
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * Reads the pack off the slots: how many bodies are actually in the fight and near enough to be in it, which way they
+     * lie as one direction, how far off the second nearest of them is, and what there is of them to cut down and to be hurt
+     * by. Everything it finds goes into this brain's own working space, since none of it outlives the tick.
+     *
+     * <p><b>In the fight</b> is the slot's own {@code ENEMY_TARGETS_ME}, or a body that has been seen to swing, which is the
+     * same "it has come for me" the observation's count of the fight is made of. A body that is merely standing there is not
+     * a pack however many of it there are, which is what keeps the league's idle bystanders out of all of this.
+     *
+     * <p><b>Near enough</b> is {@link #PACK_RANGE}, and it has to be something that must reach the agent to hurt it: a
+     * flyer and anything that shoots count for nothing here, because backing away from an archer is backing away while being
+     * shot and nothing swung reaches a flyer. Those are the ranged rules' fights and this leaves them exactly as they were.
+     *
+     * <p>The direction is the sum of the ways to each of them, each a unit vector weighted by how near it is, so the body
+     * about to land a blow counts for more than the one still crossing the ground. Where two of them stand on opposite sides
+     * that sum cancels, and there the nearest is the whole answer: backing away from the pack has no meaning, but backing
+     * away from the one that is about to hit still does.
+     *
+     * @return how many bodies are in the fight, of which two is a pack
+     */
+    private int sizeUp(Fighter me, float[] o, int obs) {
+
+        this.inTheFight = 0;
+        this.threatForward = 0.0F;
+        this.threatRight = 0.0F;
+        this.nearestInFight = Float.MAX_VALUE;
+        this.secondNearest = Float.MAX_VALUE;
+        this.packHealth = 0.0F;
+        this.packDamage = 0.0F;
+
+        float nearestForward = 0.0F;
+        float nearestRight = 0.0F;
+        float sumForward = 0.0F;
+        float sumRight = 0.0F;
+
+        for (int slot = 0; slot < ObservationSchema.ENEMY_SLOTS; slot++) {
+
+            int at = obs + ObservationSchema.enemyOffset(slot);
+
+            if (o[at + ObservationSchema.ENEMY_PRESENT] < 0.5F
+                    || AgentObservation.isProjectileKind(o[at + ObservationSchema.ENEMY_KIND])
+                    || o[at + ObservationSchema.ENEMY_SHOOTS] > 0.5F
+                    || o[at + ObservationSchema.ENEMY_FLIES] > 0.5F) {
+
+                continue;
+            }
+
+            if (o[at + ObservationSchema.ENEMY_TARGETS_ME] < 0.5F && !me.hasSwung(slot)) {
+
+                continue;
+            }
+
+            float distance = o[at + ObservationSchema.ENEMY_DISTANCE] * (float) ObservationSchema.VIEW_DISTANCE;
+
+            if (distance > PACK_RANGE) {
+
+                continue;
+            }
+
+            this.inTheFight++;
+            this.packHealth += o[at + ObservationSchema.ENEMY_HEALTH_LEFT] * ObservationSchema.HEALTH_SCALE;
+            this.packDamage += o[at + ObservationSchema.ENEMY_DAMAGE] * ObservationSchema.DAMAGE_SCALE;
+
+            float forward = o[at + ObservationSchema.ENEMY_FORWARD];
+            float right = o[at + ObservationSchema.ENEMY_RIGHT];
+
+            if (distance < this.nearestInFight) {
+
+                this.secondNearest = this.nearestInFight;
+                this.nearestInFight = distance;
+                nearestForward = forward;
+                nearestRight = right;
+            }
+
+            else if (distance < this.secondNearest) {
+
+                this.secondNearest = distance;
+            }
+
+            float across = (float) Math.hypot(forward, right);
+
+            if (across > 1.0E-6F) {
+
+                float weight = 1.0F / Math.max(distance, 1.0F);
+
+                sumForward += weight * forward / across;
+                sumRight += weight * right / across;
+            }
+        }
+
+        float length = (float) Math.hypot(sumForward, sumRight);
+
+        if (length <= 1.0E-6F) {
+
+            sumForward = nearestForward;
+            sumRight = nearestRight;
+            length = (float) Math.hypot(sumForward, sumRight);
+        }
+
+        if (length > 1.0E-6F) {
+
+            this.threatForward = sumForward / length;
+            this.threatRight = sumRight / length;
+        }
+
+        return this.inTheFight;
+    }
+
+    /**
+     * The step that puts ground between the agent and the pack: of the spots one step away that the grid says a body can
+     * stand on, the one that goes most directly against the threat.
+     *
+     * <p>The grid is most of the safety already. Its search only ever visits somewhere with room for a body, ground under it
+     * and nothing in it that hurts, and it is not allowed to step off an edge here, so a hazard, a drop and a wall inside its
+     * own four blocks are all refused before this ever scores anything. What the rays add is the four blocks out to thirty
+     * two: a direction whose ray reports lava or a ledge inside {@link #PACK_CLEAR_BEHIND} is scored down rather than
+     * forbidden, so it is taken only when there is nothing better, and what "nothing better" comes out as is the step
+     * sideways along the edge rather than over it.
+     *
+     * @param far whether this is a fight being run from rather than backed out of, which is what puts how clear a way is
+     *            into the choice at all: one step cares only about the next block, a run cares about the next thirty
+     * @return the spot to step to, or the one the agent stands on when the grid offers nowhere
+     */
+    private int giveGround(float[] o, int obs, double threatX, double threatZ, boolean far) {
+
+        int reached = this.search(o, obs, false);
+        int start = state(CENTRE, 0, CENTRE);
+
+        int best = start;
+        double bestScore = -Double.MAX_VALUE;
+
+        for (int i = 0; i < reached; i++) {
+
+            int s = this.queue[i];
+
+            if (this.depth[s] != 1 || this.dropped[s]) {
+
+                continue;
+            }
+
+            int dx = s % X - CENTRE;
+            int dz = (s / X) % Z - CENTRE;
+            double length = Math.hypot(dx, dz);
+
+            if (length < 1.0E-6D) {
+
+                continue;
+            }
+
+            // One where the step goes straight away from the pack, nought where it goes across them, less where it goes in.
+            double score = -(dx * threatX + dz * threatZ) / length;
+
+            int ray = obs + ObservationSchema.RAY_OFFSET + rayFor(dx, dz) * ObservationSchema.RAY_STRIDE;
+            float clear = PACK_CLEAR_BEHIND / (float) ObservationSchema.RAY_REACH;
+
+            if (o[ray + ObservationSchema.RAY_HAZARD] < clear || o[ray + ObservationSchema.RAY_DROP] < clear) {
+
+                // Past the whole range a clear step can score, so this is only ever taken when every way out is like it.
+                score -= 2.0D;
+            }
+
+            if (far) {
+
+                score += Math.min(o[ray + ObservationSchema.RAY_WALL],
+                        Math.min(o[ray + ObservationSchema.RAY_HAZARD], o[ray + ObservationSchema.RAY_DROP]));
+            }
+
+            if (score > bestScore) {
+
+                bestScore = score;
+                best = s;
+            }
+        }
+
+        return best;
+    }
+
+    /**
+     * Which of the eight rays runs the way a step goes. They are world aligned and one every forty five degrees, which is
+     * exactly the eight steps the grid search takes, so every step has one of them and no step falls between two.
+     */
+    private static int rayFor(int dx, int dz) {
+
+        return (int) Math.round(Math.atan2(dz, dx) / (Math.PI / 4.0D)) & (ObservationSchema.RAYS - 1);
+    }
+
+    /** How far off the agent's aim a spot in the grid lies, in degrees, which is what the aim control is given. */
+    private static float bearing(int spot, float sin, float cos) {
+
+        double dx = spot % X - CENTRE;
+        double dz = (spot / X) % Z - CENTRE;
+
+        return (float) Math.toDegrees(Mth.atan2(dx * -cos + dz * -sin, dx * -sin + dz * cos));
+    }
+
+    /**
+     * Whether the fight is already lost, which is the one thing worth running from rather than trading through. It is
+     * arithmetic and not despair, off the same slots everything else here reads, and deliberately only three numbers:
+     *
+     * <ul>
+     *   <li><b>how long the agent has</b>: its own health, against what one round of the pack's blows takes off it — every
+     *       engaged slot's own {@code ENEMY_DAMAGE}, less the share its armour stops — spread over the twenty ticks a
+     *       vanilla melee goal waits between swings;</li>
+     *   <li><b>how long the pack has</b>: the health standing in those same slots, over what the agent's own blow takes off,
+     *       at one blow every cooldown — and the cooldown's rate is already known, read off two ticks of the observation by
+     *       {@link #time}, which is why this holds for an axe as well as a sword;</li>
+     *   <li><b>and nothing else.</b> No armour on their side, no knockback buying time, no hope of the ground finishing one.
+     *       Every one of those makes the fight go better than this reckons, which is the right way round for a rule whose
+     *       answer is to stop fighting.</li>
+     * </ul>
+     *
+     * <p>Only ever under half health, so a fight that has barely started is never called off, and only once the cooldown's
+     * rate has been seen, which is two ticks.
+     */
+    private boolean hopeless(Fighter me, float[] o, int obs) {
+
+        int self = obs + ObservationSchema.SELF_OFFSET;
+        float health = o[self + ObservationSchema.SELF_HEALTH];
+
+        if (health >= PACK_HOPELESS_HEALTH || me.strengthRate <= 0.0F || this.packDamage <= 0.0F) {
+
+            return false;
+        }
+
+        // A bare fist takes one, which is what a hotbar with nothing to swing in it comes to.
+        double blow = Math.max(1.0D, o[self + ObservationSchema.SELF_WEAPON_DAMAGE] * ObservationSchema.DAMAGE_SCALE);
+        double ticksToClear = this.packHealth / blow / me.strengthRate;
+
+        double taken = this.packDamage * (1.0D - ARMOUR_SOAKS * o[self + ObservationSchema.SELF_ARMOUR]) / MOB_BLOW_TICKS;
+        double ticksToFall = health * AGENT_HEALTH / Math.max(taken, 1.0E-4D);
+
+        return ticksToFall < ticksToClear;
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
     // Working a drawn weapon
     // ---------------------------------------------------------------------------------------------------------------
 
@@ -1462,6 +1915,14 @@ public final class ScriptedBrain implements Brain {
      * <p>It also goes up for a shot already in the air, whatever the distance to whoever fired it, and that one is not a
      * guess: only something actually on its way to the agent holds a slot. It stays down while the swing is ready and the
      * target is in reach, since a blow landed is worth more than an arrow stopped, and it comes back up straight after.
+     *
+     * <p><b>A pack changes nothing here, and that was measured rather than assumed.</b> The obvious worry is that a shield
+     * takes the movement keys down to a fifth while moving is the whole of what keeps several bodies from surrounding one,
+     * and that every reason this rule has — hurt, within reach, the swing cooling — is true at once in a pack, so the shield
+     * would go up and stay up. Narrowing it there to a body with its arm actually up was tried and is worse: over 342 pack
+     * fights on one bench the narrow rule won 64.3% against this one's 65.2%, and on the two loadouts that carry a shield at
+     * all it was 65.0% and 70.0% against 71.7% and 73.3%. A shield up between blows is worth more than the ground it costs,
+     * because the ground is given back on the next tick and the blow is not.
      *
      * @return whether the hands are busy, and so whether the swing has to wait
      */

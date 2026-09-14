@@ -1,5 +1,10 @@
 package net.sievert.modularmobai.gametest.tests;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.function.Consumer;
+
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -11,16 +16,19 @@ import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
+import net.sievert.modularmobai.Constants;
 import net.sievert.modularmobai.arena.Episode;
 import net.sievert.modularmobai.arena.Loadout;
 import net.sievert.modularmobai.brain.Brains;
+import net.sievert.modularmobai.brain.schema.ObservationSchema;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 import net.sievert.modularmobai.gametest.GameTestGroup;
 import net.sievert.modularmobai.gametest.league.Loadouts;
 
 /**
  * The scripted fighter's own rules, which is the one fighter in the build that is hand written: getting itself out of
- * something that hurts, walking away from a lit creeper, and starting no draw it cannot finish.
+ * something that hurts, walking away from a lit creeper, starting no draw it cannot finish, and what it does about several
+ * bodies coming at it at once.
  *
  * <p>It is worth pinning because it is the anchor. Every rating in the league is measured against it at 1500, and every
  * network in the repository was copied from it, so a rule of its own that quietly stopped working would move the scale
@@ -332,5 +340,252 @@ public class AgentTeacherGameTest {
 
             return false;
         });
+    }
+
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // What the teacher does about a pack
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /** How long a pack fight is watched: a sword's cooldown is twelve and a half ticks, so this is a dozen whole cycles. */
+    private static final int PACK_TICKS = 160;
+
+    /** Half the cone the agent perceives through, which is the whole of what "in front of it" means. */
+    private static final double HALF_CONE = ObservationSchema.VIEW_CONE_DEGREES / 2.0D;
+
+    /** Surrounded: two bodies this close at once, which is inside the reach of anything man sized. */
+    private static final double ON_TOP = 2.0D;
+
+    /**
+     * Three bodies in the fight at once, spread over a right angle, and the teacher gives ground and keeps all three where it
+     * can see them instead of standing among them and facing one.
+     *
+     * <p>They are held where they are put, and their target is put back on the agent every tick. That is the point of the
+     * test rather than a convenience: the only thing that can have moved the teacher is <b>the three of them being in the
+     * fight</b>, since nothing is coming at it, nothing swings at it and nothing ever hits it. Three zombies walking in would
+     * have shown the same behaviour and proved nothing about which rule produced it.
+     *
+     * <p>Four things are asked, and they are what the pack rule is for:
+     *
+     * <ul>
+     *   <li>it <b>keeps them in front</b>: the aim goes to the middle of the three rather than onto one of them, so all of
+     *       them sit inside the hundred degree cone the agent perceives through. A body outside that cone is a body that is
+     *       not in the observation at all, so this is not a nicety;</li>
+     *   <li>it <b>keeps its distance</b>: the nearest of them stands further off on an average tick than the band a sword
+     *       wants, because ground is given while the swing cools instead of the fighter holding the band and waiting in it;</li>
+     *   <li>it is <b>not surrounded</b>, two of them inside two blocks on few ticks, which is two of them able to strike;</li>
+     *   <li>and it <b>still lands blows</b>, which is the half that stops all of this being satisfied by walking backwards.
+     *       Giving ground is a cycle and not a retreat: the swing comes back, the fighter steps in and takes it. A version
+     *       that only backed away was written, measured and thrown out; see {@code ScriptedBrain#PACK_STANDOFF}.</li>
+     * </ul>
+     *
+     * <p>Every threshold here is measured off this same fight with the rule turned off, which the line the run prints says
+     * outright. With it off the teacher has <b>1.63</b> of the three inside its view cone on an average tick and holds the
+     * nearest <b>3.13</b> blocks off; with it on those are <b>2.18</b> and <b>3.49</b>. The thresholds sit between the two
+     * rather than under the second, so a tuning that gives a little of it back does not fail this.
+     */
+    @GameTest(template = Mechanics.ARENA, timeoutTicks = 400)
+    public static void theTeacherGivesGroundToAPackInsteadOfStandingInIt(GameTestHelper helper) {
+
+        fightAPack(helper, true, watched -> {
+
+            helper.assertTrue(watched.inFront() > 1.9D,
+                    "Only " + round(watched.inFront()) + " of the three were inside the agent's own view cone on an average "
+                            + "tick, against 1.63 with the rule off and 2.18 with it on: it faced one of them and not the three");
+
+            helper.assertTrue(watched.standoff() > 3.30D,
+                    "The nearest of the three stood " + round(watched.standoff()) + " blocks off on an average tick, against "
+                            + "3.13 with the rule off and 3.49 with it on: it held the band rather than giving ground");
+
+            helper.assertTrue(watched.share(watched.twoOnTop) < 0.25D,
+                    "Two of the three were within " + ON_TOP + " blocks on " + percent(watched.share(watched.twoOnTop))
+                            + " of the ticks: the teacher was surrounded");
+
+            helper.assertTrue(watched.landed > 0,
+                    "The teacher landed no blow on the three in " + PACK_TICKS + " ticks; it only backed away");
+        });
+    }
+
+    /**
+     * And the ground it gives costs it next to nothing against a pack that is actually coming. Three zombies walk in, and the
+     * teacher goes on swinging and going on landing: every claim in the test above can be had by a fighter that has simply
+     * stopped fighting, and this is what says it has not.
+     *
+     * <p>It is a floor and not a match, and the exact numbers are worth writing down rather than rounding off. With the rule
+     * turned off this fight is <b>12 swings and 12 landed</b>; with it on it is <b>9 and 9</b>. Three blows of a dozen is what
+     * the standoff costs here, and what it buys is in docs/findings.md: over 1,134 pack fights on one bench, 57.5% won and
+     * 35.5% lost against 61.3% and 30.2%. A version of the rule that gave ground for as long as two bodies were in the fight
+     * landed next to nothing and ran the clock out instead, which is the collapse this floor is set to catch.
+     */
+    @GameTest(template = Mechanics.ARENA, timeoutTicks = 400)
+    public static void aPackCostsTheTeacherNoBlows(GameTestHelper helper) {
+
+        fightAPack(helper, false, watched -> {
+
+            helper.assertTrue(watched.swings >= 7,
+                    "The teacher swung " + watched.swings + " times at three zombies walking in, well short of the 12 it swings "
+                            + "with the pack rule turned off and the 9 it swings with it on");
+
+            helper.assertTrue(watched.landed >= 7,
+                    "The teacher landed " + watched.landed + " blows on three zombies walking in, well short of the 12 it lands "
+                            + "with the pack rule turned off and the 9 it lands with it on");
+        });
+    }
+
+    /**
+     * One fight against three zombies, all of them in the fight with the agent, watched tick by tick and handed to the verdict
+     * when it is over. They stand over a right angle from the agent and at different distances, so that where the pack lies as
+     * one direction is nowhere near where the nearest of it lies: that difference is the whole of what the rule is, and an
+     * arrangement that put them in a line would have had both answers agree.
+     *
+     * @param held whether they are held where they are put, which is what makes the teacher's own decision the only thing in
+     *             the measurement, or left to walk in, which is what says the decision costs no blows
+     */
+    private static void fightAPack(GameTestHelper helper, boolean held, Consumer<Watched> verdict) {
+
+        AgentMob agent = Mechanics.agent(helper, new BlockPos(4, 2, 4), 0.0F, 0.0F);
+
+        // Due north of the agent, off to the north east, and due east: three blocks, three and a sixth, and four and a
+        // quarter. The nearest is the one straight ahead, so a fighter reading the nearest slot alone faces north.
+        BlockPos[] where = {new BlockPos(4, 2, 7), new BlockPos(7, 2, 5), new BlockPos(7, 2, 7)};
+        List<Mob> pack = new ArrayList<>(where.length);
+
+        for (BlockPos feet : where) {
+
+            pack.add(held ? helper.spawnWithNoFreeWill(EntityType.ZOMBIE, feet) : helper.spawn(EntityType.ZOMBIE, feet));
+        }
+
+        agent.startEpisode(new Episode(Mechanics.FIGHT_TICKS, Mechanics.bounds(helper), List.copyOf(pack)));
+        Loadout.SWORD.equip(agent);
+        agent.brain().use(Brains.scripted());
+
+        Watched watched = new Watched();
+
+        Mechanics.run(helper, tick -> {
+
+            for (Mob zombie : pack) {
+
+                // Put back every tick: a zombie that has let go of its target is not in the fight, and how many are in the
+                // fight is exactly what the rule turns on.
+                if (zombie.isAlive()) {
+
+                    zombie.setTarget(agent);
+                }
+            }
+
+            watched.tick(agent, pack);
+
+            if (tick == PACK_TICKS || !agent.isAlive()) {
+
+                helper.assertTrue(agent.isAlive(),
+                        "The teacher died to three zombies on tick " + tick + ", having landed " + watched.landed);
+
+                // Said out loud, because every threshold above is measured off this line with the rule on and off, and a
+                // threshold whose measurement cannot be repeated is a threshold nobody can move.
+                Constants.LOG.info(String.format(Locale.ROOT,
+                        "A %s pack of three: %d ticks, %.2f of them in front on an average tick, two inside %.1f blocks on "
+                                + "%s, the nearest %.2f blocks off, from the middle of them %.2f to %.2f, %d swings, %d landed",
+                        held ? "held" : "walking", watched.ticks, watched.inFront(), ON_TOP,
+                        percent(watched.share(watched.twoOnTop)), watched.standoff(), watched.opened, watched.ended,
+                        watched.swings, watched.landed));
+
+                verdict.accept(watched);
+                return true;
+            }
+
+            return false;
+        });
+    }
+
+    private static String percent(double share) {
+
+        return Math.round(share * 100.0D) + "%";
+    }
+
+    private static String round(double blocks) {
+
+        return String.format(Locale.ROOT, "%.2f", blocks);
+    }
+
+    /** What one pack fight came to: where the pack was on each tick, and what the teacher did about it. */
+    private static final class Watched {
+
+        private int ticks;
+
+        /** How many of the pack were inside the agent's own view cone, added up over the ticks. */
+        private int inFrontSum;
+
+        /** Ticks with two of them inside {@link #ON_TOP} blocks at once, which is two of them able to strike. */
+        private int twoOnTop;
+
+        /** The distances to the nearest of the pack, added up, which is the standoff giving ground buys. */
+        private double nearestSum;
+
+        /** How far the agent was from the middle of the pack on the first tick and on the last. */
+        private double opened;
+        private double ended;
+
+        private int swings;
+        private int landed;
+
+        private void tick(AgentMob agent, List<Mob> pack) {
+
+            int alive = 0;
+            int inFront = 0;
+            int onTop = 0;
+            double nearest = Double.MAX_VALUE;
+            double middleX = 0.0D;
+            double middleZ = 0.0D;
+
+            for (Mob zombie : pack) {
+
+                if (!zombie.isAlive()) {
+
+                    continue;
+                }
+
+                double away = agent.distanceTo(zombie);
+
+                alive++;
+                nearest = Math.min(nearest, away);
+                inFront += Mechanics.aimError(agent, zombie) <= HALF_CONE ? 1 : 0;
+                onTop += away <= ON_TOP ? 1 : 0;
+                middleX += zombie.getX();
+                middleZ += zombie.getZ();
+            }
+
+            this.swings += agent.executed().attacked ? 1 : 0;
+            this.landed += agent.executed().attackHit ? 1 : 0;
+
+            if (alive == 0) {
+
+                return;
+            }
+
+            this.ticks++;
+            this.inFrontSum += inFront;
+            this.twoOnTop += onTop >= 2 ? 1 : 0;
+            this.nearestSum += nearest;
+
+            this.ended = Math.hypot(middleX / alive - agent.getX(), middleZ / alive - agent.getZ());
+            this.opened = this.ticks == 1 ? this.ended : this.opened;
+        }
+
+        /** How many of the pack were in front of the agent on an average tick. */
+        private double inFront() {
+
+            return this.inFrontSum / (double) Math.max(1, this.ticks);
+        }
+
+        private double share(int of) {
+
+            return of / (double) Math.max(1, this.ticks);
+        }
+
+        /** How far the nearest of the pack was on an average tick, which is the whole of what a standoff is. */
+        private double standoff() {
+
+            return this.nearestSum / Math.max(1, this.ticks);
+        }
     }
 }

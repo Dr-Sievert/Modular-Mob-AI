@@ -87,7 +87,7 @@ Read these before changing anything:
 ```
 scripts\setup.ps1                      once per machine: Java 21, Python + PyTorch, compile, parity check
 scripts\test.ps1                       20 arena fights with the scripted fighter: expect 20/20, 54 ticks each
-scripts\test.ps1 -Mechanics            the item and block rules against a player's numbers: expect 57 passed
+scripts\test.ps1 -Mechanics            the item and block rules against a player's numbers: expect 60 passed
 scripts\test.ps1 -Crowd -Weights models\blast6\best.mbw    one fight with 0, 1, 3 and 9 monsters standing about it, tick by tick
 scripts\test.ps1 -Horde                20, 100, 500 and 2,000 mobs round one agent: clips a tick, time to perceive, ticks lived
 scripts\test.ps1 -Play                 the agent in a real game (jar networks, /mmai, sides, Infinity loadouts): expect 24 passed
