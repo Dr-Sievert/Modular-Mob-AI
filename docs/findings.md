@@ -853,6 +853,49 @@ are deliberate.
 
 ## The league's opponents
 
+- **A pack is a different fight, and the anchor had no rule for it at all.** `nearestEnemy` picked one body and the teacher
+  fought that one as if alone — stood in the band, traded, and let the second and third walk round the back of it — and only a
+  lit fuse ever moved it. It now has a second fight, reached only when **two or more bodies are in the fight and within six
+  blocks**, which one opponent never is. Measured on the pack bench, every one-mob fight a pack
+  (`scripts\bench.ps1 -Teacher -HostileCrowds 1`), 1,134 pack fights a row before and after, with a fixed network on the same
+  bench as the scale:
+
+  | Pack | 2 | 3 | 4 | 5 | 6 | all | lost | timed out |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | Teacher before | 71.7% | 57.8% | 46.4% | 35.2% | 30.9% | **57.5%** | 35.5% | 4.5% |
+  | Teacher after | 77.8% | 64.0% | 45.1% | 40.8% | 40.2% | **62.7%** | 29.5% | 5.6% |
+  | blast8 033457, unchanged by any of this | 60.3% | 29.5% | 27.3% | 28.0% | 21.8% | 42.1% | 42.6% | 12.8% |
+
+  The network's row is the one that says the sitting did not move: 41.8% before, 42.1% after. The whole league, packs and all,
+  went 64.2% to 66.7%; the plain one-on-one bench went 80.8% to 82.1% over 1,445 fights each, which is inside a sitting's own
+  drift and is what the arena check's unchanged 54.0 ticks already says — every rule below is gated on the count, so one
+  opponent reaches none of them.
+  - **Backing away is not the rule. A cycle is.** The first version gave ground for as long as two bodies were in the fight,
+    which is exactly wrong and wrong for a reason worth keeping: a body walking backwards covers 0.216 blocks a tick and a
+    zombie covers 0.154, so **nothing ever arrives**, nothing is landed, and the fight runs the clock out. Over 342 pack fights
+    it turned 6.1% timeouts into **23.4%** and took the win rate from 59.4% to **43.6%** — the losses barely moved, so it did
+    not even buy survival. Ground is now given only while the swing is cooling and only while something is inside four blocks,
+    and the fighter starts closing again a few ticks before the cooldown fills, since the ground given up has to be covered
+    before a blow can land. Starting on the tick it filled arrived four ticks late every cycle and was worth about three
+    points on its own.
+  - **The eyes follow the feet.** The aim goes to the middle of the pack while ground is being given and onto the body only
+    while the fighter is stepping in to strike. Putting it back on the body as soon as the body was inside four blocks —
+    which in a pack is most of the fight — left the ones at the edges outside the hundred degree cone the agent perceives
+    through, which is to say outside the observation: 2.00 of three inside the cone against 2.18 once the two rules agreed.
+  - **The shield needed nothing, and that is the useful half of it.** The obvious worry is that a shield takes the movement
+    keys down to a fifth while moving is the whole tactic, and that every reason the existing rule has is true at once in a
+    pack. Narrowing it there to a body with its arm actually up is **worse**: 64.3% against 65.2% over 342 pack fights, and
+    65.0% and 70.0% against 71.7% and 73.3% on the two loadouts that carry a shield. A shield up between blows is worth more
+    than the ground it costs, because the ground comes back on the next tick and the blow does not.
+  - **Running when it is hopeless is worth about a point and a half** — 64.3% against 62.6% over 342 fights — and all of it is
+    at four bodies and up, where it is the difference between dying in the middle of them and stringing them out. It is
+    arithmetic and not despair: their blows against the health left, their health against the agent's own cooldown, and only
+    ever under half health, with nothing on their side counted that would make the fight go better than the reckoning.
+  - **What is deliberately left out.** Nothing that shoots and nothing that flies counts towards a pack — backing away from an
+    archer is backing away while being shot — so skeleton packs and flyers keep the ranged rules exactly as they were. A lit
+    fuse still comes first. And the hazard shove, standing where agent, target and lava fall on one line, is given up in a
+    pack, because lining one up means standing still and standing still is what the whole rule is against.
+
 - **The 1500-rated anchor was drawing a bow.** Every rating in the league is measured against the scripted fighter, so its
   strength has to stay put, and it is held to something to swing for exactly that reason. But `Loadouts.melee` asked only
   whether hotbar slot zero was a sword or an axe, and `sword_and_bow` leads with an iron sword and keeps the bow behind it:

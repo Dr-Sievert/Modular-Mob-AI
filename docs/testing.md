@@ -12,7 +12,7 @@ scripts\parity.ps1               Java forward pass against PyTorch's, after touc
 | Check | Pass looks like | Proves |
 | --- | --- | --- |
 | `test.ps1` | `All 20 required tests passed`; every fight 54 ticks | the observation, the body and the scripted fighter still work; the 54 ticks are deterministic, so any change in them is a behaviour change |
-| `test.ps1 -Mechanics` | `All 58 required tests passed` | bows, crossbows, shields, axes, mining, placing, use slowdown and damage payment follow a player's rules, what a press of attack costs and what holding it down costs, that a swing sends a ghast's fireball back and nothing else, that a hand keeps the slot it started a draw in, what the observation says about a use, about the clock and the quiver, about what is shot at the agent, about how many of the bodies in its view are in the fight with it, about the armour on either side of the fight, about whether the other side has engaged and about what the weapon in the agent's hand takes off — the last three against the same numbers the critic's privileged facts carry — the teacher getting itself out of powder snow and starting no draw it cannot finish, what an enemy slot goes to and what a wall between leaves of it, **which slot each body gets — the fight first, then the nearest, and the fight moved to the front when it engages late** — that the league's bystanders stand aside unpaid until struck, that the size of a crowd is drawn small far more often than large and that a pack of one mob all comes for the agent and is paid for once, and how a league training fight is drawn from the trainer's shares |
+| `test.ps1 -Mechanics` | `All 60 required tests passed` | bows, crossbows, shields, axes, mining, placing, use slowdown and damage payment follow a player's rules, what a press of attack costs and what holding it down costs, that a swing sends a ghast's fireball back and nothing else, that a hand keeps the slot it started a draw in, what the observation says about a use, about the clock and the quiver, about what is shot at the agent, about how many of the bodies in its view are in the fight with it, about the armour on either side of the fight, about whether the other side has engaged and about what the weapon in the agent's hand takes off — the last three against the same numbers the critic's privileged facts carry — the teacher getting itself out of powder snow, starting no draw it cannot finish and giving ground to a pack instead of standing in it, what an enemy slot goes to and what a wall between leaves of it, **which slot each body gets — the fight first, then the nearest, and the fight moved to the front when it engages late** — that the league's bystanders stand aside unpaid until struck, that the size of a crowd is drawn small far more often than large and that a pack of one mob all comes for the agent and is paid for once, and how a league training fight is drawn from the trainer's shares |
 | `test.ps1 -Play` | `All 24 required tests passed`, and a `Loaded the mod's jar, modular_mob_ai/models/<name>.mbw from iteration N` line per network the jar carries | what [playing.md](playing.md) promises: the bundled networks load and drive an agent, the commands, saving, sides and friendly fire, the Infinity loadouts, and that nothing a suite tunes reaches a real game |
 | `parity.ps1` | `parity ok` once per body for the plain network and again for the attended one, logits agreeing to about 1e-6, and `the plain ones agree to the bit at batches 1 to 64` on both arms | the game runs exactly the network PyTorch trained, **for every body this build has**, plain and attended — the attention over the enemy slots is different arithmetic and not merely a different size — and the forward pass's explicit vector loops give the same bits as its plain ones |
 
@@ -91,7 +91,7 @@ once its entropy came down; see [findings.md](findings.md#learning).
 Each test sets up one situation and checks the numbers a player would get. Seven classes, one per concern, all of them
 sharing `tests/Mechanics` — the arena, the agent, the brain that hands back what the test pressed, and the readings more
 than one of them takes. Every class has to be named in `ModularMobAiGameTests` or its tests simply do not run, which is why
-the count below is worth knowing: **58**.
+the count below is worth knowing: **60**.
 
 `AgentDrawnWeaponGameTest` (9) — a bow and a crossbow, and the slot the hand keeps while one is drawn:
 
@@ -144,7 +144,7 @@ the critic's privileged facts carry:
 | `aSlotSaysWhatItWearsAndWhoItIsAfter` | armour, and whether that mob has the agent as its target: set and let go inside one tick, so the facing it used to be inferred from cannot have moved |
 | `theAgentSeesItsArmourAndWhatItIsHolding` | its own armour and what its weapon takes off, the weapon from the item's own modifiers so it is right on the first row and follows a swap at once |
 
-`AgentTeacherGameTest` (6) — the scripted fighter's own rules, which matter because it is the league's 1500-rated anchor and
+`AgentTeacherGameTest` (8) — the scripted fighter's own rules, which matter because it is the league's 1500-rated anchor and
 every network was copied from it:
 
 | Test | Checks |
@@ -154,6 +154,8 @@ every network was copied from it:
 | `theTeacherDrawsAtWhatShootsBack` | the same loadout against a skeleton six blocks off looses an arrow inside 60 ticks, which is what stops the rule above being satisfied by never drawing |
 | `theTeacherBacksOffALitCreeperOnTheFuseAlone` | a creeper lit five blocks off, past the three the old guess waited for and never moving or swinging, so `ENEMY_EXPLODES` and `ENEMY_FUSE` are the only things that can have sent the teacher backwards — and it goes back rather than closing to the band a sword wants |
 | `withTwoCreepersTheTeacherFleesTheLitOne` | two creepers either side, the unlit one nearer and so the target: the teacher walks away from the **lit** one, which the old rule, read on the target slot alone, sent it straight into |
+| `theTeacherGivesGroundToAPackInsteadOfStandingInIt` | three bodies in the fight at once, spread over a right angle and **held where they are put** so that nothing is coming, nothing swings and nothing hits — the only thing that can have moved the teacher is the three of them being in the fight. It keeps 2.18 of the three inside its own view cone on an average tick against 1.63 with the rule off, holds the nearest 3.49 blocks off against 3.13, is never surrounded, and still lands blows |
+| `aPackCostsTheTeacherNoBlows` | the same three walking in, and the standoff is not a fighter that has stopped fighting: 9 swings and 9 landed against the 12 and 12 the rule turned off gets. Every claim above can be had by walking backwards for the whole fight, and the version of the rule that did landed next to nothing; see [findings.md](findings.md) |
 
 `FightSetupGameTest` (3) — the three that are not about the body at all, here because this is the suite that holds a rule to
 a number and boots in seconds:
