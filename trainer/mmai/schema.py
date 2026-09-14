@@ -102,6 +102,28 @@ class Schema:
 
         return found
 
+    def where(self, offset: int) -> str:
+        """Which field of the observation a row offset is, in words, for a message about one number having gone wrong.
+
+        Named by block and by how far into it, and for a block of repeated things -- ten enemy slots, a terrain grid -- by
+        which one of them as well, because "enemies 37" is not a field anybody can look up and "enemies slot 1, offset 6 of
+        31" is: it names an entry of the body's own schema, which is where the number is written.
+        """
+
+        for block in self.blocks:
+            if not block.offset <= offset < block.offset + block.size:
+                continue
+
+            within = offset - block.offset
+            stride = block.facts.get("stride")
+
+            if stride:
+                return f"{block.name} slot {within // stride}, offset {within % stride} of {stride} (row offset {offset})"
+
+            return f"{block.name} offset {within} of {block.size} (row offset {offset})"
+
+        return f"row offset {offset}, which is past every block"
+
     @property
     def categorical_heads(self) -> tuple[Head, ...]:
         """The heads that choose one of several, which are the ones a mask applies to."""

@@ -266,9 +266,24 @@ def loop(run: RunDirectory, trainer: Trainer, config: Config, schema: Schema, ke
             stats = trainer.update(segments)
             trainer.iteration += 1
             trainer.report(stats)
-            trainer.save(run.state_file())
 
-            if trainer.iteration % config.checkpoint_every == 0:
+            # An update that was abandoned leaves the trainer exactly as it was, so there is nothing new to save and the
+            # state on disk is still the one to carry on from: writing it again would only move its iteration number past a
+            # policy it does not hold. The same weights go out under the next number so the workers keep fighting.
+            if stats.get("skipped"):
+                if trainer.skipped_in_a_row >= max(1, config.skip_limit):
+                    logger.error(
+                        "%d updates in a row were not finite; stopping. %s still holds iteration %d, which is the last "
+                        "one that learned anything, and the run carries on from it once whatever is wrong is fixed. See "
+                        "docs/findings.md",
+                        trainer.skipped_in_a_row, run.state_file(), trainer.iteration - trainer.skipped_in_a_row,
+                    )
+                    raise SystemExit(1)
+
+            else:
+                trainer.save(run.state_file())
+
+            if not stats.get("skipped") and trainer.iteration % config.checkpoint_every == 0:
                 keep = run.checkpoints / f"iteration-{trainer.iteration:06d}.pt"
                 shutil.copyfile(run.state_file(), keep)
                 logger.info("kept %s", keep.name)

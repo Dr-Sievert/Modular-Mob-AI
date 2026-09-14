@@ -3,6 +3,7 @@ package net.sievert.modularmobai.brain;
 import java.util.ArrayList;
 import java.util.List;
 
+import net.sievert.modularmobai.Constants;
 import net.sievert.modularmobai.arena.Episode;
 import net.sievert.modularmobai.arena.FightFacts;
 import net.sievert.modularmobai.brain.schema.Species;
@@ -23,10 +24,19 @@ import net.sievert.modularmobai.entity.agent.AgentMob;
  */
 public final class AgentBatch {
 
+    /** How many scrubbed observation values are worth a line each before the log is only repeating itself. */
+    private static final int WARN_ABOUT = 8;
+
     private final Brain brain;
     private final Species species;
     private final BrainStep step = new BrainStep();
     private final List<AgentMob> agents = new ArrayList<>();
+
+    /**
+     * How many rows this batch has had to scrub, so the warning is said rather than said ten thousand times. A NaN in the
+     * world does not go away on its own, see {@link #finite}.
+     */
+    private long scrubbed;
 
     public AgentBatch(Brain brain) {
 
@@ -73,7 +83,10 @@ public final class AgentBatch {
             Episode episode = agent.episode();
 
             state.enemySlots().tick(agent, episode == null ? null : episode.bounds());
-            this.species.observe(agent, state.enemySlots(), this.step.observations, index * this.species.obsDim());
+
+            int row = index * this.species.obsDim();
+            this.species.observe(agent, state.enemySlots(), this.step.observations, row);
+            this.finite(agent, row);
 
             // What the fight is, beside what the agent can see of it. No brain reads this; it goes into the rollout row for
             // the critic on the training side, and it is written here because this is where a fight and a body are both to
@@ -138,5 +151,56 @@ public final class AgentBatch {
 
         this.agents.clear();
         return true;
+    }
+
+    /**
+     * Scrubs anything that is not a number out of one agent's finished observation, and says so the first few times.
+     *
+     * <p><b>Why a body's own writer is not trusted to do this.</b> Most of a row is the agent's own state, which the mod
+     * controls, but a good part of it is copied straight off other entities: where they are, how fast they are going, what
+     * they are worth. Those numbers belong to vanilla, and vanilla can hand out a NaN — it happened. A breeze in a league
+     * fight arrived at a tick with a NaN vertical velocity, and vanilla's own physics then made it permanent: {@code
+     * Entity#move} only moves an entity when {@code collide(movement).lengthSqr() > 1e-7}, which is false for a NaN, so the
+     * breeze stood exactly still for the rest of the fight with a NaN it could never work off. The slot copied that NaN into
+     * {@code ENEMY_VELOCITY_UP} on every one of the remaining 54 ticks.
+     *
+     * <p><b>What one NaN costs.</b> Every layer of the network mixes the whole row, so a single NaN input makes every logit
+     * a NaN, every continuous control a NaN and the log probability of the step a NaN: the agent stops aiming and stops
+     * pressing anything for the rest of its life. Out in a world that is a brain-dead agent; in training it is worse,
+     * because those rows are written into a rollout shard and one NaN row in sixty five thousand poisons every parameter of
+     * the network the moment Adam averages it — see {@code docs/findings.md}. Zero is the reading that keeps the fight
+     * going: a still opponent is a thing the network has seen a million times, and it is a great deal nearer the truth about
+     * a body that is no longer moving than a NaN is.
+     *
+     * <p>Done here rather than in each body's writer because this is the one place every body's row is finished, so a body
+     * added later is covered by having a brain at all, and because a row is scanned once whatever it contains: the cost is
+     * one pass of {@code Float.isFinite} over the row, on a tick that already ran a ray cast per direction.
+     */
+    private void finite(AgentMob agent, int row) {
+
+        int width = this.species.obsDim();
+
+        for (int offset = 0; offset < width; offset++) {
+
+            float value = this.step.observations[row + offset];
+
+            if (Float.isFinite(value)) {
+
+                continue;
+            }
+
+            this.step.observations[row + offset] = 0.0F;
+            this.scrubbed++;
+
+            // Every occurrence would be every tick of every fight that ever meets one, since the world does not mend
+            // itself; the first few say which field of which body it was, which is what anyone reading the log needs.
+            if (this.scrubbed <= WARN_ABOUT) {
+
+                Constants.LOG.warn("A {} observation held {} at offset {} of its row; read as zero instead. Agent {} at"
+                        + " {}. The world handed the observation a value that is not a number{}",
+                        this.species.name(), value, offset, agent.getId(), agent.blockPosition(),
+                        this.scrubbed == WARN_ABOUT ? "; no more of these will be said" : "");
+            }
+        }
     }
 }
