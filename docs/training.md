@@ -473,6 +473,19 @@ run's and dense enough to mean something. With nothing recorded anywhere the pri
 fresh run draws as it always did and only separates as the fights say it should. Evaluation fights are not paired: they draw
 the opponent evenly and the loadout evenly, since every rating is measured on them.
 
+**One pairing is never drawn at all**: a loadout that carries nothing that shoots against a flyer that never comes within
+reach, the ghast and the phantom, on any rung, packed, crowded, or on a squad with one of them on it. A ghast drifts and
+fires, a phantom swoops past and climbs away, and a deflected fireball kills a ghast only for a real player, so there is
+nothing there to win or to lose: every one of those fights was 2,400 ticks of timeout, dragging a rating with a number that
+means nothing and spending a worker's minute on a question with one answer. It gets no share, which is also what keeps the
+frontier probe off it — the probe holds a hopeless pairing down to a trickle rather than to nothing, and a pairing that is
+never in the table is never probed. The workers say which rows those are in the `reach` column of `roster.csv`, and the game
+side refuses the same pairing in its own draw. **It changes what a checkpoint's evaluated win rate is averaged over**: an
+evaluation fight draws its opponent evenly and its loadout evenly, so those hopeless fights were about one evaluation fight
+in seventy and every one of them a timeout. So this belongs at a **run boundary** — a run that crossed it could not compare
+its best weights before with its best weights after — and the orchestrator restarts the run when it lands. The plain bench
+(`scripts\bench.ps1`) is untouched either way and is still the number to compare across runs.
+
 `pairs.csv` is `loadout,opponent,share,chance,fights,wins`, largest share first, and `matchmaking.csv` is the same shares
 added up per opponent. Both are rewritten every iteration, and the log says `the pairings with the most: bow against ghast
 1.4%; sword against ravager 1.3%; axe against ravager 1.2%`. The workers say which loadouts they field in `roster.csv`, under

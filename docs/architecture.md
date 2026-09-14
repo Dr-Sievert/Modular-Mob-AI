@@ -416,8 +416,15 @@ different opponent every time, with a different loadout:
   (`SlimeInvoker`, `BreezeMixin`); a bee never counts as having stung, or it would die of its own sting (`BeeMixin`); a
   snow golem is given fire resistance, or a warm biome would melt it.
 - Whatever flies starts in the air over its spawn spot, which always has open sky: a ghast 8 blocks up, a phantom 6, a
-  vex 3, a blaze and a bee 2. A flyer cannot be reached in melee at all, which is what the bow and crossbow loadouts are
-  for. An evoker's vexes are taken into the fight as it calls them, and swept up with it.
+  vex 3, a blaze and a bee 2. An evoker's vexes are taken into the fight as it calls them, and swept up with it.
+- **Two of them never come within reach: the ghast and the phantom** (`Roster.Member.unreachable`). A ghast drifts and
+  fires, a phantom swoops past and climbs away, and a deflected fireball kills a ghast only for a real player
+  ([findings.md](findings.md)), so a loadout that carries nothing that shoots can neither win such a fight nor lose it —
+  all 2,400 ticks of it are a timeout. **That pairing is never drawn**, in training or in evaluation, on any rung, packed
+  or crowded, and on a squad with one of them on it (`phantom+zombie`) for the same reason: one left standing is the clock
+  running out however well the rest of it went. The rule is `gametest/league/Loadouts.fights` on the game side and
+  `League.pairable` on the trainer's, which is told which rows those are by the `reach` column of `roster.csv`. The other
+  flyers do come to the agent — a blaze closes, a vex dives, a bee stings, a breeze lands — so every loadout meets those.
 - The warden is a benchmark, not a lesson: nothing beats it and the reward cannot pay for escaping, so its share of the
   training fights is capped at 0.2% (`Roster.Member.trainingCap`, written into `roster.csv`). It stays fully rated.
 - 11 squads of several mobs at once (`gametest/league/Opposition`): `2x_zombie`, `2x_vindicator`, `3x_silverfish`,
@@ -514,7 +521,7 @@ and the viewer draws them: `scripts\viewer.ps1 -League`, see [viewer.md](viewer.
 
 | File (`runs/<run>/league/`) | Written by | Holds |
 | --- | --- | --- |
-| `roster.csv` | each worker as it starts | `opponent,kind,cap`: the mobs, the scripted fighter and the published networks it fields, and the largest share of the training fights each may take (1 for no cap). `kind` is `mob`, `squad`, `scripted` or `model`, and `loadout` for the rows that are not opponents at all but the loadouts the worker arms the agent with, which the trainer needs to weigh a pairing |
+| `roster.csv` | each worker as it starts | `opponent,kind,cap,reach`: the mobs, the scripted fighter and the published networks it fields, and the largest share of the training fights each may take (1 for no cap). `kind` is `mob`, `squad`, `scripted` or `model`, and `loadout` for the rows that are not opponents at all but the loadouts the worker arms the agent with, which the trainer needs to weigh a pairing. `reach` is `melee` on a loadout that carries nothing that shoots, `unreachable` on an opponent nothing but a shot can touch, and `-` otherwise: the two together are the one pairing that is never drawn |
 | `results/wNN.csv` | each worker, a line a fight | `iteration,kind,opponent,loadout,opponent_loadout,outcome,ticks,cause,site,finish,weapon,swaps,uses,shots,replay`; kind `train` or `eval`, outcome `win`, `loss`, `timeout` or `draw`, cause what the agent died of when it died, site what was on the ground, finish what finished the other side (`agent`, `side`, a damage name like `lava`, or `-`), then what the agent did with its hands — the item it held longest, ticks that changed the kind of item held, uses begun, arrows and bolts loosed — and the file its replay is in, or `-`. **The columns grow to the right and never move**: a run appended to across builds has short older lines, and both the trainer and the viewer read one as saying nothing about what it leaves out |
 | `pairs.csv` | the trainer, every iteration | `loadout,opponent,share,chance,fights,wins`: each pairing of a loadout and an opponent, the share of the training fights it gets, the agent's chance in it, and the faded training record behind that chance. **This is what a worker draws a training fight from**; largest share first |
 | `matchmaking.csv` | the trainer, every iteration | `opponent,share,chance,rating,fights`: the same shares added up per opponent, which is what the tables and the tier list read, what says which checkpoints are in the pool, and what a worker falls back to when there is no pair table |

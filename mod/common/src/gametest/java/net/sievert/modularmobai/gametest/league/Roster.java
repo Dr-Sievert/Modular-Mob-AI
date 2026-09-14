@@ -70,6 +70,11 @@ import net.sievert.modularmobai.gametest.terrain.TerrainSites;
  *   <li>Whatever flies starts in the air above the ground the fight was laid out on, {@link Member#height}, since a
  *       ghast is four blocks across and would otherwise start wedged in a tree. Both starting spots have open sky over
  *       them, so straight up is always clear, see {@link net.sievert.modularmobai.gametest.terrain.TerrainSites}.</li>
+ *   <li>Two of the flyers never come within reach at all, {@link Member#unreachable}: the ghast, which drifts and fires,
+ *       and the phantom, which swoops past and climbs away again. A loadout carrying nothing that shoots is never drawn
+ *       against one, in training or in evaluation, because there is no fight there to win or lose; see
+ *       {@link Loadouts#fights}. The other flyers come to the agent — a blaze closes, a vex dives, a bee stings, a breeze
+ *       lands — so a sword is a fight against any of those.</li>
  * </ul>
  *
  * <p>Most mobs fight whatever their target is, and only look for one among players, so the agent is made the target and
@@ -184,33 +189,47 @@ public final class Roster {
      * @param ticks        how long a fight against it is given
      * @param start       how far away it starts, or zero for the ordinary seven to eleven blocks
      * @param trainingCap the largest share of a run's training fights it may take, 1 for no cap at all
+     * @param unreachable whether nothing but a shot can ever touch it, see {@link #unreachableAt}
      */
     public record Member(String name, EntityType<? extends Mob> type, @Nullable Supplier<SpawnGroupData> spawnData,
                          Preparation preparation, Provocation provocation, int height, int ticks, int start,
-                         double trainingCap) {
+                         double trainingCap, boolean unreachable) {
 
         /**
-         * The same mob, starting that far up in the air, with a flyer's clock and a flyer's room: it cannot be reached in
-         * melee at all, so the fight is a shooting match or it is nothing.
+         * The same mob, starting that far up in the air, with a flyer's clock and a flyer's room. It still comes down to the
+         * agent, so a sword is a fight it can win: a blaze closes to attack, a vex dives, a bee stings, a breeze lands.
          */
         public Member flyingAt(int height) {
 
             return new Member(this.name, this.type, this.spawnData, this.preparation, this.provocation, height, FLYING_TICKS,
-                    RANGED_START, this.trainingCap);
+                    RANGED_START, this.trainingCap, this.unreachable);
+        }
+
+        /**
+         * The same mob flying that high and <b>never coming within reach</b>: a ghast, which drifts and fires, and a phantom,
+         * which swoops past and climbs away again. A loadout that carries nothing to shoot with cannot win such a fight and
+         * cannot lose it either — a deflected fireball only kills a ghast for a real {@link net.minecraft.world.entity.player.Player},
+         * see findings.md — so all 2,400 ticks of it are a timeout, and the pairing is never drawn at all; see
+         * {@link Loadouts#fights}.
+         */
+        public Member unreachableAt(int height) {
+
+            return new Member(this.name, this.type, this.spawnData, this.preparation, this.provocation, height, FLYING_TICKS,
+                    RANGED_START, this.trainingCap, true);
         }
 
         /** The same mob with a shooting match's clock and room, for one that fights from a distance on the ground. */
         public Member ranged() {
 
             return new Member(this.name, this.type, this.spawnData, this.preparation, this.provocation, this.height,
-                    RANGED_TICKS, RANGED_START, this.trainingCap);
+                    RANGED_TICKS, RANGED_START, this.trainingCap, this.unreachable);
         }
 
         /** The same mob, given at most that share of a run's training fights. */
         public Member cappedAt(double share) {
 
             return new Member(this.name, this.type, this.spawnData, this.preparation, this.provocation, this.height,
-                    this.ticks, this.start, share);
+                    this.ticks, this.start, share, this.unreachable);
         }
 
         /** What its finalizeSpawn is handed, or null for what it would pick itself. */
@@ -277,8 +296,8 @@ public final class Roster {
             member("breeze", EntityType.BREEZE, null, AS_SPAWNED, Roster::attack).ranged(),
             member("evoker", EntityType.EVOKER, null, AS_SPAWNED, Roster::summon).ranged(),
             member("blaze", EntityType.BLAZE, null, AS_SPAWNED, Roster::target).flyingAt(HOVER_HEIGHT),
-            member("ghast", EntityType.GHAST, null, AS_SPAWNED, Roster::target).flyingAt(GHAST_HEIGHT),
-            member("phantom", EntityType.PHANTOM, null, AS_SPAWNED, Roster::target).flyingAt(PHANTOM_HEIGHT),
+            member("ghast", EntityType.GHAST, null, AS_SPAWNED, Roster::target).unreachableAt(GHAST_HEIGHT),
+            member("phantom", EntityType.PHANTOM, null, AS_SPAWNED, Roster::target).unreachableAt(PHANTOM_HEIGHT),
             member("vex", EntityType.VEX, null, AS_SPAWNED, Roster::target).flyingAt(VEX_HEIGHT),
             member("bee", EntityType.BEE, GROWN_ANIMAL, Roster::grown, Roster::enrage).flyingAt(HOVER_HEIGHT),
             member("wolf", EntityType.WOLF, GROWN_ANIMAL, Roster::grown, Roster::enrage),
@@ -345,7 +364,7 @@ public final class Roster {
     private static Member member(String name, EntityType<? extends Mob> type, @Nullable Supplier<SpawnGroupData> spawnData,
                                  Preparation preparation, Provocation provocation) {
 
-        return new Member(name, type, spawnData, preparation, provocation, 0, MELEE_TICKS, MELEE_START, 1.0D);
+        return new Member(name, type, spawnData, preparation, provocation, 0, MELEE_TICKS, MELEE_START, 1.0D, false);
     }
 
     // ---------------------------------------------------------------------------------------------------------------

@@ -2,6 +2,7 @@ package net.sievert.modularmobai.gametest.league;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 
 import org.jetbrains.annotations.Nullable;
@@ -57,8 +58,14 @@ public final class Pairings {
      *
      * @param opponents whether this process fields an opponent of that name
      * @param loadouts  whether this process arms the agent with a loadout of that name
+     * @param pairs     whether this process would field the two of them together, which is the one rule that looks at both:
+     *                  a loadout carrying nothing that shoots is never drawn against something it cannot reach, see
+     *                  {@link Loadouts#fights}. The trainer gives such a pairing no share at all, so nothing should reach
+     *                  here; a build that meets an older trainer's table drops it the same way it drops a loadout it does
+     *                  not field
      */
-    public static Pairings parse(List<String> lines, Predicate<String> opponents, Predicate<String> loadouts) {
+    public static Pairings parse(List<String> lines, Predicate<String> opponents, Predicate<String> loadouts,
+                                 BiPredicate<String, String> pairs) {
 
         List<Pairing> found = new ArrayList<>();
         List<Double> shares = new ArrayList<>();
@@ -86,7 +93,8 @@ public final class Pairings {
                 continue;
             }
 
-            if (!(share > 0.0D) || !loadouts.test(loadout) || !opponents.test(opponent)) {
+            if (!(share > 0.0D) || !loadouts.test(loadout) || !opponents.test(opponent)
+                    || !pairs.test(loadout, opponent)) {
 
                 continue;
             }

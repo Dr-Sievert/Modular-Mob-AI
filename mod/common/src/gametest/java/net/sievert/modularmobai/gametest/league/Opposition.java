@@ -117,6 +117,17 @@ public record Opposition(String name, List<Roster.Member> mobs, Difficulty diffi
     }
 
     /**
+     * Whether nothing but a shot can finish this fight: <b>any</b> mob on it that never comes within reach, since one left
+     * standing is the clock running out however well the rest of it went. So {@code ghast} and {@code phantom+zombie} are
+     * both of them, and a loadout that carries nothing to shoot with is never drawn against either; see
+     * {@link Roster.Member#unreachable} and {@link Loadouts#fights}.
+     */
+    public boolean unreachable() {
+
+        return this.mobs.stream().anyMatch(Roster.Member::unreachable);
+    }
+
+    /**
      * What this fight's mobs are spawned with, which is {@link Level#getCurrentDifficultyAt} with the rung's difficulty in
      * place of the level's own: the same day time, the same inhabited time and the same moon, since those are the fight's
      * ground and not its difficulty.

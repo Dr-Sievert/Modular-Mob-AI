@@ -83,6 +83,17 @@ always was — the loadout even within the opponent — and only separates as th
 None of this costs coverage. The floor is spread over the pairings rather than over the opponents, which comes to the same
 share per pairing as before: an opponent's even floor was already being split ten ways by the even loadout draw.
 
+One pairing is not in the table at all: **a loadout that carries nothing to shoot with against a flyer that never comes
+within reach**, the ghast and the phantom. There is nothing to win there and nothing to lose — a deflected fireball only
+kills a ghast for a real player, and a phantom swoops past and climbs away again — so every one of those fights is 2,400
+ticks of timeout, dragging a rating with a number that means nothing and spending a worker's minute on a question with one
+answer. It gets no share, which also means the frontier probe never reaches it, since the probe only holds down a share that
+exists. The workers say which rows those are in the fourth column of roster.csv, `reach`: `melee` on a loadout that carries
+no shot, `unreachable` on an opponent nothing but a shot can touch. A build too old to write the column bars nothing, which
+is what the league did before. The game side refuses the same pairing in its own draw, evaluation included; see the game's
+league/Loadouts#fights. **It changes what a checkpoint's evaluated win rate is averaged over**, so it belongs at a run
+boundary; see docs/training.md.
+
 Only the training fights are paired. An evaluation fight still draws its opponent evenly and its loadout evenly, because
 every rating in the league is measured on those: pairing them would move the scale under a run that is already going.
 
@@ -122,6 +133,12 @@ SCRIPTED = "scripted"
 # The kind a row of roster.csv carries when it is one of the loadouts the agent is armed with rather than an opponent; the
 # game writes both in the one file, see the game's league/League#writeRoster.
 LOADOUT = "loadout"
+
+# What the fourth column of roster.csv, `reach`, says about a row: that this loadout carries nothing to shoot with, or that
+# nothing but a shot can ever touch this opponent. The two of them together are the one pairing that is never drawn; every
+# other row says "-", and a build too old to write the column says nothing and bars nothing.
+MELEE = "melee"
+UNREACHABLE = "unreachable"
 
 # The faded fights below which a training record is forgotten: a thousandth of a fight, which league_decay reaches about 340
 # iterations after the last one, and which the prior outweighs ten thousand to one.
@@ -584,6 +601,11 @@ class League:
         self.caps: dict[str, float] = {}
         self.loadouts: list[str] = []
 
+        # The one pairing the workers will not field, as the `reach` column of roster.csv names its two halves: the loadouts
+        # that carry nothing to shoot with, and the opponents nothing but a shot can ever reach. Read afresh with the rest.
+        self.melee: set[str] = set()
+        self.unreachable: set[str] = set()
+
         # The rungs of the difficulty ladder opened so far, by full name: zombie(hard), 2x_zombie(easy). A ratchet, so it
         # is saved with the rest and a resumed run does not have to earn them again.
         self.rungs: set[str] = set()
@@ -708,6 +730,10 @@ class League:
         The loadouts the agent is armed with come in the same file, under the kind `loadout`, because the game is what knows
         which of them a run fields (`-PleagueLoadouts`) and a pairing cannot be drawn without both halves. A build too old to
         say leaves the list empty, and then the shares stay what they always were, one per opponent.
+
+        The fourth column, `reach`, is the other thing only the game knows: which loadouts carry nothing that shoots and
+        which opponents nothing but a shot can ever touch, so that the two are never paired. A build too old to write it
+        leaves both sets empty and nothing is barred.
         """
 
         file = self.folder / "roster.csv"
@@ -727,13 +753,23 @@ class League:
 
             parts = [part.strip() for part in line.split(",")]
             kind = parts[1] if len(parts) > 1 and parts[1] else "mob"
+            reach = parts[3] if len(parts) > 3 else ""
 
             if kind == LOADOUT:
                 loadouts.append(parts[0])
+                self.melee.discard(parts[0])
+
+                if reach == MELEE:
+                    self.melee.add(parts[0])
+
                 continue
 
             names.append(parts[0])
             self.kinds[parts[0]] = kind
+            self.unreachable.discard(parts[0])
+
+            if reach == UNREACHABLE:
+                self.unreachable.add(parts[0])
 
             try:
                 self.caps[parts[0]] = float(parts[2]) if len(parts) > 2 and parts[2] else 1.0
@@ -877,6 +913,9 @@ class League:
         prior of `league_prior` fights of the guess, and the guess is the opponent's chance moved by how this loadout does
         over all of its fights (`pair_guess`). The loadout's own chance is shrunk towards the average the same way, so a
         loadout with a handful of fights does not drag a whole column of the table about.
+
+        One pairing never enters the table at all, so it gets no share and the frontier probe never reaches it: a loadout
+        that carries nothing to shoot with against a flyer that never comes within reach. See `pairable`.
         """
 
         if not self.loadouts:
@@ -896,11 +935,28 @@ class League:
 
         for loadout in self.loadouts:
             for opponent, chance in chances.items():
+                if not self.pairable(loadout, opponent):
+                    continue
+
                 record = self.training_pairs.get((loadout, opponent), [0.0, 0.0])
                 guess = pair_guess(chance, loadouts[loadout], average)
                 pairs[(loadout, opponent)] = win_chance(record[0], record[1], guess, self.config.league_prior)
 
         return pairs
+
+    def pairable(self, loadout: str, opponent: str) -> bool:
+        """Whether a fight of that loadout against that opponent is one the workers would ever field.
+
+        One rule: a loadout that carries nothing to shoot with is never drawn against something nothing but a shot can
+        reach, a ghast or a phantom, on their own or on a squad with one, on any rung. Both halves come from the `reach`
+        column of roster.csv, since the game is what knows; the rung comes off the name first, because how hard a mob spawns
+        has nothing to do with whether a sword can get at it.
+
+        A build too old to write that column leaves both sets empty and nothing is barred, which is what the league did
+        before the rule.
+        """
+
+        return not (loadout in self.melee and base(opponent) in self.unreachable)
 
     # -------------------------------------------------------------------------------------------------------------
 

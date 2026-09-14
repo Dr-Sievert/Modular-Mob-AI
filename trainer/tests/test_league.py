@@ -741,6 +741,65 @@ class LeagueTest(unittest.TestCase):
 
         self.assertFalse((self.run.path / "league" / "pairs.csv").is_file())
 
+    def test_a_melee_loadout_is_never_paired_with_a_flyer_it_cannot_reach(self):
+        """The one pairing that gets no share at all: something with nothing to shoot with against something nothing but a
+        shot can reach. Every such fight is 2,400 ticks of timeout, so it drags a rating with a number that means nothing and
+        spends a worker's minute on a question with one answer.
+
+        Getting no share is also what keeps the frontier probe off it: the probe holds a hopeless pairing down to a trickle
+        rather than to nothing, and a pairing that is never in the table is never probed."""
+
+        (self.run.path / "league" / "roster.csv").write_text(
+            "opponent,kind,cap,reach\n"
+            "zombie,mob,1.00000,-\n"
+            "ghast,mob,1.00000,unreachable\n"
+            "phantom+zombie,squad,1.00000,unreachable\n"
+            "scripted,scripted,1.00000,-\n"
+            "sword,loadout,1.00000,melee\n"
+            "bow,loadout,1.00000,-\n", encoding="utf-8")
+
+        league = League(self.run, self.config)
+        league.update(50)
+
+        pairs = {(row[0], row[1]): float(row[2]) for row in self.read("pairs.csv")}
+        shares = {row[0]: float(row[1]) for row in self.read("matchmaking.csv")}
+
+        self.assertNotIn(("sword", "ghast"), pairs)
+        self.assertNotIn(("sword", "phantom+zombie"), pairs)
+
+        # And nothing else has gone with them: the bow still meets both, the sword still meets everything it can reach, and
+        # the two unreachable opponents are still met and still rated.
+        self.assertIn(("bow", "ghast"), pairs)
+        self.assertIn(("bow", "phantom+zombie"), pairs)
+        self.assertIn(("sword", "zombie"), pairs)
+        self.assertIn(("sword", "scripted"), pairs)
+        self.assertGreater(shares["ghast"], 0.0)
+
+        # A ghast's whole share is the bow's, since the sword has none of it.
+        self.assertAlmostEqual(shares["ghast"], pairs[("bow", "ghast")], places=4)
+        self.assertAlmostEqual(sum(pairs.values()), 1.0, places=4)
+
+        # A rung is not a different question: how hard a mob spawns has nothing to do with whether a sword can get at it.
+        self.assertFalse(league.pairable("sword", "ghast(hard)"))
+        self.assertFalse(league.pairable("sword", "ghast(easy)"))
+        self.assertTrue(league.pairable("bow", "ghast(hard)"))
+        self.assertTrue(league.pairable("sword", "zombie(hard)"))
+
+    def test_a_build_too_old_to_say_what_is_out_of_reach_pairs_everything_as_before(self):
+        """The `reach` column is newer than some workers. Without it nothing is barred, which is exactly what the league did
+        before the rule, so a run resumed across the change keeps drawing what it was drawing."""
+
+        self.armed("sword", "bow")
+
+        league = League(self.run, self.config)
+        league.update(50)
+
+        pairs = {(row[0], row[1]): float(row[2]) for row in self.read("pairs.csv")}
+
+        self.assertEqual(league.melee, set())
+        self.assertEqual(league.unreachable, set())
+        self.assertIn(("sword", "ghast"), pairs)
+
     def test_the_tables_hold_every_opponent_and_loadout(self):
         self.results(0, "50,eval,zombie,sword,-,win,200", "50,train,creeper,bow,-,loss,300", "50,eval,iteration-000025,axe,bow,win,500")
 

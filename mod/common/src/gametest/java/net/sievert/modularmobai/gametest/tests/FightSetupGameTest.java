@@ -13,14 +13,19 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
+import net.sievert.modularmobai.arena.Loadout;
 import net.sievert.modularmobai.gametest.GameTestGroup;
+import net.sievert.modularmobai.gametest.league.League;
+import net.sievert.modularmobai.gametest.league.Loadouts;
+import net.sievert.modularmobai.gametest.league.Opposition;
 import net.sievert.modularmobai.gametest.league.Pairings;
 import net.sievert.modularmobai.gametest.terrain.PouredHazards;
 
 /**
  * Not the body: how the ground a fight happens on and the opponent it happens against are arranged. The lava poured beside a
  * hazard fight and drained again, which has to leave the site exactly as it found it because a site hosts a hundred fights;
- * and a league training fight drawn out of the trainer's shares as a loadout and an opponent together.
+ * a league training fight drawn out of the trainer's shares as a loadout and an opponent together; and the one pairing that
+ * is never drawn at all, a loadout with nothing to shoot with against a flyer that never comes within reach.
  *
  * <p>They are in the mechanics suite because this is the suite that checks a rule against the number it is supposed to give,
  * and because it boots in seconds. The shares themselves are the trainer's, tested by {@code scripts\league.ps1 -Test}.
@@ -152,7 +157,8 @@ public class FightSetupGameTest {
                 "bow,ghast,0.005000,0.0300,30.0,1.0",
                 "bow,warden,0.900000,0.0000,10.0,0.0",
                 "netherite_sword,creeper,0.900000,0.5000,10.0,5.0",
-                ""), List.of("creeper", "zombie", "ghast")::contains, List.of("sword", "bow")::contains);
+                ""), List.of("creeper", "zombie", "ghast")::contains, List.of("sword", "bow")::contains,
+                (loadout, opponent) -> true);
 
         helper.assertValueEqual(pairings.pairings().size(), 6, "pairings this build can field");
         helper.assertTrue(Math.abs(pairings.total() - 1.0D) < 1.0E-9D, "The shares add up to " + pairings.total() + ", not one");
@@ -184,6 +190,117 @@ public class FightSetupGameTest {
         helper.assertTrue(even > 20 * hopeless, "The even pairings took " + even + " fights against the hopeless ones' " + hopeless);
 
         helper.assertTrue(Pairings.NONE.draw(RandomSource.create(1L)) == null, "An empty table drew something");
+        helper.succeed();
+    }
+
+    /**
+     * The one pairing the league refuses to draw: something with nothing to shoot with against something nothing but a shot
+     * can reach. A ghast drifts out of reach and a phantom climbs away again, a deflected fireball kills a ghast only for a
+     * real player, and so every one of those fights was 2,400 ticks of timeout — a rating dragged by a number that means
+     * nothing, and a worker's minute on a question with one answer.
+     *
+     * <p>Three claims, because the rule has three halves that can each be got wrong on their own. <b>Who</b>: the two that
+     * never come are barred and the four flyers that do come to the agent — vex, bee, blaze, breeze — are not, since a sword
+     * is a real fight against any of those. <b>The squad</b>: one unreachable body on a side is enough, because one left
+     * standing is the clock running out however well the rest of it went. And <b>the table</b>: a pairing a trainer older
+     * than the rule still writes is dropped on the way in, the same way a loadout this build does not field is.
+     */
+    @GameTest(template = Mechanics.ARENA, timeoutTicks = 100)
+    public static void aMeleeLoadoutIsNeverPairedWithAFlyerItCannotReach(GameTestHelper helper) {
+
+        for (String name : List.of("ghast", "phantom")) {
+
+            Opposition beyond = Opposition.named(name);
+
+            helper.assertTrue(beyond != null && beyond.unreachable(), name + " is not out of a sword's reach");
+            helper.assertTrue(!Loadouts.fights(Loadout.SWORD, beyond), "A sword is drawn against a " + name);
+            helper.assertTrue(!Loadouts.fights(Loadouts.AXE, beyond), "An axe is drawn against a " + name);
+            helper.assertTrue(Loadouts.fights(Loadout.BOW, beyond), "A bow is not drawn against a " + name);
+            helper.assertTrue(Loadouts.fights(Loadouts.SWORD_AND_BOW, beyond), "A sword with a bow behind it is not drawn "
+                    + "against a " + name + ", though it is what the bow is for");
+        }
+
+        // The flyers that do come to the agent. A rule that barred these would take four opponents away from every melee
+        // loadout in the league for no reason at all.
+        for (String name : List.of("vex", "bee", "blaze", "breeze")) {
+
+            Opposition comes = Opposition.named(name);
+
+            helper.assertTrue(comes != null && !comes.unreachable(), name + " is out of a sword's reach, and should not be");
+            helper.assertTrue(Loadouts.fights(Loadout.SWORD, comes), "A sword is not drawn against a " + name);
+        }
+
+        // One body on a side is enough: phantom+zombie with a sword kills the zombie and then runs the clock out.
+        Opposition squad = Opposition.named("phantom+zombie");
+
+        helper.assertTrue(squad != null && squad.unreachable(), "A squad with a phantom on it is not out of a sword's reach");
+        helper.assertTrue(!Loadouts.fights(Loadout.SWORD, squad), "A sword is drawn against a squad with a phantom on it");
+
+        // A rung is not a different question: how hard a mob spawns has nothing to do with whether a sword can get at it.
+        helper.assertTrue(!Loadouts.fields("sword", "ghast(hard)"), "A sword is drawn against a hard ghast");
+        helper.assertTrue(Loadouts.fields("bow", "ghast(hard)"), "A bow is not drawn against a hard ghast");
+        helper.assertTrue(Loadouts.fields("sword", "zombie"), "A sword is not drawn against a zombie");
+
+        // And the table, read exactly as a worker reads the trainer's: the barred rows go out with the ones naming things
+        // this build cannot field, and the rest keeps its shares.
+        Pairings pairings = Pairings.parse(List.of(
+                "loadout,opponent,share,chance,fights,wins",
+                "sword,zombie,0.400000,0.5500,110.0,60.0",
+                "sword,ghast,0.100000,0.0200,40.0,1.0",
+                "axe,ghast,0.100000,0.0200,40.0,1.0",
+                "bow,ghast,0.400000,0.3000,30.0,9.0",
+                ""), name -> Opposition.named(name) != null, name -> Loadouts.named(name) != null, Loadouts::fields);
+
+        helper.assertValueEqual(pairings.pairings().size(), 2, "pairings left once the unreachable ones are dropped");
+
+        for (Pairings.Pairing pairing : pairings.pairings()) {
+
+            helper.assertTrue(!pairing.opponent().equals("ghast") || !pairing.loadout().equals("sword"),
+                    "The pair table still holds a sword against a ghast");
+            helper.assertTrue(!pairing.opponent().equals("ghast") || !pairing.loadout().equals("axe"),
+                    "The pair table still holds an axe against a ghast");
+        }
+
+        helper.succeed();
+    }
+
+    /**
+     * And the same rule where it is hardest to see: in the draw itself, over a thousand fights. The pair table is only half
+     * of it — an evaluation fight is not paired at all, it draws its opponent evenly and its loadout evenly, and that is
+     * where most of the hopeless fights came from, because every rating in the league is measured on those.
+     *
+     * <p>What is held is that the opponent draw is still even — the loadout is narrowed against an unreachable flyer and the
+     * opponent is not, so a checkpoint is still measured against all of them alike — and that a ghast is still met, with
+     * something that can shoot it. A rule that quietly stopped drawing the ghast at all would pass a test that only looked
+     * for the forbidden pair.
+     */
+    @GameTest(template = Mechanics.ARENA, timeoutTicks = 100)
+    public static void aThousandLeagueDrawsNeverFieldASwordAgainstAGhast(GameTestHelper helper) {
+
+        RandomSource random = RandomSource.create(1_000L);
+        int beyond = 0;
+        int shot = 0;
+
+        for (int draw = 0; draw < 1_000; draw++) {
+
+            League.Matchup matchup = League.next(null, random);
+            Opposition opposition = matchup.opposition();
+
+            if (opposition == null || !opposition.unreachable()) {
+
+                continue;
+            }
+
+            beyond++;
+            shot += Loadouts.melee(matchup.loadout()) ? 0 : 1;
+
+            helper.assertTrue(!Loadouts.melee(matchup.loadout()), "The draw handed " + matchup.loadout().name()
+                    + ", which carries no shot, against " + matchup.opponent() + ", which nothing but a shot can reach");
+        }
+
+        helper.assertTrue(beyond > 0, "Not one of a thousand draws met a ghast or a phantom, so this says nothing");
+        helper.assertValueEqual(shot, beyond, "fights against something out of reach that carried a shot");
+
         helper.succeed();
     }
 

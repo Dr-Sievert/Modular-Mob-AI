@@ -859,6 +859,31 @@ are deliberate.
 - **Pairing costs nothing in coverage.** The floor is spread over the pairings rather than the opponents, which is the same
   share per pairing as before: an opponent's even floor was already being split between the ten loadouts by the even loadout
   draw.
+- **A sword never meets a ghast, and the evaluation draw was where most of them were.** Pairing fixed the *training* draw:
+  the trainer weighs a hopeless pairing down and the frontier probe keeps only a trickle. What it could not fix is the
+  **evaluation** draw, which is deliberately even — the opponent evenly and the loadout evenly, because every rating in the
+  league is measured on it — so a melee loadout met a ghast or a phantom as often as it met a zombie. There is nothing in
+  that fight either way: a ghast drifts out of reach, a phantom swoops past and climbs away, and a swing at a fireball sends
+  it back but does not kill the ghast, because vanilla forgives a ghast's own fire only for a `Player`'s fireball (see
+  Mechanics, below). So all 2,400 ticks of it are a timeout — a rating dragged by a number that means nothing, and a worker's
+  two minutes on a question with one answer. Seven melee loadouts in ten against two of about fifty opponents is about one
+  evaluation fight in seventy, every one of them a timeout.
+  - **The property belongs to the mob, not to flying.** `Roster.Member.unreachable` is true for the ghast and the phantom
+    and false for the vex, the bee, the blaze and the breeze, which all come to the agent; a rule that read "flies" would
+    have taken four real opponents away from seven loadouts. An `Opposition` is unreachable if **any** mob on it is, so
+    `phantom+zombie` goes with them: one left standing is the clock running out however well the rest of it went. The
+    `+N_idle` and `+N_pack` variants follow without a word, since both are the same opposition under another name.
+  - **Both sides refuse it, and in different ways.** The game side narrows the *loadout* draw and leaves the opponent draw
+    even (`Loadouts.against`), so a checkpoint is still measured against every opponent alike and a ghast is still met —
+    with something that can shoot it. The trainer side leaves the pairing out of the table altogether (`League.pairable`),
+    which is what keeps the probe off it: the probe holds a hopeless pairing down to a trickle rather than to nothing, and a
+    pairing that is never in the table is never probed. The trainer cannot work out either half for itself, so the workers
+    say so in a fourth column of `roster.csv`, `reach`; a build too old to write it bars nothing, which is what the league
+    did before.
+  - **It moves the average an evaluated win rate is over**, which is the objection that held two other curriculum changes
+    back, so it is written down rather than dodged: a checkpoint's evaluated rate before and after this is not the same
+    number. It belongs at a **run boundary**, and unlike the crowd's skew there is no "the mix is fixed" defence to make —
+    the mix itself changes. The plain bench is untouched and is still what to compare across runs.
 - **A bigger fight site costs throughput and disk, not memory.** Going from a radius of 2 (80 blocks across) to 3 (112),
   measured on 320 library sites and one worker fighting 300 league fights off them: 0.84 MB a site on disk becomes 1.38 MB,
   so 4,096 sites go from 3.1 GB to about 5.5 GB; 128 sites take 208 s to build rather than 272 s; the worker still runs in a
