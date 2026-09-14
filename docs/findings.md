@@ -1143,13 +1143,15 @@ are deliberate.
     | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
     | before | 90.5% | 88.9% | 96.9% | 96.8% | 90.5% | 48.6% | 48.4% | 17.1% | **71.2%** |
     | after | 98.4% | 96.8% | 98.4% | 96.8% | 94.0% | **71.4%** | **61.7%** | 24.3% | **79.6%** |
+    | after, read again | 95.4% | 94.0% | 93.8% | 100.0% | 93.7% | **71.4%** | **66.1%** | 25.7% | **79.6%** |
 
-    Whole-sitting win rate, which counts the mirror and the packs those flags still draw as well, went 67.0% to 75.2%. The
-    two surprises are **blaze and breeze**, which no deflection touches at all: a blaze's small fireball and a breeze's wind
-    charge are both arrow-sized and so are the dodge's, not the swing's, and they are the two shots the fighter had no
-    answer to whatever — it cannot close on either, and a blaze's fireball does five and sets the ground alight. Splitting
-    the bench the way the harness splits: the ghast rows, which are the deflection's, went 17.1% to 24.3%, and the other
-    seven, which are the sidestep's, went **79.6% to 88.2%**.
+    Whole-sitting win rate, which counts the mirror and the packs those flags still draw as well, went 67.0% to 75.2% and
+    74.2% on the second read, so a sitting is worth about a point. The eight shooters read **79.6% twice over**, which is
+    the line to believe. The two surprises are **blaze and breeze**, which no deflection touches at all: a blaze's small
+    fireball and a breeze's wind charge are both arrow-sized and so are the dodge's, not the swing's, and they are the two
+    shots the fighter had no answer to whatever — it cannot close on either, and a blaze's fireball does five and sets the
+    ground alight. Splitting the bench the way the harness splits: the ghast rows, which are the deflection's, went 17.1%
+    to 24.3% and 25.7%, and the other seven, which are the sidestep's, went **79.6% to 88.2% and 88.0%**.
   - **Read the ground before believing all of it.** The two sittings drew a different mix of the terrain library: the before
     run fought 171 drop sites and 166 water, the after run 146 and 301, and water is the ground both fighters do best on
     (71.1% and 80.4%) against drop (60.8% and 65.8%). Reweighting the after sitting to the before sitting's mix reads
