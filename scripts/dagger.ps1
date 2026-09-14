@@ -43,6 +43,13 @@ param(
     # the positions it is corrected in are the ones it really gets itself into; see scripts\imitate.ps1.
     [double] $StudentNoise = 0.05,
 
+    # What share of the fights stand a crowd about them and what share of the one-mob fights are packs, as the build's
+    # -PleagueBystanders and -PleagueHostileCrowds; empty for the build's own defaults (a quarter, a tenth). A record the
+    # run is to be pulled towards teaches what it holds, so a round meant to teach the pack fight is recorded with
+    # -HostileCrowds 0.5, and the teacher's answers to every one of those fights go into the run's demos.
+    [string] $Bystanders = '',
+    [string] $HostileCrowds = '',
+
     # Which loadouts the round is fought with, empty for all of them. A record of the loadouts a run is worst with is
     # what teaches it those: the fighter's bow and crossbow win about a third of their fights where its sword wins two
     # thirds, and a round drawn from every loadout spends nine tenths of itself on what it can already do.
@@ -86,7 +93,9 @@ Write-Host ("Recording $Fights fights on the $Suite suite: $(Split-Path $driver 
 
 Invoke-Gradle (@(':fabric:recordDemonstrations', "-Prun=$Run", "-Psuite=$Suite", "-Parenas=$Fights", "-Pworkers=$Workers",
         "-PbatchSize=$Slots", "-PmaxWorkers=$Workers", "-PworkerHeap=$Heap", "-PdemonstrationNoise=$StudentNoise",
-        "-Pspecies=$Species", "-Pstudent=$driver") + @(if ($Loadouts.Count -gt 0) { "-PleagueLoadouts=$($Loadouts -join ',')" }))
+        "-Pspecies=$Species", "-Pstudent=$driver") + @(if ($Loadouts.Count -gt 0) { "-PleagueLoadouts=$($Loadouts -join ',')" }) +
+        @(if ($Bystanders -ne '') { "-PleagueBystanders=$Bystanders" }) +
+        @(if ($HostileCrowds -ne '') { "-PleagueHostileCrowds=$HostileCrowds" }))
 
 $recorded = @(Get-ChildItem $demos -Filter '*.mbr' -Recurse -ErrorAction SilentlyContinue)
 

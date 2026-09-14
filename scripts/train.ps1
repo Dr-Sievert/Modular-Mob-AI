@@ -103,6 +103,13 @@ param(
     # a link under runs\ is one more thing for a recursive delete to follow, which has cost this repository an environment.
     [string] $Demos = '',
 
+    # League only: what share of the fights stand a crowd about them, and what share of the one-mob fights are packs of it
+    # all fighting, as the build's -PleagueBystanders and -PleagueHostileCrowds; empty for the build's own defaults, a
+    # quarter and a tenth. Set at a run's start and kept for its life, since either moves the mix a checkpoint's evaluated
+    # win rate is averaged over; see docs	raining.md.
+    [string] $Bystanders = '',
+    [string] $HostileCrowds = '',
+
     # Everything the build and both sides of it say, rather than the short feed: a line every few iterations with the
     # training win rate and pace, every evaluation, every round, and anything that went wrong.
     [switch] $Full,
@@ -368,7 +375,8 @@ $arguments = (@(
 # An empty -Heap is left off the command line altogether rather than passed as nothing, so that the build sees no
 # property at all and falls back to the heap that suits what this run fights on. The same for the published networks: a
 # run that names none fields none.
-) + $workerArguments + @(if ($Heap) { "-PworkerHeap=$Heap" }) + @(if ($LeagueModels.Count -gt 0) { "-PleagueModels=$($LeagueModels -join ',')" }))
+) + $workerArguments + @(if ($Heap) { "-PworkerHeap=$Heap" }) + @(if ($LeagueModels.Count -gt 0) { "-PleagueModels=$($LeagueModels -join ',')" }) +
+  @(if ($Bystanders -ne '') { "-PleagueBystanders=$Bystanders" }) + @(if ($HostileCrowds -ne '') { "-PleagueHostileCrowds=$HostileCrowds" }))
 
 if ($Full) {
 
