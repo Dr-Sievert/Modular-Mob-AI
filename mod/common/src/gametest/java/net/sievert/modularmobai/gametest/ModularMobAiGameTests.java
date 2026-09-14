@@ -12,6 +12,7 @@ import net.sievert.modularmobai.gametest.tests.AgentHordeGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentLeagueGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentMeleeGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentPackFightGameTest;
+import net.sievert.modularmobai.gametest.tests.AgentShotsGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentPerceptionGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentTeacherGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentVindicatorGameTest;
@@ -46,6 +47,11 @@ public class ModularMobAiGameTests {
             // tick: how far the nearest of them stood, how often two were on top of the agent, how far off its blows
             // landed, and which way its feet were going. A suite of its own for the same reasons the crowd one is.
             case "pack" -> new Class<?>[] {AgentPackFightGameTest.class};
+
+            // A skeleton, a stray, a pillager and a ghast on natural ground, watched shot by shot: how many shots were
+            // fired at the agent, how many landed, how many a shield stopped, how many a swing sent back, and whether its
+            // feet ever went across the line of one. A suite of its own for the same reasons the pack one is.
+            case "shots" -> new Class<?>[] {AgentShotsGameTest.class};
 
             // The fifty thousand arena baseline, with no agent in it.
             case "baseline" -> new Class<?>[] {VillagerVindicatorGameTest.class};
