@@ -6,7 +6,12 @@ Today its published network wins **82.7%** of one-on-one fights against a league
 two points more than the hand-written fighter it was copied from on the same bench (80.3%), and **71.8%** of the same
 league once a quarter of its fights have a crowd of monsters standing about them, six and a half points *behind* that
 fighter (78.3%) — 1,000 and 2,000 fights a row, one worker, measured on this build on 2026-09-14; see docs/models.md. The
-crowd is the open problem and it is where the next points are, not in more iterations of the same. Bows, crossbows,
+crowd was the open problem, and on 2026-09-14 it was found to be the representation and not the curriculum: the first
+layer read every enemy slot through its own weights, and nine of the ten had never been trained, so one bystander bent the
+aim by 22° a tick. A network now reads its slots through attention heads (weight file version 3), a plain network converts
+in place with no retraining, and the converted `blast7` went from 41% to 79% with four to nine idle monsters about it on one
+bench while its one-on-one rate did not move; it trains on as `blast8`, unpublished until benched against `blast6` in one
+sitting. Packs that all attack are the open problem now, and the teacher is where that work starts. Bows, crossbows,
 shields, axes, mining and placing work under a player's rules. That league is an Elo one and it is what a run trains and is
 judged on: 37 mobs, 11 squads, a difficulty ladder, the hand-written fighter held at 1500 as the anchor, published networks
 and the run's own checkpoints.
@@ -35,7 +40,11 @@ Read these before changing anything:
   line of sight, or within 6 blocks all round, or if it just hit the agent; a body it stops perceiving is remembered at its last
   known place for 3 seconds and then forgotten. One mechanism, `EnemySlots`, and the cost of it is one spatial query and a dot
   product per body in range — never a clip per body. Measured at 2,000 mobs: 230 to 410 µs a tick. Don't put the full circle
-  back; see [docs/architecture.md](docs/architecture.md) and findings.md.
+  back; see [docs/architecture.md](docs/architecture.md) and findings.md. **The network reads those slots through attention
+  heads, never by position**: a head scores every occupied slot and hands the first layer one body's fields, so what the
+  network computes cannot depend on how many idle bodies stand about it. The enemies-in-range count counts only the bodies
+  in the fight. Both are what makes the crowd invariance structural; don't hand a slot's numbers to the first layer by
+  position again, and measure any change to crowd handling by that invariance first (offline, on real rows).
 - **Everything runs from `scripts\*.ps1`**, set up once by `scripts\setup.ps1`. Nothing is hardcoded to a machine; paths
   are found relative to the repository.
 - **Never commit Mojang assets.** Textures come from the local Gradle cache at runtime, or the game jar.

@@ -351,6 +351,73 @@ are deliberate.
 
 ## Perception
 
+- **A bystander bent the aim because the first layer read every slot through its own weights, and nine of the ten slots
+  had never been trained.** Every curriculum answer to the crowd — the sight rule, the slot order, the weighted draw, the
+  packs — moved the crowded win rate a few points and stalled, and the reason is in the weight file. The first layer gave
+  each of the ten enemy slots its own 31 columns. In every one-on-one fight the opponent sits in slot 0 and slots 1 to 9 are
+  zeros, so over a run the normaliser's spread for the late slots sat on its 0.1 floor with a mean near nought, and their
+  columns took no gradient worth the name: from `blast6` to `blast7`, 4,000 iterations, the columns for slot 0 moved by 0.83
+  and the ones for slot 9 by 0.32. A body arriving in a late slot is therefore turned into inputs of magnitude 5 to 10, up to
+  the clip, and fed through weights that are still their initialisation. Measured on `blast7`'s best (iteration 32625): the
+  shift one idle zombie makes to the first layer's pre-activations is **1.0 when it stands in slot 0**, which is the real
+  signal, 1.9 in slot 3, 2.8 in slot 5 and **8.3 in slot 8** — a bystander in a late slot shakes the first layer eight times
+  harder than the opponent does. And at the action, over 60 real one-on-one segments of the teacher's league record with
+  idle bodies written into the empty slots:
+
+  | idle bodies in slots 1.. | aim moved, yaw / pitch a tick | attack logit moved | hotbar choice flipped |
+  | --- | --- | --- | --- |
+  | 1 | 22.0° / 13.3° | 2.4 | 31.7% of ticks |
+  | 3 | 24.3° / 15.7° | 3.0 | 41.7% |
+  | 9 | 11.7° / 15.8° | 3.0 | 23.0% |
+
+  That is the whole of "one bystander costs 16 points and every one after it costs more", of the pitch pinned straight up
+  with seven in view, and of the zero blows in a horde of twenty: the representation, not the curriculum. The
+  enemies-in-range count was the same fault by another door — nine bystanders put it at 1.0 against a training mean of 0.11
+  and a spread of 0.11, seven standard deviations out — and it is now the count of bodies **in the fight**, engaged by the
+  same rule that orders the slots, so on every plain, squad and self-play fight it reads exactly what it did.
+  - **The pack fights said the same thing from the other side.** Over 162 recorded `+N_pack` fights of `blast7`, the agent
+    landed 3 to 8% of its swings with the aim 20 to 38 degrees off the nearest attacker, and its blows per fight — 8, 6, 9, 8,
+    13 for packs of two to six — did not grow with the pack; alone, a deployed network lands about a quarter of its swings.
+    It was not fighting the pack badly, it was not seeing it.
+  - **The fix is attention over the slots, and it needs no retraining to be invariant.** A head scores every occupied slot with
+    a linear score over the normalised fields, a softmax over those and a virtual empty token picks one, and the head hands the
+    first layer that one body's fields; the winning slot is struck off so the next head ranks the rest. What the network
+    computes therefore cannot depend on how many idle bodies stand about it. A plain network converts in place (`train.py
+    attend`): head 0 takes the old slot-0 columns unchanged, heads 1 and 2 the old slot-1 and slot-2 columns rescaled to
+    statistics now tied across the slots, and what the old first layer always received from its nine empty slots is folded
+    into the bias. Converted `blast7` (iteration 33457) matches `blast7` to **7.6e-5** in the logits on one-on-one rows and
+    stays within **5.7e-4** of "alone" with nine idle bodies in view, where `blast7` itself moves by 37. The
+    max-pool encoder that had been tried (`l770p`) imitated the teacher thirty times worse than a plain first layer — a
+    single ReLU layer pooled by max cannot hand on one body's fields whole — and is replaced rather than kept. The numbers
+    are in `docs/architecture.md`; the tests that hold the conversion are `trainer/tests/test_attention.py`.
+  - **Benched, one sitting, one worker, 1,000 league fights each, the crowd and the packs drawn as a run draws them**, on
+    2026-09-14 an hour after the conversion, blast7's final weights against the same weights converted and the scripted
+    fighter, read from each fighter's own table by kind of fight:
+
+    | kind of fight | `blast7` 033457 | the same, converted | the scripted fighter |
+    | --- | --- | --- | --- |
+    | one on one, nothing about | 82.9% (538) | **86.1%** (555) | 83.9% (539) |
+    | 1 to 3 standing about | 69.2% (156) | 76.2% (147) | 83.3% (168) |
+    | 4 to 9 standing about | **40.7%** (86) | **79.0%** (81) | 61.1% (72) |
+    | a pack of 2 to 4 all attacking | 41.5% (41) | 49.0% (49) | 78.9% (38) |
+    | a squad | 75.6% (164) | 73.2% (153) | 83.0% (159) |
+    | the whole league | 73.8% | 79.6% | 80.9% |
+
+    The same weights, with the slots read through attention instead of by position, go from 41% to 79% with four to nine
+    idle monsters in view — the row where the old network was losing half its fights it now wins as it wins alone, above
+    the scripted fighter's 61% on the same row — and nothing about the one-on-one fight moved beyond a sitting's noise. No
+    training happened between the two rows; it is the representation alone. The run carried on from the converted state as
+    `blast8`, and its own evaluation over its first 400 iterations reads the same story: 86% plain, 80 to 84% with any
+    number standing about, against `blast7`'s 76% at one and 38% at nine over its last 4,000.
+  - **The packs are the teacher's to teach.** On that bench the scripted fighter wins 79% of the packs of two to four where
+    the converted network wins 49% — the fighter simply fights the nearest and swings when its blow is ready, and the
+    network has never learned even that against several. So the next step against packs is the pipeline that taught the
+    bow: the teacher first, then DAgger on pack-heavy draws, then PPO — not more iterations of the same.
+  - **A second engaged body is not reproduced exactly, and cannot be.** With two engaged bodies the converted network differs
+    from `blast7` by up to 16 in the logits: the softmax leaves a little of the other body in each head, the heads can read the
+    two in the other order than the old leases froze them in, and the old network was clipping — the same body reads |z| up to
+    3.5 through slot 0's statistics and up to 49.6 through slot 1's. Squads and packs are what training is for; the invariance
+    to idle crowds is what the conversion buys outright.
 - **The layout had one spare slot left in it, and a drawn weapon needed it.** Nothing in the observation said how far a
   use had charged, so a network holding a bow could not tell a full draw from a tick of one. The echo's twentieth field
   was kept spare for exactly this; filling it moved nothing, so `schema.json` is byte for byte what it was (id
