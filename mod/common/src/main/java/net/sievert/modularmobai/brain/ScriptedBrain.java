@@ -233,6 +233,14 @@ public final class ScriptedBrain implements Brain {
      */
     private static final int CRIT_JUMP_COOLDOWN = 14;
 
+    /**
+     * How many ticks before the swing is ready the step back in begins. The ground given up has to be covered again before
+     * the blow can land, and a body walks 0.216 blocks a tick, so four ticks is most of the block between the standoff and
+     * the band a swing reaches from: start on the tick the cooldown fills and the fighter arrives four ticks late every
+     * cycle, which over a fight is blows not thrown and a clock that runs out.
+     */
+    private static final int PACK_STEP_IN_TICKS = 4;
+
     /** Below this a difference in the cooldown between two ticks is noise rather than the rate it recovers at. */
     private static final float STRENGTH_RATE_FLOOR = 0.01F;
 
@@ -768,8 +776,7 @@ public final class ScriptedBrain implements Brain {
         // The cycle: ground is given while the swing is cooling and something is near enough to be worth giving it from,
         // and the moment the swing is ready the fighter closes and takes it. See PACK_STANDOFF for what happens to a
         // fighter that simply backs away instead, which is the first thing this was and the wrong thing.
-        boolean giving = pack
-                && (running || strength < FULL_STRENGTH && this.nearestInFight <= PACK_STANDOFF);
+        boolean giving = pack && (running || !stepsIn(me, strength) && this.nearestInFight <= PACK_STANDOFF);
 
         // Turning right is a rising yaw, and a target off to the right has a positive right component, so the error and
         // the control share a sign and no correction is needed.
@@ -786,7 +793,7 @@ public final class ScriptedBrain implements Brain {
             lookError = bearing(packStep, sin, cos);
         }
 
-        else if (pack && distance > PACK_AIM_RANGE && strength < FULL_STRENGTH) {
+        else if (pack && !(stepsIn(me, strength) && distance <= PACK_AIM_RANGE)) {
 
             lookError = (float) Math.toDegrees(Mth.atan2(this.threatRight, this.threatForward));
         }
@@ -968,6 +975,17 @@ public final class ScriptedBrain implements Brain {
         double ticks = (1.0D - strength) / me.strengthRate;
 
         return ticks >= CRIT_JUMP_EARLIEST && ticks <= CRIT_JUMP_LATEST;
+    }
+
+    /**
+     * Whether the swing is near enough to ready for the fighter to start closing on the pack again. It is the cooldown's own
+     * rate that says how near, which {@link #time} already reads off two ticks of the observation, so this is as true of an
+     * axe's twenty ticks as of a sword's twelve and a half.
+     */
+    private static boolean stepsIn(Fighter me, float strength) {
+
+        return strength >= FULL_STRENGTH
+                || me.strengthRate > 0.0F && (1.0F - strength) / me.strengthRate <= PACK_STEP_IN_TICKS;
     }
 
     // ---------------------------------------------------------------------------------------------------------------
