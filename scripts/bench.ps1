@@ -53,6 +53,10 @@ param(
     # quarter. `-Bystanders 0` is the plain one-on-one bench, which is how to ask whether a gap is the crowd or the fight.
     [string] $Bystanders = '',
 
+    # What share of the one-mob fights are packs of it, forwarded to eval.ps1; empty for the build's own tenth.
+    # `-HostileCrowds 1` is the pack bench: every one-mob fight a pack, read by size in each fighter's `+N_pack` rows.
+    [string] $HostileCrowds = '',
+
     # The scripted fighter as one more row of this bench, measured first so the live lines have their scale from the start.
     [switch] $Teacher
 )
@@ -167,6 +171,11 @@ try {
         if ($Bystanders -ne '') {
 
             $arguments.Bystanders = $Bystanders
+        }
+
+        if ($HostileCrowds -ne '') {
+
+            $arguments.HostileCrowds = $HostileCrowds
         }
 
         if ($Ground -ne 0) {

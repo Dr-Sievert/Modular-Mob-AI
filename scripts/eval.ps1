@@ -68,6 +68,11 @@ param(
     # one-on-one question, which is how a network trained before the crowd landed can be read beside one trained with it.
     [string] $Bystanders = '',
 
+    # What share of the fights against one mob field several of it, all of them fighting, as the build's
+    # -PleagueHostileCrowds; empty for the build's own default of a tenth. `-HostileCrowds 1` makes every one-mob fight a
+    # pack, which is how to ask how a fighter does against packs alone, by size, in the `+N_pack` rows of its results.
+    [string] $HostileCrowds = '',
+
     # The scripted fighter instead of a network, which is the reference every other number here wants. A copy that wins 27%
     # of the league says nothing on its own: the roster holds wardens and evokers, and the question is always how much of
     # what is missing is the copy and how much is the fight. Measured the same way, on the same sites, in the same order.
@@ -132,4 +137,5 @@ Invoke-Gradle (@(':fabric:runGametestParallel', "-Pbrain=$(if ($Teacher) { 'scri
         @(if ($Loadouts.Count -gt 0) { "-PleagueLoadouts=$($Loadouts -join ',')" }) +
         @(if ($Opponents.Count -gt 0) { "-PleagueOpponents=$($Opponents -join ',')" }) +
         @(if ($Bystanders -ne '') { "-PleagueBystanders=$Bystanders" }) +
+        @(if ($HostileCrowds -ne '') { "-PleagueHostileCrowds=$HostileCrowds" }) +
         @(if ($Ground -ne 0) { "-PterrainSeed=$Ground" }))
