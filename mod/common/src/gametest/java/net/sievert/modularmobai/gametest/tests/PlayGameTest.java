@@ -14,6 +14,7 @@ import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
@@ -27,6 +28,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.Enchantments;
+import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.PlayerTeam;
 import net.sievert.modularmobai.allegiance.Allegiance;
@@ -47,6 +49,7 @@ import net.sievert.modularmobai.brain.schema.Species;
 import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 import net.sievert.modularmobai.gametest.GameTestGroup;
+import net.sievert.modularmobai.gametest.GameTestTuning;
 import net.sievert.modularmobai.gametest.util.HeldControls;
 import net.sievert.modularmobai.gametest.util.TestTicks;
 
@@ -995,6 +998,111 @@ public class PlayGameTest {
 
             return false;
         });
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // What a game test is allowed to change about a real game
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * A real game keeps its light engine, and nothing else this source set tunes reaches one either.
+     *
+     * <p>What this is for. The game-test source set is on the class path of a development client and server as well, so that
+     * {@code /test runall} works in a dev world, and {@code fabric.mod.json} lists its mixin config — so every mixin in it
+     * applies in a real game. {@code LevelLightEngineMixin} throws away both light engines when
+     * {@link GameTestTuning#lighting()} says a suite does not need them, and the suite a process with no suite property
+     * reads is {@code arena}, which is one of those. A world made with {@code scripts\play.ps1} was therefore pitch dark
+     * with nothing left to work its light out, and {@code /time set day} could not help it. See findings.md.
+     *
+     * <p>How it is proved. The play suite is itself a game-test server, so the honest test is in two halves. This process is
+     * one, and it is one of the suites that keeps its light: the sky above the plot reads full sky light, which is a reading
+     * only a live engine gives — with the engines let go every brightness in the world reads zero. Then the signal is taken
+     * away and put back, which is the decision a client gets, and with it gone every toggle whose default would change
+     * vanilla has to answer as a real game needs. What a suite gets is pinned on the way past, in the same breath, because
+     * the value of this fix is that it changed no fight: a blank property is still the arena suite and still runs without an
+     * engine, and the league still keeps one.
+     */
+    @GameTest(template = ARENA)
+    public static void aRealGameKeepsItsLightEngine(GameTestHelper helper) {
+
+        // The name the build passes, written out here rather than read from GameTestTuning: the build writes this string
+        // (mod/fabric/build.gradle, mod/neoforge/build.gradle, runArenas) and so does the class, and a rename in one of them
+        // alone is what this has to catch.
+        final String suiteProperty = "modular_mob_ai.gametest.suite";
+        final ServerLevel level = helper.getLevel();
+
+        helper.assertTrue(GameTestTuning.gameTestServer(), "A game-test server does not know it is one: '" + suiteProperty
+                + "' is not set, so every toggle in GameTestTuning is inert and the suite is running as a real game");
+        helper.assertTrue(GameTestTuning.lighting(), "The play suite is running with no light engine");
+
+        // Well above the box, whose roof is at height eight, so the only thing overhead is sky. Full sky light is fifteen
+        // whatever the time of day; it is getRawBrightness that midnight takes down, and canSeeSky is this same reading.
+        final BlockPos overhead = helper.absolutePos(new BlockPos(4, 20, 4));
+
+        helper.assertTrue(level.getBlockState(overhead).isAir(), "Something is in the way above the plot at " + overhead);
+        helper.assertValueEqual(level.getBrightness(LightLayer.SKY, overhead), 15, "the sky light above the plot");
+        helper.assertTrue(level.canSeeSky(overhead), "The sky is not visible above the plot at " + overhead);
+
+        final String suite = System.getProperty(suiteProperty);
+
+        try {
+
+            // A development client, which passes no such property.
+            System.clearProperty(suiteProperty);
+
+            helper.assertFalse(GameTestTuning.gameTestServer(), "A process with no '" + suiteProperty
+                    + "' still believes it is a game-test server");
+            helper.assertValueEqual(GameTestTuning.suite(), "arena", "the suite a process with no suite property reads");
+            helper.assertTrue(GameTestTuning.lighting(),
+                    "A real game is being given no light engine, which is what left a played world pitch dark");
+
+            // And the rest of what a suite changes, each with a default that has to mean "leave it alone" here.
+            helper.assertFalse(GameTestTuning.naturalTerrain(), "A real game's world would be generated as a suite's");
+            helper.assertFalse(GameTestTuning.buildingLibrary(), "A real game believes it is building the terrain library");
+            helper.assertFalse(GameTestTuning.soloTests(), "A real game would run its tests one at a time");
+            helper.assertFalse(GameTestTuning.reusePlots(), "A real game would keep a suite's plots");
+            helper.assertValueEqual(GameTestTuning.batchSize(), 0, "the batch size a real game hands the framework");
+            helper.assertValueEqual(GameTestTuning.ticksPerSecond(), 0, "the tick ceiling a real game is held to");
+            helper.assertTrue(GameTestTuning.library() == null, "A real game is reading the terrain library");
+
+            // A bare runGametest passes the property blank, which is the arena suite: unchanged by any of this, engine and
+            // all, because the 20 fights at exactly 54 ticks each are that suite's fingerprint.
+            System.setProperty(suiteProperty, "");
+
+            helper.assertTrue(GameTestTuning.gameTestServer(), "A blank suite property is not read as a game-test server");
+            helper.assertValueEqual(GameTestTuning.suite(), "arena", "the suite a blank suite property reads");
+            helper.assertFalse(GameTestTuning.lighting(), "The arena suite has been given a light engine back");
+
+            // The two suites that train, and one that must keep its light: the league fields the undead, spiders and
+            // endermen, whose behaviour is what its ratings are a record of.
+            System.setProperty(suiteProperty, "terrain");
+            helper.assertFalse(GameTestTuning.lighting(), "The terrain suite has been given a light engine back");
+
+            System.setProperty(suiteProperty, "league");
+            helper.assertTrue(GameTestTuning.lighting(), "The league suite has lost its light engine");
+
+            System.setProperty(suiteProperty, "play");
+            helper.assertTrue(GameTestTuning.lighting(), "The play suite has lost its light engine");
+        }
+
+        finally {
+
+            if (suite == null) {
+
+                System.clearProperty(suiteProperty);
+            }
+
+            else {
+
+                System.setProperty(suiteProperty, suite);
+            }
+        }
+
+        // Whatever happened above, this process is what it was: the suite's own answers are back.
+        helper.assertTrue(GameTestTuning.gameTestServer() && "play".equals(GameTestTuning.suite()),
+                "The suite property was not put back: the suite now reads " + GameTestTuning.suite());
+
+        helper.succeed();
     }
 
     // ---------------------------------------------------------------------------------------------------------------

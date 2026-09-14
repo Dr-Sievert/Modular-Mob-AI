@@ -27,10 +27,15 @@ public abstract class RegionFileStorageMixin {
     // saved, so nothing should ever come here; this is the last guard, at the one place chunk data reaches a region file,
     // so that no mistake anywhere else can change the ground under every worker at once. Entities and points of interest
     // have folders of their own, which are never linked, and are left alone.
+    //
+    // A game-test server only, like everything in this config: a development client is handed the source set as well, and
+    // cancelling a chunk write in a real game would lose the world. No client is ever told where a library is, so the
+    // property alone already confined this, but nothing about a chunk writer can be asked which server it belongs to, so the
+    // question is asked of the process. See GameTestTuning.gameTestServer.
     @Inject(method = "write", at = @At("HEAD"), cancellable = true)
     private void modular_mob_ai$neverWriteTheLibrary(ChunkPos pos, @Nullable CompoundTag data, CallbackInfo ci) {
 
-        if (GameTestTuning.library() != null && !GameTestTuning.buildingLibrary()
+        if (GameTestTuning.gameTestServer() && GameTestTuning.library() != null && !GameTestTuning.buildingLibrary()
                 && "region".equals(String.valueOf(this.folder.getFileName()))) {
 
             ci.cancel();

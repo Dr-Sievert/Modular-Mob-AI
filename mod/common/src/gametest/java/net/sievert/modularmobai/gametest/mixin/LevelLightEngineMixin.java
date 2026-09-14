@@ -49,6 +49,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * first appears, and only the vindicator suites are provably untouched by it. That the arena suite's twenty fights still
  * take exactly 54 ticks each is what says so.
  *
+ * <p><b>This applies in a development game too, which is why the decision asks whether it is in one.</b> Both loaders hand
+ * the game-test source set to their client and server runs and {@code fabric.mod.json} lists this mixin config, so nothing
+ * about being a game test keeps this out of a real world: it is the suite property that says so, and a client passes none.
+ * With the property absent the suite defaults to {@code arena}, which is how a world made with {@code scripts\play.ps1}
+ * came out pitch dark with no way to light it again. {@link GameTestTuning#gameTestServer()} is now the first thing
+ * {@link GameTestTuning#lighting()} asks, and {@code PlayGameTest.aRealGameKeepsItsLightEngine} holds it to that.
+ *
  * <p>The two engines are built and then let go rather than never built. That costs one pair of empty engines per level,
  * and buys not having to inject into a constructor ahead of its own body, which is the kind of thing that works until a
  * mapping changes.

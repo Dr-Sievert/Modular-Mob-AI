@@ -49,6 +49,11 @@ Read these before changing anything:
   until they were stopped and restarted by hand. A worktree that wants its own daemon uses `--no-daemon` on its own call.
 - Mixins that change vanilla behaviour are deliberate and documented at the top of each mixin. Several fix real bugs;
   see findings.md before removing one.
+- **Everything in the game-test source set is inert outside a game-test server**, and anything added there has to be. Both
+  loaders hand that source set to their client and server runs as well, so that `/test runall` works in a dev world, and
+  `fabric.mod.json` lists its mixin config — so every mixin in it applies in a real game. A throughput setting that did not
+  ask left a played world pitch dark with no way to light it. `GameTestTuning.gameTestServer` is the question to ask; see
+  findings.md.
 - **The agent's hands are a player's in all but three places, and all three are deliberate.** A drawn weapon runs to full
   once started, the hand keeps the slot it started a draw in until the draw is done, and a block keeps the crack it has
   while the aim stays on it. A network chooses each button **and its slot** afresh every tick, so without these three a bow
@@ -67,7 +72,7 @@ scripts\setup.ps1                      once per machine: Java 21, Python + PyTor
 scripts\test.ps1                       20 arena fights with the scripted fighter: expect 20/20, 54 ticks each
 scripts\test.ps1 -Mechanics            the item and block rules against a player's numbers: expect 54 passed
 scripts\test.ps1 -Crowd -Weights models\blast6\best.mbw    one fight with 0, 1, 3 and 9 monsters standing about it, tick by tick
-scripts\test.ps1 -Play                 the agent in a real game (jar networks, /mmai, sides, Infinity loadouts): expect 19 passed
+scripts\test.ps1 -Play                 the agent in a real game (jar networks, /mmai, sides, Infinity loadouts): expect 20 passed
 scripts\play.ps1                       the dev client, agents on the best network in models\; -Model, -Weights, -Loader
 scripts\terrain.ps1                    once per machine before any training: the terrain library a run fights on
 scripts\terrain.ps1 -Add 2048          more ground appended to it, without regenerating what is already there

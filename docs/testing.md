@@ -13,7 +13,7 @@ scripts\parity.ps1               Java forward pass against PyTorch's, after touc
 | --- | --- | --- |
 | `test.ps1` | `All 20 required tests passed`; every fight 54 ticks | the observation, the body and the scripted fighter still work; the 54 ticks are deterministic, so any change in them is a behaviour change |
 | `test.ps1 -Mechanics` | `All 54 required tests passed` | bows, crossbows, shields, axes, mining, placing, use slowdown and damage payment follow a player's rules, what a press of attack costs and what holding it down costs, that a swing sends a ghast's fireball back and nothing else, that a hand keeps the slot it started a draw in, what the observation says about a use, about the clock and the quiver, about what is shot at the agent, about the armour on either side of the fight, about whether the other side has engaged and about what the weapon in the agent's hand takes off — the last three against the same numbers the critic's privileged facts carry — the teacher getting itself out of powder snow and starting no draw it cannot finish, what an enemy slot goes to and what a wall between takes away from it, **which slot each body gets — the fight first, then the nearest** — that the league's bystanders stand aside unpaid until struck and that the size of a crowd is drawn small far more often than large, and how a league training fight is drawn from the trainer's shares |
-| `test.ps1 -Play` | `All 19 required tests passed`, and a `Loaded the mod's jar, modular_mob_ai/models/<name>.mbw from iteration N` line per network the jar carries | what [playing.md](playing.md) promises: the bundled networks load and drive an agent, the commands, saving, sides and friendly fire, the Infinity loadouts |
+| `test.ps1 -Play` | `All 20 required tests passed`, and a `Loaded the mod's jar, modular_mob_ai/models/<name>.mbw from iteration N` line per network the jar carries | what [playing.md](playing.md) promises: the bundled networks load and drive an agent, the commands, saving, sides and friendly fire, the Infinity loadouts, and that nothing a suite tunes reaches a real game |
 | `parity.ps1` | `parity ok` once per body, logits agreeing to about 1e-6, and `the plain ones agree to the bit at batches 1 to 64` | the game runs exactly the network PyTorch trained, **for every body this build has**, and the forward pass's explicit vector loops give the same bits as its plain ones |
 
 The network the `-Play` line names is whatever is published: the suite asks the jar what it carries and holds every network
@@ -231,6 +231,7 @@ into the tests either side, so the suite runs its tests one after another on one
 | `friendlyFireOffSparesTheSide` | an agent's blow on an ally does nothing with friendly fire off, and lands with it on |
 | `infinityBowNeverRunsOut`, `infinityCrossbowNeverRunsOut` | three shots, two bolts, the one arrow still there; the training loadouts keep 64 |
 | `aSecondBodyIsDrivenAndARefusedBrainIsNamed` | a beast, the body with no hands, is spawned, sees the enemy slots every body shares, and walks on its own seven-wide action vector; and a humanoid's brain offered to it is refused with both bodies named |
+| `aRealGameKeepsItsLightEngine` | **nothing a suite tunes reaches a real game.** A suite that keeps its light has one, read as full sky light above its plot; and with the suite property taken away — which is what a client passes — `GameTestTuning` answers as a real game needs, `lighting` included. A world made with `play.ps1` was pitch dark because it did not; see [findings.md](findings.md). What a suite gets is pinned in the same test, since the value of that fix was that it changed no fight |
 
 ## Game tests directly
 
@@ -274,6 +275,14 @@ The `terrain` and `arena` suites run with no light engine, which is worth about 
 not change a single fight: nothing the agent or a vindicator does reads light. Every other suite keeps it, since `canSeeSky`
 is a light question and the undead, spiders, endermen and rain all are too. `GameTestTuning.lighting` decides, and a run
 that keeps its own world keeps its light so the light it saves is worth reading back.
+
+**A toggle in `GameTestTuning` is inert outside a game-test server**, and anything added there has to be. The client and
+server runs of both loaders are handed this source set too, so that `/test runall` works in a dev world, and
+`fabric.mod.json` lists its mixin config — so every mixin here is loaded in a real game. `GameTestTuning.gameTestServer`
+is what says whether this process is a suite: the suite property being present, which every game-test run and every worker
+passes and nothing else does. The light above was the setting that proved it, by leaving a played world with no light at
+all; `PlayGameTest.aRealGameKeepsItsLightEngine` holds the rule, and [findings.md](findings.md) has the audit of every
+mixin in the config.
 
 Every suite runs **at midnight in clear weather**, both cycles stopped (`GameTestServerMixin`). A plot's roof is no
 protection on a test's first tick: the plot is cleared and rebuilt between tests, and the light of a box placed this tick is

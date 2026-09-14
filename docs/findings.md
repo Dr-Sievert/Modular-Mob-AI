@@ -5,6 +5,43 @@ are deliberate.
 
 ## Throughput and stability
 
+- **A played world was pitch dark, and what was doing it was a game test's throughput setting.**
+  `scripts\play.ps1 -World Test` opened a world with no light anywhere in it, and `/time set day` changed nothing, because
+  there was nothing left to work the light out: `gametest/mixin/LevelLightEngineMixin` had nulled both engines of every
+  level in the process.
+
+  **The game-test source set is not confined to game tests.** Both loaders hand it to their client and server runs as well,
+  so that `/test runall` works in a development world (`mod/fabric/build.gradle`, `mod/neoforge/build.gradle`), and
+  `fabric.mod.json` lists `modular_mob_ai.gametest.mixins.json` first in its mixins — so every mixin in that config is
+  loaded and applied in a real game. The light mixin asks `GameTestTuning.lighting()`, which is false for the `terrain` and
+  `arena` suites when no terrain file is kept, and `suite()` **defaults to `arena` when the suite property is absent**,
+  which it is in a client: only the game-test run passes it, and the client and server runs pass the brain, the weights and
+  the models and nothing else. So a client asked a question that only means anything inside a suite, and was handed the
+  answer a training worker wants.
+
+  **The rule: a toggle in `GameTestTuning` is inert outside a game-test server**, and the signal is the suite property being
+  present. Both loaders' game-test runs always pass it — blank when no `-Psuite` was named, which is what makes the arena
+  suite the default — and so does every worker, which copies the run task's properties and then names the suite itself.
+  Nothing else passes it, and the two other candidates are each wrong somewhere: `-Dfabric-api.gametest` is Fabric's own, so
+  a NeoForge suite would quietly run with a real game's settings; and a constructed `GameTestServer` is the right question
+  wherever one can be reached — five of the mixins ask it that way, and `GameTestServerMixin` is confined by targeting it —
+  but a level's light engine is built before anything holds the level, and a region file's writer never holds a server at
+  all.
+
+  The audit of the whole config, since being wrong here is quiet. `LevelLightEngineMixin` was the leak that was noticed.
+  `BeeMixin` (a bee never counts as having stung), `BreezeMixin` (a breeze fights an agent) and `VillagerMixin` (a
+  villager's death log dropped) were leaking too, harmlessly, and now ask the same question: a published jar carries none of
+  this source set, so a development game should behave as that jar does. `GameTestBatchFactoryMixin` and
+  `RegionFileStorageMixin` were already inert by the properties they read, and ask anyway. `ChunkMapMixin`, `LevelMixin`,
+  `MinecraftServerMixin`, `ServerChunkCacheMixin` and `ServerLevelMixin` already checked
+  `getServer() instanceof GameTestServer`; `GameTestServerMixin` — midnight, both cycles stopped, the plots, the throttle —
+  targets `GameTestServer`, so it cannot fire anywhere else; `SlimeInvoker` only adds accessors and changes nothing.
+
+  **No suite's fights changed**: the arena's 20 of 20 at exactly 54.0 ticks and the mechanics' 54 came out the same, and the
+  light each suite runs with is unchanged to the suite. `PlayGameTest.aRealGameKeepsItsLightEngine` pins both halves — that
+  a suite that keeps its light really has one, reading full sky light above its plot, and that with the signal taken away
+  every toggle answers as a real game needs.
+
 - **One breeze with a NaN vertical velocity killed a 23,757 iteration run, and the only state left on disk was the
   poisoned one.** blast7 stopped at iteration 23757 with `refusing to export weights that are not finite`. Iteration 23756
   was healthy in every figure (kl 0.0075, drift 3.9e-04), and 23757 went NaN in all of them at once. The whole chain, from

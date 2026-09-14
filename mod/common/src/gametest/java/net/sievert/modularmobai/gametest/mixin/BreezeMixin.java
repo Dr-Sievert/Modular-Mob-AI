@@ -3,6 +3,7 @@ package net.sievert.modularmobai.gametest.mixin;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.monster.breeze.Breeze;
 import net.sievert.modularmobai.entity.ModEntities;
+import net.sievert.modularmobai.gametest.GameTestTuning;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -15,12 +16,16 @@ public abstract class BreezeMixin {
     // the target cannot be attacked and lets it go, and in a league fight it wandered off and never fired a single charge.
     // Here it fights the agent the way it fights a player, which is what the agent is standing in for; everything else
     // about the fight, when it shoots, jumps and slides, is the breeze's own.
+    //
+    // In a game-test server only. This config is loaded in a development client as well, and a published jar has none of
+    // this source set, so a breeze met in a real game keeps vanilla's own rule about what it will fight; see
+    // GameTestTuning.gameTestServer.
     @Inject(method = "canAttackType", at = @At("HEAD"), cancellable = true)
     private void modular_mob_ai$fightsTheAgent(EntityType<?> type, CallbackInfoReturnable<Boolean> cir) {
 
         // Any body's agent, asked of the register rather than named: a breeze has no more reason to refuse one body than
         // another, and a body added later would otherwise be the one thing in the league a breeze wanders away from.
-        if (ModEntities.speciesOf(type) != null) {
+        if (GameTestTuning.gameTestServer() && ModEntities.speciesOf(type) != null) {
 
             cir.setReturnValue(true);
         }

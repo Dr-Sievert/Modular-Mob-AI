@@ -6,6 +6,12 @@ public final class GameTestTuning {
     private GameTestTuning() {}
 
     /**
+     * The property that names the suite, and so the one thing that says a game-test server started this process at all:
+     * every toggle here has to ask before it changes anything vanilla does. See {@link #gameTestServer()}.
+     */
+    private static final String SUITE_PROPERTY = "modular_mob_ai.gametest.suite";
+
+    /**
      * How many arenas run at once. Zero leaves the framework's own batching alone, which batches fifty at a time.
      *
      * Fifty measured fastest. The cost of a run is roughly {@code (arenas / batchSize) * slowestArenaInABatch *
@@ -183,6 +189,38 @@ public final class GameTestTuning {
     }
 
     /**
+     * Whether this process is a game-test server.
+     *
+     * <p><b>Why anything here has to ask.</b> The game-test source set is not confined to game tests. Both loaders hand it
+     * to their client and server runs as well, so that {@code /test runall} works in a development world
+     * ({@code mod/fabric/build.gradle}, {@code mod/neoforge/build.gradle}), and {@code fabric.mod.json} lists
+     * {@code modular_mob_ai.gametest.mixins.json} first in its mixins — so every mixin in that config is loaded and applied
+     * in a real game. Anything in here with a default that changes what vanilla does therefore changes a development game
+     * too, unless it asks this first. That is not a hypothetical: see {@link #lighting()}.
+     *
+     * <p><b>The signal.</b> The suite property being present. Both loaders' game-test runs always pass it — blank when no
+     * {@code -Psuite} was named, which is what makes {@link #suite()} answer {@code arena} — and so does every worker a
+     * parallel or training run starts, which copies the run task's own properties and then names the suite itself
+     * ({@code runArenas} in {@code multiloader-loader.gradle}). Nothing else passes it: the client and server runs pass the
+     * brain, the weights and the models and nothing more, and {@code BrainTool} and {@code MobModelTool} pass nothing at
+     * all and boot no server.
+     *
+     * <p><b>The two other candidates are each wrong somewhere.</b> {@code -Dfabric-api.gametest} is Fabric's own, and a
+     * NeoForge game-test server never sees it, so a NeoForge suite would quietly run with a development game's settings. A
+     * constructed {@link net.minecraft.gametest.framework.GameTestServer} is the right question wherever one can be
+     * reached, and every mixin that can reach one asks it that way instead — but a level's light engine is built before
+     * anything holds the level, and a region file's writer never holds a server at all, which is exactly where two of these
+     * toggles are read.
+     *
+     * <p>Read live rather than cached, so a test can clear the property and see the decision a real game gets; see
+     * {@code PlayGameTest.aRealGameKeepsItsLightEngine}.
+     */
+    public static boolean gameTestServer() {
+
+        return System.getProperties().containsKey(SUITE_PROPERTY);
+    }
+
+    /**
      * Which fights to run: {@code arena}, the agent against a vindicator in a closed nine block box on a flat world, which
      * boots in seconds and is the quick check; or {@code terrain}, the same fight out in the open on natural ground,
      * which is what training uses. {@code mechanics} runs no fights at all, only short tests of the agent's body against a
@@ -196,7 +234,7 @@ public final class GameTestTuning {
      */
     public static String suite() {
 
-        final String property = System.getProperty("modular_mob_ai.gametest.suite");
+        final String property = System.getProperty(SUITE_PROPERTY);
         return property == null || property.isBlank() ? "arena" : property.trim().toLowerCase(java.util.Locale.ROOT);
     }
 
@@ -232,8 +270,21 @@ public final class GameTestTuning {
      * saved light is exactly what later workers read instead of working it out again. A run that keeps its world
      * ({@link #terrainFile()}, the pool behind {@code -PterrainLibrary=false}) saves it for the same reason. And
      * {@code play} and {@code mechanics} are checks, not throughput.
+     *
+     * <p><b>And a real game keeps its light whatever any of that says.</b> The default when nothing names a suite is
+     * {@code arena}, which is the right default for a bare {@code runGametest} and was the wrong one for everything else:
+     * the mixin that acts on this is loaded in a development client too, which passes no suite property, so it read "arena,
+     * no terrain file" and threw away the light engine of a real world. A world made with {@code scripts\play.ps1} was pitch dark and
+     * {@code /time set day} could not help it, because there was nothing left to work the light out. So the question this
+     * answers is asked of {@link #gameTestServer()} first, and the rule behind it holds for everything in this class: a
+     * toggle here is inert outside a game-test server. See docs/findings.md.
      */
     public static boolean lighting() {
+
+        if (!gameTestServer()) {
+
+            return true;
+        }
 
         final String suite = suite();
 

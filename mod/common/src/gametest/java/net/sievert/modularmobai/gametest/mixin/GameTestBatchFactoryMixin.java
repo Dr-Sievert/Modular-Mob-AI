@@ -26,6 +26,15 @@ public class GameTestBatchFactoryMixin {
             ServerLevel level,
             CallbackInfoReturnable<Collection<GameTestBatch>> cir) {
 
+        // The framework's own batching in a game-test server only. Nothing here can be reached outside one today, since a
+        // development client is handed no suite and every size this reads then falls back to vanilla's, but the tests run by
+        // hand with /test runall in a dev world go through this class too, and they are that world's to batch. See
+        // GameTestTuning.gameTestServer.
+        if (!GameTestTuning.gameTestServer()) {
+
+            return;
+        }
+
         final int batchSize = GameTestTuning.batchSize();
 
         if (batchSize <= 0) {

@@ -36,6 +36,12 @@ humanoid agents with no brain of their own run on best.mbw from C:\...\models\bl
 
 In the game, `/mmai info` shows what each agent runs on, and `/mmai models` shows every network the game can find.
 
+**If a world comes up dark**, or anything else about a development game does not behave as the built jar does, suspect the
+game-test source set: both loaders hand it to the client and server runs as well, so that `/test runall` works in a dev
+world, and its mixins are loaded in a real game with it. Everything in `GameTestTuning` is inert outside a game-test server
+for that reason — a world with no light was one such setting reaching a client — and any new toggle there has to be too;
+see [findings.md](findings.md) and `GameTestTuning.gameTestServer`.
+
 ## Outside the development environment
 
 A mod jar built from this repository carries its networks with it. Nothing has to point it at a file.
