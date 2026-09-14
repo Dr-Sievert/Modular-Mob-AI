@@ -12,9 +12,9 @@ scripts\parity.ps1               Java forward pass against PyTorch's, after touc
 | Check | Pass looks like | Proves |
 | --- | --- | --- |
 | `test.ps1` | `All 20 required tests passed`; every fight 54 ticks | the observation, the body and the scripted fighter still work; the 54 ticks are deterministic, so any change in them is a behaviour change |
-| `test.ps1 -Mechanics` | `All 57 required tests passed` | bows, crossbows, shields, axes, mining, placing, use slowdown and damage payment follow a player's rules, what a press of attack costs and what holding it down costs, that a swing sends a ghast's fireball back and nothing else, that a hand keeps the slot it started a draw in, what the observation says about a use, about the clock and the quiver, about what is shot at the agent, about the armour on either side of the fight, about whether the other side has engaged and about what the weapon in the agent's hand takes off — the last three against the same numbers the critic's privileged facts carry — the teacher getting itself out of powder snow and starting no draw it cannot finish, what an enemy slot goes to and what a wall between leaves of it, **which slot each body gets — the fight first, then the nearest, and the fight moved to the front when it engages late** — that the league's bystanders stand aside unpaid until struck, that the size of a crowd is drawn small far more often than large and that a pack of one mob all comes for the agent and is paid for once, and how a league training fight is drawn from the trainer's shares |
+| `test.ps1 -Mechanics` | `All 58 required tests passed` | bows, crossbows, shields, axes, mining, placing, use slowdown and damage payment follow a player's rules, what a press of attack costs and what holding it down costs, that a swing sends a ghast's fireball back and nothing else, that a hand keeps the slot it started a draw in, what the observation says about a use, about the clock and the quiver, about what is shot at the agent, about how many of the bodies in its view are in the fight with it, about the armour on either side of the fight, about whether the other side has engaged and about what the weapon in the agent's hand takes off — the last three against the same numbers the critic's privileged facts carry — the teacher getting itself out of powder snow and starting no draw it cannot finish, what an enemy slot goes to and what a wall between leaves of it, **which slot each body gets — the fight first, then the nearest, and the fight moved to the front when it engages late** — that the league's bystanders stand aside unpaid until struck, that the size of a crowd is drawn small far more often than large and that a pack of one mob all comes for the agent and is paid for once, and how a league training fight is drawn from the trainer's shares |
 | `test.ps1 -Play` | `All 24 required tests passed`, and a `Loaded the mod's jar, modular_mob_ai/models/<name>.mbw from iteration N` line per network the jar carries | what [playing.md](playing.md) promises: the bundled networks load and drive an agent, the commands, saving, sides and friendly fire, the Infinity loadouts, and that nothing a suite tunes reaches a real game |
-| `parity.ps1` | `parity ok` once per body, logits agreeing to about 1e-6, and `the plain ones agree to the bit at batches 1 to 64` | the game runs exactly the network PyTorch trained, **for every body this build has**, and the forward pass's explicit vector loops give the same bits as its plain ones |
+| `parity.ps1` | `parity ok` once per body for the plain network and again for the attended one, logits agreeing to about 1e-6, and `the plain ones agree to the bit at batches 1 to 64` on both arms | the game runs exactly the network PyTorch trained, **for every body this build has**, plain and attended — the attention over the enemy slots is different arithmetic and not merely a different size — and the forward pass's explicit vector loops give the same bits as its plain ones |
 
 The network the `-Play` line names is whatever is published: the suite asks the jar what it carries and holds every network
 in it to the rule, rather than naming one, so publishing or retiring a network changes the log line and nothing else. The
@@ -91,7 +91,7 @@ once its entropy came down; see [findings.md](findings.md#learning).
 Each test sets up one situation and checks the numbers a player would get. Seven classes, one per concern, all of them
 sharing `tests/Mechanics` — the arena, the agent, the brain that hands back what the test pressed, and the readings more
 than one of them takes. Every class has to be named in `ModularMobAiGameTests` or its tests simply do not run, which is why
-the count below is worth knowing: **57**.
+the count below is worth knowing: **58**.
 
 `AgentDrawnWeaponGameTest` (9) — a bow and a crossbow, and the slot the hand keeps while one is drawn:
 
@@ -130,13 +130,14 @@ fireball does:
 | `bedrockNeverBreaks` | it never gives, and hitting it costs nothing |
 | `placingUsesABlockUpAndNeverBuildsIntoAnything`, `placedBlocksFaceAsForAPlayer` | placing |
 
-`AgentPerceptionGameTest` (7) — what the agent sees of all of it. Four of these readings are held against the same numbers
+`AgentPerceptionGameTest` (8) — what the agent sees of all of it. Four of these readings are held against the same numbers
 the critic's privileged facts carry:
 
 | Test | Checks |
 | --- | --- |
 | `useProgressIsTheItemsOwnCharge` | the echo's use charge: a bow's power curve, a crossbow's wind, nothing with the hands free |
 | `onlyShotsComingAtTheAgentTakeASlot` | an arrow on its way takes a slot with a kind of its own; one crossing, one lying still and the agent's own take none, and the mob keeps slot zero |
+| `onlyTheBodiesInTheFightAreCounted` | `SELF_ENEMIES_IN_RANGE` counts the bodies **in the fight** and not the bodies in the view: one zombie coming for the agent and two standing beside it reads 0.1 and not 0.3, with all three holding slots, and 0.2 the moment one of the two is struck and comes for it |
 | `theClockRunsUpAndTheQuiverRunsDown` | the self block's clock is this fight's own ticks over this fight's own limit, never going backwards and reading 1 once the time is up; arrows left follow the hotbar and fall as a bow is fired; a body with nothing that shoots and no fight reads nought for both |
 | `aSlotSaysWhatTheOpponentCanDo` | a slot says what the mob in it can do rather than which mob it is, which is what tells a warden from a zombie |
 | `aCreeperSaysItExplodesAndHowCloseItIs` | it says it explodes, and how far along its fuse is |
@@ -166,9 +167,9 @@ a number and boots in seconds:
 
 | Test | Checks |
 | --- | --- |
-| `theNearestOfWhatIsInSightTakeTheSlots` | in `AgentCrowdGameTest`: twelve standing about in the box with nothing between them, and the ten nearest are the ones described, worked out from where they actually are rather than from where they were put |
+| `theNearestOfWhatIsInSightTakeTheSlots` | in `AgentCrowdGameTest`: twelve standing about in the box with nothing between them, and the ten nearest are the ones described, worked out from where they actually are rather than from where they were put — while the count of what is in the fight reads nought, since none of the twelve is in one |
 | `aWallKeepsTheLastKnownPlaceAndThenForgetsIt` | the memory, and the whole of the decision behind it: a wall between agent and zombie leaves the slot reading **where the body was**, present flag up and counted, and the zombie is then **moved** while hidden and the slot goes on saying the old corner — which is the claim, since wall vision would have followed it. Shown again it is in the same slot and read live again; three seconds unperceived and the slot is gone |
-| `leagueBystandersStandAsideUntilStruck` | the league's crowd is a crowd: on no team, never the other side of the fight, never paid for by `Episode#pays`, holding slots in the view all the same, kept off the agent every tick — and free to fight back once the agent has hit one |
+| `leagueBystandersStandAsideUntilStruck` | the league's crowd is a crowd: on no team, never the other side of the fight, never paid for by `Episode#pays`, never counted in the fight, holding slots in the view all the same, kept off the agent every tick — and free to fight back once the agent has hit one, which the count follows |
 | `aCrowdedFightIsNamedForItsOpponentAndItsCrowd` | `zombie+3_idle`, the share drawn 1 to 9 and at the rate this build was told |
 | `aCrowdIsDrawnSmallFarMoreOftenThanLarge` | **how big the crowd is**: 5,000 crowds drawn, each count within four standard deviations of its own weight (one over the count, taken from `Bystanders#chance` rather than copied), none drawn more often than the count below it, nine still drawn at all, and two thirds or more of the crowds four or fewer — the curriculum's answer to a crowded rate that sat at 44% while every count above four was a fight it mostly lost |
 | `aHostilePackIsDrawnSmallAndNamedForTheMobItIsAPackOf` | the packs' draw, the other half of the same curriculum: the name (`zombie+3_pack` is a zombie and three more of it), the share this build was told, and the skew — 2,500 packs drawn, each size within four standard deviations of `HostilePacks#chance`, none drawn more often than the size below it, six still drawn, and three fifths or more of them two or three |
@@ -226,9 +227,9 @@ scripts\test.ps1 -Horde -Weights models\blast6\best.mbw     a network of your ow
 
 | Test | Checks |
 | --- | --- |
-| `theCostOfPerceivingDoesNotGrowWithTheHorde` | two thousand mobs, no minds, a hundred and twenty ticks after a warm-up: the clips never pass twenty on any tick, and the mean time to perceive is under a millisecond — 230 to 410 µs measured, with half a millisecond as the target it warns about missing rather than failing on. They have no AI deliberately: what is timed is the **agent's** perception, and two thousand pathfinding zombies would time the server instead |
+| `theCostOfPerceivingDoesNotGrowWithTheHorde` | two thousand mobs, no minds, a hundred and twenty ticks after a warm-up: the clips never pass twenty on any tick, and the mean time to perceive is under a millisecond — 230 to 410 µs measured, with half a millisecond as the target it warns about missing rather than failing on. They have no AI deliberately: what is timed is the **agent's** perception, and two thousand pathfinding zombies would time the server instead. None of the two thousand is coming for the agent, so `SELF_ENEMIES_IN_RANGE` reads nought on every tick of it with the slots full the whole time, which is the invariance at the largest size anything here fields |
 | `inAHordeOfTwentyTheAgentFightsBackWhereAnIdleBodyDoesNot` | the same horde fought by the network and by a body that presses nothing. The network presses and the control does not, which is the floor; blows landed and ticks lived are reported |
-| `inAHordeOfAHundredTheCostStaysBoundedAndTheFightHoldsSlotZero` | the same at a hundred, where nothing is asked of the outcome |
+| `inAHordeOfAHundredTheCostStaysBoundedAndTheFightHoldsSlotZero` | the same at a hundred, where nothing is asked of the outcome. From a hundred up the count of what is in the fight is held to going past the ten slots at some point, which is what the clamp on that field is for |
 | `aHordeOfFiveHundredIsStillBounded` | five hundred, reported: the clips bounded, and slot 0 holding a body that is in the fight on every tick one is in the view |
 
 It prints a row per fight — mobs, what drove the agent, clips a tick, µs a tick, slots changing hands a tick, blows, the share of

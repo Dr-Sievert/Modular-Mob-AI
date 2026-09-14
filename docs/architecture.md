@@ -77,7 +77,7 @@ that would quietly make every trained network worse the moment it left the arena
 
 | Block | Size | Contents |
 | --- | --- | --- |
-| self | 24 | health, velocity (forward/up/right), on ground, in water, attack strength, use cooldown, using (main/off hand), sprinting, crouching, fall distance, body offset (sin/cos), pitch, aim (sin/cos), hurt time, enemies in range, **the clock**, **arrows left**, **its own armour**, **what its weapon takes off** |
+| self | 24 | health, velocity (forward/up/right), on ground, in water, attack strength, use cooldown, using (main/off hand), sprinting, crouching, fall distance, body offset (sin/cos), pitch, aim (sin/cos), hurt time, how many are in the fight, **the clock**, **arrows left**, **its own armour**, **what its weapon takes off** |
 | hotbar | 9 | what each hotbar slot holds |
 | echo | 20 | what the body actually did last tick: moved (forward/strafe), jumped, sprinted, sneaked, turned (yaw/pitch), attacked, hit, attack strength and damage, crit, sweep, sprint knockback, used (main/off hand/on a block), selected slot, swapped weapon, **how far the use has charged** |
 | enemies | 10 × 31 | every hostile the agent **perceives** within 32 blocks — in the cone and in sight, within hearing, or having just hit it — and anything shot at the agent, in ten stable slots, in its own frame. A slot it has stopped perceiving reads the last known place for three seconds. Where it is and what it is doing: present, position (forward/up/right), distance, velocity, health as a fraction, facing (sin/cos), pitch, **kind**, main and off hand item, swinging, using, sprinting, **whether it has the agent as its target**. **What it is**: max health and health left in hearts, attack damage, speed, width, height, knockback resistance, **armour**, a creeper's fuse, and whether it explodes, shoots or flies |
@@ -150,6 +150,16 @@ which is what leases are for. Empty slots and the ones holding a shot stay where
 slot 0 empty with the fight behind it — which is exactly what a squad fight has always looked like once its first member goes
 down, and so a shape every network has trained on.
 
+**How many are in the fight** (`SELF_ENEMIES_IN_RANGE`) counts, of everything the agent perceives this tick and everything it
+is still remembering, the bodies that are **engaged** — the same `EnemySlots#engaged` the order above goes by — over the ten
+slots and clamped at 2. An idle bystander counts nought however close it stands, so the slots and this field answer two
+different questions on purpose: the slots say what the agent can see, this says how many of them are on it. It used to count
+everything the agent was aware of, which every fight a network trained on agreed with, since in a plain, squad or self-play
+fight every body in the view is engaged — so the field's distribution over all of that training is untouched and the weights
+that read it stay valid. What it no longer does is read 1.0 in a crowd of nine idle monsters, seven standard deviations off a
+training mean of 0.11, which is the same fault as ten slots of their own columns arriving by another door.
+`EnemySlots#inRangeCount`, pinned by `onlyTheBodiesInTheFightAreCounted` in the mechanics suite.
+
 **What the opponent is, not just where.** `kind` has five values and every hostile mob in the game is the one value
 "monster", so for a long time a creeper, a zombie, a ravager and a warden filled a slot identically: same kind, health as
 a *fraction* so all of them read 1 when whole, and empty hands for all four. The league showed the bill — every ordinary
@@ -216,9 +226,10 @@ the same strength whichever body throws it; and it has armour for the same reaso
 
 **There is no count of the other side**, and that is the rule above doing its work. The critic gets one (`FOES`); what makes
 it worth having is that it counts the side whether anything is perceived or not, so an opponent behind a hill is still two
-zombies standing. In a real game there is no roster to count, and a count over the radius the agent does perceive is
-`enemies in range` again, since both already ask one rule for who is an enemy (`Allegiance#isEnemy`). A field that
-duplicates its neighbour costs weights and teaches nothing, so none was added.
+zombies standing. In a real game there is no roster to count, and a count over the radius the agent does perceive is `how many
+are in the fight` again — more nearly so now that that one counts the engaged, and a fight's side is engaged to a body — since
+who is an enemy and who is in the fight are each already one rule (`Allegiance#isEnemy`, `EnemySlots#engaged`) asked in both. A
+field that duplicates its neighbour costs weights and teaches nothing, so none was added.
 
 ### The three places the hands are not a player's
 
@@ -285,6 +296,28 @@ for the whole fight (blank at the start of each fight), and one head per kind of
 Training runs the GRU through chunks of 32 ticks. The widths are trainer options (`--h1 --hidden --h3`); the game reads
 them from the weight file, so a wider network needs no Java change. `scripts\parity.ps1` checks that the Java forward
 pass matches PyTorch's to within about 1e-6.
+
+**The enemy slots are attended, not handed over one slot at a time.** A network with `slotHeads` K > 0 is *attended*; one with
+K = 0 is the plain network, every column exactly where it was, and every published network is that. Before the first layer,
+each of the K heads scores every **occupied** slot — occupancy read from the raw row's present flag, before normalising —
+against a learned direction in the slot's own 31 fields, plus a virtual **empty token** with a score of its own; softmaxes
+those scores; and hands the first layer one slot-wide row, the convex combination of the normalised slot rows and the empty
+slot's. Then it strikes its best candidate off, so head k+1 ranks the rest: a hard exclusion, because two heads sharing a
+softmax both land on the same opponent and nothing ever reads the second body. Ties go to the lowest slot, a candidate that
+cannot beat the empty token is not taken at all, and with nothing occupied every head hands over the empty slot exactly. The
+first layer then takes `obsDim - slots * stride + K * stride` numbers. `Forward#attend`, and `scripts\parity.ps1` checks the
+attended pass as well as the plain one because it is different arithmetic and not merely a different size.
+
+Why: the first layer used to give each of the ten slots its own 31 columns, and in every one-on-one fight the opponent sits in
+slot 0 and the rest are zeros — so the normaliser's spread for the late slots sat on its floor and their columns never took a
+gradient worth the name. Measured on blast7's own best weights over sixty real one-on-one segments: **one** idle bystander
+written into slot 1 moved the deterministic aim 22° of yaw a tick, the attack logit by 2.4, and flipped the chosen hotbar slot
+on 32% of ticks; the first layer's shift from that one zombie was 1.0 in slot 0, the real signal, against 8.3 in slot 8. That
+is the whole of "one bystander costs 16 points and nine cost 45", and it is the representation and not the curriculum. A head
+reads one body out of whichever slot it is in, so what the network computes **cannot** depend on how many idle bodies stand
+about it: the invariance is by construction, and it is the one kind that survives a world the training never fielded. It
+replaces a max-pooling slot encoder that version 2 of the weight file could describe — no network with one was ever published,
+and this build refuses the format rather than pretending it can read it.
 
 That is the whole of what the game runs. The **critic**, which PPO needs to work out what a position was worth, is a second
 network that never leaves the trainer: it is not exported, no weight file mentions it, and nothing in the game has to carry
@@ -545,11 +578,11 @@ Written by the trainer, read by the mod. A 68-byte header, then every parameter 
 
 ```
 0   'MBW1'
-4   u32 format version (2)
+4   u32 format version (3)
 8   u32 schema id          which body's layout these weights were trained against
 12  u32 topology hash      CRC32 of the dimensions below
 16  u32 obsDim, h1, hidden, h3, outDim, stdDim
-40  u32 slotAt, slots, slotStride, slotEnc     the shared encoder over the enemy slots; all zero for a network without one
+40  u32 slotAt, slots, slotStride, slotHeads   attention over the enemy slots; all zero for a network without it
 56  f32 observation clip
 60  u32 iteration
 64  u32 parameter count
@@ -557,18 +590,26 @@ Written by the trainer, read by the mod. A 68-byte header, then every parameter 
 ```
 
 Parameters are in this order, matrices row major `[out][in]` exactly as PyTorch stores them:
-`normMean[obs] normStd[obs]` then, where there is a slot encoder, `slotW[slotEnc x slotStride] slotB[slotEnc]`, then
+`normMean[obs] normStd[obs]` then, where the network is attended,
+`scoreW[slotHeads x slotStride] scoreB[slotHeads] scoreEmpty[slotHeads]`, then
 `fc1W fc1B gruWih[3H x h1] gruBih gruWhh[3H x H] gruBhh fc2W fc2B outW outB logStd[std]`.
 The GRU gates are in PyTorch's order: reset, update, new. The observation normaliser travels in the file because the
 network is meaningless behind any other one.
 
-**Version 2 added the slot encoder**, which is four numbers in the header and one matrix in the parameters; `--slot-enc N`
-asks for it. Version 1 is still read, as a network without one, because the shapes it can describe are a subset of what 2
-can, and a network with no encoder hashes over the original six dimensions alone, so adding the four retired nothing.
-`slotEnc` is the width of a matrix run over each of the ten enemy slots in turn, with the largest answer per feature kept,
-so an opponent in slot three and the same opponent in slot seven are one thing rather than two sets of weights; the first
-layer then takes `obsDim - slots * slotStride + slotEnc` numbers instead of the whole row. `scripts\parity.ps1` checks both
-passes, because the pooled one is different arithmetic and not merely a different size.
+**Version 3 is attention over the enemy slots**, which is four numbers in the header and three small parameters before the
+first layer; `--slot-heads K` asks for it, and `train.py attend` carries a plain run's weights into it. Each of the
+`slotHeads` heads scores every occupied slot, softmaxes over them and over one empty token, and hands the first layer the
+`slotStride` floats it read; the slot a head scored highest is then excluded from the heads after it, the lowest slot index
+winning a tie. The first layer takes `obsDim - slots * slotStride + slotHeads * slotStride` numbers instead of the whole
+row, and what it sees no longer depends on which slot a body happens to sit in, or on how many idle bodies are standing
+about. An attended network's ten slots carry ten copies of one set of normaliser statistics, taken over occupied slots
+alone; nothing in the file says so, and the game simply applies what is written.
+
+Version 1 and version 2 are still read as plain networks: a plain network hashes over the original six dimensions alone and
+its four slot numbers are zero in every version, so every network ever published still loads. A version 2 file whose fourth
+number is **not** zero is refused by name — in version 2 that number was the width of a max-pooled encoder over the slots,
+which this build no longer runs, and no such network was ever published. `scripts\parity.ps1` checks both passes, because
+the attended one is different arithmetic and not merely a different size.
 
 Anything that doesn't add up is refused and never coerced: wrong magic, version or schema id, a hash that disagrees with
 the dimensions, a parameter count or file length that disagrees with the topology, a non-finite parameter.

@@ -8,13 +8,13 @@ import java.util.zip.CRC32;
  * The shape of the network, and where every parameter sits in the one flat array that holds them all.
  *
  * <pre>
- *   obs[obsDim] -> normalise -> [the slot encoder, when there is one] -> Linear fc1In to h1, ReLU
+ *   obs[obsDim] -> normalise -> [the attention over the enemy slots, when there is any] -> Linear fc1In to h1, ReLU
  *               -> GRU cell h1 to hidden -> Linear hidden to h3, ReLU
  *               -> Linear h3 to outDim, the raw logits the heads squash
  * </pre>
  *
- * <p>{@link #fc1In()} is the whole observation for an ordinary network, and for a {@link #pooled()} one it is everything
- * outside the enemy slots plus the {@code slotEnc} features that replace them.
+ * <p>{@link #fc1In()} is the whole observation for an ordinary network, and for an {@link #attended()} one it is everything
+ * outside the enemy slots plus the {@code slotHeads} slot-wide rows the heads pick out in their place.
  *
  * <p>The runtime reads its dimensions from here rather than from constants, so a wider or narrower network is a new
  * weight file and not a code change. Only one topology is live at a time, by policy; nothing in the code needs that.
@@ -26,7 +26,8 @@ import java.util.zip.CRC32;
  *
  * <pre>
  *   normMean[obsDim]  normStd[obsDim]                  the observation normaliser the network was trained behind
- *   slotW[slotEnc x slotStride]  slotB[slotEnc]        only when pooled(); the shared encoder over the enemy slots
+ *   scoreW[slotHeads x slotStride]  scoreB[slotHeads]  only when attended(); what each head ranks the enemy slots by
+ *   scoreEmpty[slotHeads]                              and what it scores the empty token at
  *   fc1W[h1 x fc1In]  fc1B[h1]
  *   gruWih[3H x h1]  gruBih[3H]  gruWhh[3H x H]  gruBhh[3H]   gates in PyTorch's order: reset, update, new
  *   fc2W[h3 x H]  fc2B[h3]
@@ -34,14 +35,14 @@ import java.util.zip.CRC32;
  *   logStd[stdDim]                                     the spread of the continuous heads while training
  * </pre>
  *
- * <p>The slot encoder comes before the first layer here because that is the order the pass applies it in, so the file is
- * read straight through without seeking.
+ * <p>The score parameters come before the first layer here because that is the order the pass applies them in, so the file
+ * is read straight through without seeking.
  *
  * <p>The normaliser lives in here on purpose. A network trained on normalised inputs and run on raw ones does not fail,
  * it just plays badly, so the statistics travel with the weights they belong to and cannot be forgotten.
  */
 public record Topology(int obsDim, int h1, int hidden, int h3, int outDim, int stdDim,
-                       int slotAt, int slots, int slotStride, int slotEnc) {
+                       int slotAt, int slots, int slotStride, int slotHeads) {
 
     /** A network with a plain first layer over the whole observation, which is what every file before version 2 holds. */
     public Topology(int obsDim, int h1, int hidden, int h3, int outDim, int stdDim) {
@@ -57,27 +58,30 @@ public record Topology(int obsDim, int h1, int hidden, int h3, int outDim, int s
                     + h3 + ", " + outDim + ", " + stdDim);
         }
 
-        if (slotEnc < 0 || slots < 0 || slotStride < 0 || slotAt < 0
-                || (slotEnc > 0 && (slots <= 0 || slotStride <= 0 || slotAt + slots * slotStride > obsDim))) {
+        if (slotHeads < 0 || slots < 0 || slotStride < 0 || slotAt < 0
+                || (slotHeads > 0 && (slots <= 0 || slotStride <= 0 || slotAt + slots * slotStride > obsDim))) {
 
-            throw new IllegalArgumentException("Not a usable slot encoder: " + slots + " slots of " + slotStride
-                    + " at " + slotAt + " into " + slotEnc + ", in an observation " + obsDim + " wide");
+            throw new IllegalArgumentException("Not a usable slot attention: " + slots + " slots of " + slotStride
+                    + " at " + slotAt + " read by " + slotHeads + " heads, in an observation " + obsDim + " wide");
         }
     }
 
     /**
-     * Whether the enemy slots are encoded and pooled before the first layer, rather than handed to it one number at a
-     * time. See the training side's Topology for why one shared matrix over ten slots is worth a change to the format.
+     * Whether the enemy slots are attended before the first layer, rather than handed to it one slot's worth of columns at
+     * a time. {@code slotHeads} is how many of them a head picks out: each head scores every occupied slot, takes a
+     * softmax over them and an empty token, and hands the first layer one slot-wide row. See {@link Forward} for the
+     * arithmetic and the training side's Topology for why ten slots of their own columns had to go.
      */
-    public boolean pooled() {
+    public boolean attended() {
 
-        return this.slotEnc > 0;
+        return this.slotHeads > 0;
     }
 
-    /** What the first layer takes: the whole observation, or everything outside the slots plus the features that replace them. */
+    /** What the first layer takes: the whole observation, or everything outside the slots plus the rows that replace them. */
     public int fc1In() {
 
-        return this.pooled() ? this.obsDim - this.slots * this.slotStride + this.slotEnc : this.obsDim;
+        return this.attended() ? this.obsDim - this.slots * this.slotStride + this.slotHeads * this.slotStride
+                : this.obsDim;
     }
 
     public int normMean() {
@@ -90,20 +94,26 @@ public record Topology(int obsDim, int h1, int hidden, int h3, int outDim, int s
         return this.normMean() + this.obsDim;
     }
 
-    /** The shared encoder over the slots, which comes before the first layer here because it does in the pass. */
-    public int slotW() {
+    /** What each head ranks the slots by, which comes before the first layer here because it does in the pass. */
+    public int scoreW() {
 
         return this.normStd() + this.obsDim;
     }
 
-    public int slotB() {
+    public int scoreB() {
 
-        return this.slotW() + this.slotEnc * this.slotStride;
+        return this.scoreW() + this.slotHeads * this.slotStride;
+    }
+
+    /** What each head scores the empty token at: one number a head, and the whole of what "nothing left" is worth to it. */
+    public int scoreEmpty() {
+
+        return this.scoreB() + this.slotHeads;
     }
 
     public int fc1W() {
 
-        return this.slotB() + this.slotEnc;
+        return this.scoreEmpty() + this.slotHeads;
     }
 
     public int fc1B() {
@@ -166,20 +176,20 @@ public record Topology(int obsDim, int h1, int hidden, int h3, int outDim, int s
      * A CRC32 of the dimensions as little endian integers. The training side works out the same number, and a weight file
      * whose stored hash disagrees with its own dimensions is corrupt rather than merely different.
      *
-     * <p>A network with no slot encoder hashes over the original six alone, exactly as it did before the other four
+     * <p>A network that attends nothing hashes over the original six alone, exactly as it did before the other four
      * existed. Adding a shape the format can describe must not change the identity of a shape it already described, or
      * every network trained before this would be refused for no reason at all.
      */
     public int hash() {
 
-        boolean pooled = this.pooled();
+        boolean attended = this.attended();
 
-        ByteBuffer bytes = ByteBuffer.allocate(pooled ? 40 : 24).order(ByteOrder.LITTLE_ENDIAN);
+        ByteBuffer bytes = ByteBuffer.allocate(attended ? 40 : 24).order(ByteOrder.LITTLE_ENDIAN);
         bytes.putInt(this.obsDim).putInt(this.h1).putInt(this.hidden).putInt(this.h3).putInt(this.outDim).putInt(this.stdDim);
 
-        if (pooled) {
+        if (attended) {
 
-            bytes.putInt(this.slotAt).putInt(this.slots).putInt(this.slotStride).putInt(this.slotEnc);
+            bytes.putInt(this.slotAt).putInt(this.slots).putInt(this.slotStride).putInt(this.slotHeads);
         }
 
         CRC32 crc = new CRC32();
@@ -190,7 +200,8 @@ public record Topology(int obsDim, int h1, int hidden, int h3, int outDim, int s
     @Override
     public String toString() {
 
-        String slots = this.pooled() ? this.slots + "x" + this.slotStride + " -> " + this.slotEnc + " pooled, " : "";
+        String slots = this.attended()
+                ? this.slots + "x" + this.slotStride + " -> " + this.slotHeads + " attended, " : "";
 
         return this.obsDim + " -> " + slots + this.fc1In() + " -> " + this.h1 + " -> GRU " + this.hidden + " -> "
                 + this.h3 + " -> " + this.outDim

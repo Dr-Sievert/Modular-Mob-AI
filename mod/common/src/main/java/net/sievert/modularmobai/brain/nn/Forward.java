@@ -185,9 +185,23 @@ public final class Forward {
         private float[][] fc2;
         private float[][] head;
 
-        /** What the first layer is given where the slots are pooled: null for a network whose first layer takes the row. */
+        /** What the first layer is given where the slots are attended: null for a network whose first layer takes the row. */
         private float[] encoded;
-        private float[][] slot;
+
+        /**
+         * One head's working room over the slots: what each occupied slot scored, and which slots are still candidates —
+         * occupied, and not already taken by an earlier head. Both as wide as the slots and allocated with the weights, so
+         * an attended tick allocates nothing at all.
+         */
+        private float[] slotScores;
+        private boolean[] slotCandidate;
+
+        /**
+         * The empty token's row: {@code clamp((0 - mean) / std, -clip, clip)} over one slot's fields, which is what an empty
+         * slot normalises to and so what a head hands the first layer when it attends nothing. A function of the weights
+         * alone, so it is worked out once here rather than per agent per tick.
+         */
+        private float[] slotEmpty;
 
         private WeightSet laidOut;
 
@@ -203,7 +217,7 @@ public final class Forward {
             int capacity = Math.max(16, agents + (agents >> 1));
 
             this.input = new float[capacity * topology.obsDim()];
-            this.encoded = topology.pooled() ? new float[capacity * topology.fc1In()] : null;
+            this.encoded = topology.attended() ? new float[capacity * topology.fc1In()] : null;
             this.layer1 = new float[capacity * topology.h1()];
             this.gatesIn = new float[capacity * 3 * topology.hidden()];
             this.gatesHidden = new float[capacity * 3 * topology.hidden()];
@@ -220,7 +234,10 @@ public final class Forward {
             Topology topology = weights.topology();
             float[] w = weights.params();
 
-            this.slot = topology.pooled() ? transpose(w, topology.slotW(), topology.slotStride(), topology.slotEnc()) : null;
+            this.slotScores = topology.attended() ? new float[topology.slots()] : null;
+            this.slotCandidate = topology.attended() ? new boolean[topology.slots()] : null;
+            this.slotEmpty = topology.attended() ? emptySlot(topology, w, weights.obsClip()) : null;
+
             this.fc1 = transpose(w, topology.fc1W(), topology.fc1In(), topology.h1());
             this.gruIh = transpose(w, topology.gruWih(), topology.h1(), 3 * topology.hidden());
             this.gruHh = transpose(w, topology.gruWhh(), topology.hidden(), 3 * topology.hidden());
@@ -230,6 +247,25 @@ public final class Forward {
             this.sums = new float[Math.max(Math.max(topology.h1(), 3 * topology.hidden()), Math.max(topology.h3(), topology.outDim()))];
             this.pairedSums = new float[this.sums.length];
             this.laidOut = weights;
+        }
+
+        /**
+         * What a slot of nothing normalises to, worked out from the very expression {@link Forward#normalise} uses, so that
+         * a genuinely empty slot and the empty token are the same bits and not merely the same number.
+         */
+        private static float[] emptySlot(Topology topology, float[] w, float clip) {
+
+            float[] empty = new float[topology.slotStride()];
+
+            for (int field = 0; field < empty.length; field++) {
+
+                float value = (0.0F - w[topology.normMean() + topology.slotAt() + field])
+                        / w[topology.normStd() + topology.slotAt() + field];
+
+                empty[field] = value < -clip ? -clip : Math.min(value, clip);
+            }
+
+            return empty;
         }
 
         /** The row major {@code [out][in]} matrix at {@code from}, as one array per input. */
@@ -298,9 +334,9 @@ public final class Forward {
 
         loops.normalise(obs, scratch.input, w, topology.normMean(), topology.normStd(), weights.obsClip(), in, agents);
 
-        // Where this network pools its enemy slots, the first layer is given the row with those slots replaced by what the
-        // shared encoder found in them; otherwise it is given the row itself.
-        final float[] intoFc1 = topology.pooled() ? pool(topology, w, obs, scratch, agents) : scratch.input;
+        // Where this network attends its enemy slots, the first layer is given the row with those ten slots replaced by the
+        // few its heads picked out of them; otherwise it is given the row itself.
+        final float[] intoFc1 = topology.attended() ? attend(topology, w, obs, scratch, agents) : scratch.input;
         final int fc1In = topology.fc1In();
 
         loops.linear(intoFc1, fc1In, scratch.layer1, h1, scratch.fc1, w, topology.fc1B(), agents, first, second);
@@ -349,6 +385,171 @@ public final class Forward {
     }
 
     /**
+     * The enemy slots read by a few attention heads, and the slot-wide rows they pick out put where the ten slots were.
+     * Returns the row the first layer should be given.
+     *
+     * <p><b>Why any of this.</b> The first layer used to give every one of the ten slots its own thirty one columns. In
+     * every one-on-one fight the opponent sits in slot 0 and the other nine are zeros, so the normaliser's spread for the
+     * late slots sat on its floor and their columns never took a gradient worth the name. Measured on blast7's own best
+     * weights over sixty real one-on-one segments: <b>one idle bystander</b> written into slot 1 moved the deterministic aim
+     * by 22 degrees of yaw a tick and flipped the chosen hotbar slot on a third of them, and the first layer's shift from
+     * that one zombie was 1.0 in slot 0, the real signal, against 8.3 in slot 8. That is the whole of "one bystander costs
+     * sixteen points and nine cost forty five", and it is the representation rather than the curriculum. A head reads one
+     * body at a time out of whichever slot it happens to be in, so what the network computes cannot depend on how many idle
+     * bodies stand about it: the invariance is by construction and not by training.
+     *
+     * <p>Per head, over the slots that are still candidates — occupied, and not already taken by an earlier head:
+     *
+     * <pre>
+     *   s_j     = scoreB[k] + sum over the fields of scoreW[k][f] * z[slot j][f]
+     *   s_empty = scoreEmpty[k]                     a virtual "nothing" slot, always a candidate
+     *   m       = max(s_empty, max of s_j)
+     *   row_k   = (exp(s_empty - m) * zEmpty + sum of exp(s_j - m) * z_j) / (exp(s_empty - m) + sum of exp(s_j - m))
+     * </pre>
+     *
+     * and then the highest scoring candidate is struck off, so head k+1 ranks the rest. That last step is a hard set
+     * operation on purpose: two heads sharing a softmax would both land on the same opponent, and nothing would ever read
+     * the second body. Ties go to the lowest slot, and a candidate that cannot beat the empty token is not taken at all,
+     * so a head that would rather read nothing leaves the bodies to the heads behind it.
+     *
+     * <p>Whether a slot is occupied is read from the <b>raw</b> observation rather than the normalised one, exactly as the
+     * max-pool this replaced did: the flag cannot be read after normalising, where an absent slot reads
+     * {@code (0 - mean) / std} and is not zero. With nothing occupied at all every head hands over {@code zEmpty} exactly —
+     * the empty token's weight is {@code exp(0)}, which is one, and one over one is the row itself — so a view of empty air
+     * gives the first layer precisely what an all-zero slot always gave it.
+     *
+     * <p>The same arithmetic in the same order as the training side's attention, and {@code scripts\parity.ps1} is what
+     * holds the two to it. Both sets of loops share this one routine, as the pool did: it is a few hundred multiplies
+     * against the quarter of a million the layers do, and writing it twice would be two places for the order of a sum to
+     * drift.
+     */
+    private static float[] attend(Topology topology, float[] w, float[] obs, Scratch scratch, int agents) {
+
+        final int in = topology.obsDim();
+        final int at = topology.slotAt();
+        final int slots = topology.slots();
+        final int stride = topology.slotStride();
+        final int heads = topology.slotHeads();
+        final int width = topology.fc1In();
+        final int after = at + slots * stride;
+
+        final float[] normalised = scratch.input;
+        final float[] out = scratch.encoded;
+        final float[] empty = scratch.slotEmpty;
+        final float[] scores = scratch.slotScores;
+        final boolean[] candidate = scratch.slotCandidate;
+
+        final int scoreW = topology.scoreW();
+        final int scoreB = topology.scoreB();
+        final int scoreEmpty = topology.scoreEmpty();
+
+        for (int agent = 0; agent < agents; agent++) {
+
+            final int from = agent * in;
+            final int to = agent * width;
+
+            System.arraycopy(normalised, from, out, to, at);
+            System.arraycopy(normalised, from + after, out, to + at + heads * stride, in - after);
+
+            // The present flag is the first number of a slot, in the row as the game wrote it.
+            for (int slot = 0; slot < slots; slot++) {
+
+                candidate[slot] = obs[from + at + slot * stride] > 0.5F;
+            }
+
+            for (int head = 0; head < heads; head++) {
+
+                final int weights = scoreW + head * stride;
+                final float nothing = w[scoreEmpty + head];
+
+                // What every candidate is worth to this head, and which of them is worth the most. Strictly greater, walking
+                // the slots upwards, so a tie goes to the lowest slot on both sides of the parity check.
+                int best = -1;
+                float bestScore = 0.0F;
+
+                for (int slot = 0; slot < slots; slot++) {
+
+                    if (!candidate[slot]) {
+
+                        continue;
+                    }
+
+                    final int row = from + at + slot * stride;
+                    float score = w[scoreB + head];
+
+                    for (int field = 0; field < stride; field++) {
+
+                        score += w[weights + field] * normalised[row + field];
+                    }
+
+                    scores[slot] = score;
+
+                    if (best < 0 || score > bestScore) {
+
+                        bestScore = score;
+                        best = slot;
+                    }
+                }
+
+                // The softmax, with the largest score taken out first so that a body a head is sure of cannot overflow the
+                // exponential. In double and rounded once, which is what the rest of the pass does with an exponential.
+                final float highest = best >= 0 && bestScore > nothing ? bestScore : nothing;
+                final float weightEmpty = (float) Math.exp((double) (nothing - highest));
+
+                float total = weightEmpty;
+
+                for (int slot = 0; slot < slots; slot++) {
+
+                    if (candidate[slot]) {
+
+                        scores[slot] = (float) Math.exp((double) (scores[slot] - highest));
+                        total += scores[slot];
+                    }
+                }
+
+                // The row the first layer gets: the empty token's share of it first, then each candidate's in slot order,
+                // and the division once at the end, so the sum is taken in one order on both sides.
+                final int into = to + at + head * stride;
+
+                for (int field = 0; field < stride; field++) {
+
+                    out[into + field] = weightEmpty * empty[field];
+                }
+
+                for (int slot = 0; slot < slots; slot++) {
+
+                    if (!candidate[slot]) {
+
+                        continue;
+                    }
+
+                    final int row = from + at + slot * stride;
+                    final float weight = scores[slot];
+
+                    for (int field = 0; field < stride; field++) {
+
+                        out[into + field] += weight * normalised[row + field];
+                    }
+                }
+
+                for (int field = 0; field < stride; field++) {
+
+                    out[into + field] /= total;
+                }
+
+                // Struck off, so the next head ranks the rest. A candidate that could not beat the empty token is left where
+                // it is: this head would rather read nothing than read it, and the heads behind it may feel otherwise.
+                if (best >= 0 && bestScore >= nothing) {
+
+                    candidate[best] = false;
+                }
+            }
+        }
+
+        return out;
+    }
+
+    /**
      * {@code dst[agent][j] = bias[j] + sum over k of w[j][k] * src[agent][k]}, for every agent in the batch.
      *
      * @param srcStride how far apart consecutive agents' inputs are in {@code src}
@@ -358,80 +559,6 @@ public final class Forward {
      * @param first     the running sums of the first agent of a pair, as wide as the widest layer
      * @param second    the same for the second, unused when a lone agent is left over
      */
-    /**
-     * The enemy slots through one shared encoder, the largest answer per feature kept, and the result put where the slots
-     * were. Returns the row the first layer should be given.
-     *
-     * <p>Only occupied slots count, and whether a slot is occupied is read from the <b>raw</b> observation rather than the
-     * normalised one. An empty slot is all zeros, so the encoder answers it with ReLU of the bias, and any feature whose
-     * bias came out positive would be won by slots holding nothing: the network's view of the worst thing in front of it
-     * would be partly noise from empty air. The flag cannot be read after normalising either, where an absent slot reads
-     * {@code (0 - mean) / std} and is not zero. With nothing in view every feature is zero, which no occupied slot can
-     * produce, since ReLU of a real slot is at worst zero and the mask lets nothing else through.
-     *
-     * <p>The same thing, in the same order, as the training side's Actor.encode. The parity check is what holds the two to
-     * it.
-     */
-    private static float[] pool(Topology topology, float[] w, float[] obs, Scratch scratch, int agents) {
-
-        final int in = topology.obsDim();
-        final int at = topology.slotAt();
-        final int slots = topology.slots();
-        final int stride = topology.slotStride();
-        final int enc = topology.slotEnc();
-        final int width = topology.fc1In();
-        final int after = at + slots * stride;
-
-        final float[] normalised = scratch.input;
-        final float[] out = scratch.encoded;
-        final float[][] rows = scratch.slot;
-        final int bias = topology.slotB();
-
-        for (int agent = 0; agent < agents; agent++) {
-
-            final int from = agent * in;
-            final int to = agent * width;
-
-            System.arraycopy(normalised, from, out, to, at);
-            System.arraycopy(normalised, from + after, out, to + at + enc, in - after);
-
-            for (int j = 0; j < enc; j++) {
-
-                out[to + at + j] = 0.0F;
-            }
-
-            for (int slot = 0; slot < slots; slot++) {
-
-                final int row = from + at + slot * stride;
-
-                // The present flag is the first number of a slot, in the row as the game wrote it.
-                if (obs[row] < 0.5F) {
-
-                    continue;
-                }
-
-                for (int j = 0; j < enc; j++) {
-
-                    float sum = w[bias + j];
-
-                    for (int k = 0; k < stride; k++) {
-
-                        sum += rows[k][j] * normalised[row + k];
-                    }
-
-                    float activated = sum < 0.0F ? 0.0F : sum;
-
-                    if (activated > out[to + at + j]) {
-
-                        out[to + at + j] = activated;
-                    }
-                }
-            }
-        }
-
-        return out;
-    }
-
     static void linear(float[] src, int srcStride, float[] dst, int dstStride, float[][] rows,
                        float[] params, int bias, int agents, float[] first, float[] second) {
 

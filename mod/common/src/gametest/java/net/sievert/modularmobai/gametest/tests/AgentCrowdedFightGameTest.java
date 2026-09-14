@@ -144,8 +144,9 @@ public class AgentCrowdedFightGameTest {
         }
 
         System.out.println("  slot 0 %: of the ticks the opponent could be seen, the share it held the first slot in; "
-                + "nearer %: the share a bystander was closer to the agent than its opponent; in range: what "
-                + "SELF_ENEMIES_IN_RANGE read; aim: how far off the opponent the agent was looking, in degrees; "
+                + "nearer %: the share a bystander was closer to the agent than its opponent; in fight: what "
+                + "SELF_ENEMIES_IN_RANGE read, which counts the bodies on the agent and not the bodies in its view; "
+                + "aim: how far off the opponent the agent was looking, in degrees; "
                 + "on opp / on idle / on air: where a press of attack landed.");
         System.out.println("=".repeat(70));
     }
@@ -331,7 +332,7 @@ public class AgentCrowdedFightGameTest {
             if (this.traced && this.tally.ticks <= TRACED_TICKS) {
 
                 Constants.LOG.info(String.format(Locale.ROOT,
-                        "crowd=%d tick=%3d slot=%2d inRange=%.2f bodies=%2d opp=%5.1fb idle=%5.1fb aim=%5.1f deg "
+                        "crowd=%d tick=%3d slot=%2d inFight=%.2f fighting=%2d opp=%5.1fb idle=%5.1fb aim=%5.1f deg "
                                 + "press=%s hit=%s health=%.1f/%.1f",
                         CROWDS[this.which], this.tally.ticks, slot, inRange, view.inRangeCount(), toOpponent,
                         nearest == Double.MAX_VALUE ? -1.0D : nearest, aimError(this.agent, this.opponent),
@@ -425,7 +426,7 @@ public class AgentCrowdedFightGameTest {
 
         private static final String HEADER = String.format(Locale.ROOT,
                 "  %6s %7s %7s %8s %8s %9s %7s %8s %8s %8s %8s",
-                "crowd", "fights", "won %", "slot 0 %", "nearer %", "mean slot", "in range", "aim", "on opp", "on idle",
+                "crowd", "fights", "won %", "slot 0 %", "nearer %", "mean slot", "in fight", "aim", "on opp", "on idle",
                 "on air");
 
         private final int crowd;

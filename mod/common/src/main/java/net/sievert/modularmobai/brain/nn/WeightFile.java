@@ -16,16 +16,16 @@ import java.nio.file.Path;
  *   8       4     u32 schema id        which body's observation and action layout these weights were trained against
  *   12      4     u32 topology hash    CRC32 of the dimensions below
  *   16      24    u32 obsDim, h1, hidden, h3, outDim, stdDim
- *   40      16    u32 slotAt, slots, slotStride, slotEnc     version 2 only; all zero for a network with no slot encoder
+ *   40      16    u32 slotAt, slots, slotStride, slotHeads   version 2 and later; all zero for a network that attends nothing
  *   56      4     f32 observation clip
  *   60      4     u32 training iteration
  *   64      4     u32 parameter count
  *   68      N*4   f32 parameters, in {@link Topology}'s segment order
  * </pre>
  *
- * <p>A version 1 file has no slot encoder, so its header stops after the six dimensions: the clip, the iteration and the
- * count sit at 40, 44 and 48, and the parameters begin at 52. It reads as a version 2 file whose four slot numbers are
- * zero, which is exactly the shape it describes.
+ * <p>A version 1 file has none of those four numbers, so its header stops after the six dimensions: the clip, the iteration
+ * and the count sit at 40, 44 and 48, and the parameters begin at 52. It reads as a file whose four slot numbers are zero,
+ * which is exactly the shape it describes.
  *
  * <p>Anything that does not add up is refused, loudly, and never coerced: no padding, no truncating, no guessing which
  * slot was meant. A network loaded against a layout it was not trained on does not crash, it reads health out of the
@@ -44,11 +44,18 @@ public final class WeightFile {
     public static final String EXTENSION = ".mbw";
 
     /**
-     * 2 added the four numbers that describe a shared encoder over the enemy slots; see Topology. A version 1 file still
-     * reads, as a network without one, because the shapes it can describe are a subset of what 2 can, and refusing them
-     * would retire every network trained before this for no reason.
+     * 2 added four numbers describing a shared max-pooling encoder over the enemy slots; 3 keeps the four words where they
+     * are and gives the last of them a new meaning, {@code slotHeads}, the attention that replaced that encoder — see
+     * {@link Topology} and {@link Forward}. Versions 1 and 2 still read wherever those four numbers are zero, which is
+     * every network ever published: the shapes they describe are a subset of what 3 describes, and refusing them would
+     * retire the whole of {@code models\} for no reason.
+     *
+     * <p>A version 2 file whose fourth number is <b>not</b> zero is the one thing that is refused rather than read. It is a
+     * max-pooled network, a shape this build no longer has a pass for, and reading its parameters as an attention's would
+     * be a network that loads and plays nonsense. Nothing was lost by dropping it: no pooled network was ever published or
+     * kept.
      */
-    public static final int VERSION = 2;
+    public static final int VERSION = 3;
     public static final int OLDEST = 1;
 
     private static final byte[] MAGIC = {'M', 'B', 'W', '1'};
@@ -110,13 +117,21 @@ public final class WeightFile {
         int outDim = buffer.getInt();
         int stdDim = buffer.getInt();
 
-        // Version 1 is exactly a version 2 file with these at zero: a network whose first layer takes the whole row.
+        // Version 1 is exactly a later file with these at zero: a network whose first layer takes the whole row.
         int slotAt = version >= 2 ? buffer.getInt() : 0;
         int slots = version >= 2 ? buffer.getInt() : 0;
         int slotStride = version >= 2 ? buffer.getInt() : 0;
-        int slotEnc = version >= 2 ? buffer.getInt() : 0;
+        int slotHeads = version >= 2 ? buffer.getInt() : 0;
 
-        Topology topology = new Topology(obsDim, h1, hidden, h3, outDim, stdDim, slotAt, slots, slotStride, slotEnc);
+        // The one file that is refused by name rather than read: version 2 wrote a max-pooling encoder's width into that
+        // last word, and the parameters behind it are one matrix over the slots and not a set of scores. Same number, other
+        // network; see VERSION.
+        if (version == 2 && slotHeads > 0) {
+
+            throw refuse(source, "is a max-pooled network, which this build no longer reads");
+        }
+
+        Topology topology = new Topology(obsDim, h1, hidden, h3, outDim, stdDim, slotAt, slots, slotStride, slotHeads);
 
         if (topology.hash() != storedHash) {
 

@@ -119,13 +119,13 @@ class EveryBodyTest(unittest.TestCase):
                         self.assertLessEqual(head.mask + head.size, schema.obs_dim, head.name)
 
     def test_an_actor_is_built_at_each_body_s_own_width(self) -> None:
-        """Straight out of the file, plain and pooled. Pooling reads where the enemy slots are from the body's schema,
+        """Straight out of the file, plain and attended. Attention reads where the enemy slots are from the body's schema,
         which is the only thing that knows, so it is the arithmetic most likely to have a width written into it."""
 
         for name, schema in self.bodies:
             with self.subTest(name):
-                for slots in (0, 16):
-                    actor = Actor.for_schema(schema, H1, MEMORY, H3, slot_enc=slots)
+                for slots in (0, 3):
+                    actor = Actor.for_schema(schema, H1, MEMORY, H3, slot_heads=slots)
 
                     self.assertEqual(actor.topology.obs_dim, schema.obs_dim)
                     self.assertEqual(actor.topology.out_dim, schema.logit_dim)

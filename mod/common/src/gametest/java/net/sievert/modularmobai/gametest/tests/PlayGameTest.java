@@ -192,7 +192,7 @@ public class PlayGameTest {
                     "The agent is not on best, which is " + Brains.describe(Brains.named("best")));
             helper.assertTrue(zombie.getHealth() < zombie.getMaxHealth(), "The zombie is unhurt after " + ticks[0]
                     + " ticks: " + swings[0] + " swings, " + String.format(java.util.Locale.ROOT, "%.2f",
-                    agent.distanceTo(zombie)) + " blocks away, slots " + agent.brain().enemySlots().inRangeCount());
+                    agent.distanceTo(zombie)) + " blocks away, " + agent.brain().enemySlots().inRangeCount() + " in the fight");
         });
     }
 
@@ -257,7 +257,7 @@ public class PlayGameTest {
                 if (tick > 0 && zombie.isAlive()) {
 
                     helper.assertTrue(agent.brain().brain() == Brains.named("best"), "The agent is not on best");
-                    helper.assertValueEqual(view.inRangeCount(), 1, "monsters in view");
+                    helper.assertValueEqual(view.inRangeCount(), 1, "monsters in the fight");
                     helper.assertTrue(occupies(view, zombie), "The zombie beside the agent has no slot");
                     helper.assertFalse(view.remembering(slotOf(view, zombie)), "The agent has lost sight of the zombie two "
                             + "blocks in front of it, which nothing in a seven block box should let it do");
@@ -285,7 +285,7 @@ public class PlayGameTest {
 
                     helper.assertTrue(died[0] >= 0, "The agent never killed the zombie beside it: "
                             + String.format(java.util.Locale.ROOT, "%.1f", zombie.getHealth()) + " health left, "
-                            + view.inRangeCount() + " monsters in view");
+                            + view.inRangeCount() + " monsters in the fight");
                 }
 
                 if (died[0] >= 0) {
@@ -437,7 +437,7 @@ public class PlayGameTest {
 
             if (watched % 20 == 0 || watched < 5) {
 
-                Constants.LOG.info(String.format(Locale.ROOT, "order=%d tick=%3d bodies=%2d engaged=%s slots=%s "
+                Constants.LOG.info(String.format(Locale.ROOT, "order=%d tick=%3d fighting=%2d engaged=%s slots=%s "
                                 + "aim=%5.1f deg press=%s health=%.1f", order[0] + 1, watched, view.inRangeCount(),
                         engaged ? "y" : "n", occupancy(fighter, view, crowd), aimError(fighter, view.occupant(0)),
                         fighter.executed().attacked ? "y" : "n", fighter.getHealth()));
@@ -1259,9 +1259,13 @@ public class PlayGameTest {
 
         run(helper, tick -> {
 
+            // Coming for the agent, so that the count below moves with the sides and not with a zombie's own mind: only what
+            // is in the fight is counted, and an ally set against the agent is in it from the tick it is set.
+            zombie.setTarget(agent);
+
             if (tick == 3) {
 
-                helper.assertValueEqual(view.inRangeCount(), 1, "enemies in view with an ally beside it");
+                helper.assertValueEqual(view.inRangeCount(), 1, "enemies in the fight with an ally beside it");
                 helper.assertTrue(occupies(view, zombie), "The zombie has no slot");
                 helper.assertFalse(occupies(view, ally), "The ally has a slot");
 
@@ -1270,7 +1274,7 @@ public class PlayGameTest {
 
             if (tick == 6) {
 
-                helper.assertValueEqual(view.inRangeCount(), 2, "enemies in view once the ally is one");
+                helper.assertValueEqual(view.inRangeCount(), 2, "enemies in the fight once the ally is one");
                 helper.assertTrue(occupies(view, ally), "The ally turned enemy has no slot");
 
                 disband(agent, ally, zombie);

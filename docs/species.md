@@ -257,9 +257,9 @@ scripts\parity.ps1
   parity ok
 ```
 
-The second width is what the first layer actually takes, which is the whole observation unless the network pools its enemy
-slots; see [architecture.md](architecture.md#mbw-weights). A plain run also goes round every body a second time with the
-pooled pass, since that is different arithmetic and not merely a different size.
+The second width is what the first layer actually takes, which is the whole observation unless the network attends its enemy
+slots; see [architecture.md](architecture.md#the-network). A plain run also goes round every body a second time with the
+attended pass, since that is different arithmetic and not merely a different size.
 
 If your body's figures come out at a tenth rather than a millionth, the two sides disagree about the layout: nearly always
 a block offset, a head that reads the wrong outputs, or an encoder writing a field at the wrong index.
@@ -276,7 +276,7 @@ a block offset, a head that reads the wrong outputs, or an encoder writing a fie
 5. A renderer in both loaders' clients, only if it is not to borrow the player model; a shape in `viewer/models/` only if
    its own silhouette matters in the 3D replay.
 6. A lang entry per mob it declares, and a spawn-egg one if any of them is a `WORLD` mob.
-7. `scripts\parity.ps1` — it checks your body without being told to, plain and pooled. It must say `parity ok` for it.
+7. `scripts\parity.ps1` — it checks your body without being told to, plain and attended. It must say `parity ok` for it.
 8. `scripts\league.ps1 -Test` — `trainer/tests/test_species.py` walks every body without being told about yours: the
    layout adds up, an actor builds at its width, a shard of its width round trips, and the blocks it has and has not are
    asked for rather than assumed.

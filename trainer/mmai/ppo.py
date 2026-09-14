@@ -176,10 +176,11 @@ class Config:
     # critic caught up. Zero for a run from scratch, where there is nothing to protect.
     critic_warmup: int = 0
 
-    # Width of the shared encoder over the enemy slots, or zero for a first layer that takes every slot's numbers on their
-    # own. See weights.Topology: ten slots of the same shape, learned once instead of ten times, which is the difference
-    # between beating one skeleton 84% of the time and two of them 9%.
-    slot_enc: int = 0
+    # How many heads read the enemy slots, or zero for a first layer that takes every slot's numbers where they sit. See
+    # model.SlotAttention: ten slots of the same shape, read for what is in them instead of for where they are, so that
+    # idle bodies standing about cannot move the first layer. One idle bystander written into blast7's slot 1 moved its
+    # aim by 22 degrees a tick; three heads is what the converter builds, and there is no reason yet to think more helps.
+    slot_heads: int = 0
 
     # How hard every update pulls the policy back towards the teacher it was copied from, zero for a run with no teacher.
     # Started from a 90% copy, reinforcement learning twice made the fighter it would ship worse: advantages from a critic
@@ -322,7 +323,7 @@ class Trainer:
 
         self.heads = PolicyHeads(schema.heads)
         self.actor = Actor.for_schema(schema, config.h1, config.hidden, config.h3, config.obs_clip,
-                                      config.slot_enc).to(self.device)
+                                      config.slot_heads).to(self.device)
         self.critic = self._new_critic((config.critic_gru_width or config.hidden) if config.critic_gru else 0)
 
         self.optimizer = torch.optim.Adam(
@@ -354,7 +355,14 @@ class Trainer:
             torch.optim.Adam(self.aux.parameters(), lr=config.learning_rate, eps=1e-5) if self.aux is not None else None
         )
 
-        self.normalizer = RunningNormalizer(schema.obs_dim)
+        # An attended network's slots share one set of statistics, taken from the occupied slots alone; see
+        # model.RunningNormalizer. A plain one keeps the untied statistics it has always had.
+        topology = self.actor.topology
+
+        self.normalizer = RunningNormalizer(
+            schema.obs_dim,
+            slots=(topology.slot_at, topology.slots, topology.slot_stride) if topology.attended() else None,
+        )
         self.normalizer.into(self.actor)
         self.reward_scaler = RewardScaler(config.gamma)
 
@@ -417,7 +425,8 @@ class Trainer:
         """
 
         return Critic(self.schema.obs_dim, self.config.hidden, self.config.critic_width, gru,
-                      (PRIVILEGED_COLUMNS if privileged is None else privileged) if gru else 0).to(self.device)
+                      (PRIVILEGED_COLUMNS if privileged is None else privileged) if gru else 0,
+                      self.actor.topology).to(self.device)
 
     # -----------------------------------------------------------------------------------------------------------
     # One iteration
@@ -816,7 +825,8 @@ class Trainer:
             critic_hidden = torch.zeros(len(group), self.critic.gru_width, device=self.device)
 
             logits, memory = self.actor(obs, hidden)
-            values, critic_memory = self.critic(self.actor.normalise(obs), memory, told, critic_hidden)
+            values, critic_memory = self.critic(self.actor.normalise(obs), memory, told, critic_hidden, obs,
+                                                self.actor.slot_empty())
             log_probs = self.heads.log_prob(self.heads.distributions(logits, self.actor.log_std, obs), actions)
 
             memory = memory.cpu().numpy()
@@ -1110,7 +1120,8 @@ class Trainer:
                 # recovered the same way, so a chunk in the middle of a fight starts from where the chunk before it ended
                 # rather than from nothing.
                 values, _ = self.critic(self.actor.normalise(obs), batch["memory"][rows],
-                                        batch["privileged"][rows], batch["critic_hidden"][rows])
+                                        batch["privileged"][rows], batch["critic_hidden"][rows], obs,
+                                        self.actor.slot_empty())
 
                 ratio = (log_probs - old_log_probs).exp()
                 chunk_advantages = advantages[rows]

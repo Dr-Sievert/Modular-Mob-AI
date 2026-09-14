@@ -3,6 +3,7 @@
     python train.py loop --run ../runs/default      wait for rollouts, learn, export the next weights, repeat
     python train.py init --run ../runs/default      just write iteration zero's weights and stop
     python train.py imitate --run ../runs/imitate   start a run by copying the recorded scripted fighter
+    python train.py attend --from R --into S        carry a plain run's network over into an attended one
     python train.py parity --schema S --out DIR     build the fixture the game checks its own forward pass against
 
 The game is what runs the network; this only improves it. The two never talk directly: the game writes rollout shards
@@ -40,10 +41,13 @@ logger = log.get("train")
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train Modular Mob AI agents from recorded rollouts.")
-    parser.add_argument("command", choices=["loop", "init", "imitate", "parity"], nargs="?", default="loop")
+    parser.add_argument("command", choices=["loop", "init", "imitate", "attend", "parity"], nargs="?", default="loop")
     parser.add_argument("--run", help="the run folder the game is writing into")
     parser.add_argument("--schema", help="the layout the game wrote, defaults to <run>/schema.json")
     parser.add_argument("--out", help="where to put the parity fixture")
+    parser.add_argument("--from", dest="source", help="attend: the plain run to carry over, or a state file by path")
+    parser.add_argument("--into", help="attend: the run folder to write, which must not be the one being read")
+    parser.add_argument("--heads", type=int, default=3, help="attend: how many heads read the enemy slots")
     parser.add_argument("--demos", help="the recorded teacher, for imitate and for the pull towards it; defaults to <run>/demos")
     parser.add_argument("--imitation-epochs", type=int, default=80, help="passes over the teacher's record")
     parser.add_argument("--log-dir", help="defaults to <run>/logs, or the parity folder")
@@ -70,9 +74,22 @@ def main() -> None:
 
     lower_priority()
 
-    default_logs = Path(arguments.run) / "logs" if arguments.run else Path(arguments.out or "parity")
+    written_to = arguments.run or arguments.into
+    default_logs = Path(written_to) / "logs" if written_to else Path(arguments.out or "parity")
     path = log.setup(arguments.log_dir or default_logs)
     logger.info("logging to %s", path)
+
+    if arguments.command == "attend":
+        from mmai.attend import convert
+
+        if not arguments.source or not arguments.into:
+            parser.error("attend needs --from, the plain run, and --into, the run to write")
+
+        if Path(arguments.source).resolve() == Path(arguments.into).resolve():
+            parser.error("attend writes a new run; --into has to be somewhere other than --from")
+
+        convert(Path(arguments.source), Path(arguments.into), max(1, arguments.heads))
+        return
 
     if arguments.command == "parity":
         from mmai.parity import generate
@@ -84,7 +101,7 @@ def main() -> None:
         logger.info("%s", schema.describe())
 
         directory = generate(arguments.out or "parity", schema, config.h1, config.hidden, config.h3, config.obs_clip,
-                             slot_enc=config.slot_enc)
+                             slot_heads=config.slot_heads)
         logger.info("wrote the parity fixture to %s", directory.resolve())
         return
 
