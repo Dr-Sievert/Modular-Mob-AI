@@ -2,16 +2,17 @@
 
 A neural-network brain for Minecraft mobs. A player-shaped mob, the **agent**, is driven every tick by a small network
 running inside the game in plain Java. The network is trained offline with PyTorch PPO from what the game recorded.
-Today its published network wins **82.7%** of one-on-one fights against a league of every vanilla mob that fights fair,
-two points more than the hand-written fighter it was copied from on the same bench (80.3%), and **71.8%** of the same
-league once a quarter of its fights have a crowd of monsters standing about them, six and a half points *behind* that
-fighter (78.3%) — 1,000 and 2,000 fights a row, one worker, measured on this build on 2026-09-14; see docs/models.md. The
-crowd was the open problem, and on 2026-09-14 it was found to be the representation and not the curriculum: the first
-layer read every enemy slot through its own weights, and nine of the ten had never been trained, so one bystander bent the
-aim by 22° a tick. A network now reads its slots through attention heads (weight file version 3), a plain network converts
-in place with no retraining, and the converted `blast7` went from 41% to 79% with four to nine idle monsters about it on one
-bench while its one-on-one rate did not move; it trains on as `blast8`, unpublished until benched against `blast6` in one
-sitting. Packs that all attack are the open problem now, and the teacher is where that work starts. Bows, crossbows,
+Today its published network, `blast8`, wins **79.1%** of a league of every vanilla mob that fights fair, with a crowd of
+idle monsters standing about a quarter of the fights and packs of a mob all attacking in a tenth — level with the
+hand-written fighter it descends from (79.1%) on the same bench, one sitting, one worker, 2,000 fights each on 2026-09-14;
+by kind, 85.2% one on one (that fighter 81.0), **80.9% with one to nine idle monsters in view (78.5)**, and 46.5% against
+packs of two to six all attacking (67.9); see docs/models.md. The crowd was the open problem until 2026-09-14, when it was
+found to be the representation and not the curriculum: the first layer read every enemy slot through its own weights, nine
+of the ten had never been trained, and one bystander bent the aim by 22° a tick. A network now reads its slots through
+attention heads (weight file version 3), a plain network converts in place with no retraining, and the converted network
+went from 35% to 82% with four to nine idle monsters about it while its one-on-one rate did not move. **Packs that all
+attack are the open problem now**: the scripted fighter kites and gives ground and wins 68% of them, the network 47%, and
+the run is being pulled towards a record of the fighter's answers on pack-heavy fights. Bows, crossbows,
 shields, axes, mining and placing work under a player's rules. That league is an Elo one and it is what a run trains and is
 judged on: 37 mobs, 11 squads, a difficulty ladder, the hand-written fighter held at 1500 as the anchor, published networks
 and the run's own checkpoints.
