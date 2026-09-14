@@ -21,8 +21,8 @@ import net.minecraft.util.RandomSource;
  * melee ones far more. Drawing the pairing itself spends the fights where a loadout can still learn something, and hands a
  * loadout that is losing more of the matchups it is losing.
  *
- * <p>The table is loadouts times opponents, ten against 49 at the start of a run and against 145 once every rung of the
- * difficulty ladder is open, so 490 to 1,450 pairings and a few tens of kilobytes of file. It is read once whenever the
+ * <p>The table is loadouts times opponents, ten against 62 at the start of a run and against 184 once every rung of the
+ * difficulty ladder is open, so 620 to 1,840 pairings and a few tens of kilobytes of file. It is read once whenever the
  * trainer writes a new one, not per fight.
  *
  * <p>Only the training fights are drawn from it. An evaluation fight draws its opponent evenly and its loadout evenly,

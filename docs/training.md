@@ -426,7 +426,7 @@ hold a copied policy still and a loss that moves the memory moves the policy wit
 
 ### The league: `-Suite league` and `scripts\league.ps1`
 
-A league run fights 37 mobs, 11 squads of several mobs at once, the scripted fighter, any published networks it was told
+A league run fights 48 mobs, 11 squads of several mobs at once, 2 jockeys, the scripted fighter, any published networks it was told
 to field, and frozen checkpoints of itself, with a loadout drawn every fight; see
 [architecture.md](architecture.md#the-league). Matchmaking sends training fights where the agent wins about half the
 time, and what it draws is a **pairing** of one loadout with one opponent rather than the opponent alone, so a bow is handed
@@ -464,8 +464,8 @@ far more. Pairing them puts the fights where a loadout can still learn something
 the matchups it is losing. A pairing near an even result gets the most fights, a floor keeps every one of them coming round,
 and a cap is the opponent's: the warden's two thousandths cover every loadout against it between them.
 
-The table is loadouts times opponents: 490 pairings at the start of a run (10 loadouts against 48 mobs and squads plus the
-scripted fighter), 1,450 once every rung of the ladder is open, and 80 more for the self-play pool. A pairing's own record is
+The table is loadouts times opponents: 620 pairings at the start of a run (10 loadouts against 61 mobs, squads and jockeys
+plus the scripted fighter), 1,840 once every rung of the ladder is open, and 80 more for the self-play pool. A pairing's own record is
 thin at that size — a couple of thousand fights fade through the whole table, so single figures each and plenty with none — so
 **a pairing's chance is never asked to stand on its own**: it is the pairing's own record over a prior worth `--league-prior`
 fights, and that prior is the opponent's chance moved by how the loadout does over all of its fights, which is a tenth of the

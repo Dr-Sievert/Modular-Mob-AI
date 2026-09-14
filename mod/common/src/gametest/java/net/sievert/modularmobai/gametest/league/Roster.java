@@ -20,6 +20,7 @@ import net.minecraft.world.entity.NeutralMob;
 import net.minecraft.world.entity.SpawnGroupData;
 import net.minecraft.world.entity.ai.Brain;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
+import net.minecraft.world.entity.animal.Panda;
 import net.minecraft.world.entity.monster.Slime;
 import net.minecraft.world.entity.monster.Vex;
 import net.minecraft.world.entity.monster.Zombie;
@@ -43,22 +44,38 @@ import net.sievert.modularmobai.gametest.terrain.TerrainSites;
  *   -Dmodular_mob_ai.league.opponents=NAME,NAME   only these, by name; every one of them unless given
  * </pre>
  *
- * <p>Every hostile mob a player meets in a fair fight is here: the ones that walk, the ones that fly, the ones that only
- * fight when provoked, and the two golems a player builds. Left out are the bosses (the ender dragon, the wither and the
- * elder guardian), the guardian, which only fights in water, the shulker, which never leaves its block, and the
- * illusioner, which never spawns in a survival world.
+ * <p>Every mob a player meets in a fair fight on land is here: the ones that walk, the ones that fly, the babies, the ones
+ * that only fight when provoked, and the two golems a player builds. Left out, and each for a reason of its own:
+ *
+ * <ul>
+ *   <li>the <b>bosses</b> — the ender dragon and the wither — which are not a fair fight and not one mob;</li>
+ *   <li>the <b>guardian</b> and the <b>elder guardian</b>, which only fight in water. The league's ground is the terrain
+ *       library's open sky and dry land, a guardian out of water flops and cannot use its beam, and a fight held in water
+ *       would be a different fight for every other player in the league as well;</li>
+ *   <li>the <b>shulker</b>, which never leaves its block: it does not come, cannot be made to, and a fight against one is a
+ *       fight against a wall that shoots;</li>
+ *   <li>the <b>illusioner</b>, which never spawns in a survival world at all, so no player meets it.</li>
+ * </ul>
  *
  * <p>Every one gets the finalizeSpawn it would get spawning on its own, which is what arms it: the vindicator's axe, the
  * skeleton's bow, the piglin's golden sword or crossbow, the vex's iron sword, now and then some armour. On top of that:
  *
  * <ul>
- *   <li>Babies are grown up. A baby piglin or hoglin never attacks at all, and a baby zombie is a different fight from
- *       the zombie a rating is meant to be for; so is the one in twenty that rides a chicken, and the spider in a hundred
- *       with a skeleton on its back. A wolf, a polar bear and a bee come as cubs as often as one in twenty.</li>
+ *   <li>Babies are grown up <b>where they are not a player of their own</b>. A baby piglin or hoglin never attacks at all,
+ *       and a wolf, a polar bear and a bee come as cubs as often as one in twenty, so all of those are grown. A baby of the
+ *       zombie family is a different fight rather than a smaller one — half again as fast as the agent walks, a step and a
+ *       half tall and three tenths of a block wide — so it is four players of its own instead, {@code baby_zombie} and its
+ *       kind, spawned as babies and kept babies, and the grown zombie's rating goes on meaning what it meant.</li>
  *   <li>Piglins, piglin brutes and hoglins do not turn into zombies. Out of the Nether they would after fifteen seconds,
  *       and the fight would be against something else.</li>
- *   <li>A slime or a magma cube is always the biggest there is. The smallest slime does no damage at all, and a middling
- *       one little more.</li>
+ *   <li>A slime and a magma cube are fielded at <b>all three of their sizes</b>, each a player of its own, since a body that
+ *       hits for four and splits twice and a body that dies to one blow are not the same fight. A small slime cannot hurt the
+ *       agent at all — vanilla's own {@code isDealsDamage} is false while it is tiny — so that fight is a win or the clock
+ *       and nothing else; a small magma cube overrides that and hits for three.</li>
+ *   <li>Three animals that fight only once something has provoked them, and that a player meets on land: the llama, which
+ *       spits and so gets a shooting match's clock and room; the goat, which rams; and the panda, which is fielded with the
+ *       aggressive gene, the one that fights back. The goat is the only mob here that cannot be handed a target at all; see
+ *       {@link #charge}.</li>
  *   <li>A snow golem cannot melt. Its own aiStep burns it a heart a tick in any biome warm enough to rain, which is a
  *       third of the terrain library, and a golem that dies of the weather hands the agent a win it never fought for. It
  *       is given fire resistance for good, which is what that damage goes through.</li>
@@ -107,8 +124,15 @@ public final class Roster {
 
     private static final String PROPERTY = "modular_mob_ai.league.opponents";
 
-    /** How big a slime or a magma cube is made: the biggest a natural one comes. */
+    /**
+     * How big a slime or a magma cube is made. The three vanilla sizes are three different fights and each is a player of
+     * its own: the big one hits for four and splits twice, the middling one hits for two, and the small one is a body to
+     * finish. A small <b>slime</b> cannot hurt the agent at all — vanilla's own {@code isDealsDamage} is false while it is
+     * tiny — so that fight is only ever a win or the clock; a small <b>magma cube</b> overrides that and hits for three.
+     */
     private static final int SLIME_SIZE = 4;
+    private static final int SLIME_MEDIUM = 2;
+    private static final int SLIME_SMALL = 1;
 
     /** How long a piglin's anger lasts once it is angered, and how often it is angered again well before that runs out. */
     private static final long ANGER_TICKS = 600L;
@@ -159,6 +183,16 @@ public final class Roster {
      */
     public static final int MELEE_TICKS = AgentReward.DEFAULT_MAX_TICKS;
     private static final int RANGED_TICKS = 1800;
+
+    /**
+     * And what a fight against something that <b>splits</b> is given, which is a third shape again: the same ground and the
+     * same seven to eleven blocks, but as many as twenty bodies to put down instead of one, since a big slime leaves two to
+     * four middling ones and each of those leaves two to four small. Measured on the scripted fighter, 160 fights, one
+     * worker: on the minute it won 87.5% of the plain slime and 58.3% of the hard one, and every fight it did not win was
+     * the clock running out with bodies still standing; on this, 94.4% and 82.4%, the timeouts falling from 12.5% and 41.7%
+     * to 5.6% and 17.6%. The smallest size keeps the minute, having nothing to split into.
+     */
+    private static final int SPLITTING_TICKS = 1800;
     private static final int FLYING_TICKS = 2400;
     private static final int MELEE_START = 0;
     private static final int RANGED_START = 20;
@@ -190,10 +224,11 @@ public final class Roster {
      * @param start       how far away it starts, or zero for the ordinary seven to eleven blocks
      * @param trainingCap the largest share of a run's training fights it may take, 1 for no cap at all
      * @param unreachable whether nothing but a shot can ever touch it, see {@link #unreachableAt}
+     * @param rides       whether it is put on the back of the mob before it on its side, see {@link #riding}
      */
     public record Member(String name, EntityType<? extends Mob> type, @Nullable Supplier<SpawnGroupData> spawnData,
                          Preparation preparation, Provocation provocation, int height, int ticks, int start,
-                         double trainingCap, boolean unreachable) {
+                         double trainingCap, boolean unreachable, boolean rides) {
 
         /**
          * The same mob, starting that far up in the air, with a flyer's clock and a flyer's room. It still comes down to the
@@ -202,7 +237,7 @@ public final class Roster {
         public Member flyingAt(int height) {
 
             return new Member(this.name, this.type, this.spawnData, this.preparation, this.provocation, height, FLYING_TICKS,
-                    RANGED_START, this.trainingCap, this.unreachable);
+                    RANGED_START, this.trainingCap, this.unreachable, this.rides);
         }
 
         /**
@@ -215,21 +250,42 @@ public final class Roster {
         public Member unreachableAt(int height) {
 
             return new Member(this.name, this.type, this.spawnData, this.preparation, this.provocation, height, FLYING_TICKS,
-                    RANGED_START, this.trainingCap, true);
+                    RANGED_START, this.trainingCap, true, this.rides);
+        }
+
+        /**
+         * The same mob with longer on the clock and the room it always had, for one whose fight is more bodies rather than
+         * more distance: a slime, which leaves two to four copies of itself every time one dies.
+         */
+        public Member lasting(int ticks) {
+
+            return new Member(this.name, this.type, this.spawnData, this.preparation, this.provocation, this.height, ticks,
+                    this.start, this.trainingCap, this.unreachable, this.rides);
         }
 
         /** The same mob with a shooting match's clock and room, for one that fights from a distance on the ground. */
         public Member ranged() {
 
             return new Member(this.name, this.type, this.spawnData, this.preparation, this.provocation, this.height,
-                    RANGED_TICKS, RANGED_START, this.trainingCap, this.unreachable);
+                    RANGED_TICKS, RANGED_START, this.trainingCap, this.unreachable, this.rides);
+        }
+
+        /**
+         * The same mob, put on the back of whatever stands before it on its side once both are in the world: a jockey, which
+         * is the only thing in the league that is two bodies and one fight rather than two bodies side by side. See
+         * {@link Opposition#mount}.
+         */
+        public Member riding() {
+
+            return new Member(this.name, this.type, this.spawnData, this.preparation, this.provocation, this.height,
+                    this.ticks, this.start, this.trainingCap, this.unreachable, true);
         }
 
         /** The same mob, given at most that share of a run's training fights. */
         public Member cappedAt(double share) {
 
             return new Member(this.name, this.type, this.spawnData, this.preparation, this.provocation, this.height,
-                    this.ticks, this.start, share, this.unreachable);
+                    this.ticks, this.start, share, this.unreachable, this.rides);
         }
 
         /** What its finalizeSpawn is handed, or null for what it would pick itself. */
@@ -263,6 +319,12 @@ public final class Roster {
     /** Neither a baby nor a chicken jockey, for every kind of zombie. */
     private static final Supplier<SpawnGroupData> GROWN_ZOMBIE = () -> new Zombie.ZombieGroupData(false, false);
 
+    /**
+     * A baby, and never a chicken jockey, for every kind of zombie: the second argument is vanilla's own leave to put one on
+     * a chicken, and a jockey is a fight of its own with a name of its own, {@code chicken_jockey}.
+     */
+    private static final Supplier<SpawnGroupData> BABY_ZOMBIE = () -> new Zombie.ZombieGroupData(true, false);
+
     /** Grown up, for an animal that comes as a cub one time in twenty: a wolf, a polar bear, a bee. */
     private static final Supplier<SpawnGroupData> GROWN_ANIMAL = () -> new AgeableMob.AgeableMobGroupData(false);
 
@@ -272,6 +334,10 @@ public final class Roster {
             member("husk", EntityType.HUSK, GROWN_ZOMBIE, AS_SPAWNED, Roster::target),
             member("drowned", EntityType.DROWNED, GROWN_ZOMBIE, AS_SPAWNED, Roster::target),
             member("zombie_villager", EntityType.ZOMBIE_VILLAGER, GROWN_ZOMBIE, AS_SPAWNED, Roster::target),
+            member("baby_zombie", EntityType.ZOMBIE, BABY_ZOMBIE, Roster::infant, Roster::target),
+            member("baby_husk", EntityType.HUSK, BABY_ZOMBIE, Roster::infant, Roster::target),
+            member("baby_drowned", EntityType.DROWNED, BABY_ZOMBIE, Roster::infant, Roster::target),
+            member("baby_zombie_villager", EntityType.ZOMBIE_VILLAGER, BABY_ZOMBIE, Roster::infant, Roster::target),
             member("skeleton", EntityType.SKELETON, null, AS_SPAWNED, Roster::target).ranged(),
             member("stray", EntityType.STRAY, null, AS_SPAWNED, Roster::target).ranged(),
             member("bogged", EntityType.BOGGED, null, AS_SPAWNED, Roster::target).ranged(),
@@ -286,8 +352,12 @@ public final class Roster {
             member("enderman", EntityType.ENDERMAN, null, AS_SPAWNED, Roster::target),
             member("silverfish", EntityType.SILVERFISH, null, AS_SPAWNED, Roster::target),
             member("endermite", EntityType.ENDERMITE, null, AS_SPAWNED, Roster::target),
-            member("slime", EntityType.SLIME, null, Roster::biggest, Roster::touch),
-            member("magma_cube", EntityType.MAGMA_CUBE, null, Roster::biggest, Roster::touch),
+            member("slime", EntityType.SLIME, null, Roster::biggest, Roster::touch).lasting(SPLITTING_TICKS),
+            member("slime_medium", EntityType.SLIME, null, Roster::middling, Roster::touch).lasting(SPLITTING_TICKS),
+            member("slime_small", EntityType.SLIME, null, Roster::smallest, Roster::touch),
+            member("magma_cube", EntityType.MAGMA_CUBE, null, Roster::biggest, Roster::touch).lasting(SPLITTING_TICKS),
+            member("magma_cube_medium", EntityType.MAGMA_CUBE, null, Roster::middling, Roster::touch).lasting(SPLITTING_TICKS),
+            member("magma_cube_small", EntityType.MAGMA_CUBE, null, Roster::smallest, Roster::touch),
             member("zombified_piglin", EntityType.ZOMBIFIED_PIGLIN, GROWN_ZOMBIE, AS_SPAWNED, Roster::target),
             member("piglin", EntityType.PIGLIN, null, Roster::grownPiglin, Roster::anger),
             member("piglin_brute", EntityType.PIGLIN_BRUTE, null, Roster::unturning, Roster::anger),
@@ -302,9 +372,21 @@ public final class Roster {
             member("bee", EntityType.BEE, GROWN_ANIMAL, Roster::grown, Roster::enrage).flyingAt(HOVER_HEIGHT),
             member("wolf", EntityType.WOLF, GROWN_ANIMAL, Roster::grown, Roster::enrage),
             member("polar_bear", EntityType.POLAR_BEAR, GROWN_ANIMAL, Roster::grown, Roster::enrage),
+            member("llama", EntityType.LLAMA, null, Roster::grown, Roster::target).ranged(),
+            member("goat", EntityType.GOAT, GROWN_ANIMAL, Roster::grown, Roster::charge),
+            member("panda", EntityType.PANDA, GROWN_ANIMAL, Roster::aggressive, Roster::target),
             member("iron_golem", EntityType.IRON_GOLEM, null, AS_SPAWNED, Roster::enrage),
             member("snow_golem", EntityType.SNOW_GOLEM, null, Roster::unmelting, Roster::target).ranged(),
             member("warden", EntityType.WARDEN, null, AS_SPAWNED, Roster::rouse).cappedAt(WARDEN_TRAINING_CAP));
+
+    /**
+     * Mobs the league never fields on their own, only underneath something else. A chicken has no attack of any kind, so it
+     * is no opponent and takes no rating; it is here because a <b>chicken jockey</b> is a fight a player really has, and
+     * killing the chicken out from under the baby zombie is half of winning it. Kept apart from {@link #ALL} so that nothing
+     * — the rotation, the packs, the bystanders, the trainer's roster — ever meets a chicken on its own.
+     */
+    private static final List<Member> MOUNTS = List.of(
+            member("chicken", EntityType.CHICKEN, GROWN_ANIMAL, Roster::grown, Roster::unmoved));
 
     /** The ones this process fields, read once. */
     private static List<Member> fielded;
@@ -350,11 +432,14 @@ public final class Roster {
      */
     public static Member any(String name) {
 
-        for (Member member : ALL) {
+        for (List<Member> among : List.of(ALL, MOUNTS)) {
 
-            if (member.name().equals(name)) {
+            for (Member member : among) {
 
-                return member;
+                if (member.name().equals(name)) {
+
+                    return member;
+                }
             }
         }
 
@@ -364,7 +449,7 @@ public final class Roster {
     private static Member member(String name, EntityType<? extends Mob> type, @Nullable Supplier<SpawnGroupData> spawnData,
                                  Preparation preparation, Provocation provocation) {
 
-        return new Member(name, type, spawnData, preparation, provocation, 0, MELEE_TICKS, MELEE_START, 1.0D, false);
+        return new Member(name, type, spawnData, preparation, provocation, 0, MELEE_TICKS, MELEE_START, 1.0D, false, false);
     }
 
     // ---------------------------------------------------------------------------------------------------------------
@@ -374,6 +459,43 @@ public final class Roster {
     private static void biggest(Mob mob, RandomSource random) {
 
         ((Slime) mob).setSize(SLIME_SIZE, true);
+    }
+
+    private static void middling(Mob mob, RandomSource random) {
+
+        ((Slime) mob).setSize(SLIME_MEDIUM, true);
+    }
+
+    private static void smallest(Mob mob, RandomSource random) {
+
+        ((Slime) mob).setSize(SLIME_SMALL, true);
+    }
+
+    /**
+     * A baby, and kept one. Its group data already asked for a baby; this is the second half of the same claim, since a
+     * zombie is not an {@link AgeableMob} and never grows up on its own, and a build that changed what group data means
+     * would otherwise hand the league four ordinary zombies under four new names.
+     *
+     * <p>A baby zombie is a different opponent and not a smaller one: a step and a half tall, three tenths of a block wide,
+     * and half again as fast as the agent walks. It is the mob that beat the published network in the owner's own world.
+     */
+    private static void infant(Mob mob, RandomSource random) {
+
+        ((Zombie) mob).setBaby(true);
+    }
+
+    /**
+     * A panda with the aggressive gene, which is the one that fights back: {@code Panda#isAggressive} reads the variant, its
+     * melee goal will not run without it, and its hurt-by-target goal drops the target on the next tick without it. Both
+     * genes, since the variant is the main one unless that is recessive, and aggressive is not.
+     */
+    private static void aggressive(Mob mob, RandomSource random) {
+
+        Panda panda = (Panda) mob;
+
+        panda.setMainGene(Panda.Gene.AGGRESSIVE);
+        panda.setHiddenGene(Panda.Gene.AGGRESSIVE);
+        panda.setBaby(false);
     }
 
     private static void unturning(Mob mob, RandomSource random) {
@@ -423,6 +545,13 @@ public final class Roster {
     // ---------------------------------------------------------------------------------------------------------------
     // Provocations
     // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * Nothing at all, for a body on the other side that has no attack to provoke: the chicken under a chicken jockey. It is
+     * on that side because putting the jockey down means putting both of them down, not because it fights, and giving it a
+     * target would be saying it does.
+     */
+    private static void unmoved(Mob mob, LivingEntity agent) {}
 
     /** A mob that goes by its goals fights its target, and a neutral one is angered by having one. */
     private static void target(Mob mob, LivingEntity agent) {
@@ -498,6 +627,39 @@ public final class Roster {
             neutral.setRemainingPersistentAngerTime((int) ANGER_TICKS);
             neutral.setPersistentAngerTarget(agent.getUUID());
         }
+    }
+
+    /**
+     * A goat, which is the one mob here with <b>no way at all of being given a target</b>. It thinks with a brain and that
+     * brain has no {@code ATTACK_TARGET} memory in it: its only attack is the ram, which its own {@code PrepareRamNearestTarget}
+     * aims at the nearest visible living thing that is not a goat, from between four and seven blocks, and then not again
+     * until a cooldown of between thirty seconds and five minutes has run out. Left alone in a minute's fight a goat would
+     * ram once if the wandering happened to bring it close, and otherwise stroll.
+     *
+     * <p>So the provocation is the <b>cooldown</b>, erased every tick — which is also what a failed search sets — and nothing
+     * else about how it moves. With the cooldown gone the ram is the goat's active state for the whole fight, and its own
+     * {@code PrepareRamNearestTarget} does the walking: it picks a spot four to seven blocks off the agent, goes there, lowers
+     * its head for twenty ticks and charges through. <b>Pushing a walk target at the agent breaks exactly that</b>, which is
+     * how this was got wrong the first time — the push overwrote the walk to the ram position, so the goat trotted up to the
+     * agent and never once rammed in forty fights. What lands now is a goat's own ram, for a goat's own damage and knockback.
+     */
+    private static void charge(Mob mob, LivingEntity agent) {
+
+        // Its own mind does nothing with a target, but the agent's view does: a body takes an enemy slot when it is a
+        // monster, when it is on a side against the agent, or when it has chosen the agent as its target, and a goat is none
+        // of the first two. Without this the agent cannot see a goat as an enemy at all — measured, forty-eight fights that
+        // every one of them ran the clock out with the goat never touched.
+        target(mob, agent);
+
+        Brain<?> brain = mob.getBrain();
+
+        brain.eraseMemory(MemoryModuleType.RAM_COOLDOWN_TICKS);
+
+        // Its panic is deliberately left alone. A hurt goat bolts at twice its walking speed, which looked like the same
+        // trouble the bee and the snow golem are fixed for, so it was measured both ways over forty fights each against the
+        // scripted fighter: 90% and 100% won with the panic in, 95% and 100% with it erased. The agent catches it either
+        // way, so there is nothing here to fix and an unmeasured deviation not to make.
+
     }
 
     /**

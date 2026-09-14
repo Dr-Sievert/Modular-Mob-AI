@@ -407,14 +407,46 @@ for that even when a library exists.
 
 The league suite (`-Psuite=league`, `scripts\train.ps1 -Suite league`) is the same fight on the same sites against a
 different opponent every time, with a different loadout:
-- 37 mobs (`gametest/league/Roster`, which also says why the rest are left out): zombie, husk, drowned, zombie villager,
-  skeleton, stray, bogged, wither skeleton, spider, cave spider, creeper, vindicator, pillager, witch, ravager, enderman,
-  silverfish, endermite, slime, magma cube, zombified piglin, piglin, piglin brute, hoglin, zoglin, breeze, evoker,
-  blaze, ghast, phantom, vex, bee, wolf, polar bear, iron golem, snow golem, warden. Each gets its own finalizeSpawn, is
-  grown up, kept from zombifying and, for a slime, made its biggest, and is made to go for the agent every tick it has
-  let go: as its target, angered, or in its brain's memory. Slimes and breezes treat the agent as a player
-  (`SlimeInvoker`, `BreezeMixin`); a bee never counts as having stung, or it would die of its own sting (`BeeMixin`); a
-  snow golem is given fire resistance, or a warm biome would melt it.
+- 48 mobs (`gametest/league/Roster`, which also says why the rest are left out): zombie, husk, drowned, zombie villager,
+  **baby zombie, baby husk, baby drowned, baby zombie villager**, skeleton, stray, bogged, wither skeleton, spider, cave
+  spider, creeper, vindicator, pillager, witch, ravager, enderman, silverfish, endermite, slime, **medium slime, small
+  slime**, magma cube, **medium magma cube, small magma cube**, zombified piglin, piglin, piglin brute, hoglin, zoglin,
+  breeze, evoker, blaze, ghast, phantom, vex, bee, wolf, polar bear, **llama, goat, panda**, iron golem, snow golem,
+  warden. Each gets its own finalizeSpawn, is kept from zombifying, is sized where that is a choice, and is made to go for
+  the agent every tick it has let go: as its target, angered, or in its brain's memory. Slimes and breezes treat the agent
+  as a player (`SlimeInvoker`, `BreezeMixin`); a bee never counts as having stung, or it would die of its own sting
+  (`BeeMixin`); a snow golem is given fire resistance, or a warm biome would melt it.
+  - **Babies are grown up only where they are not a player of their own.** A baby piglin or hoglin never attacks, and a
+    wolf, polar bear or bee comes as a cub one time in twenty, so those are grown. A baby of the zombie family is a
+    different fight and not a smaller one — half again as fast as the agent walks, a step and a half tall, three tenths of a
+    block wide — so it is four players of its own, spawned as babies and kept babies, and the grown zombie's rating goes on
+    meaning what it meant.
+  - **A slime and a magma cube are fielded at all three sizes.** A small slime cannot hurt the agent at all (vanilla's own
+    `isDealsDamage` is false while it is tiny), so that fight is a win or the clock; a small magma cube overrides that and
+    hits for three. The two larger sizes **split**, which is a fight of its own, below.
+  - **Three animals that fight only when provoked**: the llama, which spits and so gets a shooting match's clock and room;
+    the goat, which rams; the panda, fielded with the aggressive gene, the one that fights back. The goat is the only mob
+    in the league that cannot be handed an attack target at all — its brain has no such memory and its only attack is a ram
+    its own `PrepareRamNearestTarget` lines up from four to seven blocks, on a cooldown of thirty seconds to five minutes.
+    The provocation erases that cooldown and nothing else, so the ram is a goat's own; it is also given the agent as a
+    target, not for its own mind but for the agent's view, which only counts a body an enemy if it is a monster, on a side
+    against the agent, or coming for it.
+- **Two jockeys**, `chicken_jockey` and `spider_jockey` (`gametest/league/Opposition`): one mob riding another, as the game
+  spawns them — a baby zombie on a chicken, a skeleton on a spider. Each is a side of two with the rider put on its mount
+  once both are in the world, so **both bodies are on the other side**: each is paid for exactly once and the fight is won
+  only when both are down, since killing the chicken out from under the zombie or the spider out from under the archer
+  leaves something standing. The room and the clock follow from the members like any side's, so a spider jockey is the
+  skeleton's shooting match at twenty blocks. A jockey is never packed (`+N_pack` is drawn over one-mob opponents only),
+  and the chicken is not a league opponent of its own — it has no attack of any kind.
+- **A slime that dies is still the fight** (`gametest/league/Splits`). Vanilla makes two to four half-sized copies inside
+  `Slime#remove`, which is twenty ticks of death animation after the health reaches nought. The league used to end the
+  fight the tick the one body it spawned stopped being alive, so a big slime was a **win the agent never earned** with
+  three or four middling slimes standing on untouched ground, each of which would have split again; they carried no fight
+  tag either, so the wildlife sweep took them within the second and nothing in a run's results said so. Every child now
+  joins the other side as it appears — tagged, on the side's team, paid for once, waited for — and a fight that can split is
+  not over while a dead body of it is still on its way out. The two splitting sizes get 1,800 ticks instead of the minute,
+  since there are as many as twenty bodies to put down: measured on the scripted fighter, that took the plain slime from
+  87.5% to 94.4% and the hard one from 58.3% to 82.4%, the rest being the clock.
 - Whatever flies starts in the air over its spawn spot, which always has open sky: a ghast 8 blocks up, a phantom 6, a
   vex 3, a blaze and a bee 2. An evoker's vexes are taken into the fight as it calls them, and swept up with it.
 - **Two of them never come within reach: the ghast and the phantom** (`Roster.Member.unreachable`). A ghast drifts and
@@ -429,8 +461,8 @@ different opponent every time, with a different loadout:
   training fights is capped at 0.2% (`Roster.Member.trainingCap`, written into `roster.csv`). It stays fully rated.
 - 11 squads of several mobs at once (`gametest/league/Opposition`): `2x_zombie`, `2x_vindicator`, `3x_silverfish`,
   `2x_skeleton`, `zombie+skeleton`, `witch+zombie`, `pillager+vindicator`, `spider+cave_spider`, `2x_wither_skeleton`,
-  `2x_creeper`, `phantom+zombie`. They are curated, not generated: every pair of 37 mobs would be 600 ratings saying
-  little. **Each composition is a player of its own** — two zombies are not twice a zombie, and nothing anywhere adds a
+  `2x_creeper`, `phantom+zombie`. They are curated, not generated: every pair of 48 mobs would be over a thousand ratings
+  saying little. **Each composition is a player of its own** — two zombies are not twice a zombie, and nothing anywhere adds a
   squad's members up. A squad fights as a side: the agent on one team and all of them on another
   (`allegiance/Allegiance`), so each goes for the agent and the agent counts every one an enemy whatever it is; the teams
   are disbanded the moment the fight ends. A fight against one mob still uses no teams at all. The warden is in no squad,

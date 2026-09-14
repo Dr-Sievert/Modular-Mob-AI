@@ -40,6 +40,13 @@ import net.sievert.modularmobai.Constants;
  *       fighter, a published network or a checkpoint, for the same reason {@link Bystanders} leaves those alone: the anchor
  *       and the policies are what every rating in the league is measured against, and they may not move under a run that is
  *       already going.</li>
+ *   <li><b>And so never a jockey</b>, which falls out of the rule above rather than needing one of its own: a chicken jockey
+ *       and a spider jockey are {@link Opposition}s of two, so {@code League#packed} passes over them exactly as it passes
+ *       over {@code zombie+skeleton}. That is the wanted answer and not an accident worth fixing. Four spider jockeys is
+ *       eight bodies and four archers, which is not "the same fight with more of it" but a different fight nobody asked to
+ *       rate; and a pack of them would be drawn over the one-mob opponents the count question was chosen to be asked of. A
+ *       pack of <b>baby zombies</b>, on the other hand, is exactly the question — they are one mob, on their feet, and
+ *       monsters — and is drawn like any other.</li>
  *   <li><b>Copies, not a mixed pack.</b> A mixed pack was the other option and it is the one the squads already cover:
  *       {@code zombie+skeleton} is a body in front and a shot behind, {@code pillager+vindicator} is a patrol. What the league
  *       had no way of saying is <b>how many</b>, with nothing else changed, which is exactly what {@code 2x_zombie} and

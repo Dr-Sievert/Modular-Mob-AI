@@ -1,5 +1,7 @@
 package net.sievert.modularmobai.arena;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import org.jetbrains.annotations.Nullable;
@@ -46,8 +48,27 @@ public final class Episode {
     public Episode(int maxTicks, @Nullable AABB bounds, List<? extends LivingEntity> opponents) {
 
         this.bounds = bounds;
-        this.opponents = List.copyOf(opponents);
+        this.opponents = new ArrayList<>(opponents);
         this.reward.beginEpisode(maxTicks);
+    }
+
+    /**
+     * Takes one more body into the fight, for the one thing in the league that makes new ones in the middle of one: a slime
+     * or a magma cube, which leaves two to four smaller copies of itself behind when it dies. Those are as much the fight as
+     * the body that left them — a player who kills a big slime has not finished until the last of them is down — so they join
+     * the other side, and from then on the reward pays for hurting one and the arena waits for the last of them.
+     *
+     * <p>A fight with no side at all pays for hurting anything and has nothing to join: that is an agent out on real terrain
+     * with animals about, and narrowing it to one body mid fight would be the opposite of what that is for. Joining the same
+     * body twice would pay twice for one blow, the fault a side of copies invites, so it is refused here rather than at every
+     * call site.
+     */
+    public void join(LivingEntity opponent) {
+
+        if (!this.opponents.isEmpty() && !this.opponents.contains(opponent)) {
+
+            this.opponents.add(opponent);
+        }
     }
 
     public AgentReward reward() {
@@ -70,10 +91,11 @@ public final class Episode {
     /**
      * The other side of this fight, whether any of it is still standing or not, and empty where the agent is paid for
      * hurting anything at all. This is what {@link FightFacts} describes to the critic: who the agent is actually up
-     * against, rather than what it happens to be able to see.
+     * against, rather than what it happens to be able to see. It can grow while the fight runs, see {@link #join}, so a
+     * caller that walks it by index has to ask for its size each time round.
      */
     public List<LivingEntity> opponents() {
 
-        return this.opponents;
+        return Collections.unmodifiableList(this.opponents);
     }
 }

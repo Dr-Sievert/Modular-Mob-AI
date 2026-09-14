@@ -13,6 +13,7 @@ import org.jetbrains.annotations.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.Difficulty;
 import net.minecraft.world.DifficultyInstance;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import net.sievert.modularmobai.Constants;
 
@@ -33,7 +34,7 @@ import net.sievert.modularmobai.Constants;
  *
  * <h2>Which squads</h2>
  *
- * <p>Every pair of thirty seven mobs is over six hundred fights to rate, and most of them would say nothing that another
+ * <p>Every pair of forty eight mobs is over a thousand fights to rate, and most of them would say nothing that another
  * pair did not. So the squads are chosen rather than generated, each for a question it is the cleanest way to ask:
  *
  * <ul>
@@ -53,6 +54,10 @@ import net.sievert.modularmobai.Constants;
  *   <li><b>One in the air and one on the ground</b>, {@code phantom+zombie}: the first fight that wants a bow and a
  *       shield in the same minute.</li>
  * </ul>
+ *
+ * <p>Two more sides of two are not squads but <b>jockeys</b>, {@code chicken_jockey} and {@code spider_jockey}: one mob
+ * riding another, which is how the game itself spawns them and a fight no composition of two bodies side by side is. They go
+ * through the squad machinery all the same, and the rider is put on its mount once both are in the world, {@link #mount}.
  *
  * <p>The warden is in no squad. One of it is already a fight nobody wins, and a second opponent beside it would only be a
  * second way to say so.
@@ -128,6 +133,29 @@ public record Opposition(String name, List<Roster.Member> mobs, Difficulty diffi
     }
 
     /**
+     * Puts each rider on the back of whatever stands before it, once every body is in the world, which is what makes a
+     * jockey one fight rather than two bodies side by side. Nothing but the two jockeys has a rider, and for everything else
+     * this does nothing at all.
+     *
+     * <p>Called after the bodies are added rather than in a {@link Roster.Member.Preparation}, because a preparation is
+     * handed one mob and cannot see the other, and because {@code startRiding} wants both of them already in the level. The
+     * rider was placed on a spot of its own, which it leaves the moment it mounts; the spot is still asked for, since the
+     * fight has no way of knowing a mount will succeed.
+     *
+     * @param bodies the other side, in the order {@link #mobs} names them
+     */
+    public void mount(List<? extends Entity> bodies) {
+
+        for (int on = 1; on < bodies.size() && on < this.mobs.size(); on++) {
+
+            if (this.mobs.get(on).rides()) {
+
+                bodies.get(on).startRiding(bodies.get(on - 1), true);
+            }
+        }
+    }
+
+    /**
      * What this fight's mobs are spawned with, which is {@link Level#getCurrentDifficultyAt} with the rung's difficulty in
      * place of the level's own: the same day time, the same inhabited time and the same moon, since those are the fight's
      * ground and not its difficulty.
@@ -185,6 +213,30 @@ public record Opposition(String name, List<Roster.Member> mobs, Difficulty diffi
             List.of("creeper", "creeper"),
             List.of("phantom", "zombie"));
 
+    /**
+     * One jockey: a fight against one mob riding another, which no squad is and which the game spawns on its own — a baby
+     * zombie on a chicken one time in twenty, a skeleton on a spider one in a hundred. Written as the name it is rated under
+     * and the two mobs on it, the mount first and the rider second.
+     */
+    private record Jockey(String name, String mount, String rider) {}
+
+    /**
+     * The two of them. Each is an {@link Opposition} of two members exactly as a squad is, and that is the decision worth
+     * writing down: <b>both bodies are on the other side</b>. So each is paid for exactly once, the agent's view holds both,
+     * and the fight is won only when both are down — killing the chicken out from under the zombie, or the spider out from
+     * under the skeleton, leaves something still standing and wins nothing. The alternative, one body in the fight with the
+     * other a prop, gets the spider jockey plainly wrong: the skeleton on top is the half that shoots, and a fight that
+     * ended when the spider died would pay nothing for the archer and call it a win.
+     *
+     * <p>What each asks for follows from its members with no special case. The spider jockey takes the skeleton's shooting
+     * match — 1,800 ticks and twenty blocks apart, since {@link #ticks} and {@link #start} take whatever the mob on the side
+     * that wants most asks for — so the rider is provoked as the ranged member it is. The chicken jockey is two melee
+     * bodies, one of which does not fight, so it keeps the minute and the seven to eleven blocks.
+     */
+    private static final List<Jockey> JOCKEYS = List.of(
+            new Jockey("chicken_jockey", "chicken", "baby_zombie"),
+            new Jockey("spider_jockey", "spider", "skeleton"));
+
     /** Everyone this process fields, by name, in the order a run without a trainer goes through them; read once. */
     @Nullable
     private static Map<String, Opposition> fielded;
@@ -220,6 +272,19 @@ public record Opposition(String name, List<Roster.Member> mobs, Difficulty diffi
                 }
 
                 found.put(name, new Opposition(name, List.copyOf(mobs), Difficulty.NORMAL));
+            }
+
+            for (Jockey jockey : JOCKEYS) {
+
+                // A jockey is fielded when it is named, or when nothing is named at all. Not the squads' rule — that asks
+                // whether every mob on it is fielded, and a chicken never is on its own.
+                if (!named.isEmpty() && !named.contains(jockey.name())) {
+
+                    continue;
+                }
+
+                found.put(jockey.name(), new Opposition(jockey.name(),
+                        List.of(Roster.any(jockey.mount()), Roster.any(jockey.rider()).riding()), Difficulty.NORMAL));
             }
 
             // Not Map.copyOf, which keeps nothing of the order these were put in, and the order is what a run with no

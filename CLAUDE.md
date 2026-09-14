@@ -14,7 +14,7 @@ went from 35% to 82% with four to nine idle monsters about it while its one-on-o
 attack are the open problem now**: the scripted fighter kites and gives ground and wins 68% of them, the network 47%, and
 the run is being pulled towards a record of the fighter's answers on pack-heavy fights. Bows, crossbows,
 shields, axes, mining and placing work under a player's rules. That league is an Elo one and it is what a run trains and is
-judged on: 37 mobs, 11 squads, a difficulty ladder, the hand-written fighter held at 1500 as the anchor, published networks
+judged on: 48 mobs, 11 squads, 2 jockeys, a difficulty ladder, the hand-written fighter held at 1500 as the anchor, published networks
 and the run's own checkpoints.
 
 Read these before changing anything:
@@ -88,7 +88,7 @@ Read these before changing anything:
 ```
 scripts\setup.ps1                      once per machine: Java 21, Python + PyTorch, compile, parity check
 scripts\test.ps1                       20 arena fights with the scripted fighter: expect 20/20, 54 ticks each
-scripts\test.ps1 -Mechanics            the item and block rules against a player's numbers: expect 65 passed
+scripts\test.ps1 -Mechanics            the item and block rules against a player's numbers: expect 67 passed
 scripts\test.ps1 -Crowd -Weights models\blast8\best.mbw    one fight with 0, 1, 3 and 9 monsters standing about it, tick by tick
 scripts\test.ps1 -Pack                 the teacher, or -Weights, against packs of 2, 3 and 4 zombies and 2 and 3 vindicators, tick by tick
 scripts\test.ps1 -Horde                20, 100, 500 and 2,000 mobs round one agent: clips a tick, time to perceive, ticks lived

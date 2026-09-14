@@ -70,8 +70,8 @@ bow was an average over the matchups where a bow is the answer and the matchups 
 run, the ranged loadouts won about 40% of their fights and the melee ones far more. Drawing the pairing puts the fights
 where a loadout can still learn something, and hands a loadout that is losing more of the matchups it is losing.
 
-The pair table is loadouts times opponents, and both are small: ten loadouts against 48 mobs and squads plus the scripted
-fighter is 490 pairings at the start of a run, 1,450 once every rung of the difficulty ladder is open, and 80 more for the
+The pair table is loadouts times opponents, and both are small: ten loadouts against 61 mobs, squads and jockeys plus the
+scripted fighter is 620 pairings at the start of a run, 1,840 once every rung of the difficulty ladder is open, and 80 more for the
 self-play pool. That is thin ground for a per-pair win rate. The faded record holds about 1/(1 - league_decay) = 50
 iterations of fights, which at rollout_steps and a few hundred ticks a fight is a couple of thousand fights all told, so a
 pairing has single figures of them and plenty have none at all. **So a pairing's chance is never asked to stand on its
