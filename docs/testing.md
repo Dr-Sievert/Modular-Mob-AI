@@ -12,7 +12,7 @@ scripts\parity.ps1               Java forward pass against PyTorch's, after touc
 | Check | Pass looks like | Proves |
 | --- | --- | --- |
 | `test.ps1` | `All 20 required tests passed`; every fight 54 ticks | the observation, the body and the scripted fighter still work; the 54 ticks are deterministic, so any change in them is a behaviour change |
-| `test.ps1 -Mechanics` | `All 53 required tests passed` | bows, crossbows, shields, axes, mining, placing, use slowdown and damage payment follow a player's rules, what a press of attack costs and what holding it down costs, that a swing sends a ghast's fireball back and nothing else, that a hand keeps the slot it started a draw in, what the observation says about a use, about the clock and the quiver, about what is shot at the agent, about the armour on either side of the fight, about whether the other side has engaged and about what the weapon in the agent's hand takes off — the last three against the same numbers the critic's privileged facts carry — the teacher getting itself out of powder snow and starting no draw it cannot finish, what an enemy slot goes to and what a wall between takes away from it, **which slot each body gets — the fight first, then the nearest** — that the league's bystanders stand aside unpaid until struck, and how a league training fight is drawn from the trainer's shares |
+| `test.ps1 -Mechanics` | `All 54 required tests passed` | bows, crossbows, shields, axes, mining, placing, use slowdown and damage payment follow a player's rules, what a press of attack costs and what holding it down costs, that a swing sends a ghast's fireball back and nothing else, that a hand keeps the slot it started a draw in, what the observation says about a use, about the clock and the quiver, about what is shot at the agent, about the armour on either side of the fight, about whether the other side has engaged and about what the weapon in the agent's hand takes off — the last three against the same numbers the critic's privileged facts carry — the teacher getting itself out of powder snow and starting no draw it cannot finish, what an enemy slot goes to and what a wall between takes away from it, **which slot each body gets — the fight first, then the nearest** — that the league's bystanders stand aside unpaid until struck and that the size of a crowd is drawn small far more often than large, and how a league training fight is drawn from the trainer's shares |
 | `test.ps1 -Play` | `All 19 required tests passed`, and a `Loaded the mod's jar, modular_mob_ai/models/<name>.mbw from iteration N` line per network the jar carries | what [playing.md](playing.md) promises: the bundled networks load and drive an agent, the commands, saving, sides and friendly fire, the Infinity loadouts |
 | `parity.ps1` | `parity ok` once per body, logits agreeing to about 1e-6, and `the plain ones agree to the bit at batches 1 to 64` | the game runs exactly the network PyTorch trained, **for every body this build has**, and the forward pass's explicit vector loops give the same bits as its plain ones |
 
@@ -91,7 +91,7 @@ once its entropy came down; see [findings.md](findings.md#learning).
 Each test sets up one situation and checks the numbers a player would get. Seven classes, one per concern, all of them
 sharing `tests/Mechanics` — the arena, the agent, the brain that hands back what the test pressed, and the readings more
 than one of them takes. Every class has to be named in `ModularMobAiGameTests` or its tests simply do not run, which is why
-the count below is worth knowing: **53**.
+the count below is worth knowing: **54**.
 
 `AgentDrawnWeaponGameTest` (9) — a bow and a crossbow, and the slot the hand keeps while one is drawn:
 
@@ -162,7 +162,7 @@ a number and boots in seconds:
 | `pouredLavaIsLavaAndLeavesNothingBehind`, `pouredLavaSweepsUpWhatItFedOutsideItself` | the lava poured beside a hazard fight is nine blocks of it, every block of ground it touched is exactly as it was once drained, and lava it fed three blocks away — as far as lava spreads on land, and outside the box the drain used to sweep — is swept up too and reported, which is what makes the site forget a label the spill has made untrue. Where a pool may go needs open ground with a heightmap, so the live run is what exercises that; see [findings.md](findings.md) |
 | `theLeagueDrawsAPairingByItsShare` | a league training fight comes out of `league/pairs.csv` as a loadout and an opponent together, in proportion to the shares, the same way twice from one seed, nothing the table names ever starved, and a pairing the build cannot field dropped. The shares themselves are the trainer's, tested by `scripts\league.ps1 -Test` |
 
-`AgentCrowdGameTest` (4) — what the view is allowed to hold, and the league's crowd:
+`AgentCrowdGameTest` (5) — what the view is allowed to hold, and the league's crowd:
 
 | Test | Checks |
 | --- | --- |
@@ -170,6 +170,7 @@ a number and boots in seconds:
 | `aWallTakesTheReadingAndLeavesTheSlot` | the sight rule and the whole of the decision behind it, on a body that never moves: a wall built between agent and zombie takes the count to nought and the slot's present flag to nought, and **leaves the lease** so the zombie is back in the same slot the tick the wall comes down; a grace later with the wall up, the lease is gone |
 | `leagueBystandersStandAsideUntilStruck` | the league's crowd is a crowd: on no team, never the other side of the fight, never paid for by `Episode#pays`, holding slots in the view all the same, kept off the agent every tick — and free to fight back once the agent has hit one |
 | `aCrowdedFightIsNamedForItsOpponentAndItsCrowd` | `zombie+3_idle`, the share drawn 1 to 9 and at the rate this build was told |
+| `aCrowdIsDrawnSmallFarMoreOftenThanLarge` | **how big the crowd is**: 5,000 crowds drawn, each count within four standard deviations of its own weight (one over the count, taken from `Bystanders#chance` rather than copied), none drawn more often than the count below it, nine still drawn at all, and two thirds or more of the crowds four or fewer — the curriculum's answer to a crowded rate that sat at 44% while every count above four was a fight it mostly lost |
 
 `AgentEnemyOrderGameTest` (3) — **which** slot each body gets, which is the rule a whole curriculum turned on. A slot used to
 go out in the order the level's own walk over its entity sections returned bodies, so against one opponent it always landed in

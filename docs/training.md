@@ -483,7 +483,8 @@ curriculum hole. It is filled by `gametest/league/Bystanders`:
 ```
 
 - **A quarter of the fights**, which is what the hazard ground was given and for the same reason: the plain fight on plain
-  ground is still the fight the agent has to be able to win. 1 to 9 monsters, 8 to 30 blocks from the middle of the fight, on
+  ground is still the fight the agent has to be able to win. 1 to 9 monsters, **weighted towards the small crowds** (one over
+  the count, so 35% of crowded fights stand one and 4% stand nine), 8 to 30 blocks from the middle of the fight, on
   **no** team, and handed their target back on every tick until something hits them — the exact opposite of the provocation a
   league opponent gets, and needed rather than assumed; see findings.md. They are not part of the win condition and
   `Episode#pays` never pays for one, so the reward and the fight are exactly what they were: the only thing that changes is
@@ -521,6 +522,20 @@ opponent holds slot 0 in a crowd exactly as it does on its own. **A network trai
 saw a crowd it could learn from, so the crowded rate is a thing to watch on the next run rather than a thing already better.
 The numbers, what was ruled out, and what was deliberately left alone are in [findings.md](findings.md#perception); the harness
 that took them is `scripts\test.ps1 -Crowd`, and crowded fights now record a replay like any other.
+
+**Then it moved twelve points and stopped, and the draw is why the count is no longer flat.** With the order fixed, `blast7`'s
+crowded win rate climbed 31.6% → 44% over 6,000 iterations — and then sat at 44% for 4,000 more, against 79% plain. Per count
+it is graded the whole way down, 68 / 58 / 48 / 46 / 39 / 37 / 32 / 31 / 31% from one bystander to nine, so a **flat** draw from
+1 to 9 spent five crowded fights in nine on the counts where it wins about a third and where nothing had moved in four thousand
+iterations, and four in nine on the small crowds the twelve points had actually come from. The count is now drawn with a weight
+of one over the count — 35.4 / 17.7 / 11.8 / 8.8 / 7.1 / 5.9 / 5.0 / 4.4 / 3.9% for one to nine, a crowd of 3.2 on average
+rather than 5.0, and 73.6% of crowded fights at four or fewer instead of 44.4%. Nine is still drawn, on about one crowded fight
+in twenty five, because a count that stops being drawn stops feeding the `+N_idle` row a run is judged on. **The share did not
+change** and neither did anything outside this one draw: `-PleagueBystanders` means exactly what it meant, and the explicit 0,
+1, 3 and 9 of `scripts\test.ps1 -Crowd` are left alone on purpose. What it does move is the mix a checkpoint's crowded win rate
+is averaged over, so that number is not comparable with a run from before it — fixed for the whole of a run, which is what best
+weights need, but a different average; the plain rate is the one to compare across runs. See
+[findings.md](findings.md#the-leagues-curriculum).
 
 **The view has since been narrowed as well**, which was the other half: a slot now wants a line of sight from the agent's
 eyes and not only thirty two blocks, so a mob behind rock never takes one. That is what actually fixed the reported game —

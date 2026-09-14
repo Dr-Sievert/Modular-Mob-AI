@@ -483,6 +483,8 @@ are deliberate.
     a run already going. Worth trying if the crowded rate still does not move after a retrain on the fixed order. A **bystander
     that fights back** turned out to need nothing: `Bystanders#leaveAlone` only takes a target away while nothing has hurt it,
     so a struck one already keeps the agent, and `leagueBystandersStandAsideUntilStruck` already held it.
+    (It did move, by twelve points, and then stopped; the draw has since been weighted towards the small crowds instead of
+    ramped, for the reason written above. See **the flat draw spent the curriculum on the fights it loses** below.)
   - **Crowded fights now record a replay, which is why nobody had seen one.** A replay held exactly one body besides the
     agent, so a squad fight and a crowded one recorded nothing at all — two thousand fights a run in the one place the trouble
     was. The recorder now follows as many bodies as it is handed, each with its own frames and a role: `opponent` for the other
@@ -509,6 +511,47 @@ are deliberate.
   - Two things that bit the driver: `/kill @e[type=!minecraft:player]` kills the agent too, and every loaded animal in
     the world; and a client on the same GPU as a training run takes the VRAM the trainer's 4 GB cap was counting on — the
     run's update hit CUDA out of memory and fell back to the CPU at three times the cost per update until restarted.
+- **The flat draw spent the curriculum on the fights it loses, and the plateau was the shape of the draw.** The slot order fix
+  worked: with it in, `blast7`'s crowded win rate climbed **31.6% → 44% over 6,000 iterations**, which is what a curriculum that
+  is no longer noise looks like. Then it stopped, and sat at **44% for 4,000 more** (iterations 22k to 26k), while the plain
+  fights beside it held 79%. Per count over the last buckets it is graded the whole way down and has no cliff in it:
+
+  | Standing about | none | +1 | +2 | +3 | +4 | +5 | +6 | +7 | +8 | +9 |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | Won | 79% | 68% | 58% | 48% | 46% | 39% | 37% | 32% | 31% | 31% |
+
+  The count was drawn **flat** from 1 to 9, so five crowded fights in nine were spent on the five counts where it wins about a
+  third and the eight points between +5 and +9 are all the room there is; the four where it wins about half, and where the
+  twelve points had come from, got four in nine. A fight the agent loses at 31% at iteration 22,000 and at 31% at 26,000 is a
+  fight nothing is coming out of, and the majority of the curriculum's spend was on those. The draw is now **weighted towards
+  the small crowds**: a weight of one over the count, so one bystander comes up nine times as often as nine do.
+
+  | Standing about | +1 | +2 | +3 | +4 | +5 | +6 | +7 | +8 | +9 |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | Share of crowded fights | 35.4% | 17.7% | 11.8% | 8.8% | 7.1% | 5.9% | 5.0% | 4.4% | 3.9% |
+
+  A crowd is now 3.2 bystanders on average instead of 5.0, and 1 to 4 of them takes **73.6%** of the crowded fights instead of
+  44.4% — without closing the tail, which is the part that matters as much: nine still comes up on about one crowded fight in
+  twenty five, so `+9_idle` is still rated and still trained on, and a count that stops being drawn is a row the run is judged
+  on that quietly stops being fed.
+  - **One draw changed and nothing else.** The share is still a quarter and still `-PleagueBystanders`; the two draws are
+    separate on purpose — whether a fight is crowded, then how big the crowd is — so the skew can be changed without touching
+    what a run was told. `Bystanders#name`, `League#crowded`, the trainer's `base()` and the `+N_idle` rating names are all
+    exactly what they were, and the **explicit** counts elsewhere are left alone deliberately: `scripts\test.ps1 -Crowd` and
+    `AgentCrowdedFightGameTest` fight 0, 1, 3 and 9 because those are the four rows of the table above worth watching tick by
+    tick, and a probe that drew its own counts at random would stop being a probe.
+  - **It moves the average an evaluated win rate is over, again.** That was the objection that held a ramp back the first time
+    and it applies here too, so it is written down rather than dodged: a checkpoint's crowded rate before and after this is not
+    the same number, because it is over a different mix of `+N_idle` players. What makes it acceptable where a ramp was not is
+    that the mix is **fixed** — the same average from a run's first iteration to its last, so best weights are still picked by
+    comparing like with like inside the run. The plain rate is untouched either way and is the number to compare across runs.
+  - **What was rejected.** Dropping the large counts altogether (the tail is what the whole thing was built for, and a rating
+    nothing feeds is worse than a hard one), and a ramp that walks the count up as the run goes (a moving average under a live
+    run, which is what best weights are chosen by). Whether 44% was a plateau in the policy or in the draw is not settled by
+    this — it is a curriculum change, and the next run's crowded curve is what says so.
+  - `aCrowdIsDrawnSmallFarMoreOftenThanLarge` in the mechanics suite holds the shape, the tail and the share: 5,000 crowds are
+    drawn, every count comes up, none more often than the count below it, each within four standard deviations of its own
+    weight (`Bystanders#chance`, so the test is not a second copy of the weights), and 1 to 4 take two thirds or more.
 - **A crowd of bystanders costs a fifth of a worker, not nothing, and the reason is their wits.** The share that stands 1 to 9
   idle monsters about a quarter of the league's fights was written down as probably free: a probe had run fourteen of them in
   a box with no measurable slowdown. Measured properly — 200 league fights on one worker, share off and on — it is **7,330

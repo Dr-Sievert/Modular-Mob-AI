@@ -40,9 +40,10 @@ import net.sievert.modularmobai.gametest.util.TestTicks;
  * fed a view of ten bodies that mostly ignored it, stopped fighting the zombie beside it. The whole story and the numbers are
  * in findings.md; {@code PlayGameTest.theCrowdedViewOfARealWorldIsTheWorldsOwn} is the same thing proved on a real fight.
  *
- * <p>The two after that are the curriculum's half of the same problem: the bystanders a share of league fights now stands
+ * <p>The three after that are the curriculum's half of the same problem: the bystanders a share of league fights now stands
  * about it, which are the crowd the league never had, and which have to stay out of the fight's own arithmetic while filling
- * its view. See {@link Bystanders}.
+ * its view — what one is, what a fight with one is called and at what rate they come, and how big the crowd is when it comes,
+ * which is weighted towards the small crowds the agent can still learn something in. See {@link Bystanders}.
  *
  * <p>Everything happens inside the plot's own bedrock box, and the walls that take sight away are built by the test rather
  * than borrowed from the arena's, so nothing moves between the two readings but the block in the way. An agent that could
@@ -55,6 +56,15 @@ public class AgentCrowdGameTest {
 
     /** Long enough for the leases' own grace to run out twice over, which the wall test waits through. */
     private static final int FIGHT_TICKS = 1200;
+
+    /**
+     * How many crowds the skew is measured over, and how many draws it may spend getting them. Enough that the rarest count —
+     * nine, at about one crowd in twenty five — is expected two hundred times, so a count of nought there means the tail really
+     * is closed and not that the sample was small. The cap is what a share far below a quarter costs, and no draw touches a
+     * world, so even four hundred thousand of them is a few milliseconds.
+     */
+    private static final int CROWDS_WANTED = 5_000;
+    private static final int CROWD_DRAWS_CAP = 400_000;
 
     /**
      * Where the twelve stand, as offsets inside the room from the corner the agent is in. Twelve candidates for ten slots,
@@ -317,6 +327,84 @@ public class AgentCrowdGameTest {
         helper.succeed();
     }
 
+    /**
+     * How big the crowd is, when there is one: weighted towards the small ones, and the big ones still drawn. One over the
+     * count, so one bystander comes up nine times as often as nine, which is the curriculum's answer to a crowded win rate that
+     * sat at 44% for four thousand iterations while every count above four was a fight the agent mostly died in; see
+     * findings.md.
+     *
+     * <p>Three things are held, and they are the three a skew can get wrong. The <b>shape</b>: every count is drawn, none of
+     * them more often than the one below it, and the small half takes the great majority. The <b>tail</b>: nine still comes up,
+     * because a count that stops being drawn stops being rated and the run quietly loses a row it is judged on. And the
+     * <b>share</b>: this draw may not have moved how many fights are crowded at all, which is the number a run was told and
+     * {@code aCrowdedFightIsNamedForItsOpponentAndItsCrowd} asserts against — so the counts here are taken from crowded draws
+     * only and checked against {@link Bystanders#chance}, the weights themselves rather than a second copy of them.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 40)
+    public static void aCrowdIsDrawnSmallFarMoreOftenThanLarge(GameTestHelper helper) {
+
+        RandomSource random = RandomSource.create(11L);
+        int[] counts = new int[10];
+        int crowded = 0;
+
+        // Drawn until there are enough crowds to measure, rather than for a fixed number of fights: the share is whatever this
+        // build was told, and a run told a tenth would otherwise have a tenth of the sample and fail a suite for obeying.
+        for (int draw = 0; draw < CROWD_DRAWS_CAP && crowded < CROWDS_WANTED; draw++) {
+
+            int wanted = Bystanders.wanted(random);
+
+            helper.assertTrue(wanted >= 0 && wanted <= 9, "A draw asked for " + wanted + " bystanders");
+
+            if (wanted > 0) {
+
+                counts[wanted]++;
+                crowded++;
+            }
+        }
+
+        // Nothing is asserted about a share of nought: a run told -PleagueBystanders=0 has no crowds to measure the skew of,
+        // and is doing exactly as it was told.
+        if (crowded == 0) {
+
+            helper.assertValueEqual(Bystanders.share(), 0.0D, "the share, with not one crowd drawn");
+            helper.succeed();
+
+            return;
+        }
+
+        for (int standing = 1; standing <= 9; standing++) {
+
+            // Every count, each against its own weight. Four standard deviations of a binomial draw either way, which at this
+            // many crowded fights is well under a point for the rare counts and about a point for the common ones.
+            double chance = Bystanders.chance(standing);
+            double expected = crowded * chance;
+            double spread = 4.0D * Math.sqrt(Math.max(1.0D, expected * (1.0D - chance)));
+
+            helper.assertTrue(counts[standing] > 0, "No fight in " + crowded + " stood " + standing + " bystanders about, so "
+                    + "the +" + standing + "_idle rating would never be fed");
+
+            helper.assertTrue(Math.abs(counts[standing] - expected) <= spread, counts[standing] + " of " + crowded
+                    + " crowds were " + standing + ", where a weight of " + percent(chance) + " asks for about "
+                    + Math.round(expected));
+
+            // Never more often than the count below it: the skew is monotone, which is what makes it a skew and not a bump.
+            if (standing > 1) {
+
+                helper.assertTrue(chance <= Bystanders.chance(standing - 1), "A crowd of " + standing + " is drawn more often "
+                        + "than a crowd of " + (standing - 1));
+            }
+        }
+
+        // And the point of the whole thing: the fights go where the rate was still moving. One to four is where the crowded win
+        // rate was 68 / 58 / 48 / 46%, against 39% and under from five up.
+        int small = counts[1] + counts[2] + counts[3] + counts[4];
+
+        helper.assertTrue(small >= crowded * 2 / 3, small + " of " + crowded + " crowds were four or fewer, where the skew "
+                + "means two thirds or more of them to be");
+
+        helper.succeed();
+    }
+
     // ---------------------------------------------------------------------------------------------------------------
 
     /** A wall of bedrock across the middle of the room, or the air it was built out of. */
@@ -373,6 +461,12 @@ public class AgentCrowdGameTest {
     private static String blocks(double distance) {
 
         return String.format(java.util.Locale.ROOT, "%.2f", distance);
+    }
+
+    /** A weight as a share, for the message a failed draw leaves behind. */
+    private static String percent(double chance) {
+
+        return String.format(java.util.Locale.ROOT, "%.1f%%", chance * 100.0D);
     }
 
     /**

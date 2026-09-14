@@ -32,6 +32,11 @@ import net.sievert.modularmobai.gametest.terrain.TerrainSites;
  *   -Dmodular_mob_ai.league.bystanders=0.25   the share of fights with a crowd in them; 0 for none at all
  * </pre>
  *
+ * <p>The share says how many fights have a crowd; how big the crowd is is a second draw, and it is <b>weighted towards the
+ * small crowds</b> — one over the count, so one bystander comes up nine times as often as nine. A flat draw spent five crowded
+ * fights in nine on the counts the agent mostly dies in, which four thousand iterations of a plateau said nothing was being
+ * learned from; nine is still reachable, so the tail is still rated and still trained on. See {@link #RUNNING} and findings.md.
+ *
  * <p>What a bystander is and is not:
  *
  * <ul>
@@ -81,6 +86,28 @@ public final class Bystanders {
     private static final int MOST = 9;
 
     /**
+     * How the count is drawn once a fight is having a crowd at all: a weight of one over the count, so a crowd of one comes up
+     * nine times as often as a crowd of nine, and every count between is somewhere in order. Running totals rather than the
+     * weights themselves, so one draw of the random source answers it.
+     *
+     * <p>It was a flat draw between {@link #FEWEST} and {@link #MOST} until the numbers said what the curriculum was spending
+     * itself on. With the slot order fixed the crowded win rate climbed from 31.6 to 44% over 6,000 iterations and then sat at
+     * 44% for 4,000 more, and per count it was graded all the way down: 68% with one standing about, 58, 48, 46, 39, 37, 32, 31
+     * and 31% with nine, against 79% on the plain fights beside them. A flat draw spends five crowded fights in nine on the five
+     * counts the agent mostly dies in, and a fight it dies in at the start and at the end of four thousand iterations is a fight
+     * nothing is being learned from. The weight moves that spend onto the small crowds, where the rate was still moving, without
+     * closing the tail: nine is still drawn on about one crowded fight in twenty five, so {@code +9_idle} keeps being rated and
+     * keeps being trained on. See findings.md.
+     *
+     * <p>What it does not do is change the share, the name a crowded fight is rated under, or anything outside this draw. It
+     * does move which {@code +N_idle} players a checkpoint's evaluated win rate is averaged over, which is what the best weights
+     * are picked by — the same objection that held a ramp back the first time round, and the reason this is one weight over the
+     * counts rather than a rung that walks up as a run goes: the average is a different average from a run before it, but it is
+     * the same average from the first iteration to the last.
+     */
+    private static final double[] RUNNING = running();
+
+    /**
      * How far from the middle of the fight they stand. Near enough to be well inside the thirty two blocks the agent sees,
      * far enough that none of them is in the fight: the nearest is a second off at a walk, and a mob that does not come is
      * still that far off when the fight ends.
@@ -110,6 +137,10 @@ public final class Bystanders {
      * How many bystanders the next fight against a mob or a squad stands about in, and nought for none. Drawn per fight
      * rather than settled per opponent, so an opponent is met both ways and the plain rating and the crowd's are both fed
      * from the same draw.
+     *
+     * <p>Two draws, and they answer two different questions. The first is {@link #share()}, whether this fight has a crowd at
+     * all, which is the quarter a run turns up and down; the second is how big it is, which is weighted towards the small
+     * crowds, see {@link #RUNNING}. Keeping them apart is what lets the skew be changed without touching what a run asked for.
      */
     public static synchronized int wanted(RandomSource random) {
 
@@ -120,7 +151,52 @@ public final class Bystanders {
             return 0;
         }
 
-        return Mth.nextInt(random, FEWEST, MOST);
+        double drawn = random.nextDouble() * RUNNING[RUNNING.length - 1];
+
+        for (int index = 0; index < RUNNING.length; index++) {
+
+            if (drawn < RUNNING[index]) {
+
+                return FEWEST + index;
+            }
+        }
+
+        // Only a double landing exactly on the total gets here, which the draw's own half-open range says it cannot; the most
+        // is the honest answer to it rather than an exception about the last bit of a mantissa.
+        return MOST;
+    }
+
+    /**
+     * The chance a fight that is having a crowd at all has that many standing about: about 35% for one, down to about 4% for
+     * nine, and nought for a count the draw cannot produce. Public for the same reason {@link #share()} is — a test that wrote
+     * the weights out a second time would be a test of its own copy of them.
+     */
+    public static double chance(int standing) {
+
+        if (standing < FEWEST || standing > MOST) {
+
+            return 0.0D;
+        }
+
+        int index = standing - FEWEST;
+        double below = index == 0 ? 0.0D : RUNNING[index - 1];
+
+        return (RUNNING[index] - below) / RUNNING[RUNNING.length - 1];
+    }
+
+    /** The running totals of one over the count, from {@link #FEWEST} to {@link #MOST}; see {@link #RUNNING}. */
+    private static double[] running() {
+
+        double[] totals = new double[MOST - FEWEST + 1];
+        double running = 0.0D;
+
+        for (int standing = FEWEST; standing <= MOST; standing++) {
+
+            running += 1.0D / standing;
+            totals[standing - FEWEST] = running;
+        }
+
+        return totals;
     }
 
     /**
@@ -278,11 +354,26 @@ public final class Bystanders {
 
             crowd = Roster.fielded().stream().filter(Bystanders::crowds).toList();
 
-            Constants.LOG.info("League fights stand bystanders drawn from {} of the {} mobs, {} to {} of them {} blocks off",
-                    crowd.size(), Roster.fielded().size(), FEWEST, MOST, NEAREST + " to " + FURTHEST);
+            Constants.LOG.info("League fights stand bystanders drawn from {} of the {} mobs, {} to {} of them {} blocks off, "
+                            + "the count weighted small: {}", crowd.size(), Roster.fielded().size(), FEWEST, MOST,
+                    NEAREST + " to " + FURTHEST, weighting());
         }
 
         return crowd;
+    }
+
+    /** What the skew comes out as, per count, so a run's own log says what its crowds were rather than what the code meant. */
+    private static String weighting() {
+
+        StringBuilder said = new StringBuilder();
+
+        for (int standing = FEWEST; standing <= MOST; standing++) {
+
+            said.append(standing == FEWEST ? "" : ", ").append(standing).append(':')
+                    .append(Math.round(chance(standing) * 100.0D)).append('%');
+        }
+
+        return said.toString();
     }
 
     /** Whether that mob makes a crowd: a monster, so it takes a slot on sight; on its feet; and not the warden. */
