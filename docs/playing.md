@@ -169,7 +169,8 @@ An agent walks over a dropped item and takes it, the way a player does. Where it
 
 1. **armour is worn**, and only into a slot that is empty. It will put on a helmet it hasn't got; it won't swap the one
    it's wearing for a better one, and it never takes anything off. A piece it won't wear goes in the hotbar or the pocket
-   like anything else;
+   like anything else. **Armour only** — a shield it walks over goes into the hotbar, not the off hand; put one in the off
+   hand through the screen or with a loadout;
 2. **into a stack of the same thing**, hotbar before pocket. This is the branch arrows take, and it's why they count: the
    quiver the network reads and the stack a bow fires from are both the hotbar;
 3. **the first empty hotbar slot**. A bare-handed agent that walks over a bow can draw it, and the network reads a ranged

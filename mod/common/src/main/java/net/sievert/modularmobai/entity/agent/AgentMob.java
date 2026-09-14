@@ -11,7 +11,6 @@ import net.minecraft.core.NonNullList;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
-import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
@@ -1843,17 +1842,12 @@ public class AgentMob extends PathfinderMob {
 
         else if (player instanceof ServerPlayer opener) {
 
+            // Named for the mob itself, so a named agent is told apart from the three standing beside it.
             opener.openMenu(new SimpleMenuProvider((containerId, playerInventory, ignored) ->
-                    new AgentMenu(containerId, playerInventory, this), this.menuTitle()));
+                    new AgentMenu(containerId, playerInventory, this), this.getDisplayName()));
         }
 
         return InteractionResult.CONSUME;
-    }
-
-    /** What its screen is called: the agent's own name, so a named one is told apart from the three beside it. */
-    private Component menuTitle() {
-
-        return this.hasCustomName() ? this.getCustomName() : Component.literal("Agent");
     }
 
     /**
