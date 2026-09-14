@@ -18,7 +18,10 @@ mod (Java, every tick)                                trainer (Python, once per 
 At the start of every level tick, before any entity moves, `AgentDriver` gathers every agent in the level, groups them by
 the brain driving them, and puts each group through its brain in one call:
 
-1. Each agent's `EnemySlots` refresh, and `AgentObservation` fills its row of the observation.
+1. Each agent's `EnemySlots` refresh, and `AgentObservation` fills its row of the observation. `AgentBatch` then scans the
+   finished row and reads anything that is not a number as zero: a good part of a row is copied straight off other entities,
+   those numbers are vanilla's, and one NaN input makes every output of the network a NaN for the rest of that agent's life.
+   See [findings.md](findings.md) for the breeze that proved it.
 2. Each agent's hidden vector (its memory) is gathered into the batch.
 3. The brain decides:
    - a `NeuralBrain` runs `Forward` over the whole batch (two agents share each pass over the weights), then

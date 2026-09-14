@@ -13,6 +13,7 @@ matching, something about the network has drifted apart and every ratio in the u
 
 from __future__ import annotations
 
+import copy
 import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
@@ -30,6 +31,15 @@ from .schema import Schema
 from .weights import export as export_weights
 
 logger = log.get("ppo")
+
+
+class NotFinite(Exception):
+    """An update produced a loss or a gradient that is not a number, and was abandoned rather than applied.
+
+    Never seen by anything outside this module: ``Trainer._learn`` raises it, having already put every parameter and every
+    one of Adam's moments back where they were, and ``Trainer.update`` turns it into a skipped iteration. See
+    ``Config.skip_limit``.
+    """
 
 
 def describe_critic(gru: int, privileged: int) -> str:
@@ -132,6 +142,12 @@ class Config:
 
     # An iteration this small is not worth a gradient; the weights are carried over unchanged and the data with them.
     min_steps: int = 512
+
+    # How many updates in a row may be skipped for a loss or a gradient that is not a number before the run stops; see
+    # Trainer.update. One skipped update is a bad row that got through, and the right answer is to carry on from the weights
+    # that were there before it. Three in a row is not bad luck, and going on would be spending workers on a network that
+    # has something wrong with it. The run stops without writing a state, so the last good one stays on disk.
+    skip_limit: int = 3
 
     # Padded rows per replay batch, which is the only thing here that grows with segment length.
     replay_rows: int = 131072
@@ -370,6 +386,10 @@ class Trainer:
         # critic never learned either; see load, which is where it matters.
         self.critic_trained = False
 
+        # How many updates in a row have been abandoned for going non-finite; see update and Config.skip_limit. Not saved:
+        # it is about the run as it is going, and a restart has already thrown the bad iteration away.
+        self.skipped_in_a_row = 0
+
         logger.info(
             "%s, critic %d wide%s, learning on %s",
             self.actor.topology.describe(),
@@ -404,31 +424,58 @@ class Trainer:
     # -----------------------------------------------------------------------------------------------------------
 
     def update(self, segments: list[Segment]) -> dict:
-        """Learns from one iteration's shards. Returns the figures for the log line."""
+        """Learns from one iteration's shards. Returns the figures for the log line.
+
+        Two things can go wrong here that are nothing to do with the arithmetic being asked for, and neither may take the
+        run down; see docs/findings.md for the night that proved it.
+
+        **A shard can hold a value that is not a number.** Most of an observation is the agent's own state, but a good part
+        of it is copied off other entities, and those numbers are vanilla's. The game now scrubs a row before the network
+        ever sees it, but a shard recorded by an older game may still carry one, and one NaN row in sixty five thousand is
+        enough to poison every parameter of the network: it lands in the mean of a minibatch loss, and Adam writes the NaN
+        out across everything it touches. So the rows are checked before anything is learned from them; see _finite.
+
+        **An update can go non-finite anyway**, from an overflow or from a device that misbehaved. Then it is abandoned
+        whole rather than applied in part: every parameter and every one of Adam's moments goes back to where it was before
+        the update, the iteration is reported as not learned from, and the run carries on. Config.skip_limit is how many of
+        those in a row the run tolerates.
+        """
 
         started = time.time()
+        segments, scrubbed = self._finite(segments)
         steps = sum(segment.steps for segment in segments)
         self.total_steps += steps
+
+        if not segments:
+            return self._skipped("every segment of this iteration held a value that is not a number", steps, started,
+                                 scrubbed)
 
         scaled, privileged = self._scale(segments)
 
         try:
-            replayed = self._replay(segments, scaled, privileged)
-            batch = self._chunks(segments, replayed)
-            stats = self._learn(batch)
+            try:
+                replayed = self._replay(segments, scaled, privileged)
+                batch = self._chunks(segments, replayed)
+                stats = self._learn(batch)
 
-        except RuntimeError as failure:
-            if self.device.type == "cpu" or "cuda" not in str(failure).lower():
-                raise
+            except RuntimeError as failure:
+                if self.device.type == "cpu" or "cuda" not in str(failure).lower():
+                    raise
 
-            logger.error("the %s device failed during an update: %s", self.device, str(failure).splitlines()[0])
-            logger.error("carrying on from the CPU; check the GPU before trusting it again")
+                logger.error("the %s device failed during an update: %s", self.device, str(failure).splitlines()[0])
+                logger.error("carrying on from the CPU; check the GPU before trusting it again")
 
-            self._fall_back_to_cpu()
+                self._fall_back_to_cpu()
 
-            replayed = self._replay(segments, scaled, privileged)
-            batch = self._chunks(segments, replayed)
-            stats = self._learn(batch)
+                replayed = self._replay(segments, scaled, privileged)
+                batch = self._chunks(segments, replayed)
+                stats = self._learn(batch)
+
+        except NotFinite as failure:
+            # _learn has already put everything back; nothing of this update survives but the log line.
+            return self._skipped(str(failure), steps, started, scrubbed)
+
+        self.skipped_in_a_row = 0
 
         # The statistics move after the update, never before it: the log probabilities the game recorded were worked out
         # behind the ones it was given, and shifting them first would make every ratio in this update a lie.
@@ -450,8 +497,152 @@ class Trainer:
             vram = torch.cuda.max_memory_allocated(self.device) / 2**30
             torch.cuda.reset_peak_memory_stats(self.device)
 
-        stats.update({"steps": steps, "drift": drift, "seconds": time.time() - started, "vram": vram})
+        stats.update({"steps": steps, "drift": drift, "seconds": time.time() - started, "vram": vram,
+                      "scrubbed": scrubbed})
         return stats
+
+    def _skipped(self, why: str, steps: int, started: float, scrubbed: int) -> dict:
+        """One iteration that was not learned from, said loudly, and shaped like any other iteration's figures so that the
+        rest of the loop and the dashboard carry on reading them.
+
+        Nothing of the abandoned update is kept: the weights, Adam's moments, the learning rate and the observation
+        normaliser are all exactly what they were before it, so the game is handed the same policy again under the next
+        iteration's number and collects another round under it. That is the right answer to one bad iteration, and the wrong
+        one to a network that has genuinely gone bad, which is what the count is for.
+        """
+
+        self.skipped_in_a_row += 1
+
+        # One past the iteration counter, because the loop advances it after the update and every other line in the log --
+        # report's, the checkpoint's -- is numbered the way it is afterwards.
+        logger.error(
+            "iteration %d was NOT learned from: %s. Every parameter, Adam's moments and the normaliser are as they were "
+            "before it, and the same policy goes out again. %d in a row; the run stops at %d.",
+            self.iteration + 1, why, self.skipped_in_a_row, max(1, self.config.skip_limit),
+        )
+
+        return {
+            "policy": float("nan"), "value": float("nan"), "entropy": float("nan"), "clip": float("nan"),
+            "kl": float("nan"), "teacher": 0.0, "aux": {}, "epochs": 0, "chunks": 0, "rate": self.rate,
+            "steps": steps, "drift": float("nan"), "seconds": time.time() - started, "vram": 0.0,
+            "scrubbed": scrubbed, "skipped": why,
+        }
+
+    def _finite(self, segments: list[Segment]) -> tuple[list[Segment], int]:
+        """The segments an update may learn from, and how many steps were thrown away to get them.
+
+        A segment is cut at its first row holding anything that is not a number -- in the observation, in the privileged
+        columns, in the action, in the log probability or in the reward -- and what is before that row is kept as a segment
+        that was merely cut off rather than one that ended: the fight did not finish there, so it is bootstrapped from the
+        last good observation exactly as a stretch of a fight whose continuation never arrived is. A segment whose very first
+        row is bad, or whose starting memory is, goes entirely: there is nothing before it to keep.
+
+        Rows are dropped rather than mended because a row is one tick of one fight and there are sixty five thousand of them
+        an iteration, and because the alternative is what happened: a breeze with a NaN vertical velocity put 54 such rows
+        into one shard, PPO averaged them into a loss, and one Adam step wrote a NaN into all 91 tensors of the network,
+        normaliser included. Nothing downstream caught it -- the drift check is ``NaN > 1e-3``, which is False -- so the
+        first thing to notice was the export refusing to write weights, by which time the run's only state on disk was
+        already poisoned. See docs/findings.md.
+        """
+
+        kept: list[Segment] = []
+        dropped_steps = 0
+        dropped_whole = 0
+        cut_short = 0
+        first = ""
+
+        for segment in segments:
+            bad, why = self._first_bad_row(segment)
+
+            if bad is None:
+                kept.append(segment)
+                continue
+
+            first = first or f"{why}, agent {segment.key} step {bad} of {segment.steps}"
+
+            # One step fewer than the rows that are good, because the row a segment ends on is a row of its own: a segment
+            # of n steps needs n + 1 good observations, the last of which is what the cut fight is priced against. Keeping
+            # bad steps instead leaves the bad row itself as that bootstrap, and then every advantage in the segment is a
+            # NaN again with nothing in the batch to show where from -- which is what the first cut of this guard did.
+            keep = bad - 1
+            dropped_steps += segment.steps - max(0, keep)
+
+            if keep < 1:
+                dropped_whole += 1
+                continue
+
+            cut_short += 1
+
+            kept.append(
+                Segment(
+                    key=segment.key,
+                    obs=segment.obs[: keep + 1].copy(),
+                    privileged=segment.privileged[: keep + 1].copy(),
+                    actions=segment.actions[:keep].copy(),
+                    log_probs=segment.log_probs[:keep].copy(),
+                    rewards=segment.rewards[:keep].copy(),
+                    h0=segment.h0,
+                    # Cut rather than finished, whatever the shard said: the rows that ended the fight are the ones being
+                    # thrown away, so the last good row is a position to be priced and not an outcome.
+                    done=False,
+                    new=segment.new,
+                )
+            )
+
+        if dropped_steps:
+            logger.error(
+                "dropped %s steps that were not finite before the update: %d of %d segments cut short and %d thrown away "
+                "whole. The first was %s",
+                f"{dropped_steps:,}", cut_short, len(segments), dropped_whole, first,
+            )
+
+        return kept, dropped_steps
+
+    def _first_bad_row(self, segment: Segment) -> tuple[int | None, str]:
+        """The first row of a segment holding something that is not a number, and which field it was, or ``(None, "")``.
+
+        Counted in rows of the segment, so row ``steps`` is the observation the segment ended on, which is a row of its own
+        and is what a cut fight is bootstrapped from.
+        """
+
+        if not np.isfinite(segment.h0).all():
+            return 0, "the memory the segment starts from"
+
+        rows = ~np.isfinite(segment.obs).all(axis=1)
+        rows |= ~np.isfinite(segment.privileged).all(axis=1)
+
+        steps = segment.steps
+        rows[:steps] |= ~np.isfinite(segment.actions).all(axis=1)
+        rows[:steps] |= ~np.isfinite(segment.log_probs)
+        rows[:steps] |= ~np.isfinite(segment.rewards)
+
+        if not rows.any():
+            return None, ""
+
+        row = int(rows.argmax())
+
+        # Which column, by name, since a row number alone says nothing about what went wrong. The observation is asked
+        # first because it is where every one of these has ever come from.
+        columns = np.flatnonzero(~np.isfinite(segment.obs[row]))
+
+        if columns.size:
+            return row, f"the observation's {self.schema.where(int(columns[0]))}"
+
+        columns = np.flatnonzero(~np.isfinite(segment.privileged[row]))
+
+        if columns.size:
+            name = SHARD_PRIVILEGED[int(columns[0])] if int(columns[0]) < len(SHARD_PRIVILEGED) else str(columns[0])
+            return row, f"the privileged column {name}"
+
+        if row < steps and not np.isfinite(segment.actions[row]).all():
+            chosen = int(np.flatnonzero(~np.isfinite(segment.actions[row]))[0])
+            name = self.schema.action_names[chosen] if chosen < len(self.schema.action_names) else str(chosen)
+            return row, f"the action {name}"
+
+        if row < steps and not np.isfinite(segment.log_probs[row]):
+            return row, "the log probability the game recorded"
+
+        return row, "the reward"
 
     def _describe_drift(self, segments: list[Segment], replayed: list[Replayed]) -> None:
         """Says as much as can be said about the one row that disagreed most, because a drift warning is a max over tens of
@@ -462,6 +653,13 @@ class Trainer:
         that a millionth of a difference in the mean is a large difference in a log probability. So it names the row, says
         whether it is the row a segment starts on (the only row whose memory came from another policy), and prints the
         action, the spread of each continuous control, and the mask each choice was under.
+
+        **The mask is printed as which choices it opened, not only as the numbers it is made of**, because those numbers are
+        not a nought-and-one mask and reading them as one sends people looking for a bug that is not there. A mask is an
+        observation offset whose values are open above zero (see ``schema.Head``), and on the humanoid the slot head's mask
+        *is* the hotbar block: its values are item categories, so a row reads ``[0.125 0 0 ...]`` for a hand carrying one
+        thing in slot nought, and that is exactly what both sides masked on. Every drift line blast7 ever printed said
+        something of that shape.
         """
 
         worst = (0.0, -1, -1)
@@ -494,7 +692,13 @@ class Trainer:
         for head in self.schema.heads:
             if head.mask >= 0:
                 mask = segment.obs[step, head.mask : head.mask + head.size]
-                logger.warning("  %s was masked by %s", head.name, np.array2string(mask, precision=3))
+                open_to = np.flatnonzero(mask > 0.0)
+
+                logger.warning(
+                    "  %s was open to %s of %d, from %s, which is %s",
+                    head.name, open_to.tolist() or "nothing, so every choice was left open", head.size,
+                    self.schema.where(head.mask), np.array2string(mask, precision=3),
+                )
 
     def _scale(self, segments: list[Segment]) -> tuple[list[np.ndarray], list[np.ndarray]]:
         """Rewards as the critic sees them, the episode totals as the game paid them, and everything it is told besides.
@@ -804,6 +1008,64 @@ class Trainer:
         return targets
 
     def _learn(self, batch: dict[str, Tensor]) -> dict:
+        """Every epoch of one update, or none of it.
+
+        An update that produces a loss or a gradient that is not a number is abandoned rather than applied: the snapshot
+        taken here is put back and NotFinite is raised, so the caller finds the trainer exactly as it was before the first
+        epoch, Adam's moments included. Nothing is stepped on a bad minibatch either -- the check is between the backward
+        pass and the step -- so it is only the *earlier* minibatches of the same update that the snapshot has to undo.
+        """
+
+        before = self._snapshot()
+
+        try:
+            return self._epochs(batch)
+
+        except NotFinite:
+            self._restore(before)
+            self.actor.eval()
+            self.critic.eval()
+            raise
+
+    def _snapshot(self) -> dict:
+        """Everything an update may move, copied: the parameters of all three networks, both optimizers' moments, the
+        steered rate, and whether the critic has learned anything. Deep copies, because a state dict hands out the live
+        tensors themselves.
+
+        A megabyte or two of tensors once an update, against an update that takes seconds. What it buys is that an update
+        can be undone whole rather than half applied, which is the difference between one wasted iteration and a run whose
+        every parameter is a NaN.
+        """
+
+        return {
+            "actor": copy.deepcopy(self.actor.state_dict()),
+            "critic": copy.deepcopy(self.critic.state_dict()),
+            "optimizer": copy.deepcopy(self.optimizer.state_dict()),
+            "aux": copy.deepcopy(self.aux.state_dict()) if self.aux is not None else None,
+            "aux_optimizer": copy.deepcopy(self.aux_optimizer.state_dict()) if self.aux_optimizer is not None else None,
+            "rate": self.rate,
+            "critic_trained": self.critic_trained,
+        }
+
+    def _restore(self, snapshot: dict) -> None:
+        """Puts back what _snapshot took."""
+
+        self.actor.load_state_dict(snapshot["actor"])
+        self.critic.load_state_dict(snapshot["critic"])
+        self.optimizer.load_state_dict(snapshot["optimizer"])
+
+        if self.aux is not None and snapshot["aux"] is not None:
+            self.aux.load_state_dict(snapshot["aux"])
+            self.aux_optimizer.load_state_dict(snapshot["aux_optimizer"])
+
+        self.rate = snapshot["rate"]
+        self.critic_trained = snapshot["critic_trained"]
+
+        # Adam's saved groups carry the rate they were written with, which is this one; said again so the two cannot part.
+        for group in self.optimizer.param_groups:
+            group["lr"] = self.rate
+
+    def _epochs(self, batch: dict[str, Tensor]) -> dict:
         config = self.config
 
         valid = batch["mask"]
@@ -899,20 +1161,34 @@ class Trainer:
                             loss = loss + config.aux_coef * piece
                             aux_losses.setdefault(name, []).append(piece.item())
 
+                # Before anything is stepped. A loss that is not a number has one in every term of it, so there is nothing
+                # in this minibatch to learn from and a step would write the NaN into every parameter Adam touches.
+                if not torch.isfinite(loss):
+                    raise NotFinite(f"a minibatch of {int(mask.sum())} steps had a loss of {loss.item()}")
+
                 self.optimizer.zero_grad(set_to_none=True)
 
                 if self.aux_optimizer is not None:
                     self.aux_optimizer.zero_grad(set_to_none=True)
 
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(
+                norm = torch.nn.utils.clip_grad_norm_(
                     list(self.actor.parameters()) + list(self.critic.parameters()), config.max_grad_norm
                 )
 
                 # Clipped on their own, since they are stepped on their own. A head left unclipped is one blown gradient
                 # away from feeding nonsense back into the memory it is supposed to be shaping.
-                if self.aux_optimizer is not None:
-                    torch.nn.utils.clip_grad_norm_(self.aux.parameters(), config.max_grad_norm)
+                aux_norm = (torch.nn.utils.clip_grad_norm_(self.aux.parameters(), config.max_grad_norm)
+                            if self.aux_optimizer is not None else torch.zeros(()))
+
+                # A finite loss can still differentiate to a gradient that is not finite, and clipping does not save it:
+                # the clip divides by the norm, so one non-finite gradient makes a non-finite norm and scales every other
+                # gradient by it. Checked here, between the backward pass and the step, so nothing is written either way.
+                if not torch.isfinite(norm) or not torch.isfinite(aux_norm):
+                    raise NotFinite(
+                        f"a minibatch of {int(mask.sum())} steps had a gradient norm of {float(norm)}"
+                        + ("" if self.aux_optimizer is None else f" and {float(aux_norm)} on the auxiliary heads")
+                    )
 
                 self.optimizer.step()
 
@@ -1253,6 +1529,18 @@ class Trainer:
         returns, lengths, wins = self.take_episode_stats()
         episodes = len(returns)
 
+        # An iteration that was not learned from has no losses to report, and a line of NaNs where the figures go is how
+        # blast7's failure read in the log: every field filled in, nothing saying what had happened. The prefix up to the
+        # win rate is the same, because scripts\watch.ps1 reads the steps and the fights off it.
+        if stats.get("skipped"):
+            logger.warning(
+                "iteration %5d  steps %11s  episodes %5d  win %5.1f%%  |  NOT LEARNED FROM: %s  |  %d in a row  "
+                "%4.1fs",
+                self.iteration, f"{self.total_steps:,}", episodes, 100.0 * wins / max(1, episodes),
+                stats["skipped"], self.skipped_in_a_row, stats["seconds"],
+            )
+            return
+
         logger.info(
             "iteration %5d  steps %11s  episodes %5d  win %5.1f%%  return %+7.3f  length %6.1f  |  "
             "pi %+.4f  v %.4f  ent %.3f  clip %.3f  kl %.4f  ep %d  |  drift %.1e  %s %4.1fs  vram %.2fG  |  %6.1fm",
@@ -1308,7 +1596,56 @@ class Trainer:
     def export(self, path: Path, iteration: int) -> Path:
         return export_weights(path, self.actor, self.schema.schema_id, iteration)
 
+    def not_finite(self) -> str:
+        """The tensors of this trainer that hold something other than a number, named, or an empty string for a healthy one.
+
+        Everything a state carries that a run would have to carry on from: all three networks, and the observation
+        normaliser, which is the one piece of state that no amount of further training would mend.
+        """
+
+        named = [("actor", self.actor.state_dict()), ("critic", self.critic.state_dict())]
+
+        if self.aux is not None:
+            named.append(("aux", self.aux.state_dict()))
+
+        found = [
+            f"{owner}.{name}"
+            for owner, state in named
+            for name, tensor in state.items()
+            if torch.is_floating_point(tensor) and not torch.isfinite(tensor).all()
+        ]
+
+        found += [name for name, statistic in (("normalizer.mean", self.normalizer.mean),
+                                              ("normalizer.var", self.normalizer.var))
+                  if not torch.isfinite(statistic).all()]
+
+        found += [name for name, value in (("reward_scaler.mean", self.reward_scaler.mean),
+                                           ("reward_scaler.var", self.reward_scaler.var))
+                  if not np.isfinite(value)]
+
+        if not found:
+            return ""
+
+        return f"{len(found)} of them: " + ", ".join(found[:6]) + (", ..." if len(found) > 6 else "")
+
     def save(self, path: Path) -> None:
+        """Writes everything needed to carry the run on, or refuses and leaves the file that is there alone.
+
+        **A state that is not finite is never written.** The export already refuses non-finite weights, but that check fires
+        after this one has run, and blast7 died of exactly that ordering: one bad update, state.pt overwritten with 91
+        non-finite tensors, then the export refusing and the run stopping with nothing on disk worth resuming from. The last
+        good state has to survive the failure, and the guards in update mean a state should never get here poisoned in the
+        first place -- so this is the assertion that says both.
+        """
+
+        bad = self.not_finite()
+
+        if bad:
+            raise ValueError(
+                f"refusing to write a state that is not finite -- {bad}. {path} is left exactly as it was, so the run "
+                f"can be carried on from it; see docs/findings.md"
+            )
+
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_suffix(".tmp")
 

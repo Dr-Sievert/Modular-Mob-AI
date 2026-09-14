@@ -5,6 +5,69 @@ are deliberate.
 
 ## Throughput and stability
 
+- **One breeze with a NaN vertical velocity killed a 23,757 iteration run, and the only state left on disk was the
+  poisoned one.** blast7 stopped at iteration 23757 with `refusing to export weights that are not finite`. Iteration 23756
+  was healthy in every figure (kl 0.0075, drift 3.9e-04), and 23757 went NaN in all of them at once. The whole chain, from
+  the eight preserved shards:
+
+  1. In worker 3's fight, agent `(6, 3, 150543)`, a **breeze** arrived at tick 14 of its segment with a NaN in
+     `getDeltaMovement().y`. The observation's `ENEMY_VELOCITY_UP` for slot 1 is that number divided by a constant, so the
+     row carried a NaN at offset 90 — and only there: `x` and `z` were finite, which is what says the NaN was the entity's
+     own and not a rotation or a knockback. The slot is a breeze beyond doubt: 30 health, 3 attack damage, 0.63 movement
+     speed, 0.6 by 1.77, shoots, which is `Breeze.createAttributes` to the digit.
+     - **Whose arithmetic made the NaN is not pinned, and it is not this mod's.** Nothing in `mod/` writes another entity's
+       vertical velocity: the only push the agent gives anything is `AgentMob#resolveAttack`'s knockback, whose `y` is a
+       literal `0.1`, and a NaN yaw there would show in `x` and `z` first. The nearest candidate is vanilla's own
+       `LongJumpUtil.calculateJumpVectorForAngle`, which a breeze's whole movement goes through: it guards its square root
+       with `if (d < 0.0) return empty` and its magnitude with `if (v > max) return empty`, **and a NaN passes both**, since
+       every comparison against a NaN is false. A 0/0 in that division therefore returns a NaN jump vector rather than
+       nothing. That path would make all three components NaN, though, so it is not the one that fired here, and hunting
+       further is not worth it: the mod cannot patch vanilla's physics, and the fix has to be that a number from the world
+       is never trusted.
+  2. **Vanilla made it permanent.** `Entity#move` only moves an entity when `collide(movement).lengthSqr() > 1.0E-7`, and
+     that is false for a NaN, so the breeze never moved again and never worked the NaN off: its position in the shard is
+     identical to four decimals for the remaining 54 ticks, and its vertical velocity is NaN on every one of them.
+  3. **One NaN input is a NaN network.** Every layer mixes the whole row, so all 19 logits went NaN, all four continuous
+     controls sampled NaN, and the log probability the game wrote down was NaN. The agent stopped aiming and stopped
+     pressing anything for the rest of the fight, and its own echo block went NaN with it (offsets 33, 34, 38, 39).
+  4. **PPO averaged 54 such rows into a loss.** One Adam step then wrote a NaN into all 91 tensors of the run —
+     `actor.fc1.weight`, `actor.gru.weight_ih_l0`, `actor.log_std` — and `_refresh_normalizer` took the NaN columns into
+     `actor.norm_mean` and `actor.norm_std`, which is the one piece of state no further training would mend.
+  5. **Nothing caught it on the way down.** The drift check is `drift > 1e-3` and `NaN > 1e-3` is False; worse, `max()` over
+     the per-segment maxima *skips* a NaN, because `nan > current` is also False, so the log reported a perfectly healthy
+     drift of 2.8e-04 for the very update that was destroying the network. The export's finite check was the first and only
+     one to fire — and it fires *after* `trainer.save`, so `state.pt` had already been overwritten with the poison and the
+     run had nothing on disk worth resuming from.
+
+  Reproduced offline: `state-23750.pt` plus those eight shards, with the guards below turned off, gives `pi nan` and 33
+  non-finite tensors named in the same order the dead run's state had them. With the guards on, the same update finishes at
+  `pi +0.0253  v 0.2203`.
+
+  Three things changed, and all three are cheap:
+  - **The game scrubs a row before the network sees it** (`AgentBatch.finite`). Most of an observation is the agent's own
+    state, but a good part of it is copied off other entities, and those numbers are vanilla's to get wrong. A non-finite
+    value is read as zero — a still opponent, which is nearer the truth about a body that will never move again than a NaN
+    is — and the first eight say which field of which body they were. Done where every body's row is finished, so a body
+    added later is covered by having a brain at all, and it costs one `Float.isFinite` pass over a row on a tick that
+    already casts eight rays.
+  - **The trainer drops rows that are not finite before the update** (`Trainer._finite`). A segment is cut at its first bad
+    row — in the observation, the privileged columns, the action, the log probability or the reward — and what is before it
+    is kept as a stretch that was merely cut off rather than one that ended. **One step fewer than the good rows**: a
+    segment of n steps needs n + 1 good observations, the last being what the cut fight is priced against, and keeping the
+    bad row as that bootstrap put a NaN back into every advantage of the segment with nothing in the batch to show where
+    from. The log line names the field out of the body's own schema — "enemies slot 1, offset 6 of 31 (row offset 90)" —
+    which is the sentence that turned four hours of this into ten minutes.
+  - **An update that goes non-finite anyway is abandoned whole** (`Config.skip_limit`). The loss is checked before anything
+    is stepped and the gradient norm between the backward pass and the step, so no bad minibatch is ever applied; a snapshot
+    taken at the top of the update puts the earlier, good minibatches of the same update back, Adam's moments included. The
+    iteration reports itself as `NOT LEARNED FROM`, the same weights go out under the next number, and the run carries on.
+    Three in a row stops it — **without writing a state**, so the last good one stays where it is. And `Trainer.save` now
+    refuses a non-finite state outright: the file that is there is always the one to carry on from.
+- **`slot was masked by [0.125 0. 0. ...]` is not a broken mask.** It looks like one and it is not, and the drift line used
+  to print nothing but those numbers. A mask is an observation offset whose values are open above zero (`schema.Head`), and
+  on the humanoid the slot head's mask *is* the hotbar block: its values are item categories, so a hand carrying one thing
+  in slot nought reads exactly that, and both sides masked on the same numbers. The line now says which choices it opened
+  and which block it came from, so nobody goes looking again.
 - **A fifth of the forward pass was one call to `Math.tanh`, and `Math.exp` gives the same answer.** `tanh(x)` is
   `2 * sigmoid(2x) - 1`, so the GRU's candidate can be worked out from `Math.exp`, which is an intrinsic, instead of from
   `Math.tanh`, which is `StrictMath`'s software `expm1`. Pinned to one core the call went from 30.2 ns to 14.8 ns, and the
