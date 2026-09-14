@@ -88,9 +88,10 @@ Read these before changing anything:
 ```
 scripts\setup.ps1                      once per machine: Java 21, Python + PyTorch, compile, parity check
 scripts\test.ps1                       20 arena fights with the scripted fighter: expect 20/20, 54 ticks each
-scripts\test.ps1 -Mechanics            the item and block rules against a player's numbers: expect 63 passed
+scripts\test.ps1 -Mechanics            the item and block rules against a player's numbers: expect 66 passed
 scripts\test.ps1 -Crowd -Weights models\blast8\best.mbw    one fight with 0, 1, 3 and 9 monsters standing about it, tick by tick
 scripts\test.ps1 -Pack                 the teacher, or -Weights, against packs of 2, 3 and 4 zombies and 2 and 3 vindicators, tick by tick
+scripts\test.ps1 -Shots                the teacher, or -Weights, against a skeleton, a stray, a pillager and a ghast: what became of every shot
 scripts\test.ps1 -Horde                20, 100, 500 and 2,000 mobs round one agent: clips a tick, time to perceive, ticks lived
 scripts\test.ps1 -Play                 the agent in a real game (jar networks, /mmai, sides, loadouts, pickup, its screen): expect 29 passed
 scripts\play.ps1                       the dev client, agents on the best network in models\; -Model, -Weights, -Loader

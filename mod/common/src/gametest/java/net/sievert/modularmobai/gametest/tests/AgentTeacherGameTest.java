@@ -13,9 +13,12 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.MobSpawnType;
 import net.minecraft.world.entity.monster.Creeper;
+import net.minecraft.world.entity.monster.Ghast;
+import net.minecraft.world.entity.projectile.LargeFireball;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.Vec3;
 import net.sievert.modularmobai.Constants;
 import net.sievert.modularmobai.arena.Episode;
 import net.sievert.modularmobai.arena.Loadout;
@@ -41,6 +44,195 @@ public class AgentTeacherGameTest {
 
     /** How long a creeper's fuse burns before it goes off, so a test can watch the teacher react and stop short of it. */
     private static final int FUSE_TICKS = 30;
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // What is shot at it
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * A fireball coming at a fighter with nothing in its off hand is swung at, and a swing sends it back. The timing is
+     * the whole rule, so this is what pins it.
+     *
+     * <p>A fireball covers about a block a tick and a swing reaches three, with a block of pick radius on the fireball
+     * besides, so the window is a couple of ticks wide — and the observation the press is decided from is already a tick
+     * old, which is why the fighter swings at where the shot will be rather than where it is; see
+     * {@code ScriptedBrain#arriving}. Too early and the press costs a cooldown and touches nothing, too late and the
+     * fireball has gone off on the agent.
+     *
+     * <p>The body it is fighting stands right across the plot and the fireball comes down the same line, which is the
+     * geometry of the fight it is taken from — a ghast sits twenty blocks off and its fireball arrives alone — and it is
+     * also what keeps this test about the timing: a body the fighter could have hit instead takes the press, by the rule's
+     * own {@code aimed} test, and a test where both were true at once would measure which rule won rather than whether
+     * this one works. The body is a skeleton rather than the ghast the fireball belongs to for the same reason: a ghast is
+     * four blocks wide, so one standing across a nine block plot has hitbox inside the swing's own reach and the press
+     * would have two things it could have landed on.
+     *
+     * <p>That the fireball was <b>deflected</b> rather than destroyed needs no separate reading. {@code Fireball#hurt}
+     * answers false to everything, so the damage path of {@code AgentMob#resolveAttack} cannot report a hit on one: a
+     * press that lands on a fireball at all is a press that went through vanilla's deflect branch. What the deflection
+     * itself does — the direction, the new owner, the cooldown it costs — is pinned in {@link AgentMeleeGameTest}.
+     */
+    @GameTest(template = Mechanics.ARENA, timeoutTicks = 300)
+    public static void theTeacherSendsAFireballBack(GameTestHelper helper) {
+
+        AgentMob agent = Mechanics.agent(helper, new BlockPos(1, 2, 1), 0.0F, 0.0F);
+        Mob ghast = helper.spawnWithNoFreeWill(EntityType.SKELETON, new Vec3(7.5D, 2.0D, 7.5D));
+
+        agent.startEpisode(new Episode(Mechanics.FIGHT_TICKS, Mechanics.bounds(helper), ghast));
+        Loadout.SWORD.equip(agent);
+        agent.brain().use(Brains.scripted());
+
+        // Two of them. The first press of a fight is the fighter asking its own off hand whether there is a shield in it
+        // at all, and that press is spent whatever the answer, so the first fireball is the question and the second is the
+        // rule. A ghast throws a dozen in a real fight.
+        int first = Mechanics.SETTLE + 2;
+        int second = first + 16;
+
+        Mechanics.run(helper, tick -> {
+
+            if (tick == first || tick == second) {
+
+                Vec3 at = Mechanics.relative(helper, agent.getEyePosition());
+                Vec3 nock = at.add(at.subtract(new Vec3(7.5D, 3.6D, 7.5D)).normalize().scale(-5.0D));
+
+                // Five blocks out and down the line between them, coming in at about what a ghast's own fireball has
+                // picked up by the time it arrives; it accelerates along its own flight from there, as vanilla's does.
+                Vec3 flight = at.subtract(nock).normalize().scale(0.5D);
+
+                Mechanics.fireball(helper, ghast, nock.x, nock.y, nock.z, flight.x, flight.y, flight.z);
+                return false;
+            }
+
+            for (LargeFireball shot : helper.getLevel().getEntitiesOfClass(LargeFireball.class, Mechanics.bounds(helper))) {
+
+                if (shot.getOwner() != agent) {
+
+                    continue;
+                }
+
+                // Vanilla's deflection hands the projectile to whoever swung at it and throws it along that swinger's own
+                // look, so the two halves are one assertion: the agent owns it, and it is going away from the agent.
+                Vec3 away = shot.position().subtract(agent.getEyePosition()).normalize();
+
+                helper.assertTrue(shot.getDeltaMovement().normalize().dot(away) > 0.0D,
+                        "The fireball is the agent's now but still coming at it, at " + shot.getDeltaMovement());
+
+                helper.assertValueEqual(agent.getHealth(), agent.getMaxHealth(), "the agent's health after a deflection");
+                return true;
+            }
+
+            if (tick >= second + 40) {
+
+                helper.fail("No fireball was ever sent back: the teacher wore both of them");
+            }
+
+            return false;
+        });
+    }
+
+    /**
+     * An arrow whose line would pass through a fighter with no shield is stepped out of, across the line rather than away
+     * from it: nothing outruns an arrow, and the whole of a dodge is not being where it is going.
+     *
+     * <p>Measured as the ground the agent covers <b>across</b> the shot's own line while it is in the air, which is the
+     * only definition that is not reading the rule back to itself. The agent is walking at the skeleton the whole time, so
+     * ground covered along the line is the fight and ground covered across it is the dodge.
+     */
+    @GameTest(template = Mechanics.ARENA, timeoutTicks = 300)
+    public static void theTeacherStepsOutOfAnArrowsWay(GameTestHelper helper) {
+
+        steppedOrBlocked(helper, Loadout.SWORD, true);
+    }
+
+    /**
+     * And a fighter with a shield raises it instead, which is the better answer and the one that was already there: a
+     * shield stops the arrow outright where a step only moves the body it was aimed at, and the feet stay on the fight.
+     * The dodge is refused to a shield carrier rather than ranked below the shield.
+     */
+    @GameTest(template = Mechanics.ARENA, timeoutTicks = 300)
+    public static void aShieldCarrierRaisesItRatherThanStepping(GameTestHelper helper) {
+
+        steppedOrBlocked(helper, Loadout.SWORD_AND_SHIELD, false);
+    }
+
+    /**
+     * An arrow down the line between a skeleton and the teacher, twice over: the first so that the fighter has asked its
+     * own off hand what is in it, the second to measure. What it does about the second is the whole difference between the
+     * two loadouts.
+     *
+     * @param stepping whether the fighter should have gone across the shot's line rather than raised something
+     */
+    private static void steppedOrBlocked(GameTestHelper helper, Loadout loadout, boolean stepping) {
+
+        // On the diagonal, because the fighter closes on what it is fighting at about a fifth of a block a tick and the
+        // dodge is refused inside its own reach: eight and a half blocks apart leaves it ground to cross under fire.
+        AgentMob agent = Mechanics.agent(helper, new BlockPos(1, 2, 1), 0.0F, 0.0F);
+        Mob skeleton = helper.spawnWithNoFreeWill(EntityType.SKELETON, new BlockPos(7, 2, 7));
+
+        agent.startEpisode(new Episode(Mechanics.FIGHT_TICKS, Mechanics.bounds(helper), skeleton));
+        loadout.equip(agent);
+        agent.brain().use(Brains.scripted());
+
+        int first = Mechanics.SETTLE + 2;
+        int second = first + 14;
+        int read = second + 14;
+
+        Vec3[] way = new Vec3[1];
+        Vec3[] from = new Vec3[1];
+        boolean[] blocked = {false};
+
+        Mechanics.run(helper, tick -> {
+
+            blocked[0] |= agent.isBlocking();
+
+            if (tick == first || tick == second) {
+
+                Vec3 at = Mechanics.relative(helper, agent.getEyePosition());
+                Vec3 nock = new Vec3(7.5D, 3.4D, 7.5D);
+                Vec3 flight = at.subtract(nock).normalize().scale(0.6D);
+
+                Mechanics.shoot(helper, skeleton, nock.x, nock.y, nock.z, flight.x, flight.y, flight.z);
+
+                if (tick == second) {
+
+                    way[0] = new Vec3(flight.x, 0.0D, flight.z).normalize();
+                    from[0] = agent.position();
+                }
+
+                return false;
+            }
+
+            if (tick == read) {
+
+                Vec3 went = agent.position().subtract(from[0]);
+
+                // How far it went across the shot's line, which is the cross product of the two flattened; along the line
+                // is the ground it was covering anyway.
+                double across = Math.abs(went.x * way[0].z - went.z * way[0].x);
+
+                Constants.LOG.info(String.format(Locale.ROOT, "%s went %.2f blocks across the arrow and %s shield",
+                        loadout.name(), across, blocked[0] ? "raised its" : "raised no"));
+
+                if (stepping) {
+
+                    helper.assertTrue(across >= 0.5D, "The fighter went "
+                            + String.format(Locale.ROOT, "%.2f", across)
+                            + " blocks across the arrow's line, which is not a step out of its way");
+                }
+
+                else {
+
+                    helper.assertTrue(blocked[0], "The shield never came up against the arrow");
+                    helper.assertTrue(across < 0.5D, "The shield carrier stepped "
+                            + String.format(Locale.ROOT, "%.2f", across) + " blocks aside as well as raising it");
+                }
+
+                return true;
+            }
+
+            return false;
+        });
+    }
 
     // ---------------------------------------------------------------------------------------------------------------
     // Getting out of something that hurts

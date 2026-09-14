@@ -2,6 +2,8 @@ package net.sievert.modularmobai.gametest.tests;
 
 import java.util.function.IntPredicate;
 
+import org.jetbrains.annotations.Nullable;
+
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.Registries;
@@ -10,8 +12,10 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.projectile.Arrow;
+import net.minecraft.world.entity.projectile.LargeFireball;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.Enchantment;
@@ -102,6 +106,39 @@ final class Mechanics {
         helper.getLevel().addFreshEntity(arrow);
 
         return arrow;
+    }
+
+    /**
+     * A ghast's fireball in the air from wherever, with whatever velocity, and an owner or none. Everything about it is
+     * vanilla's: one point of explosion power, as a ghast's has, and the acceleration it puts on itself every tick.
+     *
+     * <p>Beside {@link #shoot} because the two are the same thing asked of the two shots that behave differently under a
+     * swing: an arrow is never deflected and a fireball always is, and both the melee suite and the teacher's own need one
+     * of each.
+     */
+    static LargeFireball fireball(GameTestHelper helper, @Nullable LivingEntity owner,
+            double x, double y, double z, double vx, double vy, double vz) {
+
+        Vec3 at = helper.absoluteVec(new Vec3(x, y, z));
+        LargeFireball fireball = new LargeFireball(EntityType.FIREBALL, helper.getLevel());
+
+        fireball.moveTo(at.x, at.y, at.z);
+
+        if (owner != null) {
+
+            fireball.setOwner(owner);
+        }
+
+        fireball.setDeltaMovement(vx, vy, vz);
+        helper.getLevel().addFreshEntity(fireball);
+
+        return fireball;
+    }
+
+    /** Where a spot in the world lies in this test's own plot, which is the frame every position in a test is written in. */
+    static Vec3 relative(GameTestHelper helper, Vec3 at) {
+
+        return at.subtract(helper.absoluteVec(Vec3.ZERO));
     }
 
     /**

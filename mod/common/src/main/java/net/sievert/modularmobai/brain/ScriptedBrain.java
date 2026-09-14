@@ -113,6 +113,26 @@ import net.sievert.modularmobai.entity.agent.MobControls;
  * the ranged rules' fights and they are exactly what they were. And a lit fuse still comes first, since a creeper is the one
  * body worth walking away from whatever else is standing there.
  *
+ * <h2>Against what is shot at it</h2>
+ *
+ * <p>A shot already in the air holds an enemy slot of its own, and until now the shield was the only thing that ever read
+ * one. Two rules more, and both are last resorts rather than tactics: they are reached only where the shield is not the
+ * answer, and neither touches the fight against a body.
+ *
+ * <ul>
+ *   <li><b>A fireball is sent back.</b> A player's swing deflects anything in the {@code redirectable_projectile} tag
+ *       along the swinger's own look, and the agent's hands are a player's, so a fireball arriving on a fighter with no
+ *       shield to raise is a fireball worth swinging at. The aim goes on the shot for the last few blocks of its flight,
+ *       which is the same direction as the ghast that fired it — the fireball flies in a straight line from it — so the
+ *       swing both finds the fireball and throws it back where it came from. Only a fireball: see {@link #DEFLECT_WIDTH}
+ *       for why the two wind charges in the same tag are deliberately left out.</li>
+ *   <li><b>An arrow is stepped out of</b>, and only by a fighter that has found no shield in its off hand. Where a shot's
+ *       line would pass through the agent, the feet go across that line rather than on with the fight, by the same one
+ *       step {@link #giveGround} chooses for a pack — so the grid keeps it off hazards and the rays keep it off ledges —
+ *       begun while there is still time for a step to matter. Never in a pack, never while walking away from a fuse, and
+ *       never on a tick the fighter would have struck: a blow landed is worth more than an arrow dodged.</li>
+ * </ul>
+ *
  * <h2>Everything else it carries</h2>
  *
  * <p>A drawn weapon and a shield each need something the observation does not carry: whether the weapon drawing is a bow or
@@ -372,6 +392,56 @@ public final class ScriptedBrain implements Brain {
      * a shield up for the whole flight of every shot is a fighter that never covers the ground to the archer.
      */
     private static final float BLOCK_SHOT_RANGE = 12.0F;
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // Sending a shot back, and stepping out of one
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * How wide a shot has to read before a swing is worth throwing at it, over {@link ObservationSchema#SIZE_SCALE}.
+     *
+     * <p>A player's swing sends back anything in the {@code redirectable_projectile} tag and nothing else, and the one
+     * thing a slot says about a shot beyond where it is and where it is going is <b>how big it is</b>: everything else in
+     * the enemy block belongs to a body and a projectile leaves it at nought. A ghast's fireball is a block across, an
+     * arrow half of one, and that is the whole of the test — measured on the shots harness, where every fireball in the
+     * air read exactly 1.00 wide and every arrow 0.50.
+     *
+     * <p><b>Which is why the wind charges are left out</b>, and they are the other two thirds of the tag. A breeze's wind
+     * charge and a blaze's small fireball are both 0.3125 wide and there is nothing else in a projectile's slot to tell
+     * them apart, so a rule that swung at one would swing at the other — and a swing at a blaze's fireball cannot deflect
+     * it, does not stop it, and costs a whole attack cooldown against an opponent the agent is trying to close on. A wind
+     * charge takes one damage and some knockback. The trade is the wrong way round, so the fireball is the whole of this.
+     */
+    private static final float DEFLECT_WIDTH = 0.75F / ObservationSchema.SIZE_SCALE;
+
+    /**
+     * How near the shot has to be, on the tick the swing resolves, for the swing to reach it. A player's own entity reach
+     * is three blocks, and a fireball carries a block of pick radius on top of that, so four is the far edge of what the
+     * aim finds; a little inside it, because the observation is a tick old and the fireball covers about a block in one.
+     */
+    private static final float DEFLECT_REACH = 3.6F;
+
+    /** How far out the aim starts going to the shot rather than the body, which is a second or so of a fireball's flight. */
+    private static final float DEFLECT_AIM_RANGE = 12.0F;
+
+    /** How near the aim has to be, in degrees, before the press is worth spending: a swing that misses costs the cooldown. */
+    private static final float DEFLECT_CONE_DEGREES = 12.0F;
+
+    /**
+     * How near an arriving shot's line has to pass before stepping out of it is worth the ground. A body is six tenths of
+     * a block wide and an arrow is half of one, so under this the shot is arriving on the agent rather than past it. The
+     * slots are already narrower than the eye would be — only a shot whose line passes within a block and a half is given
+     * one at all — and this is the half of that which would actually land.
+     */
+    private static final double DODGE_MISS = 0.9D;
+
+    /**
+     * When the feet start moving out of the way, and when it is too late to bother. A step covers about a fifth of a block
+     * a tick sideways and a body is six tenths of a block wide, so three or four ticks of stepping is the whole of what a
+     * dodge needs; ten is that with room for the turn, and under two the arrow is closer than the step is long.
+     */
+    private static final int DODGE_TICKS = 10;
+    private static final int DODGE_LATEST = 2;
 
     // ---------------------------------------------------------------------------------------------------------------
     // A pack: several bodies all coming at once
@@ -841,6 +911,18 @@ public final class ScriptedBrain implements Brain {
             return;
         }
 
+        // Which shot in the air, if any, the hands are for and which the feet are: a fireball near enough to send back,
+        // and an arrow whose line would pass through the agent. Both are read here, before the aim, because each puts the
+        // eyes or the feet somewhere the fight against the body alone would not.
+        //
+        // Never while walking away from a fuse, which already has the feet and is already the right answer; the dodge is
+        // also never asked for in a pack, whose footwork is its own rule, nor by a fighter that has a shield to raise,
+        // which is a better answer to an arrow than any amount of walking. A drawn weapon never reaches either: it has
+        // returned above with the hands committed and the keys at a fifth, where a step goes nowhere and a press is
+        // swallowed.
+        int fireball = fleeing ? -1 : deflectable(o, obs);
+        int dodging = fleeing || crowded || me.shield != SHIELD_NONE ? -1 : dodged(o, obs);
+
         // Several bodies all coming at once, which is a different fight from one body twice over and the one this fighter
         // used to stand in the middle of and trade in. Everything that follows from it is gated on there being two of them
         // in the fight, so a fight against one opponent reaches none of it. Never while walking away from a lit fuse: that
@@ -886,7 +968,23 @@ public final class ScriptedBrain implements Brain {
         // the observation altogether — and it is the way out while the fight is being run from.
         float lookError = yawError;
 
-        if (running) {
+        // Where the eyes go up and down, which is the target's in every fight but one: a fireball comes down out of the
+        // sky and the swing that sends it back has to be aimed at it rather than at whatever fired it.
+        float lookForward = forward;
+        float lookRight = right;
+        float lookUp = up;
+
+        if (fireball >= 0) {
+
+            int shot = obs + ObservationSchema.enemyOffset(fireball);
+
+            lookForward = o[shot + ObservationSchema.ENEMY_FORWARD];
+            lookRight = o[shot + ObservationSchema.ENEMY_RIGHT];
+            lookUp = o[shot + ObservationSchema.ENEMY_UP];
+            lookError = (float) Math.toDegrees(Mth.atan2(lookRight, lookForward));
+        }
+
+        else if (running) {
 
             lookError = bearing(packStep, sin, cos);
         }
@@ -898,12 +996,13 @@ public final class ScriptedBrain implements Brain {
 
         a[act + ActionSchema.AIM_YAW] = Mth.clamp(lookError / MobControls.MAX_AIM_YAW_PER_TICK, -1.0F, 1.0F);
 
-        float horizontal = (float) Math.sqrt(forward * forward + right * right) * (float) ObservationSchema.VIEW_DISTANCE;
-        float wantedPitch = (float) -Math.toDegrees(Mth.atan2(up * (float) ObservationSchema.VIEW_DISTANCE, horizontal));
+        float horizontal = (float) Math.sqrt(lookForward * lookForward + lookRight * lookRight)
+                * (float) ObservationSchema.VIEW_DISTANCE;
+        float wantedPitch = (float) -Math.toDegrees(Mth.atan2(lookUp * (float) ObservationSchema.VIEW_DISTANCE, horizontal));
         float pitch = o[self + ObservationSchema.SELF_PITCH] * 90.0F;
+        float pitchError = wantedPitch - pitch;
 
-        a[act + ActionSchema.AIM_PITCH] =
-                Mth.clamp((wantedPitch - pitch) / MobControls.MAX_AIM_PITCH_PER_TICK, -1.0F, 1.0F);
+        a[act + ActionSchema.AIM_PITCH] = Mth.clamp(pitchError / MobControls.MAX_AIM_PITCH_PER_TICK, -1.0F, 1.0F);
 
         // Whatever it swings with, held ready. A draw that was under way is not cancelled by asking for another slot: the
         // body holds the slot until the draw is charged, looses, and swaps then. See AgentMob#drawHoldsTheSlot.
@@ -924,6 +1023,12 @@ public final class ScriptedBrain implements Brain {
         int shove = retreating ? -1 : this.hazardSpot(o, obs, distance, targetX, targetEye, targetZ);
         boolean linedUp = shove == start;
 
+        // The step across an arriving shot's line, which comes before closing the ground and after everything that is
+        // already about staying alive. Never on a tick the fighter would have struck: an arrow costs a few health and a
+        // blow given up costs a whole cooldown, so a body in reach with the swing ready keeps the feet.
+        int aside = dodging >= 0 && !retreating && !(stepsIn(me, strength) && distance <= PACK_AIM_RANGE)
+                ? this.stepAside(o, obs, dodging, sin, cos) : start;
+
         if (retreating) {
 
             if (pack) {
@@ -941,6 +1046,11 @@ public final class ScriptedBrain implements Brain {
 
                 next = this.retreat(o, obs, gridX(o, from, sin, cos), gridZ(o, from, sin, cos));
             }
+        }
+
+        else if (aside != start) {
+
+            next = aside;
         }
 
         else if (shove >= 0) {
@@ -986,6 +1096,19 @@ public final class ScriptedBrain implements Brain {
             return;
         }
 
+        // The shield was not raised — there is none in the off hand, an axe has just knocked it aside, or the rule did not
+        // want it — and a fireball is arriving. A swing sends it back along the agent's own look, which the aim has been
+        // putting on the shot for the last few blocks of its flight, so the press both finds it and throws it at whatever
+        // fired it. It costs the cooldown exactly as a landed blow does, which is why the aim has to be on it first and
+        // why a blow that is actually available comes before it: see deflectable and DEFLECT_REACH.
+        if (fireball >= 0 && !(aimed(distance, yawError) && strength >= FULL_STRENGTH)
+                && arriving(o, obs, fireball) <= DEFLECT_REACH
+                && Math.abs(lookError) < DEFLECT_CONE_DEGREES && Math.abs(pitchError) < DEFLECT_CONE_DEGREES) {
+
+            a[act + ActionSchema.ATTACK] = 1.0F;
+            return;
+        }
+
         // Whether this blow wants to carry knockback rather than the damage a critical adds. A hazard behind the target is
         // the whole fight; a reach longer than a man's, empty hands that have not swung yet, and health already gone are
         // each a reason to want whatever is in front of the agent further away than it is. Never while backing away, since
@@ -1004,7 +1127,7 @@ public final class ScriptedBrain implements Brain {
         // does barely more than five of a sword's six, and a vindicator then takes five hits instead of four. A swing
         // that meets a block on the way costs nothing, as a player's does, and clears grass and ferns out of the way, so a
         // line the grid says is blocked is no reason to hold back; it only decides where to walk.
-        boolean aimed = distance <= SWING_RANGE && Math.abs(yawError) < SWING_CONE_DEGREES;
+        boolean aimed = aimed(distance, yawError);
 
         if (aimed && strength >= FULL_STRENGTH) {
 
@@ -1033,6 +1156,204 @@ public final class ScriptedBrain implements Brain {
             a[act + ActionSchema.SPRINT] = 0.0F;
             me.sinceJump = 0;
         }
+    }
+
+    /**
+     * Whether a body is close enough and square enough in front to be worth swinging at. Swinging wide costs the whole
+     * cooldown, so the swing waits until the target is actually there.
+     */
+    private static boolean aimed(float distance, float yawError) {
+
+        return distance <= SWING_RANGE && Math.abs(yawError) < SWING_CONE_DEGREES;
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // What is in the air
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /**
+     * Which slot holds a shot a swing could send back, near enough for the aim to be worth turning to, or -1 for none.
+     *
+     * <p>Only what is actually coming is ever in a slot, so the whole question is what it is and how near: see
+     * {@link #DEFLECT_WIDTH} for why size is the test, and why the wind charges in the same vanilla tag are left out of
+     * it. The nearest of them where there are two, since the one about to arrive is the one a single press can answer.
+     */
+    private static int deflectable(float[] o, int obs) {
+
+        int best = -1;
+        float bestDistance = DEFLECT_AIM_RANGE;
+
+        for (int slot = 0; slot < ObservationSchema.ENEMY_SLOTS; slot++) {
+
+            int at = obs + ObservationSchema.enemyOffset(slot);
+
+            if (o[at + ObservationSchema.ENEMY_PRESENT] < 0.5F
+                    || !AgentObservation.isProjectileKind(o[at + ObservationSchema.ENEMY_KIND])
+                    || o[at + ObservationSchema.ENEMY_WIDTH] < DEFLECT_WIDTH
+                    || closing(o, at) <= 0.0D) {
+
+                // One already past is one that has gone off or gone by, and turning the eyes after it would only be
+                // turning them away from what fired it.
+                continue;
+            }
+
+            float distance = o[at + ObservationSchema.ENEMY_DISTANCE] * (float) ObservationSchema.VIEW_DISTANCE;
+
+            if (distance < bestDistance) {
+
+                bestDistance = distance;
+                best = slot;
+            }
+        }
+
+        return best;
+    }
+
+    /**
+     * How far off a shot will be by the time a press asked for now has resolved: where it is, less what it covers in the
+     * tick between the observation being written and the swing going out. A fireball covers about a block in that tick,
+     * which is most of the window a swing at one has.
+     */
+    private static float arriving(float[] o, int obs, int slot) {
+
+        int at = obs + ObservationSchema.enemyOffset(slot);
+
+        float distance = o[at + ObservationSchema.ENEMY_DISTANCE] * (float) ObservationSchema.VIEW_DISTANCE;
+
+        return distance - (float) closing(o, at);
+    }
+
+    /**
+     * How fast a shot is closing on the agent, in blocks a tick: its own velocity along the line between them, which is
+     * negative for one already past. Both arrive in the agent's frame, so this is one dot product and no world directions.
+     */
+    private static double closing(float[] o, int at) {
+
+        double forward = o[at + ObservationSchema.ENEMY_FORWARD];
+        double right = o[at + ObservationSchema.ENEMY_RIGHT];
+        double up = o[at + ObservationSchema.ENEMY_UP];
+
+        double length = Math.sqrt(forward * forward + right * right + up * up);
+
+        if (length < 1.0E-9D) {
+
+            return 0.0D;
+        }
+
+        return -(o[at + ObservationSchema.ENEMY_VELOCITY_FORWARD] * forward
+                + o[at + ObservationSchema.ENEMY_VELOCITY_RIGHT] * right
+                + o[at + ObservationSchema.ENEMY_VELOCITY_UP] * up) * VELOCITY_SCALE / length;
+    }
+
+    /**
+     * Which slot holds a shot whose line would pass through the agent soon enough for a step to matter, or -1 for none.
+     *
+     * <p>Two numbers off the slot decide it, and they are the same two {@code EnemySlots#incoming} reads to hand a shot a
+     * slot at all: along the line of flight, how long before it gets here; across it, how far it would miss by. A shot
+     * that would miss anyway is not worth a step, and one already inside a couple of ticks cannot be stepped out of.
+     * Nothing here follows the arc down, exactly as nothing there does: over the few blocks left an arrow falls a tenth of
+     * one.
+     */
+    private static int dodged(float[] o, int obs) {
+
+        int best = -1;
+        double soonest = Double.MAX_VALUE;
+
+        for (int slot = 0; slot < ObservationSchema.ENEMY_SLOTS; slot++) {
+
+            int at = obs + ObservationSchema.enemyOffset(slot);
+
+            if (o[at + ObservationSchema.ENEMY_PRESENT] < 0.5F
+                    || !AgentObservation.isProjectileKind(o[at + ObservationSchema.ENEMY_KIND])
+                    || o[at + ObservationSchema.ENEMY_WIDTH] >= DEFLECT_WIDTH) {
+
+                // A fireball is the hands' business, not the feet's: it is answered with a swing where it can be answered
+                // at all, and a body that stepped aside from one would only be stepping into the next.
+                continue;
+            }
+
+            double speed = speed(o, at);
+            double closing = closing(o, at);
+
+            if (speed < 1.0E-4D || closing <= 0.0D) {
+
+                continue;
+            }
+
+            float distance = o[at + ObservationSchema.ENEMY_DISTANCE] * (float) ObservationSchema.VIEW_DISTANCE;
+
+            // How far along its own flight the agent is, and how far to the side of it: the right angled triangle whose
+            // hypotenuse is the distance between them.
+            double along = distance * closing / speed;
+            double miss = Math.sqrt(Math.max(0.0D, distance * distance - along * along));
+            double ticks = along / speed;
+
+            if (miss > DODGE_MISS || ticks < DODGE_LATEST || ticks > DODGE_TICKS || ticks >= soonest) {
+
+                continue;
+            }
+
+            soonest = ticks;
+            best = slot;
+        }
+
+        return best;
+    }
+
+    /** How fast a shot is going in blocks a tick, whichever way it is going. */
+    private static double speed(float[] o, int at) {
+
+        double forward = o[at + ObservationSchema.ENEMY_VELOCITY_FORWARD] * VELOCITY_SCALE;
+        double right = o[at + ObservationSchema.ENEMY_VELOCITY_RIGHT] * VELOCITY_SCALE;
+        double up = o[at + ObservationSchema.ENEMY_VELOCITY_UP] * VELOCITY_SCALE;
+
+        return Math.sqrt(forward * forward + right * right + up * up);
+    }
+
+    /**
+     * The step that takes the agent off the line a shot is flying down: across that line rather than away from it, since
+     * an arrow covers three blocks a tick and nothing outruns one.
+     *
+     * <p>Which of the two sides is worked out rather than chosen. The agent already stands a signed distance from the
+     * line — the cross product of the way to the shot with the way it is going — and a step changes that distance by its
+     * own component across the line, so the side to step is the one that makes what is already there larger. Where the
+     * shot is dead on the line that number is nought and either side is as good, which is the case the grid settles.
+     *
+     * <p>And the grid does settle it. {@link #giveGround} is the same one step a pack is backed away from: it only ever
+     * offers somewhere with room for a body, ground under it and nothing in it that hurts, and it scores down a direction
+     * whose ray reports lava or a ledge inside six blocks. So a dodge is never a step into a ravine, and against a wall it
+     * is the best of what is left rather than a step that does not happen.
+     */
+    private int stepAside(float[] o, int obs, int slot, float sin, float cos) {
+
+        int at = obs + ObservationSchema.enemyOffset(slot);
+
+        double speed = speed(o, at);
+
+        if (speed < 1.0E-4D) {
+
+            return state(CENTRE, 0, CENTRE);
+        }
+
+        // The way it is going and the way to it, both flattened: a step is along the ground whatever the arc is doing.
+        double wayForward = o[at + ObservationSchema.ENEMY_VELOCITY_FORWARD] * VELOCITY_SCALE / speed;
+        double wayRight = o[at + ObservationSchema.ENEMY_VELOCITY_RIGHT] * VELOCITY_SCALE / speed;
+
+        double toForward = o[at + ObservationSchema.ENEMY_FORWARD];
+        double toRight = o[at + ObservationSchema.ENEMY_RIGHT];
+
+        // Which side of the line the agent is already on, and so which way is further off it.
+        double side = toForward * wayRight - toRight * wayForward >= 0.0D ? -1.0D : 1.0D;
+
+        double stepForward = side * wayRight;
+        double stepRight = -side * wayForward;
+
+        // Back into the world's frame the grid is written in, exactly as the pack's direction is.
+        double stepX = -sin * stepForward - cos * stepRight;
+        double stepZ = cos * stepForward - sin * stepRight;
+
+        // giveGround takes the way the danger lies and steps the other way, so the way to go goes in backwards.
+        return this.giveGround(o, obs, -stepX, -stepZ, false);
     }
 
     // ---------------------------------------------------------------------------------------------------------------

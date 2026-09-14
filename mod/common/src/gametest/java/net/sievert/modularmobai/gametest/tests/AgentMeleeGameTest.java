@@ -1,7 +1,5 @@
 package net.sievert.modularmobai.gametest.tests;
 
-import org.jetbrains.annotations.Nullable;
-
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -467,7 +465,7 @@ public class AgentMeleeGameTest {
 
                 // Level with the eyes, a block and a half out, drifting in slowly: near enough for the aim to find and slow
                 // enough that a tick has not carried it anywhere.
-                shot[0] = fireball(helper, null, 4.5D, 3.12D, 3.2D, 0.0D, 0.0D, -0.25D);
+                shot[0] = Mechanics.fireball(helper, null, 4.5D, 3.12D, 3.2D, 0.0D, 0.0D, -0.25D);
 
                 helper.assertTrue(shot[0].getDeltaMovement().z < 0.0D, "The fireball is not coming at the agent");
                 helper.assertValueEqual(agent.getAttackStrengthScale(0.0F), 1.0F, "attack strength before the swing");
@@ -528,7 +526,7 @@ public class AgentMeleeGameTest {
 
             if (tick == swing) {
 
-                fireball(helper, null, 4.5D, 3.12D, 3.2D, 0.0D, 0.0D, -0.25D);
+                Mechanics.fireball(helper, null, 4.5D, 3.12D, 3.2D, 0.0D, 0.0D, -0.25D);
                 helper.assertValueEqual(opponent.getHealth(), opponent.getMaxHealth(), "the zombie's health before the swing");
                 return false;
             }
@@ -583,7 +581,7 @@ public class AgentMeleeGameTest {
 
             if (tick == swing) {
 
-                fireball(helper, ghast, 4.5D, 3.12D, 3.2D, 0.0D, 0.0D, -0.25D);
+                Mechanics.fireball(helper, ghast, 4.5D, 3.12D, 3.2D, 0.0D, 0.0D, -0.25D);
                 return false;
             }
 
@@ -651,29 +649,6 @@ public class AgentMeleeGameTest {
 
             return false;
         });
-    }
-
-    /**
-     * A ghast's fireball in the air from wherever, with whatever velocity, and an owner or none. Everything about it is
-     * vanilla's: one point of explosion power, as a ghast's has, and the acceleration it puts on itself every tick.
-     */
-    private static LargeFireball fireball(GameTestHelper helper, @Nullable LivingEntity owner,
-            double x, double y, double z, double vx, double vy, double vz) {
-
-        Vec3 at = helper.absoluteVec(new Vec3(x, y, z));
-        LargeFireball fireball = new LargeFireball(EntityType.FIREBALL, helper.getLevel());
-
-        fireball.moveTo(at.x, at.y, at.z);
-
-        if (owner != null) {
-
-            fireball.setOwner(owner);
-        }
-
-        fireball.setDeltaMovement(vx, vy, vz);
-        helper.getLevel().addFreshEntity(fireball);
-
-        return fireball;
     }
 
     // ---------------------------------------------------------------------------------------------------------------
