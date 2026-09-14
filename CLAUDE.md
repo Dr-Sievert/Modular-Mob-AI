@@ -43,6 +43,10 @@ Read these before changing anything:
   answers — `robocopy /MIR` from an empty folder, `Remove-Item -Recurse` — **follow a junction** and mirrored the deletion
   through it. Torch, numpy and `pyvenv.cfg` went in seconds, and half an hour of generated ground with them. If a worktree
   must be deleted by hand, `robocopy /XJ` or `rmdir /s` do not follow junctions.
+- **Never `gradlew --stop` while a run is training.** Gradle daemons are shared by every worktree on the machine, and a
+  live run's supervisor (`runTraining`: the memory floor, worker restarts, the round loop) is one of them. A `--stop` from
+  a worktree at 08:25 on 2026-09-14 took blast7's supervisor down mid-run; the trainer and its workers carried on orphaned
+  until they were stopped and restarted by hand. A worktree that wants its own daemon uses `--no-daemon` on its own call.
 - Mixins that change vanilla behaviour are deliberate and documented at the top of each mixin. Several fix real bugs;
   see findings.md before removing one.
 - **The agent's hands are a player's in all but three places, and all three are deliberate.** A drawn weapon runs to full
