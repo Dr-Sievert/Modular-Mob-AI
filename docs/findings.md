@@ -778,6 +778,40 @@ are deliberate.
 
 ## Learning
 
+- **blast7's judged best is under two points above the published network, so nothing was published.** blast7 judged its
+  best at iteration 27100 (75.9% and a rating of 1652 by its own evaluation, which is the run's highest). Benched against
+  the published `blast6` and the scripted fighter, one worker, `bench.ps1 -Teacher`, two sittings an hour apart on
+  2026-09-14 while the run itself trained on eight workers:
+
+  | Fighter | 600 fights | 2,000 fights |
+  | --- | --- | --- |
+  | the scripted fighter | 82.2% | 78.3% |
+  | `blast7` 027100, the judged best | 73.5% | 73.5% |
+  | `blast7`, the run's newest (027557, then 027636) | 74.2% | 72.2% |
+  | `blast6`, published | 71.2% | 71.8% |
+
+  The judged best is **1.7 points above the published network over 2,000 fights** and 2.3 over 600, which is inside what a
+  sitting can tell apart, so `models\` was left alone. The two columns are two sittings and cannot be subtracted from each
+  other; each is read on its own, and both put the same four fighters in the same order.
+  - **The last checkpoint did not beat the judged best this time**, which is the third check of the paired rule below to go
+    the best's way: 027100 read 73.5% twice and the newest 74.2% and then 72.2%, all within a sitting's noise of each other.
+  - **Every network on this bench is now below the scripted fighter, where `blast6` was published 2.4 points above it.**
+    `blast6` benched 84.7% against the fighter's 82.3% when it was published; on this build it reads 4.8 to 11.0 points
+    *under* the same fighter, whose own reads held (82.3 → 78.3 and 82.2). The fighter is the anchor and it did not move,
+    so what moved is what a network is asked to do — the crowd of bystanders in a quarter of the league's fights, and the
+    sight rule that fills a slot only with what the agent could see, both of which landed after `blast6` was trained. Until
+    that is chased, **the headline "about five points more than the hand-written fighter" is a statement about a bench that
+    no longer exists**, and no network in `models\` has been measured above the fighter on the current build.
+  - **The scripted fighter read 77.3%, 82.2% and 78.3% inside one hour**, on one machine, one build, three sittings of the
+    same 600 or 2,000 league fights. The recorded span was 78.2 to 81.5; this widens it to 77.3 to 82.2, or **4.9 points of
+    drift with nothing at all changed**. It is the sharpest measurement yet of why a number from one sitting cannot be
+    subtracted from a number in another.
+  - **`bench.ps1` copied each network aside only when its turn came, and the run's pruner ate one mid-sitting.** The script's
+    own header promised the copy; it took it inside the fight loop, so the newest checkpoint of a live run — named at the
+    start, fought fourth — was gone four minutes later and the sitting died with `Cannot find path ...027471.mbw`. Every
+    network is copied before the first fight now. A live run keeps every 25th iteration and its last few, so it is exactly
+    the file worth benching that the pruner takes first.
+
 - **The agent holds attack down for hundreds of ticks because a press at a block is the one press that costs nothing,
   and because it is doing it in fights it cannot win.** Measured over 796 recorded league768 fights, 284,000 ticks,
   sampled evenly over the run and joined to the league's own records so the sampled training fights and the deterministic
