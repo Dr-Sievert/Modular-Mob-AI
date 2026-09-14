@@ -5,6 +5,7 @@
 #   scripts\bench.ps1 -Weights models\blast\best.mbw,runs\blast\weights\002000.mbw
 #   scripts\bench.ps1 -Run blast -Last 3 -Arenas 2000    tighter, four times as long
 #   scripts\bench.ps1 -Run blast -Last 2 -Teacher        and the scripted fighter as one more row, in the same sitting
+#   scripts\bench.ps1 -Weights models\blast6\best.mbw -Teacher -Heap 1G    beside a live run, which needs the memory
 #
 # Why this exists rather than reading a run's own eval.csv: a league run's win rate and rating are measured against
 # opponents the matchmaking keeps changing, so the same network scores differently as the run goes on, and a rating wanders
@@ -28,8 +29,8 @@
 #     span 78.2 to 81.5% across sittings. Asking for it separately is exactly the mistake the first rule is about, so it is
 #     a switch here and a row like any other.
 #
-# Each network is copied aside before it is fought, because a run keeps only its last few weight files and prunes the rest
-# while this is running.
+# Every network is copied aside before the first fight, because a run keeps only its last few weight files and prunes the
+# rest while this is running.
 
 param(
     [string] $Run = '',
@@ -38,6 +39,11 @@ param(
     [string[]] $Weights = @(),
     [int] $Arenas = 600,
     [int] $Workers = 1,
+
+    # The worker's heap, forwarded to eval.ps1. A bench beside a live training run is the case this is for: the run stops
+    # itself when the machine falls under 1.5 GB free, and a worker on the terrain library holds about 520 MB live and runs
+    # in a gigabyte, which is the build's own default for that suite. Whatever it is, it is the same for every row.
+    [string] $Heap = '1280M',
     [ValidateSet('terrain', 'arena', 'league')] [string] $Suite = 'league',
     [string[]] $Loadouts = @(),
     [int] $Ground = 0,
@@ -110,6 +116,24 @@ try {
         throw 'Nothing to bench: give -Run with -Last or -Iterations, or -Weights, or -Teacher'
     }
 
+    # Every network is copied aside now, before the first fight, and not when its turn comes round: a run keeps only its
+    # last few weight files and prunes the rest, and the ones being benched are exactly the ones it is about to prune. Taking
+    # the copy at the fight lost a live run's newest checkpoint an hour after it was named -- three fights of a four-row
+    # sitting is minutes, and 027471.mbw was gone by the third.
+    $copied = 0
+
+    foreach ($entry in $entries) {
+
+        if ($entry.file) {
+
+            $copy = Join-Path $scratch ((Split-Path $entry.file -Leaf) + '.' + $copied)
+            Copy-Item $entry.file $copy -Force
+
+            $entry | Add-Member -NotePropertyName copy -NotePropertyValue $copy
+            $copied++
+        }
+    }
+
     Write-Host "Benching $($entries.Count) fighter$(if ($entries.Count -ne 1) { 's' }) over $Arenas fights of the $Suite suite, $Workers worker$(if ($Workers -ne 1) { 's' }) each"
 
     $results = @()
@@ -118,16 +142,11 @@ try {
 
         # A hashtable, not a list: splatting a list hands the values over positionally, and eval.ps1's second position is
         # the iteration.
-        $arguments = @{ Suite = $Suite; Arenas = $Arenas; Workers = $Workers }
+        $arguments = @{ Suite = $Suite; Arenas = $Arenas; Workers = $Workers; Heap = $Heap }
 
         if ($entry.file) {
 
-            # Copied aside first: a run prunes all but its last few weight files, and the ones being benched are exactly
-            # the ones it is about to prune.
-            $copy = Join-Path $scratch ((Split-Path $entry.file -Leaf) + '.' + $results.Count)
-            Copy-Item $entry.file $copy -Force
-
-            $arguments.Weights = $copy
+            $arguments.Weights = $entry.copy
         }
 
         else {
