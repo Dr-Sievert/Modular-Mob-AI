@@ -1161,6 +1161,14 @@ are deliberate.
     scripted fighter held at 1500, so a fighter that is eight points better against half the roster is a scale that has
     moved: ratings earned against the old anchor and ratings earned against this one are not the same number.
 
+  **The published network was already ahead of its teacher here, and still is.** The same harness under
+  `-Weights models\blast8\best.mbw`, 240 fights, 60 an opponent: it sends back **0.67** fireballs a fight, which is the
+  teacher's new 0.70 to within the sample, so the rule has caught the teacher up rather than taught it anything new. What
+  it has not caught up on is being hit at all — against a ghast the network takes 1.02 shots and 4.45 health where the
+  teacher now takes 1.71 and 8.76 and ends on 11.1 health against the network's 14.6, and the same gap runs down the arrow
+  rows (a stray takes 1.25 shots off it against 2.02, a pillager 0.47 against 1.67). A teacher behind its own student on a
+  whole class of fight is worth knowing about: the teacher pull is what a run drags the network back towards.
+
   **What is deliberately left out**, and the first of them is the interesting one:
   - **The two wind charges in the same vanilla tag are not deflected.** `redirectable_projectile` holds the ghast's fireball
     and the two wind charges, and the one thing a projectile's slot says about itself beyond where it is and where it is
