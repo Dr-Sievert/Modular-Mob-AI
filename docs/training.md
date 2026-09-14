@@ -43,6 +43,20 @@ to copy a hand-written fighter first, then improve the copy with reinforcement l
      given up has to be covered before a blow can land. Backing away for as long as two bodies were in the fight was the
      first rule written and is the wrong one — a body outpaces a zombie, so nothing arrives, nothing is landed and the clock
      runs out; see [findings.md](findings.md);
+   - **kites a pack it can outwalk**, which is one number off the slots rather than a judgement: the fastest `ENEMY_SPEED`
+     in the fight against a backpedal's 0.216 blocks a tick. A zombie, a husk, a drowned and a zombie villager all cover
+     0.154, and against those the fighter never steps in at all — it gives ground the moment one comes inside 2.6 blocks
+     whether or not its swing is ready, stands still while the swing is ready and lets the body walk into a sword's reach,
+     and swings the tick it arrives. A vindicator covers 0.24 and a spider more, and against those none of it applies and
+     the cycle above is the whole of the footwork. Only while they are coming: a pack that has stopped is walked up to,
+     since holding ground against one that is not arriving is the retreat that ran the clock out wearing a different hat.
+     Worth 8.8 points at four zombies and most of the blows it used to take; see [findings.md](findings.md);
+   - **gives ground with a drawn weapon too.** A bow takes the movement keys down to a fifth for twenty ticks, and the
+     fighter used to choose its weapon before it had counted the fight: a bow in a pack was a fighter standing still among
+     four bodies. The pack is sized up first now, a draw in a pack is begun only where it will be full before the nearest
+     arrives — the same question a fighter with a sword to fall back on already asked — and the step away while drawing is
+     the pack's direction rather than the target's. It is the widest single thing that was wrong with this fighter in a
+     pack: over 900 harness fights a crossbow landed 0.0 blows and took 3.2, against a sword's 8.6 and 0.5;
    - **keeps them in front.** The aim goes to the middle of the pack for as long as it is giving ground and onto the body
      only while it is stepping in to strike, so the ones at the edges stay inside the hundred degree cone the agent perceives
      through. A body outside that cone is not in the observation at all;
@@ -51,7 +65,8 @@ to copy a hand-written fighter first, then improve the copy with reinforcement l
      along the clearest ray away from them instead of dying in the middle of them;
    - **throws the sprint blow for the knockback** whenever the second nearest is far enough that the step forward is not a
      step into a second set of hands, and **never leaves the ground for a critical**, since a dozen ticks in the air is a
-     dozen ticks of footwork given up;
+     dozen ticks of footwork given up. Both halves of that are pinned in the mechanics suite off where the second body
+     actually stood when each blow landed;
    - and **changes nothing about the shield**, which was measured rather than assumed: narrowing it in a pack to a body with
      its arm actually up is worse than the rule that was already there.
 

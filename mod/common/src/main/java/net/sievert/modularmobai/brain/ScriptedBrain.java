@@ -69,7 +69,7 @@ import net.sievert.modularmobai.entity.agent.MobControls;
  * <p>Everything above is one fight against one body, and against several it was the whole of what this fighter did: it took
  * the nearest, stood in the band, and traded, which is how a good player dies. So there is a second fight in here, and it is
  * reached only when <b>two or more bodies are actually in the fight</b> and near enough to be in it, which a fight against one
- * opponent never is. It is four rules and they are all the same rule:
+ * opponent never is. It is six rules and they are all the same rule:
  *
  * <ul>
  *   <li><b>Give ground instead of trading, in a cycle.</b> A body walking backwards covers 0.216 blocks a tick and a zombie
@@ -80,6 +80,21 @@ import net.sievert.modularmobai.entity.agent.MobControls;
  *       measured and written down at {@link #PACK_STANDOFF}. So it steps back in a few ticks before the cooldown fills, since
  *       the ground given up has to be covered before a blow can land, and gives it again once the blow has gone. See
  *       {@link #sizeUp}, {@link #giveGround} and {@link #stepsIn}.</li>
+ *   <li><b>Kite the pack it can outwalk, and only that one.</b> The cycle above is what a fighter does against bodies it
+ *       cannot simply outpace. Against ones it can it should never step in at all: a body walking backwards covers 0.216
+ *       blocks a tick and a zombie covers 0.154, a sword reaches three blocks and a zombie's blow about two, so a fighter
+ *       that holds the band between those two is striking from ground the zombie cannot answer from. That is one number off
+ *       the slots, the fastest {@code ENEMY_SPEED} in the fight, and where it says so the fighter gives ground the moment
+ *       one comes inside {@link #KITE_EDGE} whether or not the swing is ready, holds still while the swing is ready and lets
+ *       the body walk into reach, and does not close. Only while they are coming, which {@link #KITE_PATIENCE} bounds: the
+ *       same retreat held against a pack that has stopped arriving is the one measured at {@link #PACK_STANDOFF} and thrown
+ *       out. Against a vindicator's 0.24 none of it is reached.</li>
+ *   <li><b>The feet answer to the pack even while the hands are drawing.</b> A bow or a crossbow takes the movement keys
+ *       down to a fifth for twenty ticks, and this fighter used to pick its weapon before it had counted the fight at all:
+ *       a drawn weapon in a pack was a fighter standing still in the middle of four bodies, landing nothing. The pack is
+ *       sized up before the weapon is chosen now, a draw in a pack is begun only where {@link #finishesInTime} says it will
+ *       be full before the nearest arrives, and the step away while drawing is {@link #giveGround} and not
+ *       {@link #retreat}.</li>
  *   <li><b>Keep them in front.</b> The agent perceives through a hundred degree cone about its aim, so a body it turns its
  *       back on is one it stops seeing. The aim goes on the middle of the pack for as long as the feet are giving ground, and
  *       on the body only while the fighter is stepping in to strike, since a swing goes where the eyes are: the eyes and the

@@ -12,7 +12,7 @@ scripts\parity.ps1               Java forward pass against PyTorch's, after touc
 | Check | Pass looks like | Proves |
 | --- | --- | --- |
 | `test.ps1` | `All 20 required tests passed`; every fight 54 ticks | the observation, the body and the scripted fighter still work; the 54 ticks are deterministic, so any change in them is a behaviour change |
-| `test.ps1 -Mechanics` | `All 60 required tests passed` | bows, crossbows, shields, axes, mining, placing, use slowdown and damage payment follow a player's rules, what a press of attack costs and what holding it down costs, that a swing sends a ghast's fireball back and nothing else, that a hand keeps the slot it started a draw in, what the observation says about a use, about the clock and the quiver, about what is shot at the agent, about how many of the bodies in its view are in the fight with it, about the armour on either side of the fight, about whether the other side has engaged and about what the weapon in the agent's hand takes off — the last three against the same numbers the critic's privileged facts carry — the teacher getting itself out of powder snow, starting no draw it cannot finish and giving ground to a pack instead of standing in it, what an enemy slot goes to and what a wall between leaves of it, **which slot each body gets — the fight first, then the nearest, and the fight moved to the front when it engages late** — that the league's bystanders stand aside unpaid until struck, that the size of a crowd is drawn small far more often than large and that a pack of one mob all comes for the agent and is paid for once, and how a league training fight is drawn from the trainer's shares |
+| `test.ps1 -Mechanics` | `All 63 required tests passed` | bows, crossbows, shields, axes, mining, placing, use slowdown and damage payment follow a player's rules, what a press of attack costs and what holding it down costs, that a swing sends a ghast's fireball back and nothing else, that a hand keeps the slot it started a draw in, what the observation says about a use, about the clock and the quiver, about what is shot at the agent, about how many of the bodies in its view are in the fight with it, about the armour on either side of the fight, about whether the other side has engaged and about what the weapon in the agent's hand takes off — the last three against the same numbers the critic's privileged facts carry — the teacher getting itself out of powder snow, starting no draw it cannot finish, giving ground to a pack instead of standing in it, striking a pack it can outwalk from the edge of its own reach, and throwing the knockback blow only when the second body is clear of the spot it is thrown from, what an enemy slot goes to and what a wall between leaves of it, **which slot each body gets — the fight first, then the nearest, and the fight moved to the front when it engages late** — that the league's bystanders stand aside unpaid until struck, that the size of a crowd is drawn small far more often than large and that a pack of one mob all comes for the agent and is paid for once, and how a league training fight is drawn from the trainer's shares |
 | `test.ps1 -Play` | `All 24 required tests passed`, and a `Loaded the mod's jar, modular_mob_ai/models/<name>.mbw from iteration N` line per network the jar carries | what [playing.md](playing.md) promises: the bundled networks load and drive an agent, the commands, saving, sides and friendly fire, the Infinity loadouts, and that nothing a suite tunes reaches a real game |
 | `parity.ps1` | `parity ok` once per body for the plain network and again for the attended one, logits agreeing to about 1e-6, and `the plain ones agree to the bit at batches 1 to 64` on both arms | the game runs exactly the network PyTorch trained, **for every body this build has**, plain and attended — the attention over the enemy slots is different arithmetic and not merely a different size — and the forward pass's explicit vector loops give the same bits as its plain ones |
 
@@ -91,7 +91,7 @@ once its entropy came down; see [findings.md](findings.md#learning).
 Each test sets up one situation and checks the numbers a player would get. Seven classes, one per concern, all of them
 sharing `tests/Mechanics` — the arena, the agent, the brain that hands back what the test pressed, and the readings more
 than one of them takes. Every class has to be named in `ModularMobAiGameTests` or its tests simply do not run, which is why
-the count below is worth knowing: **60**.
+the count below is worth knowing: **63**.
 
 `AgentDrawnWeaponGameTest` (9) — a bow and a crossbow, and the slot the hand keeps while one is drawn:
 
@@ -144,7 +144,7 @@ the critic's privileged facts carry:
 | `aSlotSaysWhatItWearsAndWhoItIsAfter` | armour, and whether that mob has the agent as its target: set and let go inside one tick, so the facing it used to be inferred from cannot have moved |
 | `theAgentSeesItsArmourAndWhatItIsHolding` | its own armour and what its weapon takes off, the weapon from the item's own modifiers so it is right on the first row and follows a swap at once |
 
-`AgentTeacherGameTest` (8) — the scripted fighter's own rules, which matter because it is the league's 1500-rated anchor and
+`AgentTeacherGameTest` (11) — the scripted fighter's own rules, which matter because it is the league's 1500-rated anchor and
 every network was copied from it:
 
 | Test | Checks |
@@ -156,6 +156,8 @@ every network was copied from it:
 | `withTwoCreepersTheTeacherFleesTheLitOne` | two creepers either side, the unlit one nearer and so the target: the teacher walks away from the **lit** one, which the old rule, read on the target slot alone, sent it straight into |
 | `theTeacherGivesGroundToAPackInsteadOfStandingInIt` | three bodies in the fight at once, spread over a right angle and **held where they are put** so that nothing is coming, nothing swings and nothing hits — the only thing that can have moved the teacher is the three of them being in the fight. It keeps 2.18 of the three inside its own view cone on an average tick against 1.63 with the rule off, holds the nearest 3.49 blocks off against 3.13, is never surrounded, and still lands blows |
 | `aPackCostsTheTeacherNoBlows` | the same three walking in, and the standoff is not a fighter that has stopped fighting: 9 swings and 9 landed against the 12 and 12 the rule turned off gets. Every claim above can be had by walking backwards for the whole fight, and the version of the rule that did landed next to nothing; see [findings.md](findings.md) |
+| `theTeacherStrikesAPackFromTheEdgeOfItsReach` | the other half of the standoff, and the one an average distance cannot say: **where the blows land**. Three zombies walking in, and the teacher's blows land a mean 2.85 to 3.00 blocks off with none or one coming back, against the 2.4 and the three this asks for. A sword reaches three blocks and anything man sized a block and a half, so a blow landed past two and a half is one thrown from ground the zombie could not have struck from |
+| `aClearSecondBodyBuysTheKnockbackBlowInAPack`, `aSecondBodyInReachTakesTheKnockbackBlowAway` | one rule read both ways round: a pair of held vindicators, and the sprint blow is thrown when the second of them is five blocks or more clear and never while one stands inside four. Read off **where the second body actually was when each blow landed** rather than where it was put, because both are held and the agent walks |
 
 `FightSetupGameTest` (3) — the three that are not about the body at all, here because this is the suite that holds a rule to
 a number and boots in seconds:
@@ -213,6 +215,33 @@ runs the whole thing again next tick rather than failing the test — so an asse
 rule the suite measured is held as a rule by `AgentEnemyOrderGameTest` in the mechanics suite, where an assertion fails a test.
 It is a suite of its own rather than a class in the league's because it fields a fixed schedule of crowds where the league
 draws them, and because the league suite is what a training run runs.
+
+## The pack suite (`gametest/tests/AgentPackFightGameTest`, `-Psuite=pack`)
+
+Packs of two, three and four zombies and of two and three vindicators, on the hard rung, on natural ground, and over every
+loadout in turn. It is the crowd suite's question asked of the other fight a real world has: a **win rate cannot tell a
+fighter holding the edge of its reach from one standing in the middle of a pack**, because both average the same distance to
+the nearest body. So it prints what a win rate leaves out — how far off its blows landed, how often two of them were within
+two blocks, how many blows it took and whether the body that threw each was the nearest, how much of the time its swing was
+ready, and which way its feet were going — in a table per pack and a second table by what the agent was carrying.
+
+```
+scripts	est.ps1 -Pack                                    300 fights: five packs and ten loadouts, six of each pairing
+scripts	est.ps1 -Pack -Weights modelslast8est.mbw     a network in the teacher's place
+scripts	est.ps1 -Pack -Arenas 900                         tighter; the pairings go round in turn, so use a multiple of fifty
+```
+
+Two of its choices were measured rather than assumed, and both are in the class comment. **The hard rung**, because on the
+normal one with a plain sword the teacher won every one of ninety zombie fights and a column that cannot go up says nothing.
+**Every loadout**, because the first sitting with a sword alone read 93% to 100% against zombies while the pack bench read
+far less: by loadout the same 900 fights read sword 83.3% and crossbow 43.3%, and the crossbow row landed 0.0 blows a fight
+and took 3.2. That row is what the drawn weapon's own pack footwork was written for; see [findings.md](findings.md).
+
+Vindicators are in it for one reason: a vindicator covers 0.24 blocks a tick and a body walking backwards covers 0.216, so
+the same five packs sit on either side of the one number that decides whether a kite is possible at all.
+
+**Nothing in it is asserted**, for exactly the reason the crowd suite's numbers are not; what it measured is held as rules by
+`AgentTeacherGameTest` above.
 
 ## The horde suite (`gametest/tests/AgentHordeGameTest`, `-Psuite=horde`)
 
@@ -282,7 +311,7 @@ mod\gradlew.bat -p mod :fabric:runGametestParallel -Psuite=terrain -Parenas=2000
 
 | Property | What it does |
 | --- | --- |
-| `suite` | `arena` (closed box), `terrain` (natural ground, what training uses), `league` (terrain, a new opponent every fight), `crowd` (the same fight with 0, 1, 3 and 9 standing about it, watched tick by tick), `horde` (20 to 2,000 mobs round one agent: what perceiving them costs), `mechanics`, `play`, `baseline` (villager against vindicator, no agent), `library` (no fights: builds the terrain library, see `scripts\terrain.ps1`) |
+| `suite` | `arena` (closed box), `terrain` (natural ground, what training uses), `league` (terrain, a new opponent every fight), `crowd` (the same fight with 0, 1, 3 and 9 standing about it, watched tick by tick), `pack` (packs of 2 to 4 zombies and 2 to 3 vindicators, watched tick by tick), `horde` (20 to 2,000 mobs round one agent: what perceiving them costs), `mechanics`, `play`, `baseline` (villager against vindicator, no agent), `library` (no fights: builds the terrain library, see `scripts\terrain.ps1`) |
 | `terrainLibrary`, `librarySites` | `false` makes terrain workers generate their own ground even when a library exists; how many sites a library build generates |
 | `addSites` | how many sites to append to the library that is already there, instead of building a new one; only the new ones are generated |
 | `leagueOpponents`, `leagueLoadouts`, `leagueDifficulties` | league only: fewer opponents (`zombie,2x_zombie`), fewer loadouts, which rungs of the ladder a run with no trainer goes round (`easy,normal,hard`) |
