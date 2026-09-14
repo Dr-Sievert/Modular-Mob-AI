@@ -891,9 +891,10 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
         // What the workers fight on, which decides how much ground a worker holds and so how big a heap it needs. The
         // pool of kept worlds below reads these again; they are worked out here because the heap default depends on them.
         def suite = (extraProperties['modular_mob_ai.gametest.suite'] ?: providers.gradleProperty('suite').getOrElse('')) as String
-        // The pack suite fights on natural ground too, and reads it from the library for the same reason a league worker
-        // does: generating it costs three times as much and there is nothing about a pack that wants fresh ground.
-        def onTerrain = suite == 'terrain' || suite == 'league' || suite == 'pack'
+        // The pack and shots suites fight on natural ground too, and read it from the library for the same reason a
+        // league worker does: generating it costs three times as much and there is nothing about a pack or a shooting
+        // match that wants fresh ground.
+        def onTerrain = suite == 'terrain' || suite == 'league' || suite == 'pack' || suite == 'shots'
         def onLibrary = onTerrain && libraryWanted && libraryIndex.isFile()
 
         // Nearly all of a worker's heap is the ground under and around the sites it is fighting on, so what the sites cost

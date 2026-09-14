@@ -34,6 +34,24 @@ to copy a hand-written fighter first, then improve the copy with reinforcement l
    - **backs away from a lit creeper**: empty hands, never seen to swing, and stopped coming within three blocks is a
      creeper with its fuse lit, and it walks clear to seven and a half blocks before coming back.
 
+   **Against what is shot at it**, two rules more, both of them last resorts: a shot already in the air holds an enemy slot
+   of its own, and until now the shield was the only rule that ever read one. Neither touches the fight against a body, and
+   a drawn weapon reaches neither, since a draw has the hands and the keys at a fifth:
+   - **swings at a fireball to send it back**, when the shield is not up because there is none in the off hand or an axe has
+     just knocked it aside. A player's swing deflects anything in the `redirectable_projectile` tag along the swinger's own
+     look, and the agent's hands are a player's; the aim goes on the shot for the last few blocks of its flight, which is
+     the same direction as the ghast that fired it, so the swing finds the fireball and throws it back where it came from.
+     It swings at where the shot **will be** when the press resolves rather than where the observation says it is, since a
+     fireball covers about a block in that tick. Only a fireball, told by its size: a wind charge and a blaze's small
+     fireball are both 0.3125 wide and nothing in a projectile's slot tells them apart, and a swing at the blaze's cannot
+     deflect it, does not stop it, and costs a whole cooldown. Worth 7 points against a ghast and most of what a fireball
+     used to take off it; see [findings.md](findings.md);
+   - **steps out of an arrow's way**, and only where there is no shield to raise — a shield stops the arrow outright, and
+     that rule is untouched. Where a shot's line would pass through the agent it puts its feet across that line rather than
+     on with the fight, by the same one step the pack rules give ground with, so the grid keeps it off hazards and the rays
+     off ledges. Begun while there is still time for a step to matter and never on a tick it would have struck: a blow
+     landed is worth more than an arrow dodged. Worth 8.6 points across the seven shooters that are not a ghast.
+
    **Against a pack** — two or more bodies actually in the fight and within six blocks, which a fight against one opponent
    never is — it fights a different fight, because a network never learns what the teacher never did and the teacher used to
    take the nearest of a pack and trade with it as if alone:

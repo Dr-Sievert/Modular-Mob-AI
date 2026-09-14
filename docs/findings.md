@@ -1177,6 +1177,95 @@ are deliberate.
   anything living that no fight spawned, and an evoker's only real attack is entities it summons mid fight. They are taken
   into the fight as they appear, and the site's own cleanup takes them at the end, since the wildlife sweep cannot.
 
+- **The fighter had no rule for anything in the air but the shield, and two that are both last resorts are worth eight
+  points across the shooters.** A shot already coming holds an enemy slot of its own and has since the perception work, and
+  until now the only rule that ever read one was the shield going up. Everything else in this fighter is about a body. Two
+  rules more — **a swing that sends a fireball back**, and **a step across an arrow's line where there is no shield to
+  raise** — and neither touches the fight against a body: the arena check reads 20 of 20 at exactly 54.0 ticks, because a
+  fight with nothing in the air reaches neither.
+
+  **The harness was built first**, for the reason the pack one was: `scripts\test.ps1 -Shots` fights a skeleton, a stray, a
+  pillager and a ghast on the hard rung over every loadout and counts what became of every shot, which is the half of a
+  shooting match a win rate cannot say. 480 fights a sitting, 120 an opponent, before and after:
+
+  | Opponent | won % | timed out | shots at it | hit it | health lost | shield | sent back | stepped aside | health left |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | skeleton(hard), before | 94.2% | 4.2% | 2.68 | 1.83 | 6.78 | 0.08 | 0.00 | 0.13 | 13.1 |
+  | skeleton(hard), after | 95.8% | 3.3% | 2.83 | 2.03 | 7.39 | 0.20 | 0.00 | **0.30** | 12.6 |
+  | stray(hard), before | 90.0% | 4.2% | 3.43 | 2.36 | 8.79 | 0.12 | 0.00 | 0.13 | 11.1 |
+  | stray(hard), after | 98.3% | 0.8% | 2.90 | 2.02 | 7.39 | 0.11 | 0.00 | **0.31** | 12.6 |
+  | pillager(hard), before | 95.0% | 3.3% | 1.84 | 1.61 | 5.88 | 0.07 | 0.00 | 0.12 | 14.0 |
+  | pillager(hard), after | 98.3% | 0.8% | 2.08 | 1.67 | 5.90 | 0.03 | 0.00 | **0.18** | 14.1 |
+  | ghast(hard), before | 20.0% | 47.5% | 5.70 | 2.58 | 12.05 | 0.50 | 0.11 | 0.03 | 7.9 |
+  | ghast(hard), after | 15.8% | 64.2% | 3.93 | **1.71** | **8.76** | 0.36 | **0.70** | 0.02 | **11.1** |
+
+  The two halves of the table attribute themselves, which is why the suite fields those four: **no fireball ever reaches the
+  arrow rows and no arrow rule ever reaches the ghast row**, since the dodge refuses a shot of a fireball's size outright.
+  So the three arrow rows are the sidestep alone and the ghast row is the deflection alone, with no second sitting needed.
+
+  - **The deflection is the ghast row, and what it buys is not a win.** Fireballs sent back went 0.11 a fight to 0.70, what
+    they took off the agent went 12.05 health to 8.76, and the agent ended on 11.1 of 20 rather than 7.9. What moved with it
+    is the shape of the losses, not their count: **deaths went 32.5% to 20.0%** and timeouts 47.5% to 64.2%, because a
+    fighter that wears fewer fireballs survives a fight it still cannot win — a ghast is fire immune and its own fireball
+    coming back does not kill it (see Mechanics below), and only the three loadouts that draw ever kill one at all. The win
+    column went 20.0% to 15.8%, which is five fights of 120 and inside what a sitting moves by.
+  - **The sidestep is the three arrow rows, and on the harness it is worth much less than on the bench.** Steps across a
+    shot's line went 0.12 a fight to 0.26; hits taken were flat (1.93 to 1.91 over the three rows) and health lost fell from
+    7.15 to 6.89, while the win rate went 93.1% to 97.5% and the timeouts 3.9% to 1.6%. The honest reading is that the
+    harness is 120 fights an opponent and the win column is worth about two points either way at that size.
+  - **The bench is where the sidestep shows.** `scripts\bench.ps1 -Teacher -Bystanders 0 -Arenas 600 -Workers 1 -Opponents
+    skeleton,stray,bogged,pillager,witch,ghast,blaze,breeze`, one worker, before and after, by opponent over both rungs:
+
+    | | skeleton | stray | bogged | pillager | witch | blaze | breeze | ghast | all eight |
+    | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+    | before | 90.5% | 88.9% | 96.9% | 96.8% | 90.5% | 48.6% | 48.4% | 17.1% | **71.2%** |
+    | after | 98.4% | 96.8% | 98.4% | 96.8% | 94.0% | **71.4%** | **61.7%** | 24.3% | **79.6%** |
+    | after, read again | 95.4% | 94.0% | 93.8% | 100.0% | 93.7% | **71.4%** | **66.1%** | 25.7% | **79.6%** |
+
+    Whole-sitting win rate, which counts the mirror and the packs those flags still draw as well, went 67.0% to 75.2% and
+    74.2% on the second read, so a sitting is worth about a point. The eight shooters read **79.6% twice over**, which is
+    the line to believe. The two surprises are **blaze and breeze**, which no deflection touches at all: a blaze's small
+    fireball and a breeze's wind charge are both arrow-sized and so are the dodge's, not the swing's, and they are the two
+    shots the fighter had no answer to whatever — it cannot close on either, and a blaze's fireball does five and sets the
+    ground alight. Splitting the bench the way the harness splits: the ghast rows, which are the deflection's, went 17.1%
+    to 24.3% and 25.7%, and the other seven, which are the sidestep's, went **79.6% to 88.2% and 88.0%**.
+  - **Read the ground before believing all of it.** The two sittings drew a different mix of the terrain library: the before
+    run fought 171 drop sites and 166 water, the after run 146 and 301, and water is the ground both fighters do best on
+    (71.1% and 80.4%) against drop (60.8% and 65.8%). Reweighting the after sitting to the before sitting's mix reads
+    73.5% against 67.0%, so about six and a half of the eight points survive the ground. This is the same confound the kite
+    work hit and it is why a bench across two builds is not a bench in one sitting.
+  - **This moves the anchor, which is the thing to be careful of.** Every rating in the league is measured against the
+    scripted fighter held at 1500, so a fighter that is eight points better against half the roster is a scale that has
+    moved: ratings earned against the old anchor and ratings earned against this one are not the same number.
+
+  **The published network was already ahead of its teacher here, and still is.** The same harness under
+  `-Weights models\blast8\best.mbw`, 240 fights, 60 an opponent: it sends back **0.67** fireballs a fight, which is the
+  teacher's new 0.70 to within the sample, so the rule has caught the teacher up rather than taught it anything new. What
+  it has not caught up on is being hit at all — against a ghast the network takes 1.02 shots and 4.45 health where the
+  teacher now takes 1.71 and 8.76 and ends on 11.1 health against the network's 14.6, and the same gap runs down the arrow
+  rows (a stray takes 1.25 shots off it against 2.02, a pillager 0.47 against 1.67). A teacher behind its own student on a
+  whole class of fight is worth knowing about: the teacher pull is what a run drags the network back towards.
+
+  **What is deliberately left out**, and the first of them is the interesting one:
+  - **The two wind charges in the same vanilla tag are not deflected.** `redirectable_projectile` holds the ghast's fireball
+    and the two wind charges, and the one thing a projectile's slot says about itself beyond where it is and where it is
+    going is **how big it is** — everything else in the enemy block belongs to a body and a shot leaves it at nought. A
+    fireball reads 1.00 wide and an arrow 0.50, measured on every shot the harness saw, so size is a clean test for the
+    fireball. It is not one for a wind charge: a breeze's wind charge and a blaze's small fireball are **both 0.3125** and
+    nothing in the slot tells them apart. A swing at a blaze's fireball cannot deflect it, does not stop it, and costs a
+    whole attack cooldown against an opponent the fighter is trying to close on; a wind charge takes one damage and some
+    knockback. The trade is the wrong way round, so the fireball is the whole of the rule. A field that named the projectile
+    would settle it, and the layout is frozen.
+  - **A drawn weapon reaches neither rule.** A fighter that is shooting has committed its hands for twenty ticks and its
+    movement keys are at a fifth, so a press is swallowed and a step goes nowhere; both rules sit below the shot branch and
+    are simply never reached with a bow up. The three loadouts that draw are also the only ones that ever kill a ghast.
+  - **The first shot of a fight is never dodged.** The dodge is refused unless the fighter knows there is no shield in its
+    off hand, and it learns that by pressing — so the first shot to come inside twelve blocks is spent on the question. It
+    is one shot in a fight of three or four and the alternative is guessing about the agent's own hands, which is the one
+    thing this brain never does.
+  - **Nothing was added for a pack**, which keeps its own footwork: the dodge is refused outright while two or more bodies
+    are in the fight, on the same grounds the kite left the ranged rules alone.
+
 ## Mechanics (a player's rules, and bugs that broke them)
 
 - **Forward movement did nothing before commit c38efe9.** Vanilla's `Mob.setSpeed` also writes the forward input, and it

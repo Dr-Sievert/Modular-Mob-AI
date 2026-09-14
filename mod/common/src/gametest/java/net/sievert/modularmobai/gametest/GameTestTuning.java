@@ -243,7 +243,7 @@ public final class GameTestTuning {
     public static boolean naturalTerrain() {
 
         return "terrain".equals(suite()) || "league".equals(suite()) || "crowd".equals(suite())
-                || "pack".equals(suite()) || buildingLibrary();
+                || "pack".equals(suite()) || "shots".equals(suite()) || buildingLibrary();
     }
 
     /** Whether this process builds the terrain library rather than fighting. */
