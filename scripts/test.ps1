@@ -14,6 +14,9 @@
 #   scripts\test.ps1 -Crowd -Weights models\blast6\best.mbw
 #                                       the same fight with nobody standing about it and with 1, 3 and 9, tick by tick:
 #                                       which slot the opponent is in, where the aim is, who a press lands on
+#   scripts\test.ps1 -Pack              packs of 2, 3 and 4 zombies and of 2 and 3 vindicators on natural ground, tick by
+#                                       tick: how far the nearest of them stood, how often two were on top of the agent,
+#                                       how far off its blows landed, which way its feet went. -Weights for a network
 #   scripts\test.ps1 -Horde             20, 100, 500 and 2,000 mobs round one agent on flat ground: clips a tick, time to
 #                                       perceive, slot churn, blows, ticks lived against an idle body
 #   scripts\test.ps1 -Play              the agent in a real game: networks in the jar, /mmai, sides, Infinity loadouts
@@ -27,6 +30,10 @@ param(
 
     # The crowd diagnosis: one fight, fought with 0, 1, 3 and 9 monsters standing about it, watched tick by tick.
     [switch] $Crowd,
+
+    # The pack diagnosis: packs of 2, 3 and 4 zombies and of 2 and 3 vindicators, watched tick by tick. What a win rate
+    # cannot say — whether the kite is holding them off or standing in the middle of them. See docs\testing.md.
+    [switch] $Pack,
 
     # Twenty, a hundred, five hundred and two thousand mobs round one agent: what perceiving a horde costs, and whether
     # the network is worth anything in one. Prints a table; see docs\testing.md.
@@ -42,7 +49,7 @@ param(
 
 . "$PSScriptRoot\_common.ps1"
 
-$suite = if ($Play) { 'play' } elseif ($Mechanics) { 'mechanics' } elseif ($League) { 'league' } elseif ($Crowd) { 'crowd' } elseif ($Horde) { 'horde' } elseif ($Terrain) { 'terrain' } else { 'arena' }
+$suite = if ($Play) { 'play' } elseif ($Mechanics) { 'mechanics' } elseif ($League) { 'league' } elseif ($Crowd) { 'crowd' } elseif ($Pack) { 'pack' } elseif ($Horde) { 'horde' } elseif ($Terrain) { 'terrain' } else { 'arena' }
 $replayEvery = if ($Replays) { 1 } else { 0 }
 
 # Twice round the league's thirty seven mobs and eleven squads, each on normal and on hard, and the scripted fighter,
@@ -59,6 +66,14 @@ if ($League -and -not $PSBoundParameters.ContainsKey('Arenas')) {
 if ($Crowd -and -not $PSBoundParameters.ContainsKey('Arenas')) {
 
     $Arenas = 12
+}
+
+# Five packs and ten loadouts, drawn so that every pairing of the two comes round once in fifty. Three hundred is six of
+# each pairing, sixty fights a pack and thirty a loadout, and about a minute and a half on three workers. A count that is
+# not a multiple of fifty leaves the last few pairings one fight ahead of the rest.
+if ($Pack -and -not $PSBoundParameters.ContainsKey('Arenas')) {
+
+    $Arenas = 300
 }
 
 # The game runs in a folder of its own under mod\, so a path relative to here would not be found from there.

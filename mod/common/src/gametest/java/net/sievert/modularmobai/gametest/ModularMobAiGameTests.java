@@ -11,6 +11,7 @@ import net.sievert.modularmobai.gametest.tests.AgentEnemyOrderGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentHordeGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentLeagueGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentMeleeGameTest;
+import net.sievert.modularmobai.gametest.tests.AgentPackFightGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentPerceptionGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentTeacherGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentVindicatorGameTest;
@@ -40,6 +41,11 @@ public class ModularMobAiGameTests {
             // The same ground and the same fight, fought with nobody standing about it and with one, three and nine, and
             // watched tick by tick. A suite of its own and not a class in the league's, which is what a run runs.
             case "crowd" -> new Class<?>[] {AgentCrowdedFightGameTest.class};
+
+            // Packs of two, three and four zombies and of two and three vindicators on natural ground, watched tick by
+            // tick: how far the nearest of them stood, how often two were on top of the agent, how far off its blows
+            // landed, and which way its feet were going. A suite of its own for the same reasons the crowd one is.
+            case "pack" -> new Class<?>[] {AgentPackFightGameTest.class};
 
             // The fifty thousand arena baseline, with no agent in it.
             case "baseline" -> new Class<?>[] {VillagerVindicatorGameTest.class};
