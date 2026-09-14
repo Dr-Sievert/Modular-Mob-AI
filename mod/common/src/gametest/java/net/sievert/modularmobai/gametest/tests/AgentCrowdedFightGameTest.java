@@ -9,13 +9,11 @@ import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.MobSpawnType;
 import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.Vec3;
 import net.sievert.modularmobai.Constants;
 import net.sievert.modularmobai.arena.Episode;
 import net.sievert.modularmobai.brain.schema.AgentObservation;
@@ -326,7 +324,7 @@ public class AgentCrowdedFightGameTest {
             Entity struck = this.agent.executed().attacked && this.agent.executed().attackHit
                     ? this.agent.getLastHurtMob() : null;
 
-            this.tally.tick(slot, inRange, aimError(this.agent, this.opponent), nearest < toOpponent,
+            this.tally.tick(slot, inRange, Mechanics.aimError(this.agent, this.opponent), nearest < toOpponent,
                     this.agent.executed().attacked, struck == this.opponent, struck != null && struck != this.opponent);
 
             if (this.traced && this.tally.ticks <= TRACED_TICKS) {
@@ -335,7 +333,7 @@ public class AgentCrowdedFightGameTest {
                         "crowd=%d tick=%3d slot=%2d inFight=%.2f fighting=%2d opp=%5.1fb idle=%5.1fb aim=%5.1f deg "
                                 + "press=%s hit=%s health=%.1f/%.1f",
                         CROWDS[this.which], this.tally.ticks, slot, inRange, view.inRangeCount(), toOpponent,
-                        nearest == Double.MAX_VALUE ? -1.0D : nearest, aimError(this.agent, this.opponent),
+                        nearest == Double.MAX_VALUE ? -1.0D : nearest, Mechanics.aimError(this.agent, this.opponent),
                         this.agent.executed().attacked ? "y" : "n",
                         struck == null ? "-" : struck == this.opponent ? "opponent" : "idle",
                         this.agent.getHealth(), this.opponent.getHealth()));
@@ -393,18 +391,6 @@ public class AgentCrowdedFightGameTest {
         }
 
         return -1;
-    }
-
-    /** How far off that body the agent is looking, in degrees: the angle between where it looks and where the body is. */
-    private static double aimError(AgentMob agent, LivingEntity body) {
-
-        Vec3 look = agent.getViewVector(1.0F);
-        Vec3 towards = body.getEyePosition().subtract(agent.getEyePosition());
-
-        double length = towards.length();
-
-        return length < 1.0e-4D ? 0.0D
-                : Math.toDegrees(Math.acos(Mth.clamp(look.dot(towards) / length, -1.0D, 1.0D)));
     }
 
     private static void place(LivingEntity fighter, BlockPos feet) {
