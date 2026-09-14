@@ -1737,7 +1737,13 @@ public class PlayGameTest {
 
         run(helper, tick -> {
 
-            helper.assertTrue(golem.getTarget() != zombie && zombie.getTarget() != golem, "Allies went after each other");
+            // Named, because this tripped about once in twenty runs with nothing in the message to say which of the two had
+            // done it or by what goal; see findings.md. Vanilla's own target goals refuse an ally, so whichever it is, it
+            // came by another door.
+            helper.assertTrue(golem.getTarget() != zombie, "Allies went after each other: the golem took the zombie on tick "
+                    + tick + ", last hurt by " + golem.getLastHurtByMob() + ", zombie last hurt by " + zombie.getLastHurtByMob());
+            helper.assertTrue(zombie.getTarget() != golem, "Allies went after each other: the zombie took the golem on tick "
+                    + tick + ", last hurt by " + zombie.getLastHurtByMob() + ", golem last hurt by " + golem.getLastHurtByMob());
             helper.assertTrue(unhurt(golem) && unhurt(zombie), "Allies hurt each other by tick " + tick + ": the golem at "
                     + golem.getHealth() + " from " + golem.getLastDamageSource() + ", the zombie at " + zombie.getHealth()
                     + " from " + zombie.getLastDamageSource());
