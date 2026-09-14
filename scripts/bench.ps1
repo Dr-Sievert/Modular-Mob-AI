@@ -33,6 +33,7 @@
 # Every network is copied aside before the first fight, because a run keeps only its last few weight files and prunes the
 # rest while this is running.
 
+[CmdletBinding()]
 param(
     [string] $Run = '',
     [int] $Last = 0,
@@ -47,6 +48,12 @@ param(
     [string] $Heap = '1280M',
     [ValidateSet('terrain', 'arena', 'league')] [string] $Suite = 'league',
     [string[]] $Loadouts = @(),
+
+    # Only these opponents, by the names the league writes in its results (zombie, 2x_zombie, zombie(hard)), forwarded to
+    # eval.ps1. A bench that names none fights the whole roster -- and a bench that names some and is not heard fights the
+    # whole roster too, which is why this script binds its parameters strictly: an argument it does not know is refused
+    # rather than swallowed, after one sitting measured "packs of zombies" over evokers and wardens for exactly that reason.
+    [string[]] $Opponents = @(),
     [int] $Ground = 0,
 
     # What share of the fights stands a crowd about them, forwarded to eval.ps1; empty for the build's own default of a
@@ -172,6 +179,11 @@ try {
         if ($Loadouts.Count -gt 0) {
 
             $arguments.Loadouts = $Loadouts
+        }
+
+        if ($Opponents.Count -gt 0) {
+
+            $arguments.Opponents = $Opponents
         }
 
         if ($Bystanders -ne '') {
