@@ -72,6 +72,10 @@ import net.sievert.modularmobai.gametest.terrain.TerrainSites;
  *       hits for four and splits twice and a body that dies to one blow are not the same fight. A small slime cannot hurt the
  *       agent at all — vanilla's own {@code isDealsDamage} is false while it is tiny — so that fight is a win or the clock
  *       and nothing else; a small magma cube overrides that and hits for three.</li>
+ *   <li>Nothing is left riding anything, or carrying anything, {@link Member#prepare}: a zombie that came out on a chicken
+ *       is taken off it, and so is the spider's skeleton, because a jockey is a different fight from the mob a rating is
+ *       meant to be for. Both jockeys are fielded instead as players of their own, {@code chicken_jockey} and
+ *       {@code spider_jockey}, which are sides of two rather than mobs; see {@link Opposition}.</li>
  *   <li>Three animals that fight only once something has provoked them, and that a player meets on land: the llama, which
  *       spits and so gets a shooting match's clock and room; the goat, which rams; and the panda, which is fielded with the
  *       aggressive gene, the one that fights back. The goat is the only mob here that cannot be handed a target at all; see
@@ -79,6 +83,9 @@ import net.sievert.modularmobai.gametest.terrain.TerrainSites;
  *   <li>A snow golem cannot melt. Its own aiStep burns it a heart a tick in any biome warm enough to rain, which is a
  *       third of the terrain library, and a golem that dies of the weather hands the agent a win it never fought for. It
  *       is given fire resistance for good, which is what that damage goes through.</li>
+ *   <li>A slime that dies leaves two to four smaller copies of itself behind, and those are the fight too: they join the
+ *       other side as they appear, and the fight is won only when the last of them is down. It used to end at the split, on
+ *       a win the agent never earned; see {@link Splits}.</li>
  *   <li>A slime hurts what touches it only if that is a player, so the league has it touch the agent as the game has it
  *       touch a player, see {@link SlimeInvoker}. A breeze will only fight a player or an iron golem, and fights the
  *       agent as it would a player, see {@link net.sievert.modularmobai.gametest.mixin.BreezeMixin}. A bee dies of its

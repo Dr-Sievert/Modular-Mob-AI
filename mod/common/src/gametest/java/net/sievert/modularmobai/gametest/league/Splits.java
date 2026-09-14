@@ -9,6 +9,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.monster.Slime;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import net.sievert.modularmobai.gametest.terrain.TerrainSites;
 
 /**
@@ -55,19 +56,34 @@ public final class Splits {
     }
 
     /**
-     * The children that have appeared inside the fight's own ground since the last look, each tagged as the fight's on the
-     * way out so that it is only ever handed over once and so that the sweeps treat it as a fighter rather than as wildlife.
+     * The children that have appeared since the last look, each tagged as the fight's on the way out so that it is only ever
+     * handed over once and so that the sweeps treat it as a fighter rather than as wildlife.
      *
-     * <p>Asked of the fight's own box, which is the site the two sides are standing on: a child appears within a block of the
-     * parent, so nothing wider is needed and nothing wider would be safe — a worker's sites sit near enough to each other
-     * that a wider box would reach into the next fight. Bystanders carry the tag already, so a crowd of slimes standing about
-     * a fight is not mistaken for one.
+     * <p>Two things narrow the look, and the second is the one that is not obvious. The <b>box</b> is the fight's own ground,
+     * since a worker's sites sit near enough to each other that a wider one would reach into the next fight. And a child has
+     * to have appeared <b>where a body of this fight fell</b>: a crowd of bystanders can hold slimes of its own, and a
+     * bystander the agent has struck and killed leaves children exactly as an opponent does — untagged, on this site, and
+     * nothing to do with the fight. Taking one of those in would hand the fight an opponent nobody drew and a win condition
+     * that waits for it. A child appears within a block of its parent, so a few blocks of slack is all this wants.
+     *
+     * @param fell  where each body of the fight that can split was last standing as it died
+     * @param reach how far from one of those a body must be to be its child
      */
-    public static List<Slime> taken(ServerLevel level, AABB where) {
+    public static List<Slime> taken(ServerLevel level, AABB where, List<Vec3> fell, double reach) {
 
         List<Slime> left = new ArrayList<>();
 
+        if (fell.isEmpty()) {
+
+            return left;
+        }
+
         for (Slime child : level.getEntitiesOfClass(Slime.class, where, slime -> !slime.getTags().contains(TerrainSites.TAG))) {
+
+            if (fell.stream().noneMatch(at -> at.closerThan(child.position(), reach))) {
+
+                continue;
+            }
 
             child.addTag(TerrainSites.TAG);
             left.add(child);

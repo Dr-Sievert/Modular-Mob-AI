@@ -97,6 +97,9 @@ public class AgentCrowdGameTest {
     /** And how long after they appear before the agent's view is asked about them: it is worked out when the agent is stepped. */
     private static final int SPLIT_SETTLE_TICKS = 5;
 
+    /** How near where a body of the fight fell a new one has to be to be its child; the arena's own {@code SPLIT_NEAR}. */
+    private static final double SPLIT_NEAR = 4.0D;
+
     /** The largest pack the draw fields, and the size the arrangement below is held on: four, which is ten slots half full. */
     private static final int HOSTILE_MOST = 6;
     private static final int PACK_SIZE = 4;
@@ -859,7 +862,7 @@ public class AgentCrowdGameTest {
 
             if (taken[0] < 0) {
 
-                left.addAll(Splits.taken(helper.getLevel(), bounds(helper)));
+                left.addAll(Splits.taken(helper.getLevel(), bounds(helper), List.of(slime.position()), SPLIT_NEAR));
 
                 // A slime's children are made in Slime#remove, which is the end of the twenty ticks of death animation and
                 // not the tick its health reached nought. That gap is the whole reason the arena cannot call a fight over as
@@ -913,8 +916,20 @@ public class AgentCrowdGameTest {
             }
 
             // Taken once and not again: a second look finds nothing, since the first tagged them.
-            helper.assertValueEqual(Splits.taken(helper.getLevel(), bounds(helper)).size(), 0,
-                    "how many more children a second look finds");
+            helper.assertValueEqual(Splits.taken(helper.getLevel(), bounds(helper), List.of(slime.position()), SPLIT_NEAR).size(),
+                    0, "how many more children a second look finds");
+
+            // And what the second half of the rule is for: a slime standing where nothing of the fight fell is not the
+            // fight's, however untagged it is. A crowd of bystanders can hold slimes, and one the agent has struck and
+            // killed leaves children exactly as an opponent does.
+            Mob stranger = helper.spawnWithNoFreeWill(EntityType.SLIME, new BlockPos(8, 2, 8));
+
+            helper.assertValueEqual(Splits.taken(helper.getLevel(), bounds(helper), List.of(slime.position()), SPLIT_NEAR).size(),
+                    0, "how many bodies a look takes from where nothing of the fight fell");
+            helper.assertTrue(!stranger.getTags().contains(TerrainSites.TAG), "A slime nothing of the fight left behind was "
+                    + "taken into it");
+
+            stranger.discard();
 
             helper.assertValueEqual(agent.episode().opponents().size(), left.size() + 1, "how many the other side is now");
 

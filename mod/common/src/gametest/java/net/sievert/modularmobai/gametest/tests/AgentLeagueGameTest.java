@@ -1,7 +1,9 @@
 package net.sievert.modularmobai.gametest.tests;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -17,6 +19,7 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.MobSpawnType;
 import net.minecraft.world.entity.monster.Slime;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.PlayerTeam;
 import net.sievert.modularmobai.allegiance.Allegiance;
 import net.sievert.modularmobai.arena.Episode;
@@ -90,6 +93,13 @@ public class AgentLeagueGameTest {
      * around a site belongs to the fight on it.
      */
     private static final double SPLIT_REACH = 8.0D;
+
+    /**
+     * And how near where a body of the fight fell a new one has to be to be its child. Vanilla puts a child within half the
+     * parent's width of it, which is a block at the largest size; this is room for the body sliding as it dies and for
+     * nothing else, since the whole point of the test is to tell a fighter's children from a bystander's.
+     */
+    private static final double SPLIT_NEAR = 4.0D;
 
     private static final TestDurationStats TIME_TO_RESOLVE =
             new TestDurationStats("League fight length", GameTestTuning.arenasInShard(GameTestTuning.arenaCount()));
@@ -165,6 +175,14 @@ public class AgentLeagueGameTest {
         /** The team the other side is on, for a body that joins it mid fight; null where the fight uses no teams. */
         @Nullable
         private PlayerTeam side;
+
+        /**
+         * Where each body of this fight that can split was standing as it died, and the ones already written down. A child
+         * appears at its parent's feet, and this is what tells one from a bystander slime the agent happened to kill: see
+         * {@link Splits#taken}.
+         */
+        private final List<Vec3> fell = new ArrayList<>();
+        private final Set<Integer> fallen = new HashSet<>();
 
         /**
          * The monsters standing about this fight taking no interest in it, and nothing to do with who wins it. Kept only so
@@ -265,6 +283,7 @@ public class AgentLeagueGameTest {
                     // on the very tick it appears. See Splits.
                     if (this.splitting != null) {
 
+                        this.fallen();
                         this.adopt();
                     }
 
@@ -338,6 +357,8 @@ public class AgentLeagueGameTest {
             this.agent = ModEntities.training(Species.trained()).create(this.level);
             this.opponents.clear();
             this.members.clear();
+            this.fell.clear();
+            this.fallen.clear();
             this.splitting = Splits.splitting(opposition);
 
             if (this.agent == null) {
@@ -469,7 +490,7 @@ public class AgentLeagueGameTest {
          */
         private void adopt() {
 
-            for (Slime child : Splits.taken(this.level, this.site.bounds().inflate(SPLIT_REACH))) {
+            for (Slime child : Splits.taken(this.level, this.site.bounds().inflate(SPLIT_REACH), this.fell, SPLIT_NEAR)) {
 
                 if (this.side != null) {
 
@@ -479,6 +500,22 @@ public class AgentLeagueGameTest {
                 this.opponents.add(child);
                 this.members.add(this.splitting);
                 this.episode.join(child);
+            }
+        }
+
+        /**
+         * Writes down where each body of the fight that can split was standing when it died, once each. Recorded while it is
+         * dying rather than when it is gone, because by the time its children exist the body has been removed and there is
+         * nothing left to ask.
+         */
+        private void fallen() {
+
+            for (LivingEntity opponent : this.opponents) {
+
+                if (opponent.isDeadOrDying() && this.fallen.add(opponent.getId())) {
+
+                    this.fell.add(opponent.position());
+                }
             }
         }
 
