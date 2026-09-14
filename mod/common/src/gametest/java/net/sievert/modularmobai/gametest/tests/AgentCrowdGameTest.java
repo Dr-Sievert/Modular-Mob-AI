@@ -7,6 +7,7 @@ import java.util.function.IntPredicate;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
+import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.Entity;
@@ -16,6 +17,8 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.scores.PlayerTeam;
+import net.sievert.modularmobai.allegiance.Allegiance;
 import net.sievert.modularmobai.arena.Episode;
 import net.sievert.modularmobai.brain.Brain;
 import net.sievert.modularmobai.brain.BrainStep;
@@ -28,6 +31,9 @@ import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 import net.sievert.modularmobai.gametest.GameTestGroup;
 import net.sievert.modularmobai.gametest.league.Bystanders;
+import net.sievert.modularmobai.gametest.league.HostilePacks;
+import net.sievert.modularmobai.gametest.league.Opposition;
+import net.sievert.modularmobai.gametest.league.Roster;
 import net.sievert.modularmobai.gametest.util.TestTicks;
 
 /**
@@ -44,6 +50,11 @@ import net.sievert.modularmobai.gametest.util.TestTicks;
  * about it, which are the crowd the league never had, and which have to stay out of the fight's own arithmetic while filling
  * its view — what one is, what a fight with one is called and at what rate they come, and how big the crowd is when it comes,
  * which is weighted towards the small crowds the agent can still learn something in. See {@link Bystanders}.
+ *
+ * <p>The last two are the other half of that curriculum: the packs, several of the same mob that <b>all</b> fight, which is
+ * what a real world puts round an agent now that a monster comes for one the way it comes for a player. What is pinned is the
+ * draw — the name, the share and the skew — and the arrangement: one side, every one of them coming, and every one of them paid
+ * for exactly once, which is the fault a side made of copies invites. See {@link HostilePacks}.
  *
  * <p>Everything happens inside the plot's own bedrock box, and the walls that take sight away are built by the test rather
  * than borrowed from the arena's, so nothing moves between the two readings but the block in the way. An agent that could
@@ -65,6 +76,17 @@ public class AgentCrowdGameTest {
      */
     private static final int CROWDS_WANTED = 5_000;
     private static final int CROWD_DRAWS_CAP = 400_000;
+
+    /**
+     * The same for the packs: enough that six of them, at about one pack in eleven, is expected two hundred times, so a count
+     * of nought there says the tail really is closed. The draws cap is shared with the crowd's, since a share far below a tenth
+     * costs the same there.
+     */
+    private static final int PACKS_WANTED = 2_500;
+
+    /** The largest pack the draw fields, and the size the arrangement below is held on: four, which is ten slots half full. */
+    private static final int HOSTILE_MOST = 6;
+    private static final int PACK_SIZE = 4;
 
     /**
      * Where the twelve stand, as offsets inside the room from the corner the agent is in. Twelve candidates for ten slots,
@@ -405,7 +427,200 @@ public class AgentCrowdGameTest {
         helper.succeed();
     }
 
+    /**
+     * The other shape a real world has: several of the same mob, all of them fighting. What is drawn, how often, how many, and
+     * what the fight is called.
+     *
+     * <p>Beside the crowd's draw because it is the same kind of thing measured the same way, and the numbers matter for the same
+     * reason: a share nobody can read off a run's own results is a curriculum nobody can turn. Three claims. The <b>name</b>
+     * says which mob and how many more of it, {@code zombie+3_pack} being a zombie and three more, which is what lets the
+     * trainer's {@code base()} inherit the mob's kind and its cap. The <b>share</b> is whatever this build was told, asked of
+     * {@link HostilePacks#share()} rather than of a tenth, so a run told otherwise is not failed for obeying. And the
+     * <b>size</b> is weighted small — one over the number of extra bodies — with the tail still open, since a size that stops
+     * being drawn is a row the run is judged on that quietly stops being fed.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 40)
+    public static void aHostilePackIsDrawnSmallAndNamedForTheMobItIsAPackOf(GameTestHelper helper) {
+
+        helper.assertValueEqual(HostilePacks.name("zombie", 4), "zombie+3_pack", "a pack's name");
+        helper.assertValueEqual(HostilePacks.name("zombie(hard)", 6), "zombie(hard)+5_pack", "a hard pack's name");
+        helper.assertValueEqual(HostilePacks.name("zombie", 1), "zombie", "a fight against one mob");
+
+        Roster.Member zombie = Roster.any("zombie");
+        RandomSource random = RandomSource.create(23L);
+
+        int[] sizes = new int[HOSTILE_MOST + 1];
+        int packs = 0;
+
+        // Drawn until there are enough packs to measure rather than for a fixed number of fights, for the same reason the
+        // crowd's draw is: the share is whatever this build was told.
+        for (int draw = 0; draw < CROWD_DRAWS_CAP && packs < PACKS_WANTED; draw++) {
+
+            int fighting = HostilePacks.wanted(zombie, random);
+
+            helper.assertTrue(fighting == 0 || fighting >= 2 && fighting <= HOSTILE_MOST,
+                    "A draw asked for a pack of " + fighting);
+
+            if (fighting > 0) {
+
+                sizes[fighting]++;
+                packs++;
+            }
+        }
+
+        // Nothing is asserted about a share of nought: a run told -PleagueHostileCrowds=0 has no packs to measure.
+        if (packs == 0) {
+
+            helper.assertValueEqual(HostilePacks.share(), 0.0D, "the share, with not one pack drawn");
+            helper.succeed();
+
+            return;
+        }
+
+        for (int fighting = 2; fighting <= HOSTILE_MOST; fighting++) {
+
+            double chance = HostilePacks.chance(fighting);
+            double expected = packs * chance;
+            double spread = 4.0D * Math.sqrt(Math.max(1.0D, expected * (1.0D - chance)));
+
+            helper.assertTrue(sizes[fighting] > 0, "No pack in " + packs + " was " + fighting + " strong, so the +"
+                    + (fighting - 1) + "_pack rating would never be fed");
+
+            helper.assertTrue(Math.abs(sizes[fighting] - expected) <= spread, sizes[fighting] + " of " + packs
+                    + " packs were " + fighting + " strong, where a weight of " + percent(chance) + " asks for about "
+                    + Math.round(expected));
+
+            // Never more often than the size below it: the skew is monotone, which is what makes it a skew and not a bump.
+            if (fighting > 2) {
+
+                helper.assertTrue(chance <= HostilePacks.chance(fighting - 1),
+                        "A pack of " + fighting + " is drawn more often than a pack of " + (fighting - 1));
+            }
+        }
+
+        // And the point of the weighting: the fights go where there is something to learn. Two and three are two thirds of
+        // them, and six — the hardest fight in the league — is the one in eleven the tail is kept open for.
+        helper.assertTrue(sizes[2] + sizes[3] >= packs * 3 / 5, sizes[2] + sizes[3] + " of " + packs + " packs were two or "
+                + "three, where the skew means three fifths or more of them to be");
+
+        helper.succeed();
+    }
+
+    /**
+     * A pack is a side: all of them on one team against the agent, every one of them coming for it, every one of them paid for
+     * exactly once, and every one of them in the agent's view in front of anything that is not fighting.
+     *
+     * <p>Here rather than in the league suite for the reason the bystanders' arrangement is: what can go wrong is the
+     * arrangement and not the fight, and every way it can go wrong would be invisible in a run's results. A pack left off a
+     * team would wander after each other instead of the agent. One left out of the episode would be an opponent the reward does
+     * not pay for and the win condition does not wait for. One in the episode <b>twice</b> would be paid twice for the same
+     * blow, which is the fault a pack of copies invites and a squad of different mobs never could. And a pack that did not fill
+     * the view in front of the idle would be the crowded fight's old fault over again.
+     *
+     * <p>The pack is built the way a fight builds one, {@link HostilePacks#pack}, so what is held here is the thing the league
+     * actually fields rather than four zombies a test arranged.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 120)
+    public static void aHostilePackAllComesForTheAgentAndIsPaidForOnce(GameTestHelper helper) {
+
+        Opposition one = Opposition.named("zombie");
+
+        if (one == null) {
+
+            throw new GameTestAssertException("This build fields no zombie, so there is no pack to make of one");
+        }
+
+        Opposition pack = HostilePacks.pack(one, PACK_SIZE);
+
+        helper.assertValueEqual(pack.name(), "zombie+" + (PACK_SIZE - 1) + "_pack", "the pack's name");
+        helper.assertValueEqual(pack.mobs().size(), PACK_SIZE, "how many are on the pack");
+        helper.assertValueEqual(pack.kind(), "squad", "what kind of opponent a pack is to the trainer");
+
+        AgentMob agent = still(helper, new BlockPos(4, 2, 1));
+
+        // The pack, in the room's own floor, and one body on no team that nothing provokes: the pack has to come in front of
+        // that one, which is the crowded fight's rule and the reason a pack of copies is worth watching at all.
+        List<Mob> fighting = new ArrayList<>();
+
+        for (int on = 0; on < PACK_SIZE; on++) {
+
+            fighting.add(helper.spawnWithNoFreeWill(pack.mobs().get(on).type(), new BlockPos(2 + on, 2, 6)));
+        }
+
+        Mob idle = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new BlockPos(4, 2, 2));
+
+        List<PlayerTeam> teams = List.copyOf(Allegiance.enemy(List.of(agent), List.copyOf(fighting)));
+
+        // Exactly as a fight does it: the episode is given every one of them and nothing else, and each is provoked every tick.
+        agent.startEpisode(new Episode(FIGHT_TICKS, bounds(helper), List.copyOf(fighting)));
+
+        EnemySlots view = agent.brain().enemySlots();
+
+        run(helper, tick -> {
+
+            Bystanders.leaveAlone(idle, agent);
+
+            for (int on = 0; on < fighting.size(); on++) {
+
+                pack.mobs().get(on).provoke(fighting.get(on), agent);
+            }
+
+            // Ten ticks in, so everyone has finished the block they fall when they are put a block above the floor.
+            if (tick < 10) {
+
+                return false;
+            }
+
+            for (Mob member : fighting) {
+
+                helper.assertTrue(Allegiance.opposed(agent, member), "A member of the pack is not on a side against the agent");
+                helper.assertTrue(member.getTeam() == fighting.get(0).getTeam(), "The pack is on more than one team, so its "
+                        + "members would go after each other");
+                helper.assertTrue(member.getTarget() == agent, "A member of the pack is not coming for the agent");
+
+                helper.assertTrue(agent.episode().pays(member), "The fight does not pay for hurting a member of the pack");
+
+                // Once, which is the fault copies invite: the same body twice in the opponents would be paid twice for one blow
+                // and waited for twice by the win condition.
+                helper.assertValueEqual(occurrences(agent.episode().opponents(), member), 1,
+                        "how many times a member of the pack is on the other side");
+
+                helper.assertTrue(occupies(view, member), "A member of the pack in plain sight holds no slot");
+            }
+
+            helper.assertValueEqual(agent.episode().opponents().size(), PACK_SIZE, "how many the other side is");
+            helper.assertValueEqual(view.inRangeCount(), PACK_SIZE + 1, "bodies in sight");
+
+            // The whole side in front of the body that is not fighting, however near that one stands: it is two blocks off and
+            // the pack is five, so distance alone would have put it first.
+            for (Mob member : fighting) {
+
+                helper.assertTrue(slotOf(view, member) < slotOf(view, idle), "A body on no team took a slot in front of the "
+                        + "pack the fight is against");
+            }
+
+            // Teams outlive the entities on them and are saved with the world. Taken down on the last tick rather than in a
+            // finally: run only schedules the ticks and returns at once.
+            teams.forEach(Allegiance::disband);
+
+            return true;
+        });
+    }
+
     // ---------------------------------------------------------------------------------------------------------------
+
+    /** How many of one thing are in a list, for the claim that a pack member is on the other side exactly once. */
+    private static int occurrences(List<? extends Entity> among, Entity one) {
+
+        int found = 0;
+
+        for (Entity each : among) {
+
+            found += each == one ? 1 : 0;
+        }
+
+        return found;
+    }
 
     /** A wall of bedrock across the middle of the room, or the air it was built out of. */
     private static void wall(GameTestHelper helper, boolean up) {

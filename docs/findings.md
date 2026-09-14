@@ -532,6 +532,50 @@ are deliberate.
     promises that it has not taken *this* agent, and the mechanics suite's plots sit a few blocks apart, so three more plots
     with agents on them was enough for a bystander with its wits about it to pick a neighbour's and fail the suite about one run
     in three. The assertion now says what the rule says.
+- **Nothing in a real game ever came for an agent, so there was no fight to fight, and the spawn order only decided when the
+  agent noticed.** Reported from a flat world: "if I spawn the agent after the mobs are already there, it doesn't seem to
+  work" — it wanders — while "walking away from a crowd, spawning him, then zombies, then `/mmai enemy` somewhat works". Both
+  halves are one cause, and it is not the slots. **Vanilla's hostiles look for a target among players, villagers, iron golems
+  and turtles, and an agent is none of those.** So an agent stood in a crowd was ignored by every one of it, every slot in its
+  view read `ENEMY_TARGETS_ME` as nought, and a network trained on a league where the opponent comes for it from its first tick
+  does not start fights — which is the same reading `worldAgentFightsOnTheBundledNetwork` had already measured from the other
+  side ("a network will not reliably attack something that is not fighting back", above). `/mmai enemy` worked because a team is
+  the one other thing that brings a mob: `OtherTeamTargetGoal`.
+  - **Measured, tick by tick, on the owner's own two orders**: six zombies on the floor of the box and an agent on `best`
+    spawned into them in plain sight five to seven blocks off, no teams anywhere; then the same with the agent first and
+    `/mmai enemy` after. With the fix taken out again, **not one of the six had the agent as its target for fourteen ticks**,
+    and the first that did, on tick 15, did it by `HurtByTargetGoal` — *the agent had hit it* — with the other five taking the
+    agent on that same tick by no goal of their own at all, which is the alert above. In other words the only fight that could
+    ever start was one the agent started. With the fix in, a zombie takes the agent on **tick 2**, by `HuntAgentsGoal`, before
+    the agent has pressed anything; in the teamed order it is `OtherTeamTargetGoal` on tick 1. Both orders then run the same:
+    something coming for the agent on 186 of 186 and 176 of 176 ticks, 122 and 124 presses of attack, 7 and 6 blows landed.
+  - **The fix is that a monster treats an agent as it treats a player**, `allegiance/HuntAgentsGoal`: a
+    `NearestAttackableTargetGoal` for a playable agent, given to every pathfinding mob vanilla marks `Enemy`, at the priority
+    vanilla's own player goal sits at, with vanilla's reach, sight and refusal of allies. **A training agent is deliberately
+    left out.** An arena hands out every target it wants — an opponent provoked every tick, a bystander unprovoked every tick —
+    and a goal reaching into that would quietly turn the crowded quarter of the league's fights into fights with extra
+    opponents nobody rates and the reward does not pay for, which is the one fault `Bystanders` exists to prevent. So every
+    training fight is byte for byte the fight it was, and the arena suite is still 20 of 20 at exactly 54.0 ticks.
+  - **Two limits, documented rather than special-cased.** A spider's own player goal only fires in the dark and this one does
+    not, so a spider comes for an agent in daylight where it would leave a player alone; and a mob vanilla drives with a brain
+    rather than with goals — warden, piglin, hoglin — reads no goal at all and still has to be angered, which is what `Roster`
+    already does for the league.
+  - **The other half of the report was the slot the fight sits in, again, arriving by the other door.** Handing slots out by
+    the order settles nothing while **nobody has engaged yet**: a crowd that has not noticed the agent is all ranked the same,
+    so the slots go out nearest first, and a lease then keeps each body where it landed — the assignment loop only ever ranks a
+    body that holds *no* slot. So the one that then came for the agent stayed in whatever slot the walk-up had given it for the
+    rest of the fight, and the network's one reliable habit, that slot 0 is the fight, was being contradicted all over again.
+    `EnemySlots#promoteTheEngaged` now moves the bodies that are in the fight in front of the bodies that are only in the view,
+    among the slots those bodies already hold. **Engagement moves a slot; distance never does** — distance drifts every tick and
+    a view that re-sorted on it would churn under the network for nothing, which is what leases are for. Seen in the log: slots
+    `[2,3,0*,5,1,4*]` on one tick and `[0*,4*,2,3,5,1]` on the next. `engagingAfterTakingASlotMovesTheFightToTheFront` holds it
+    and is the only test that fails when the pass is taken out.
+  - **What was left alone.** A body dying in slot 0 leaves slot 0 empty with the rest of the fight behind it. That is not
+    fixed, and deliberately: it is exactly what a squad fight has looked like since squads existed, so every network has
+    trained on it, where shuffling the whole view up a slot on every death is a shape none of them has ever seen.
+  - **It does not make the agent win.** Both orders above end with the agent dead, on 7 and 6 blows landed. Six hostiles all
+    coming at once is a shape no league fight ever fielded, and making them come is what turned it from "no fight" into "a
+    fight it loses" — which is the curriculum hole the packs below were added to close.
 
 ## The league's curriculum
 
@@ -589,6 +633,42 @@ are deliberate.
   - `aCrowdIsDrawnSmallFarMoreOftenThanLarge` in the mechanics suite holds the shape, the tail and the share: 5,000 crowds are
     drawn, every count comes up, none more often than the count below it, each within four standard deviations of its own
     weight (`Bystanders#chance`, so the test is not a second copy of the weights), and 1 to 4 take two thirds or more.
+- **The crowd the league trains takes no interest, and the crowd a real game has all comes at once.** The bystander share
+  filled one of the two shapes a real world has. The other — three to six hostiles that all come for the agent — the league had
+  never fielded at all: its opponent is one mob, or one of eleven chosen squads of two or three, and the largest of those is
+  three. It became the ordinary case the day a monster started going after a playable agent the way it goes after a player (see
+  Perception, above), because a night in the open brings whatever is in view rather than nothing; and it is the owner's second
+  report, "he still gets massively overwhelmed", which the measurement of the first one ends in — both spawn orders end with the
+  agent dead on six or seven blows landed. So a tenth of the fights against one mob now field **several of it, all of them
+  fighting**, `league/HostilePacks` and `-PleagueHostileCrowds`.
+  - **It is the squad machinery, which is why it cost almost nothing to add.** A pack is an `Opposition` of copies of the mob
+    the fight was already drawn against, so the side, the provocation, the episode paying for each of them exactly once, the
+    ground asked for a place to stand for each, the clock and the replay are all what a squad already had.
+    `AgentLeagueGameTest` needed no change at all. The one fault a side made of copies invites, the same body on the other side
+    twice and so paid twice for one blow, is what `aHostilePackAllComesForTheAgentAndIsPaidForOnce` is for.
+  - **Copies rather than a mixed pack**, because the eleven squads already are the mixed packs: a body in front and a shot
+    behind, a patrol, two that climb. What the league had no way of asking was **how many**, with nothing else changed, which is
+    the question `2x_zombie` and `3x_silverfish` were chosen to ask at three points of the tier list. A pack asks it at every
+    size and against every mob.
+  - **Weighted small, and the weight is the one the bystanders' draw was already corrected to**: one over the number of extra
+    bodies, so 44 / 22 / 15 / 11 / 9% for two through six and 3.19 on average. A flat draw over 2 to 6 would make exactly the
+    mistake the flat bystander draw was caught making — most of the curriculum spent on the sizes there is nothing to learn from
+    yet — and worse, since a pack of N is harder than a crowd of N at every size. Six is still drawn on about one pack in
+    eleven, because a size that stops being drawn is a `+N_pack` row the run is judged on that quietly stops being fed.
+  - **A tenth, not a quarter.** A pack is the hardest fight in the league above two and the dearest per fight of anything in
+    it, and the plain fight against one opponent is still what the agent has to be able to win.
+  - **Never a pack and a crowd in one fight.** Fifteen bodies to tick on one worker is the cost of three fights; and keeping
+    the bystander draw exactly where it was, asked of every fight that is not a pack, means the mix of `+N_idle` players a
+    checkpoint's evaluated rate is averaged over does not move — the objection that held a curriculum ramp back twice.
+  - **Rated as `zombie+3_pack`**, the mob and three more of it, which is the `+N_idle` convention with the other word on the
+    end and right for the same reason: the plain `zombie` rating has to keep meaning what it meant in every run before this
+    one. Nothing matchmakes over the name, since it is not in the roster the workers hand over; `league.py`'s `base()` strips
+    the suffix before the rung, so a pack inherits the mob's kind and the mob's cap and the tier list gets a row. A pack named
+    `4x_zombie` was the obvious alternative and was rejected: `2x_zombie` is a **declared squad the trainer matchmakes over**,
+    so a pack of two would have poured fights nobody allocated into a rated player's record.
+  - **Smoke tested, 120 fights at a share of 0.6 over three mobs**: every size from `+1_pack` to `+5_pack` drawn, fought,
+    rated under its own name, and ended — wins, losses and timeouts, nothing hanging and no site starved by asking for six
+    places to stand.
 - **A crowd of bystanders costs a fifth of a worker, not nothing, and the reason is their wits.** The share that stands 1 to 9
   idle monsters about a quarter of the league's fights was written down as probably free: a probe had run fourteen of them in
   a box with no measurable slowdown. Measured properly — 200 league fights on one worker, share off and on — it is **7,330
@@ -611,6 +691,19 @@ are deliberate.
   the reward does not pay for and the ratings know nothing about — a fault that would never have shown up in a result.
   `leagueBystandersStandAsideUntilStruck` holds both halves: unstruck they stay off the agent, struck one fights back.
   The line in playing.md has been corrected to what was measured.
+  - **Settled: it is `HurtByTargetGoal` alerting its own kind, and it was never "on its own" at all.** Guessing from outside
+    could not answer it, and one question from inside could: ask the goal selector which of a mob's target goals is *running*
+    the tick it takes the agent. Measured on six zombies round an agent — one took the agent by **`HurtByTargetGoal` at
+    priority 1**, and the other five on the **same tick** by **no target goal of their own at all**. That is vanilla's own
+    `HurtByTargetGoal#alertOthers`: a mob the agent hurts hands the agent to every mob of its own class within its follow
+    range, tens of blocks for a monster, by calling `setTarget` on them directly — no goal of theirs runs, none of them needs
+    to see anything, and they all get it on one tick, which is the signature the report had all along. "Nothing had touched
+    **them**" was true and beside the point: something had touched their neighbour. The game test plots sit a few blocks apart,
+    which is how a bystander three plots away ended up with another test's agent, and is the same reason
+    `leagueBystandersStandAsideUntilStruck` had to stop asserting that an unstruck bystander has no target at all.
+    `PlayGameTest.aCrowdIsFoughtWhicheverWayRoundItWasSpawned` prints the goal's name on every run, so this cannot go back to
+    being a mystery. The consequence for the league is that `Bystanders#leaveAlone` is doing more work than it looked like: a
+    crowd of the opponent's own kind is alerted the instant the agent lands its first blow.
 - **The loadout and the opponent have to be drawn together.** Drawn independently, a bow was handed out against a creeper it
   should kite exactly as often as against a ghast it cannot reach, so the gradient reaching the drawing of a bow was an
   average over the matchups where a bow is the answer and the matchups where it is hopeless: measured over a league run's

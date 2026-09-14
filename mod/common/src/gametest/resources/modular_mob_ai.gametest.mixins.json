@@ -12,6 +12,7 @@
     "LevelLightEngineMixin",
     "LevelMixin",
     "MinecraftServerMixin",
+    "MobTargetGoalsAccessor",
     "RegionFileStorageMixin",
     "ServerChunkCacheMixin",
     "ServerLevelMixin",

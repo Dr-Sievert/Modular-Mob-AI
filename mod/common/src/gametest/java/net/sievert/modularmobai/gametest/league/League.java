@@ -59,6 +59,12 @@ import net.sievert.modularmobai.gametest.util.DeathCauses;
  * the reward does not know they are there, but the fight is written down under a name of its own, {@code zombie+3_idle}, so
  * that the plain {@code zombie} rating keeps meaning what it meant.
  *
+ * <p>A smaller share of the fights against <b>one</b> mob field several of it instead, all of them fighting: {@code
+ * zombie+3_pack}, see {@link HostilePacks}. That is the other half of the same hole — a crowd that takes no interest was one
+ * shape a real world has, and three to six hostiles that all come at once is the other, and it is the one the owner reported
+ * being overwhelmed by. A pack is an {@link Opposition} of copies, so it is the squad machinery throughout, and a fight is
+ * never a pack and crowded both.
+ *
  * <p>An opponent is a mob, a squad of mobs or a rung of the difficulty ladder by the name {@link Opposition} gives it,
  * {@code scripted}, a published network a run named, see {@link Published}, or a checkpoint of the run as
  * {@code iteration-000125}, whose weights play it on their most likely action, frozen, with nothing recorded: only the agent
@@ -297,8 +303,42 @@ public final class League {
 
         // A checkpoint whose weights will not load is not worth stopping a fight over; a mob always can be fielded. The
         // loadout the pairing asked for is kept, since it is the agent's own half of the draw and nothing about it failed.
-        return crowded(matchup != null ? matchup
-                : matchup(fixed.get(random.nextInt(fixed.size())), loadout, evaluation, random, fight), random);
+        Matchup drawn = matchup != null ? matchup
+                : matchup(fixed.get(random.nextInt(fixed.size())), loadout, evaluation, random, fight);
+
+        // A share of the fights against one mob field several of it, all of them fighting, which is the shape a real world has
+        // most nights and the league never had; see HostilePacks. A pack never also stands a crowd — fifteen bodies on one
+        // worker is the cost of three fights — and the bystander draw is left exactly where it was for every fight that is not
+        // one, so the mix of +N_idle players a checkpoint's rate is averaged over does not move.
+        Matchup packed = packed(drawn, random);
+
+        return packed != drawn ? packed : crowded(drawn, random);
+    }
+
+    /**
+     * The same fight with several of its mob on the other side instead of one, on a share of the fights against a single mob:
+     * {@code zombie+3_pack}, a player of its own, see {@link HostilePacks}. Unchanged for everything else — a squad, whose
+     * composition was chosen to ask one question, and the scripted fighter, a published network or a checkpoint, which are
+     * what every rating in the league is measured against.
+     *
+     * <p>Nothing downstream of here knows a pack from a squad, which is the point: it is an {@link Opposition} of several
+     * copies, so the side, the provocation, the reward, the ground, the clock and the replay are the squad machinery that was
+     * already there.
+     */
+    private static Matchup packed(Matchup matchup, RandomSource random) {
+
+        Opposition opposition = matchup.opposition();
+
+        if (opposition == null || opposition.mobs().size() != 1) {
+
+            return matchup;
+        }
+
+        int fighting = HostilePacks.wanted(opposition.mobs().get(0), random);
+
+        return fighting <= 1 ? matchup
+                : new Matchup(HostilePacks.name(matchup.opponent(), fighting), HostilePacks.pack(opposition, fighting),
+                matchup.brain(), matchup.loadout(), matchup.opponentLoadout(), matchup.evaluation(), 0);
     }
 
     /**

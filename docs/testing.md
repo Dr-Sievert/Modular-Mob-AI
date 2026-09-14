@@ -13,7 +13,7 @@ scripts\parity.ps1               Java forward pass against PyTorch's, after touc
 | --- | --- | --- |
 | `test.ps1` | `All 20 required tests passed`; every fight 54 ticks | the observation, the body and the scripted fighter still work; the 54 ticks are deterministic, so any change in them is a behaviour change |
 | `test.ps1 -Mechanics` | `All 54 required tests passed` | bows, crossbows, shields, axes, mining, placing, use slowdown and damage payment follow a player's rules, what a press of attack costs and what holding it down costs, that a swing sends a ghast's fireball back and nothing else, that a hand keeps the slot it started a draw in, what the observation says about a use, about the clock and the quiver, about what is shot at the agent, about the armour on either side of the fight, about whether the other side has engaged and about what the weapon in the agent's hand takes off — the last three against the same numbers the critic's privileged facts carry — the teacher getting itself out of powder snow and starting no draw it cannot finish, what an enemy slot goes to and what a wall between takes away from it, **which slot each body gets — the fight first, then the nearest** — that the league's bystanders stand aside unpaid until struck and that the size of a crowd is drawn small far more often than large, and how a league training fight is drawn from the trainer's shares |
-| `test.ps1 -Play` | `All 20 required tests passed`, and a `Loaded the mod's jar, modular_mob_ai/models/<name>.mbw from iteration N` line per network the jar carries | what [playing.md](playing.md) promises: the bundled networks load and drive an agent, the commands, saving, sides and friendly fire, the Infinity loadouts, and that nothing a suite tunes reaches a real game |
+| `test.ps1 -Play` | `All 21 required tests passed`, and a `Loaded the mod's jar, modular_mob_ai/models/<name>.mbw from iteration N` line per network the jar carries | what [playing.md](playing.md) promises: the bundled networks load and drive an agent, the commands, saving, sides and friendly fire, the Infinity loadouts, and that nothing a suite tunes reaches a real game |
 | `parity.ps1` | `parity ok` once per body, logits agreeing to about 1e-6, and `the plain ones agree to the bit at batches 1 to 64` | the game runs exactly the network PyTorch trained, **for every body this build has**, and the forward pass's explicit vector loops give the same bits as its plain ones |
 
 The network the `-Play` line names is whatever is published: the suite asks the jar what it carries and holds every network
@@ -91,7 +91,7 @@ once its entropy came down; see [findings.md](findings.md#learning).
 Each test sets up one situation and checks the numbers a player would get. Seven classes, one per concern, all of them
 sharing `tests/Mechanics` — the arena, the agent, the brain that hands back what the test pressed, and the readings more
 than one of them takes. Every class has to be named in `ModularMobAiGameTests` or its tests simply do not run, which is why
-the count below is worth knowing: **54**.
+the count below is worth knowing: **57**.
 
 `AgentDrawnWeaponGameTest` (9) — a bow and a crossbow, and the slot the hand keeps while one is drawn:
 
@@ -162,7 +162,7 @@ a number and boots in seconds:
 | `pouredLavaIsLavaAndLeavesNothingBehind`, `pouredLavaSweepsUpWhatItFedOutsideItself` | the lava poured beside a hazard fight is nine blocks of it, every block of ground it touched is exactly as it was once drained, and lava it fed three blocks away — as far as lava spreads on land, and outside the box the drain used to sweep — is swept up too and reported, which is what makes the site forget a label the spill has made untrue. Where a pool may go needs open ground with a heightmap, so the live run is what exercises that; see [findings.md](findings.md) |
 | `theLeagueDrawsAPairingByItsShare` | a league training fight comes out of `league/pairs.csv` as a loadout and an opponent together, in proportion to the shares, the same way twice from one seed, nothing the table names ever starved, and a pairing the build cannot field dropped. The shares themselves are the trainer's, tested by `scripts\league.ps1 -Test` |
 
-`AgentCrowdGameTest` (5) — what the view is allowed to hold, and the league's crowd:
+`AgentCrowdGameTest` (7) — what the view is allowed to hold, the league's crowd, and its packs:
 
 | Test | Checks |
 | --- | --- |
@@ -171,8 +171,10 @@ a number and boots in seconds:
 | `leagueBystandersStandAsideUntilStruck` | the league's crowd is a crowd: on no team, never the other side of the fight, never paid for by `Episode#pays`, holding slots in the view all the same, kept off the agent every tick — and free to fight back once the agent has hit one |
 | `aCrowdedFightIsNamedForItsOpponentAndItsCrowd` | `zombie+3_idle`, the share drawn 1 to 9 and at the rate this build was told |
 | `aCrowdIsDrawnSmallFarMoreOftenThanLarge` | **how big the crowd is**: 5,000 crowds drawn, each count within four standard deviations of its own weight (one over the count, taken from `Bystanders#chance` rather than copied), none drawn more often than the count below it, nine still drawn at all, and two thirds or more of the crowds four or fewer — the curriculum's answer to a crowded rate that sat at 44% while every count above four was a fight it mostly lost |
+| `aHostilePackIsDrawnSmallAndNamedForTheMobItIsAPackOf` | the packs' draw, the other half of the same curriculum: the name (`zombie+3_pack` is a zombie and three more of it), the share this build was told, and the skew — 2,500 packs drawn, each size within four standard deviations of `HostilePacks#chance`, none drawn more often than the size below it, six still drawn, and three fifths or more of them two or three |
+| `aHostilePackAllComesForTheAgentAndIsPaidForOnce` | the pack's arrangement, every half of which would be invisible in a run's results if it were wrong: all of them on **one** team against the agent, every one of them coming for it, every one of them paid for by `Episode#pays` and on the other side **exactly once** — the fault a side made of copies invites — and the whole side in front of a body on no team standing nearer |
 
-`AgentEnemyOrderGameTest` (3) — **which** slot each body gets, which is the rule a whole curriculum turned on. A slot used to
+`AgentEnemyOrderGameTest` (4) — **which** slot each body gets, which is the rule a whole curriculum turned on. A slot used to
 go out in the order the level's own walk over its entity sections returned bodies, so against one opponent it always landed in
 slot 0 and in a crowd it landed anywhere; see [findings.md](findings.md#perception). Every case here is arranged so the body
 that should win is the one the old order returned last:
@@ -182,6 +184,7 @@ that should win is the one the old order returned last:
 | `theOneFightingTheAgentTakesTheFirstSlot` | one opponent that has come for the agent, furthest of four, takes slot 0, and three idle bodies nearer than it take the slots behind it in order of their distance |
 | `aWholeSideComesBeforeTheCrowdAndTheNearestOfItFirst` | a squad's own half of the rule: two on a team set against the agent's, with their targets taken away every tick so the team is the only thing making them the fight, take slots 0 and 1 nearest first, and the crowd takes nothing in front of them |
 | `aFightTakesAnIdleSlotWhenThereAreNoneLeft` | with ten idle bodies holding every slot, one that then comes for the agent gets in — eviction ranks by the same order the slots are handed out in, so it cannot undo what the order decided |
+| `engagingAfterTakingASlotMovesTheFightToTheFront` | the half of the order handing slots out cannot reach, and the one a real game turned up: with nobody engaged the slots go out nearest first, so the body that then comes for the agent is sitting in a late slot and a lease would keep it there. Furthest of five, it takes slot 4, engages, and is in slot 0 on the next tick, with the four it passed one slot further back each and in their own order — engagement moves a slot, distance never does |
 
 Ammo: the agent's bow and crossbow loadouts carry 64 finite arrows, one used per shot, and arrows aren't picked back up.
 That covers a 60-second fight, since a full-draw shot takes 20 ticks. Vanilla skeletons and pillagers never run out.
@@ -232,6 +235,7 @@ into the tests either side, so the suite runs its tests one after another on one
 | `infinityBowNeverRunsOut`, `infinityCrossbowNeverRunsOut` | three shots, two bolts, the one arrow still there; the training loadouts keep 64 |
 | `aSecondBodyIsDrivenAndARefusedBrainIsNamed` | a beast, the body with no hands, is spawned, sees the enemy slots every body shares, and walks on its own seven-wide action vector; and a humanoid's brain offered to it is refused with both bodies named |
 | `aRealGameKeepsItsLightEngine` | **nothing a suite tunes reaches a real game.** A suite that keeps its light has one, read as full sky light above its plot; and with the suite property taken away — which is what a client passes — `GameTestTuning` answers as a real game needs, `lighting` included. A world made with `play.ps1` was pitch dark because it did not; see [findings.md](findings.md). What a suite gets is pinned in the same test, since the value of that fix was that it changed no fight |
+| `aCrowdIsFoughtWhicheverWayRoundItWasSpawned` | the owner's own two orders, in one test: six zombies on the floor and an agent spawned into them with **no teams anywhere**, then the agent first with `/mmai enemy` set on them after. Something comes for the agent in both, the slot reading it says so, and whoever is fighting holds slot 0. It logs a line per tick — who holds which slot, which are engaged, the aim off slot 0, presses, health — and names the goal that handed out the first target, which is what settled the "a vanilla mob goes after an agent on its own" question. Winning is not asserted: six at once is what the packs are for. See [findings.md](findings.md#perception) |
 
 ## Game tests directly
 
@@ -252,6 +256,7 @@ mod\gradlew.bat -p mod :fabric:runGametestParallel -Psuite=terrain -Parenas=2000
 | `leagueOpponents`, `leagueLoadouts`, `leagueDifficulties` | league only: fewer opponents (`zombie,2x_zombie`), fewer loadouts, which rungs of the ladder a run with no trainer goes round (`easy,normal,hard`) |
 | `leagueModels` | league only: published networks in `models\` to field as rated players (`blast`, or several separated by commas); nobody unless named, and a name that is another player's, or a network of another body, is refused by name |
 | `leagueHazards` | league only: the share of fights drawn onto ground with lava or an edge on it, 0.25 by default |
+| `leagueBystanders`, `leagueHostileCrowds` | league only: the share of fights that stand a crowd of monsters about them taking no interest (0.25), and the share of the fights against one mob that field several of it, all of them fighting (0.1). `0` turns either off; see [training.md](training.md) |
 | `arenas`, `workers`, `batchSize` | fights, worker processes, fights at once per worker |
 | `sites`, `siteRadius` | fight sites laid out, and chunks either side of each one's centre (2 = 80 blocks across) |
 | `brain`, `brainWeights` | `scripted` (default) or `neural` with a `.mbw` file |

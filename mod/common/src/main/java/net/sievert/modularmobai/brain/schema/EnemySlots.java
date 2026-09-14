@@ -47,6 +47,13 @@ import net.sievert.modularmobai.allegiance.Allegiance;
  *   <li><b>Then the nearest</b>, which is what the doc above always claimed and only eviction ever did.
  * </ol>
  *
+ * <p>A lease then keeps a body in its slot, which is what a lease is for — with <b>one</b> exception, {@link
+ * #promoteTheEngaged}: a body that becomes the fight after it was given a slot is moved in front of the bodies that are only
+ * in the view. Handing out slots by the order is not enough on its own, because in a real game the order's own first key
+ * changes after the fact: a crowd that nobody in has engaged the agent yet is all ranked the same, so the slots go out
+ * nearest first, and the one that then comes for the agent used to keep whichever slot the walk-up had given it for the rest
+ * of the fight. Engagement moves a slot; distance never does.
+ *
  * <p>What this does not move is anything hand written. The scripted fighter never read slot 0: it walks all ten slots and
  * works out the nearest occupant from the distance in each, so the teacher's answers, the arena suite and every label a
  * demonstration carries are untouched. A fight against one opponent has one body to order, so the sort is skipped outright
@@ -236,9 +243,113 @@ public final class EnemySlots {
             }
         }
 
+        this.promoteTheEngaged(owner);
         this.leaseProjectiles(owner);
 
         this.ordering = null;
+    }
+
+    /**
+     * Moves the bodies that are in this fight in front of the bodies that are merely in the view, among the slots those
+     * bodies already hold. A lease is otherwise never rearranged, and that is the point of one; this is the single exception,
+     * and the reason is that the thing the order is built on can change after a slot is handed out.
+     *
+     * <p>What went wrong without it was reported from a real game: stand an agent in front of a crowd nobody in which has
+     * engaged it, and every one of them is ranked the same — not engaged — so the slots go out nearest first. The moment one
+     * of them does come for the agent, that body is the fight, and it stayed in whatever slot the walk-up had given it,
+     * because the assignment loop above only ever ranks a body that holds no slot. So a network whose one reliable habit is
+     * that slot 0 is the fight was handed a fight in slot 4 for the whole of it, which is exactly the fault the order was
+     * written to remove, arriving by the other door. Measured on six zombies eight blocks off in plain sight, the one that
+     * engaged held slot 3 for 200 ticks and the aim never came onto it; with this pass it is in slot 0 on the tick after it
+     * engages. See findings.md.
+     *
+     * <p>Only engagement moves a slot, never distance. Distance drifts every tick and a view that re-sorted on it would
+     * churn under the network for nothing, which is what leases exist to stop; engagement is a state change that happens
+     * once or twice in a fight. So this is the comparator's first key and deliberately not its second: among the engaged,
+     * and among the rest, the slots keep the order they were handed out in.
+     *
+     * <p>Empty slots and the ones holding a shot are left exactly where they are, so nothing here can displace a projectile
+     * lease or fill a gap a newcomer is about to take. That means a body dying in slot 0 leaves slot 0 empty with the rest of
+     * the fight behind it, and <b>that is deliberate</b>: it is exactly what a squad fight has always looked like once its
+     * first member goes down, so it is a shape every network has trained on, where shuffling the whole view up a slot on every
+     * death is not.
+     */
+    private void promoteTheEngaged(LivingEntity owner) {
+
+        int bodies = 0;
+        boolean unengagedFirst = false;
+        boolean worthDoing = false;
+
+        // One pass to find out whether anything is out of order at all, which on the fight against one opponent and on the
+        // squad fight — every tick of most training runs — is the whole of the cost.
+        for (int slot = 0; slot < this.occupants.length; slot++) {
+
+            if (!(this.occupants[slot] instanceof LivingEntity body)) {
+
+                continue;
+            }
+
+            bodies++;
+
+            if (engaged(owner, body)) {
+
+                worthDoing |= unengagedFirst;
+            }
+
+            else {
+
+                unengagedFirst = true;
+            }
+        }
+
+        if (!worthDoing) {
+
+            return;
+        }
+
+        // The body slots, in slot order, and the bodies in them: the engaged ones in the order they were in, then the rest
+        // in the order they were in, written back into the same slots.
+        int[] slots = new int[bodies];
+        LivingEntity[] order = new LivingEntity[bodies];
+        int[] grace = new int[bodies];
+        boolean[] seen = new boolean[bodies];
+
+        int at = 0;
+        int taken = 0;
+
+        for (int slot = 0; slot < this.occupants.length; slot++) {
+
+            if (this.occupants[slot] instanceof LivingEntity) {
+
+                slots[at++] = slot;
+            }
+        }
+
+        for (int pass = 0; pass < 2; pass++) {
+
+            for (int index = 0; index < bodies; index++) {
+
+                int slot = slots[index];
+                LivingEntity body = (LivingEntity) this.occupants[slot];
+
+                if (engaged(owner, body) == (pass == 0)) {
+
+                    order[taken] = body;
+                    grace[taken] = this.graceRemaining[slot];
+                    seen[taken] = this.sighted[slot];
+                    taken++;
+                }
+            }
+        }
+
+        for (int index = 0; index < bodies; index++) {
+
+            int slot = slots[index];
+
+            this.occupants[slot] = order[index];
+            this.graceRemaining[slot] = grace[index];
+            this.sighted[slot] = seen[index];
+        }
     }
 
     /**

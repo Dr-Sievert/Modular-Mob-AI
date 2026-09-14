@@ -287,6 +287,42 @@ class LadderTest(unittest.TestCase):
         self.assertEqual(base("zombie+skeleton+2_idle"), "zombie+skeleton")
         self.assertEqual(base("witch+zombie(easy)"), "witch+zombie")
 
+    def test_the_name_of_a_pack_says_which_mob_the_pack_is_of(self):
+        # A pack of the same mob, all of them fighting, is written outside the rung exactly as a crowd is, so it comes off the
+        # same way and a pack inherits the mob's kind and the mob's cap. zombie+3_pack is a zombie and three more of it.
+        self.assertEqual(base("zombie+3_pack"), "zombie")
+        self.assertEqual(base("zombie(hard)+5_pack"), "zombie")
+        self.assertEqual(base("ravager+1_pack"), "ravager")
+
+        # And nothing about a squad's name or a crowd's can be read as a pack, or the other way round: a fight is never both,
+        # and no squad member is a digit followed by _pack.
+        self.assertEqual(base("zombie+skeleton"), "zombie+skeleton")
+        self.assertEqual(base("zombie+skeleton+2_pack"), "zombie+skeleton")
+        self.assertEqual(base("zombie+3_idle"), "zombie")
+
+    def test_a_pack_is_a_player_of_its_own_and_is_never_matchmade_over(self):
+        # The same claim a crowd gets, and the one thing that could go wrong if the suffix were not known here: a pack would
+        # arrive as a player of kind "mob" with no cap and could have a rung opened on it, and the workers field no such
+        # opponent by name, so every fight the trainer then asked for would fall back to a random one.
+        self.evaluations("zombie", wins=6, losses=4)
+        self.evaluations("zombie+3_pack", wins=1, losses=9)
+        self.evaluations("warden+2_pack", wins=0, losses=10)
+
+        league = League(self.run, self.config)
+        league.update(0)
+
+        self.assertIn("zombie+3_pack", league.ratings.players)
+        self.assertEqual(league.ratings.players["zombie+3_pack"].kind, "mob")
+        self.assertNotIn("zombie+3_pack", self.matchmaking())
+
+        # The cap comes off the mob the pack is of, which is the whole reason base() has to know the suffix: the warden is
+        # capped at a fifth of a per cent, and a pack of wardens may not be the run's curriculum either.
+        self.assertLessEqual(self.matchmaking().get("warden", 0.0), 0.01)
+
+        # And the plain rating is untouched: the agent won six of ten against one zombie and lost nine of ten against four, so
+        # the pack has to be the higher rated player of the two.
+        self.assertGreater(league.ratings.rating("zombie+3_pack"), league.ratings.rating("zombie"))
+
     def test_a_crowded_fight_is_a_player_of_its_own_and_is_never_matchmade_over(self):
         # Every fight against the plain zombie and against the same zombie with three monsters standing about it. Both are
         # rated; only the one the workers said they field is matchmade over, since the crowd is the game's own coin flip.

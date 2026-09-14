@@ -113,6 +113,16 @@ Nothing hand written reads slot 0: the scripted fighter walks all ten and works 
 the teacher, the arena suite and every demonstration label are untouched. The numbers are in
 [findings.md](findings.md#perception) and the harness that took them is `scripts\test.ps1 -Crowd`.
 
+**And the order is asked again when engagement changes**, `EnemySlots#promoteTheEngaged`, which is the one thing that ever
+rearranges a lease. Handing slots out by the order settles nothing while nobody has engaged yet: a crowd that has not noticed
+the agent is all ranked the same, so the slots go out nearest first, and the body that then comes for the agent used to keep
+whatever slot the walk-up had given it — the assignment above only ranks a body holding *no* slot. So the bodies in the fight
+are moved in front of the bodies only in the view, among the slots those bodies already hold. **Engagement moves a slot;
+distance never does**: distance drifts every tick and a view that re-sorted on it would churn under the network for nothing,
+which is what leases are for. Empty slots and the ones holding a shot stay where they are, so a body dying in slot 0 leaves
+slot 0 empty with the fight behind it — which is exactly what a squad fight has always looked like once its first member goes
+down, and so a shape every network has trained on.
+
 **What the opponent is, not just where.** `kind` has five values and every hostile mob in the game is the one value
 "monster", so for a long time a creeper, a zombie, a ravager and a warden filled a slot identically: same kind, health as
 a *fraction* so all of them read 1 when whole, and empty hands for all four. The league showed the bill — every ordinary

@@ -2,6 +2,7 @@ package net.sievert.modularmobai.gametest.tests;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.function.IntPredicate;
 
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
@@ -9,6 +10,7 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.util.Mth;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -19,6 +21,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.ai.goal.WrappedGoal;
 import net.minecraft.world.entity.animal.Cow;
 import net.minecraft.world.entity.animal.IronGolem;
 import net.minecraft.world.entity.monster.Vindicator;
@@ -31,6 +34,7 @@ import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.PlayerTeam;
+import net.sievert.modularmobai.Constants;
 import net.sievert.modularmobai.allegiance.Allegiance;
 import net.sievert.modularmobai.arena.Loadout;
 import net.sievert.modularmobai.arena.Loadouts;
@@ -42,6 +46,7 @@ import net.sievert.modularmobai.brain.Models;
 import net.sievert.modularmobai.brain.NeuralBrain;
 import net.sievert.modularmobai.brain.ScriptedBrain;
 import net.sievert.modularmobai.brain.schema.ActionSchema;
+import net.sievert.modularmobai.brain.schema.AgentObservation;
 import net.sievert.modularmobai.brain.schema.BeastSchema;
 import net.sievert.modularmobai.brain.schema.EnemySlots;
 import net.sievert.modularmobai.brain.schema.ObservationSchema;
@@ -50,6 +55,7 @@ import net.sievert.modularmobai.entity.ModEntities;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 import net.sievert.modularmobai.gametest.GameTestGroup;
 import net.sievert.modularmobai.gametest.GameTestTuning;
+import net.sievert.modularmobai.gametest.mixin.MobTargetGoalsAccessor;
 import net.sievert.modularmobai.gametest.util.HeldControls;
 import net.sievert.modularmobai.gametest.util.TestTicks;
 
@@ -292,6 +298,290 @@ public class PlayGameTest {
                 throw failed;
             }
         });
+    }
+
+    /**
+     * A crowd already standing on the ground is a fight for an agent spawned into it, and it is the same fight whichever way
+     * round the two arrived — which is what the owner reported it was not.
+     *
+     * <p>Two arrangements, in one test because the whole point is that they now come out the same:
+     *
+     * <ol>
+     *   <li><b>The crowd first.</b> Six zombies on the floor, then an agent spawned into the middle of them in plain sight,
+     *       and <b>no teams anywhere</b>. Reported: "if I spawn the agent after the mobs are already there, it doesn't seem to
+     *       work" — it wandered.</li>
+     *   <li><b>The agent first</b>, then the six, then {@code /mmai enemy} set on them, which is the workaround that was
+     *       reported as "somewhat works".</li>
+     * </ol>
+     *
+     * <p>What was wrong was not the order and not the slots: <b>nothing in the game ever came for an agent of its own accord</b>.
+     * Vanilla's hostiles look for a target among players, villagers, iron golems and turtles, and an agent is none of those.
+     * Measured on the arrangement below with the new goal taken out again, and this is the whole diagnosis: not one of the six
+     * zombies had the agent as its target for the first fourteen ticks, and the first that did, on tick 15, did it by
+     * {@code HurtByTargetGoal} — <b>the agent had hit it</b> — with the other five taking the agent on that same tick by
+     * <b>no target goal of their own at all</b>, which is that goal alerting its own kind. So the only two things that ever
+     * brought a hostile to an agent were a team and the agent starting the fight itself, and a network trained on a league
+     * where the opponent comes for it from its first tick does not start fights. With the goal in, a zombie takes the agent on
+     * tick 2, by {@code HuntAgentsGoal}, before the agent has pressed a thing; in the second arrangement it is
+     * {@code OtherTeamTargetGoal} on tick 1, which is why sides "somewhat worked". A training agent is untouched by any of it,
+     * since an arena hands out its own targets. The alert is also the answer to a question findings.md had carried open for
+     * weeks — "a vanilla mob does go after an agent on its own and what does it was not found" — and this test now prints
+     * which goal did it, every run.
+     *
+     * <p>Held here rather than measured only: that something engages, that the slot reading it says so, and that whoever is
+     * fighting the agent holds slot 0 — the last of which is the second half of the same report, since a crowd nobody in has
+     * engaged yet is ranked by distance alone and the one that then engages used to keep whatever slot it had. What is
+     * <b>not</b> asserted is winning. Six hostiles all coming at once is the shape the league never trained and the crowded
+     * curriculum is for, see the league's HostilePacks; what this test says is that it is a fight, and the numbers it logs say
+     * how it went.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 600)
+    public static void aCrowdIsFoughtWhicheverWayRoundItWasSpawned(GameTestHelper helper) {
+
+        // Where the six stand: the room's own floor is 1 to 7 in both directions, so this is five to seven blocks from the
+        // agent's corner with nothing between, which is the plain sight the report was about.
+        final int[][] standing = {{1, 6}, {2, 7}, {3, 5}, {5, 5}, {6, 7}, {7, 6}};
+        final BlockPos feet = new BlockPos(4, 2, 1);
+
+        List<Mob> crowd = new ArrayList<>();
+        AgentMob[] agent = {null};
+        PlayerTeam[][] sides = {new PlayerTeam[0]};
+
+        // Which arrangement is being watched, when it started, and what it came to: the crowd first with no teams, then the
+        // agent first with /mmai enemy.
+        int[] order = {0};
+        int[] began = {0};
+        boolean[] engagedEver = {false};
+        boolean[] firstSlotEver = {false};
+        int[] engagedTicks = {0};
+        int[] presses = {0};
+        int[] blows = {0};
+
+        // The crowd is already there when the agent arrives, which is the whole of the first arrangement.
+        for (int[] at : standing) {
+
+            crowd.add(helper.spawn(EntityType.ZOMBIE, new BlockPos(at[0], 2, at[1])));
+        }
+
+        run(helper, tick -> {
+
+            // A few ticks for the six to settle and for their own minds to have run, then the agent into the middle of them.
+            if (agent[0] == null) {
+
+                if (tick < 10) {
+
+                    return false;
+                }
+
+                agent[0] = spawnFighter(helper, feet);
+                began[0] = tick;
+
+                for (Mob zombie : crowd) {
+
+                    helper.assertTrue(zombie.getTeam() == null, "A zombie is on a team, so this is not the default rules");
+                }
+
+                return false;
+            }
+
+            AgentMob fighter = agent[0];
+            EnemySlots view = fighter.brain().enemySlots();
+            int watched = tick - began[0];
+
+            boolean engaged = false;
+
+            for (Mob zombie : crowd) {
+
+                engaged |= zombie.isAlive() && zombie.getTarget() == fighter;
+            }
+
+            // Which of the mob's own target goals is running the first time one of them comes for the agent. This is here
+            // because findings.md carried "a vanilla mob does go after an agent on its own and what does it was not found" as
+            // an open question for weeks, and the answer is a line of log away: ask the goal selector. Nothing is asserted
+            // about it — what goals a vanilla mob has is vanilla's business — but a run of this suite now says it.
+            if (engaged && !engagedEver[0]) {
+
+                for (Mob zombie : crowd) {
+
+                    if (zombie.getTarget() == fighter) {
+
+                        Constants.LOG.info("order {}: a zombie took the agent on tick {} by {}", order[0] + 1, watched,
+                                runningTargetGoals(zombie));
+                    }
+                }
+            }
+
+            engagedEver[0] |= engaged;
+            engagedTicks[0] += engaged ? 1 : 0;
+            presses[0] += fighter.executed().attacked ? 1 : 0;
+            blows[0] += fighter.executed().attacked && fighter.executed().attackHit ? 1 : 0;
+
+            // Whoever is in this fight holds slot 0: the promotion in EnemySlots, which is what a crowd that engages after it
+            // was given a slot needs. Only asked while something is engaged and the agent is alive to be looking.
+            if (engaged && fighter.isAlive()) {
+
+                Entity first = view.occupant(0);
+
+                firstSlotEver[0] |= first instanceof Mob held && held.getTarget() == fighter;
+
+                // And the slot reading an engaged body says so, which is the field the network reads and the one that was
+                // nought on every slot of every tick before the fix.
+                helper.assertTrue(targetsMeSomewhere(fighter, view),
+                        "A zombie has the agent as its target and no slot reads it: " + occupancy(fighter, view, crowd));
+            }
+
+            if (watched % 20 == 0 || watched < 5) {
+
+                Constants.LOG.info(String.format(Locale.ROOT, "order=%d tick=%3d bodies=%2d engaged=%s slots=%s "
+                                + "aim=%5.1f deg press=%s health=%.1f", order[0] + 1, watched, view.inRangeCount(),
+                        engaged ? "y" : "n", occupancy(fighter, view, crowd), aimError(fighter, view.occupant(0)),
+                        fighter.executed().attacked ? "y" : "n", fighter.getHealth()));
+            }
+
+            if (watched < WATCHED_TICKS && fighter.isAlive()) {
+
+                return false;
+            }
+
+            Constants.LOG.info("order {}: something came for the agent on {} of {} ticks, {} presses, {} blows landed, "
+                            + "the agent {}", order[0] + 1, engagedTicks[0], watched, presses[0], blows[0],
+                    fighter.isAlive() ? String.format(Locale.ROOT, "alive on %.1f health", fighter.getHealth()) : "dead");
+
+            helper.assertTrue(engagedEver[0], "In " + watched + " ticks not one of " + crowd.size() + " zombies in plain "
+                    + "sight ever came for the agent, so there was no fight to fight: " + occupancy(fighter, view, crowd));
+            helper.assertTrue(firstSlotEver[0], "Something was fighting the agent and never held slot 0, which is the slot "
+                    + "every fight a network was trained on put its opponent in");
+
+            // The second arrangement: everything cleared away, the agent first this time, then the six, then the sides the
+            // report reached for. The teams are what the first arrangement proves is no longer needed.
+            if (order[0] == 0) {
+
+                for (Mob zombie : crowd) {
+
+                    zombie.discard();
+                }
+
+                fighter.discard();
+                crowd.clear();
+
+                AgentMob second = spawnFighter(helper, feet);
+
+                for (int[] at : standing) {
+
+                    crowd.add(helper.spawn(EntityType.ZOMBIE, new BlockPos(at[0], 2, at[1])));
+                }
+
+                sides[0] = Allegiance.enemy(List.of(second), List.copyOf(crowd)).toArray(new PlayerTeam[0]);
+
+                agent[0] = second;
+                order[0] = 1;
+                began[0] = tick;
+                engagedEver[0] = false;
+                firstSlotEver[0] = false;
+                engagedTicks[0] = 0;
+                presses[0] = 0;
+                blows[0] = 0;
+
+                return false;
+            }
+
+            for (PlayerTeam side : sides[0]) {
+
+                Allegiance.disband(side);
+            }
+
+            return true;
+        });
+    }
+
+    /** How long each of the two arrangements above is watched for. */
+    private static final int WATCHED_TICKS = 200;
+
+    /** The playable agent both arrangements are fought by: a sword, and the network the jar calls best. */
+    private static AgentMob spawnFighter(GameTestHelper helper, BlockPos feet) {
+
+        AgentMob agent = worldAgent(helper, feet, 0.0F);
+
+        agent.equip(Loadout.SWORD);
+        agent.setBrainName("best");
+
+        return agent;
+    }
+
+    /**
+     * Which of that mob's target goals are running, by class name: the one question that settles who handed it its target,
+     * asked of the goal selector itself rather than guessed from the outside.
+     */
+    private static String runningTargetGoals(Mob mob) {
+
+        List<String> running = new ArrayList<>();
+
+        for (WrappedGoal wrapped : ((MobTargetGoalsAccessor) mob).modular_mob_ai$targetSelector().getAvailableGoals()) {
+
+            if (wrapped.isRunning()) {
+
+                running.add(wrapped.getGoal().getClass().getSimpleName() + " at priority " + wrapped.getPriority());
+            }
+        }
+
+        return running.isEmpty() ? "no target goal at all, so something outside its goals set it" : String.join(", ", running);
+    }
+
+    /** Whether any slot reading a body that has come for the agent says so, which is the field the network reads. */
+    private static boolean targetsMeSomewhere(AgentMob agent, EnemySlots view) {
+
+        float[] row = new float[ObservationSchema.OBS_DIM];
+        AgentObservation.write(agent, view, row, 0);
+
+        for (int slot = 0; slot < ObservationSchema.ENEMY_SLOTS; slot++) {
+
+            if (row[ObservationSchema.enemyOffset(slot) + ObservationSchema.ENEMY_TARGETS_ME] > 0.5F) {
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** Which body is in each slot and whether it is fighting the agent: {@code [3*,1,5,-,...]}, by where each was put. */
+    private static String occupancy(AgentMob agent, EnemySlots view, List<Mob> crowd) {
+
+        StringBuilder said = new StringBuilder("[");
+
+        for (int slot = 0; slot < ObservationSchema.ENEMY_SLOTS; slot++) {
+
+            Entity held = view.occupant(slot);
+
+            said.append(slot == 0 ? "" : ",");
+
+            if (held == null) {
+
+                said.append('-');
+                continue;
+            }
+
+            said.append(crowd.indexOf(held) >= 0 ? String.valueOf(crowd.indexOf(held)) : "?");
+            said.append(held instanceof Mob mob && mob.getTarget() == agent ? "*" : "");
+        }
+
+        return said.append(']').toString();
+    }
+
+    /** How far off that body the agent is looking, in degrees, and -1 for a slot with nothing in it. */
+    private static double aimError(AgentMob agent, Entity body) {
+
+        if (body == null) {
+
+            return -1.0D;
+        }
+
+        Vec3 look = agent.getViewVector(1.0F);
+        Vec3 towards = body.getBoundingBox().getCenter().subtract(agent.getEyePosition());
+        double length = towards.length();
+
+        return length < 1.0e-4D ? 0.0D
+                : Math.toDegrees(Math.acos(Mth.clamp(look.dot(towards) / length, -1.0D, 1.0D)));
     }
 
     /** One monster standing about out in the world, out of reach and taking no interest: a slot and nothing else. */

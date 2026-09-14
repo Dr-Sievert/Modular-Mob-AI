@@ -30,12 +30,14 @@ fights behind it. Once open a rung stays open, so its rating is never of a movin
 won. Each rung is a player of its own, as each composition is, and a cap belongs to the opponent rather than the rung.
 
 Who is rated. Every player is a fixed policy: a kind of mob, a squad of them, a rung of the ladder, a fight with a crowd of
-monsters standing about it, the scripted fighter, a published network the run fields, a checkpoint on its most likely action.
-A crowd is what a real world's night puts in the agent's view and what no league fight used to, and a share of the fights
-against a mob or a squad now has one: zombie+3_idle, rated separately for the same reason a rung is, so the plain zombie
-rating keeps meaning what it meant in every run before this one. Nothing here matchmakes over those names, since they are not
-in the roster the workers hand over; they arrive in the results and take a row in the tier list. See the game's
-league/Bystanders.
+monsters standing about it, a pack of the mob itself, the scripted fighter, a published network the run fields, a checkpoint on
+its most likely action. A crowd is what a real world's night puts in the agent's view and what no league fight used to, and a
+share of the fights against a mob or a squad now has one: zombie+3_idle, rated separately for the same reason a rung is, so the
+plain zombie rating keeps meaning what it meant in every run before this one. A pack is the other shape a real world has —
+several of the same mob that all come at once, zombie+3_pack being a zombie and three more of it — and a smaller share of the
+fights against one mob field one. Nothing here matchmakes over either kind of name, since they are not in the roster the
+workers hand over; they arrive in the results and take a row in the tier list. See the game's league/Bystanders and
+league/HostilePacks.
 The agent in training is none of those, since it samples and changes every iteration, so only evaluation fights are
 rated: a checkpoint on its most likely action, against an opponent drawn evenly from everyone. A fight scores one for a
 win, nothing for a loss, and a half when neither killed the other, on time or because a creeper blew itself up. Both
@@ -135,6 +137,16 @@ RUNGS = ("(hard)", "(easy)")
 # member's name, so this cannot swallow one. See the gametest's league/Bystanders.
 IDLE = re.compile(r"\+([1-9])_idle$")
 
+# The pack of the same mob a smaller share of the fights against one of it fields instead, all of them fighting, as the game
+# writes it on the end of the name: zombie+3_pack is a zombie and three more of it, zombie(hard)+5_pack is six hard ones. A
+# player of its own for the same reason a crowd is, and read off the name the same way — a digit followed by _pack cannot be a
+# squad member's name. See the gametest's league/HostilePacks.
+PACK = re.compile(r"\+([1-9])_pack$")
+
+# What the game writes on the end of an opponent's name for a fight that is not the plain one against it: a crowd standing
+# about it, or a pack of it. Both come off before the rung, since the game writes them outside it.
+VARIATIONS = (IDLE, PACK)
+
 # The kinds of player that have rungs at all: a rung is how hard the mobs on one side spawn, so only they and the squads of
 # them have one. The scripted fighter and a published network are fixed policies with nothing to turn up.
 RUNGED = ("mob", "squad")
@@ -157,14 +169,16 @@ def checkpoint_iteration(name: str) -> int | None:
 
 
 def base(name: str) -> str:
-    """The opponent a name is a variation on: zombie for zombie(hard), for zombie+3_idle and for zombie(hard)+3_idle, and
-    the name itself for anything else.
+    """The opponent a name is a variation on: zombie for zombie(hard), for zombie+3_idle, for zombie+3_pack and for
+    zombie(hard)+3_idle, and the name itself for anything else.
 
     What this is for is everything a variation inherits from the opponent it is one of: what kind of thing it is, and the cap
-    on its share of the training fights. A crowd of bystanders comes off first, since the game writes it outside the rung.
+    on its share of the training fights. A crowd of bystanders and a pack of the mob itself come off first, since the game
+    writes either outside the rung; a fight is never both, so at most one of them is ever there to come off.
     """
 
-    name = IDLE.sub("", name)
+    for variation in VARIATIONS:
+        name = variation.sub("", name)
 
     for rung in RUNGS:
         if name.endswith(rung):

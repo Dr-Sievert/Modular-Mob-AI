@@ -12,7 +12,9 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.GoalSelector;
+import net.minecraft.world.entity.monster.Enemy;
 import net.minecraft.world.level.Level;
+import net.sievert.modularmobai.allegiance.HuntAgentsGoal;
 import net.sievert.modularmobai.allegiance.OtherTeamTargetGoal;
 import net.sievert.modularmobai.entity.agent.AgentMob;
 
@@ -29,6 +31,12 @@ public abstract class MobMixin {
     // mob gets it rather than a list of fighters, so a mod's mobs and the next vanilla update's are covered too, and
     // what a mob with no attack of its own does with a target is nothing. The agent is left out: nothing but its brain
     // may move it, and its enemies are chosen by the observation, not by a target.
+    //
+    // A monster also gets the goal that sends it after a playable agent the way vanilla sends it after a player, see
+    // HuntAgentsGoal. Without it nothing in a real game ever came for an agent on its own — vanilla's hostiles look for
+    // players, villagers, golems and turtles — so an agent stood in a field of zombies was ignored by every one of them and
+    // wandered, which is what the owner reported. A training agent is not hunted: an arena hands out its own targets, and a
+    // goal reaching into that would turn the league's crowded fights into fights with unrated opponents in them.
     @Inject(method = "<init>", at = @At("TAIL"))
     private void modular_mob_ai$goAfterOtherTeams(EntityType<? extends Mob> type, Level level, CallbackInfo ci) {
 
@@ -39,6 +47,11 @@ public abstract class MobMixin {
                 && mob.getAttributes().hasAttribute(Attributes.FOLLOW_RANGE)) {
 
             this.targetSelector.addGoal(OtherTeamTargetGoal.PRIORITY, new OtherTeamTargetGoal(mob));
+
+            if (mob instanceof Enemy) {
+
+                this.targetSelector.addGoal(HuntAgentsGoal.PRIORITY, new HuntAgentsGoal(mob));
+            }
         }
     }
 }

@@ -253,6 +253,91 @@ public class AgentEnemyOrderGameTest {
         });
     }
 
+    /**
+     * A body that becomes the fight after it already holds a slot is moved to the front of the view, and the bodies it passes
+     * keep their own order behind it.
+     *
+     * <p>This is the half of the order the first rule cannot reach, and a real game is where it came from. Handing slots out
+     * by the order settles nothing when <b>nobody has engaged yet</b>: a crowd of monsters that has not noticed the agent is
+     * all ranked the same, so the slots go out nearest first, and a lease then keeps each of them where it landed. Reported
+     * from a creative world: an agent spawned into six zombies already standing there. The moment one of them came for it that
+     * body was the fight and it was sitting in slot 3, where it stayed for the whole fight, because the assignment loop only
+     * ever ranks a body holding no slot. So the network's one reliable habit — slot 0 is the fight — was being contradicted
+     * again, by the other door.
+     *
+     * <p>Arranged so that nothing but the promotion can pass the test: the body that engages is put <b>furthest</b> away, so it
+     * takes the last slot of the five on distance alone, and every other body stays exactly where it is and keeps its target
+     * taken away. A view that only ranked newcomers would leave it in slot 4 for ever.
+     */
+    @GameTest(template = ARENA, timeoutTicks = 100)
+    public static void engagingAfterTakingASlotMovesTheFightToTheFront(GameTestHelper helper) {
+
+        AgentMob agent = still(helper, new BlockPos(1, 2, 1));
+
+        // Four idle bodies at 2, 3, 4 and 5 blocks, and the one that will engage at 6: the last slot by distance, and last in
+        // the world's own walk as well, so neither order can be giving it slot 0 by accident.
+        List<Mob> idle = new ArrayList<>();
+
+        for (int at = 3; at <= 6; at++) {
+
+            idle.add(helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new BlockPos(at, 2, 1)));
+        }
+
+        Mob engages = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new BlockPos(7, 2, 1));
+
+        EnemySlots view = agent.brain().enemySlots();
+        int[] held = {-1};
+
+        run(helper, tick -> {
+
+            for (Mob standing : idle) {
+
+                Bystanders.leaveAlone(standing, agent);
+            }
+
+            // Ten ticks in, so everyone has finished the block they fall when they are put a block above the floor.
+            if (tick < 10) {
+
+                return false;
+            }
+
+            // Nobody is in this fight yet, so the slots are the distances: the one that will engage is last of the five.
+            if (tick == 10) {
+
+                helper.assertValueEqual(view.inRangeCount(), idle.size() + 1, "bodies in sight");
+
+                held[0] = slotOf(view, engages);
+
+                helper.assertValueEqual(held[0], idle.size(), "the slot of the furthest of a crowd that is not fighting");
+
+                for (int place = 0; place < idle.size(); place++) {
+
+                    helper.assertValueEqual(slotOf(view, idle.get(place)), place,
+                            "the slot of the " + (place + 1) + "th nearest while nobody is fighting");
+                }
+
+                // And now the only thing about it that changes.
+                engages.setTarget(agent);
+                return false;
+            }
+
+            // A tick later, because the slots are worked out when the agent is driven and not when a test presses a button.
+            engages.setTarget(agent);
+
+            helper.assertValueEqual(slotOf(view, engages), 0, "the slot of the body that engaged while holding slot " + held[0]);
+
+            // The bodies it passed keep their own order, one slot further back each: only engagement moves a slot, so the
+            // rest of the view is the view it was rather than a fresh sort by distance.
+            for (int place = 0; place < idle.size(); place++) {
+
+                helper.assertValueEqual(slotOf(view, idle.get(place)), place + 1,
+                        "the slot of the " + (place + 1) + "th nearest once the fight came to the front");
+            }
+
+            return true;
+        });
+    }
+
     // ---------------------------------------------------------------------------------------------------------------
 
     private static EnemySlots view(AgentMob agent) {

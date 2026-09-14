@@ -95,9 +95,19 @@ What an agent does in the world:
   (`BrainName`) and its loadout's name (`Loadout`). A saved brain the game can't find (a network another install had)
   falls back to the default with one warning in the log, and comes back once the network is there.
 - **It never despawns**, and doesn't count towards the mob cap.
-- Mobs mostly leave agents alone unless they're on opposing sides, and an agent that hits one gets hit back — but not always:
-  measured, three plain zombies on no team with nothing having touched them all took a nearby agent as their target at six
-  blocks. Don't count on a mob ignoring an agent. See [findings.md](findings.md#the-leagues-curriculum).
+- **Monsters come for it the way they come for a player.** A zombie, a skeleton, a spider, anything vanilla marks hostile,
+  goes after an agent it can see within its own follow range, and the agent is a fight from the moment it is spawned — no
+  teams, no commands. That is new: vanilla's hostiles look for players, villagers, golems and turtles, so until this an agent
+  stood in a field of zombies and every one of them walked past it, and the reported "spawn the agent after the mobs are
+  already there and it doesn't work" was exactly that. Animals, villagers and anything that would leave a player alone still
+  leave the agent alone; sides override it as they override everything (an ally is never a target). Two limits worth knowing:
+  a spider comes for an agent in daylight where it would leave a player alone, and a warden, a piglin and a hoglin have to be
+  angered as they always did, because vanilla drives them with a brain rather than with goals.
+- A mob the agent hits fights back, and so does **every mob of its own kind within its follow range** — vanilla's own
+  `HurtByTargetGoal` alerts its own kind as far as that reaches, tens of blocks for most monsters, so one blow on one zombie
+  brings the whole group and none of them needed to see anything. That was the
+  answer to "three plain zombies with nothing having touched them all took a nearby agent as their target on one tick", which
+  was written down here as unexplained; see [findings.md](findings.md#perception).
 - **A crowd in view used to be what a network could not do, and half of that is fixed.** The agent's ten enemy slots now go
   only to what it could actually see: a monster behind rock, across a valley or in the caves below takes none, which is where
   most of a real night's crowd was coming from. Measured in the box, with eleven monsters standing about behind its wall, an
@@ -181,6 +191,11 @@ targeting already never picks an ally. The mod adds what vanilla lacks:
   players, villagers and golems. A goal added to every pathfinding mob (`allegiance/OtherTeamTargetGoal`) does this, and
   does nothing while the mob has no team. The mob's own attack goals do the fighting, so a cow on a team picks a target
   and does nothing about it.
+- **Monsters go after a playable agent as they go after a player**, on no team at all: a second goal
+  (`allegiance/HuntAgentsGoal`) given to every pathfinding mob vanilla marks hostile, with vanilla's own reach, line of sight
+  and refusal to pick an ally. An agent in training is deliberately left out of it — an arena hands out its own targets, and a
+  goal reaching into that would turn the league's crowded fights into fights with opponents nobody rates. So a fight in a game
+  is a fight from the first tick, and every training fight is byte for byte the fight it was.
 - **Friendly fire** off keeps an agent and its side from hurting each other, as vanilla does between players. It covers
   swings, sweeps, arrows and bolts.
 
@@ -260,6 +275,7 @@ the next test's box. See [testing.md](testing.md).
 | `arena/Loadouts.java` | loadouts by name, and the Infinity ones |
 | `allegiance/Allegiance.java` | sides: the agent's enemy rule, friendly fire, making and removing teams |
 | `allegiance/OtherTeamTargetGoal.java`, `mixin/MobMixin.java` | vanilla mobs going after other teams |
+| `allegiance/HuntAgentsGoal.java` | monsters going after a playable agent as they go after a player |
 | `mixin/LivingEntityMixin.java` | friendly fire for agents |
 | `command/AgentCommands.java` | `/mmai` |
 | `entity/agent/AgentMob.java` | brain and loadout names, saving, spawn arming, persistence, standing still when alone |

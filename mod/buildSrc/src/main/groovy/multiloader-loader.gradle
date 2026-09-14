@@ -293,6 +293,12 @@ afterEvaluate {
     // world's night puts in the agent's view and no league fight used to; see league/Bystanders.
     runTask.systemProperty('modular_mob_ai.league.bystanders', providers.gradleProperty('leagueBystanders').getOrElse(''))
 
+    // What share of league fights against one mob field several of it instead, all of them fighting:
+    // -PleagueHostileCrowds=0.1, and 0 for none at all. A tenth unless told otherwise. That is the other shape a real world
+    // has — three to six hostiles all coming at once, where a crowd of bystanders is the ones that take no interest — and the
+    // league fielded one opponent or a chosen squad of two or three and nothing else; see league/HostilePacks.
+    runTask.systemProperty('modular_mob_ai.league.hostileCrowds', providers.gradleProperty('leagueHostileCrowds').getOrElse(''))
+
     // Whether a fight that asked for such ground and was handed flat ground gets a pool of lava poured beside it for that
     // fight, put back when it ends: -PpourHazards=false turns it off. On by default, because the overworld surface has
     // almost no lava and two per cent of fights is too rare to learn the best blow in the game from; see PouredHazards.

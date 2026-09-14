@@ -545,6 +545,39 @@ letting only the reading go; see [findings.md](findings.md#perception) and `arch
 every network sees, so a published network is better off retrained than trusted out in a world. Reachability — the mob in the
 cave below with a line of sight up through a hole — is deliberately not done, and the reason is in findings.md.
 
+### A hostile crowd
+
+A crowd standing about taking no interest is one shape a real world has. The other is **several of them all coming at once**,
+and that one the league had never fielded at all: its opponent is one mob or one of eleven chosen squads of two or three. It
+matters more than it used to, because a monster now goes after a playable agent the way it goes after a player
+(`allegiance/HuntAgentsGoal`), so a night in a real world brings whatever is in view rather than nothing at all — which is the
+owner's second report, "he still gets massively overwhelmed". It is filled by `gametest/league/HostilePacks`:
+
+```
+-PleagueHostileCrowds=0.1    the share of fights against one mob that field several of it, all fighting; 0 for none
+```
+
+- **A tenth of the fights**, against **one mob** only — never a squad, whose composition was chosen to ask one question, and
+  never the scripted fighter, a published network or a checkpoint, which are the fixed policies every rating is measured
+  against. Two to six of the mob, **weighted small** by one over the number of extra bodies: 44 / 22 / 15 / 11 / 9% for two
+  through six, 3.19 on average. A tenth rather than the crowd's quarter because a pack is the hardest fight in the league at
+  every size above two and the dearest per fight of anything in it; a run that wants more says so.
+- **A player of its own**, `zombie+3_pack` — the mob and three more of it, so four fight. Rated like `zombie+3_idle` and for
+  the same reason: the plain `zombie` rating has to keep meaning what it meant in every run before this one. The trainer never
+  matchmakes over these names, since they are not in the roster the workers hand over; `league.py`'s `base()` strips the suffix
+  so the pack inherits the mob's kind and the mob's cap, and the tier list gets a row.
+- **It is the squad machinery, not a new kind of fight.** A pack is an `Opposition` of copies, so the side, the provocation,
+  the reward paying for each of them exactly once, the ground asked for a place to stand for each, the clock and the replay are
+  all what a squad already had. Nothing downstream knows a pack from a squad, and `AgentLeagueGameTest` needed no change.
+- **Never a pack and a crowd in the same fight.** A pack of six with nine standing about it is fifteen bodies to tick on one
+  worker, and the bystander draw is left exactly where it was for every fight that is not a pack, so the mix of `+N_idle`
+  players a checkpoint's evaluated rate is averaged over does not move — the objection that held a curriculum ramp back twice.
+- **What it costs.** The same kind of bill the bystanders sent, for the same reason — every one of them has its wits and
+  pathfinds every tick — but on a tenth of the fights and at 3.19 bodies rather than 3.2, and unlike a bystander a pack member
+  is in the fight, so the fight ends sooner or the agent does. What it also moves is a checkpoint's evaluated win rate, and
+  deliberately: a network that cannot fight a pack should not be a run's best weights. That number is therefore not comparable
+  with a run from before this.
+
 ### `scripts\compare.ps1`: seeded from a copy and from nothing, side by side
 
 ```
