@@ -1,0 +1,12 @@
+{
+    "run":  "blast8",
+    "published":  "2026-09-14T20:47:45+02:00",
+    "code":  "986bb1b",
+    "weights":  "best evaluated, iteration 34600",
+    "iteration":  34600,
+    "fights":  1009,
+    "won":  81.7,
+    "lost":  14.6,
+    "timed_out":  3.8,
+    "state":  true
+}
