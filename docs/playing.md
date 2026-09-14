@@ -62,6 +62,7 @@ mod\gradlew.bat -p mod :neoforge:build     mod\neoforge\build\libs\modular_mob_a
   | `brain` | `best` | what drives an agent that has no brain of its own: `best`, `scripted`, a network's name, or a `.mbw` path |
   | `loadout` | `sword` | what an agent spawned from an egg or a bare `/summon` carries |
   | `models` | `modular_mob_ai/models` | a folder searched for networks by name before the jar; relative to the game directory |
+  | `pickup` | `true` | whether a new agent takes the items it walks over; each agent then keeps its own answer |
 
   Put more networks in that folder as `<name>/best.mbw` (a `models\<name>` folder from the repository copies in as it
   is) or `<name>.mbw`; `/mmai brain @e vs-new` finds them without a rebuild.
@@ -97,9 +98,12 @@ What an agent does in the world:
   many sight checks it made, and how long it took — which is the number to look at in a world with thousands of mobs in it.
 - **With nobody in view it stands still** (swimming up in water), whatever its brain says, and meets the next opponent
   with a fresh memory, the way every training fight started. A network was never trained with nobody there.
-- **It is saved with the world.** It keeps its hotbar as it stands (arrows spent, shield worn), its brain's name
-  (`BrainName`) and its loadout's name (`Loadout`). A saved brain the game can't find (a network another install had)
-  falls back to the default with one warning in the log, and comes back once the network is there.
+- **It picks up what it walks over**, into its own hotbar, and a player can right click it to take things back or hand it
+  something else; see [What it carries](#what-it-carries).
+- **It is saved with the world.** It keeps its hotbar as it stands (arrows spent, shield worn), what is in its pocket,
+  whether it picks things up, its brain's name (`BrainName`) and its loadout's name (`Loadout`). A saved brain the game
+  can't find (a network another install had) falls back to the default with one warning in the log, and comes back once
+  the network is there.
 - **It never despawns**, and doesn't count towards the mob cap.
 - **Monsters come for it the way they come for a player.** A zombie, a skeleton, a spider, anything vanilla marks hostile,
   goes after an agent it can see within its own follow range, and the agent is a fight from the moment it is spawned — no
@@ -153,6 +157,63 @@ skeletons, whose arrows vanilla conjures, keep shooting. Of the ways to stay arm
   walk over to them, which it was never trained to do.
 
 Infinity on a crossbow isn't something an enchanting table gives, but it works for anyone holding one.
+
+## What it carries
+
+An agent in a real game has a **hotbar of nine**, which is what it fights from and the only part of it a network sees, and
+a **pocket of twenty-seven** behind it. Both are saved with the world.
+
+### Picking things up
+
+An agent walks over a dropped item and takes it, the way a player does. Where it goes, in order:
+
+1. **armour is worn**, and only into a slot that is empty. It will put on a helmet it hasn't got; it won't swap the one
+   it's wearing for a better one, and it never takes anything off. A piece it won't wear goes in the hotbar or the pocket
+   like anything else;
+2. **into a stack of the same thing**, hotbar before pocket. This is the branch arrows take, and it's why they count: the
+   quiver the network reads and the stack a bow fires from are both the hotbar;
+3. **the first empty hotbar slot**. A bare-handed agent that walks over a bow can draw it, and the network reads a ranged
+   item in that slot on the next tick;
+4. **the first empty pocket slot**;
+5. and what won't fit is left lying.
+
+**Nothing it is already holding is ever dropped by a pickup.** That is not vanilla's rule — vanilla's `Mob` compares the
+new item against the one in the mob's hand and throws the loser on the ground, which for an agent would mean losing the
+sword it fights with because it walked over a shovel.
+
+**The pocket is storage.** It is not where a bow looks for arrows, and the observation does not read it: the layout is
+fixed and every trained network depends on it, so a pocket the quiver counted would be telling a network about arrows it
+can't reach. Move something from the pocket into the hotbar and the agent has it; leave it there and it's luggage.
+
+**A training agent never picks anything up**, whatever the config says. An arena hands out every item in the fight and the
+league rates the result under the loadout's name, so a fight that changed its own loadout half way through would be a fight
+rated as something it wasn't. It's the same reasoning that leaves a training agent out of `HuntAgentsGoal`. With the flag
+off, vanilla's loot scan doesn't run at all, so a training worker pays nothing for any of this.
+
+One vanilla limit worth knowing: **vanilla gates a mob's loot pickup on the `mobGriefing` game rule**. In a world with that
+rule off an agent picks nothing up, and `/mmai info` will still say it would.
+
+### The screen
+
+**Right click an agent with an empty hand** and its inventory opens as a screen: its four armour slots and its off hand
+along the top, the pickup button under them, its pocket, its hotbar, and your own inventory below, laid out like a chest.
+Drag, shift-click and drop as you would in any container — that's how you hand it a bow and how you take back what it
+picked up. Anything you put in the slot it's holding is in its hand on the next tick.
+
+The server is the authority for every slot, as it is for a chest, and the screen closes itself if the agent dies or you
+walk more than eight blocks away.
+
+**The button reads "Picks up items: on/off"** and flips that agent's own flag. It's the same flag `/mmai pickup` sets and
+the one saved with the agent.
+
+**Sneak and right click with an empty hand** and the agent drops whatever is in its main hand at your feet — the quick way
+to take one thing back without opening anything. It leaves the drop alone for three seconds afterwards, so it doesn't pick
+straight back up what it just handed over.
+
+```
+/mmai pickup @e[type=modular_mob_ai:agent_mob] off        none of them takes anything off the floor
+/mmai pickup @e[type=modular_mob_ai:agent_mob,limit=1,sort=nearest] on
+```
 
 ## Brains
 
@@ -242,10 +303,11 @@ All need operator level 2, like `/summon`.
 | `/mmai spawn [loadout] [brain] [pos]` | spawns an agent, facing the way you face |
 | `/mmai loadout <targets> <loadout>` | arms agents and mobs |
 | `/mmai brain <targets> <brain>` | gives agents a brain of their own, or `default` |
+| `/mmai pickup <targets> on\|off` | whether those agents take the items they walk over; kept through saving, and the same flag the button in an agent's screen flips |
 | `/mmai ally <targets> <others>` | puts them all on one side |
 | `/mmai enemy <targets> <others>` | sets the two groups against each other |
 | `/mmai horde <mob> <count> [radius]` | stands a horde of one mob round you and sets it against every agent near them |
-| `/mmai info [targets]` | brain, loadout, health, team and last-tick perception cost of each; every agent in the dimension without targets |
+| `/mmai info [targets]` | brain, loadout, whether it picks things up, health, team and last-tick perception cost of each; every agent in the dimension without targets |
 | `/mmai models` | every brain by name, the jar's networks, the folders searched, and what the default runs on |
 | `/mmai loadouts` | every loadout by name |
 
@@ -289,4 +351,7 @@ the next test's box. See [testing.md](testing.md).
 | `allegiance/HuntAgentsGoal.java` | monsters going after a playable agent as they go after a player |
 | `mixin/LivingEntityMixin.java` | friendly fire for agents |
 | `command/AgentCommands.java` | `/mmai` |
-| `entity/agent/AgentMob.java` | brain and loadout names, saving, spawn arming, persistence, standing still when alone |
+| `entity/agent/AgentMob.java` | brain and loadout names, saving, spawn arming, persistence, standing still when alone, what a pickup does with what it takes, the right click |
+| `entity/agent/AgentInventory.java` | the hotbar, the pocket, the off hand and the armour as one container |
+| `menu/AgentMenu.java`, `menu/AgentScreen.java` | the screen: the slots, the button, and what it looks like |
+| `menu/ModMenus.java` | the menu type each loader registers |

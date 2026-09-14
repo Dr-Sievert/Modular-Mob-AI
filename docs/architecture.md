@@ -78,7 +78,7 @@ that would quietly make every trained network worse the moment it left the arena
 | Block | Size | Contents |
 | --- | --- | --- |
 | self | 24 | health, velocity (forward/up/right), on ground, in water, attack strength, use cooldown, using (main/off hand), sprinting, crouching, fall distance, body offset (sin/cos), pitch, aim (sin/cos), hurt time, how many are in the fight, **the clock**, **arrows left**, **its own armour**, **what its weapon takes off** |
-| hotbar | 9 | what each hotbar slot holds |
+| hotbar | 9 | what each hotbar slot holds. An agent in a real game also has a pocket behind its hotbar, which it can put a pickup in and a player can move things through, and **nothing in the observation reads it**: the hotbar is what the network sees and what a bow finds arrows in, so anything the agent is meant to use is put in the hotbar first. See [playing.md](playing.md) |
 | echo | 20 | what the body actually did last tick: moved (forward/strafe), jumped, sprinted, sneaked, turned (yaw/pitch), attacked, hit, attack strength and damage, crit, sweep, sprint knockback, used (main/off hand/on a block), selected slot, swapped weapon, **how far the use has charged** |
 | enemies | 10 × 31 | every hostile the agent **perceives** within 32 blocks — in the cone and in sight, within hearing, or having just hit it — and anything shot at the agent, in ten stable slots, in its own frame. A slot it has stopped perceiving reads the last known place for three seconds. Where it is and what it is doing: present, position (forward/up/right), distance, velocity, health as a fraction, facing (sin/cos), pitch, **kind**, main and off hand item, swinging, using, sprinting, **whether it has the agent as its target**. **What it is**: max health and health left in hearts, attack damage, speed, width, height, knockback resistance, **armour**, a creeper's fuse, and whether it explodes, shoots or flies |
 | terrain | 9 × 5 × 9 = 405 | the blocks around it, from 2 below the feet to 2 above: 0 empty, 0.5 fluid, 1 solid by collision, 1.5 hazard. A hazard hurts or kills a body in it or on it: lava, fire, magma, cactus, lit campfires, wither roses, pointed dripstone, powder snow, berry bushes, cobwebs. An empty cell in the bottom layer reads as a hazard when the fall below it would be more than 8 blocks, or would end in a hazard |
@@ -529,13 +529,14 @@ and the viewer draws them: `scripts\viewer.ps1 -League`, see [viewer.md](viewer.
 ```
 mod/                    the Gradle build (MultiLoader: common + fabric + neoforge)
   common/src/main/java/net/sievert/modularmobai/
-    entity/agent/         the agent: body, controls, the record of what executed, item and block rules
+    entity/agent/         the agent: body, controls, the record of what executed, item and block rules, what it carries
     brain/                the driver, the batch, the brains (scripted, neural, demonstration) and the training link
     brain/schema/         what an agent sees and does: Species (a body's layout), the humanoid's and the beast's own
                           tables and encoders, enemy slots
     brain/nn/             the network runtime in plain Java: topology, weight file, forward pass, heads, rollout writer
     arena/                a fight someone set up: loadouts, the reward, what the agent may see
     allegiance/           sides: vanilla teams, the agent's enemy rule, mobs going after other teams (see playing.md)
+    menu/                 the agent's inventory screen, which a player opens by right clicking one (see playing.md)
     command/              /mmai (see playing.md)
     mixin/                vanilla changes the agent needs (placing, axes, damage payment, bow access, friendly fire,
                           mobs' goal for other teams)

@@ -5,7 +5,7 @@
 ```
 scripts\test.ps1                 20 fights in the closed arena with the scripted fighter
 scripts\test.ps1 -Mechanics      the item and block rules against a player's numbers, and what the agent sees of them
-scripts\test.ps1 -Play           the agent in a real game: networks in the jar, /mmai, sides, Infinity loadouts
+scripts\test.ps1 -Play           the agent in a real game: networks in the jar, /mmai, sides, Infinity loadouts, pickup
 scripts\parity.ps1               Java forward pass against PyTorch's, after touching brain\nn or the model
 ```
 
@@ -13,7 +13,7 @@ scripts\parity.ps1               Java forward pass against PyTorch's, after touc
 | --- | --- | --- |
 | `test.ps1` | `All 20 required tests passed`; every fight 54 ticks | the observation, the body and the scripted fighter still work; the 54 ticks are deterministic, so any change in them is a behaviour change |
 | `test.ps1 -Mechanics` | `All 63 required tests passed` | bows, crossbows, shields, axes, mining, placing, use slowdown and damage payment follow a player's rules, what a press of attack costs and what holding it down costs, that a swing sends a ghast's fireball back and nothing else, that a hand keeps the slot it started a draw in, what the observation says about a use, about the clock and the quiver, about what is shot at the agent, about how many of the bodies in its view are in the fight with it, about the armour on either side of the fight, about whether the other side has engaged and about what the weapon in the agent's hand takes off — the last three against the same numbers the critic's privileged facts carry — the teacher getting itself out of powder snow, starting no draw it cannot finish, giving ground to a pack instead of standing in it, striking a pack it can outwalk from the edge of its own reach, and throwing the knockback blow only when the second body is clear of the spot it is thrown from, what an enemy slot goes to and what a wall between leaves of it, **which slot each body gets — the fight first, then the nearest, and the fight moved to the front when it engages late** — that the league's bystanders stand aside unpaid until struck, that the size of a crowd is drawn small far more often than large and that a pack of one mob all comes for the agent and is paid for once, and how a league training fight is drawn from the trainer's shares |
-| `test.ps1 -Play` | `All 24 required tests passed`, and a `Loaded the mod's jar, modular_mob_ai/models/<name>.mbw from iteration N` line per network the jar carries | what [playing.md](playing.md) promises: the bundled networks load and drive an agent, the commands, saving, sides and friendly fire, the Infinity loadouts, and that nothing a suite tunes reaches a real game |
+| `test.ps1 -Play` | `All 29 required tests passed`, and a `Loaded the mod's jar, modular_mob_ai/models/<name>.mbw from iteration N` line per network the jar carries | what [playing.md](playing.md) promises: the bundled networks load and drive an agent, the commands, saving, sides and friendly fire, the Infinity loadouts, **what an agent picks up and the screen a player manages it through** — that a drop it stands on reaches its hotbar and the observation reads it there on the next tick without a line of the layout changing, that nothing it already holds is thrown away for it, that a training agent and one told not to take nothing at all, that the pocket stays out of the quiver and survives saving, and that the menu reaches the mob, refuses a training agent and closes out of reach — and that nothing a suite tunes reaches a real game |
 | `parity.ps1` | `parity ok` once per body for the plain network and again for the attended one, logits agreeing to about 1e-6, and `the plain ones agree to the bit at batches 1 to 64` on both arms | the game runs exactly the network PyTorch trained, **for every body this build has**, plain and attended — the attention over the enemy slots is different arithmetic and not merely a different size — and the forward pass's explicit vector loops give the same bits as its plain ones |
 
 The network the `-Play` line names is whatever is published: the suite asks the jar what it carries and holds every network
@@ -191,10 +191,11 @@ that should win is the one the old order returned last:
 | `aFightTakesAnIdleSlotWhenThereAreNoneLeft` | with ten idle bodies holding every slot, one that then comes for the agent gets in — eviction ranks by the same order the slots are handed out in, so it cannot undo what the order decided |
 | `engagingAfterTakingASlotMovesTheFightToTheFront` | the half of the order handing slots out cannot reach, and the one a real game turned up: with nobody engaged the slots go out nearest first, so the body that then comes for the agent is sitting in a late slot and a lease would keep it there. Furthest of five, it takes slot 4, engages, and is in slot 0 on the next tick, with the four it passed one slot further back each and in their own order — engagement moves a slot, distance never does |
 
-Ammo: the agent's bow and crossbow loadouts carry 64 finite arrows, one used per shot, and arrows aren't picked back up.
-That covers a 60-second fight, since a full-draw shot takes 20 ticks. Vanilla skeletons and pillagers never run out.
-Real play gets `bow_infinity` and `crossbow_infinity` instead, one arrow that Infinity never uses up; see
-[playing.md](playing.md) for why.
+Ammo: the agent's bow and crossbow loadouts carry 64 finite arrows, one used per shot, and **a training agent picks
+nothing back up** — it takes no item off the floor at all, which is `AgentMob#wantsToPickUp` and is the rule the play suite
+holds it to. That covers a 60-second fight, since a full-draw shot takes 20 ticks. Vanilla skeletons and pillagers never
+run out. Real play gets `bow_infinity` and `crossbow_infinity` instead, one arrow that Infinity never uses up — and an
+agent met in a world does pick arrows up, into the hotbar where the quiver counts them; see [playing.md](playing.md).
 
 ## The crowd suite (`gametest/tests/AgentCrowdedFightGameTest`, `-Psuite=crowd`)
 
