@@ -66,6 +66,12 @@ param(
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('mmai-bench-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
 New-Item -ItemType Directory -Force $scratch | Out-Null
 
+# Where each fighter's whole evaluation table is kept once the sitting is over: the scratch above goes with the copies, and
+# a table of how it went against each opponent is exactly the record a sitting is worth keeping for. Under runs\, which
+# is machine-local and not in git, named by the moment the sitting began.
+$kept = Join-Path $Runs ('bench-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+New-Item -ItemType Directory -Force $kept | Out-Null
+
 try {
 
     $entries = @()
@@ -187,8 +193,8 @@ try {
 
         # The whole of what the evaluation printed, kept beside the copies: the table of how it went against each opponent
         # is the part a win rate cannot say, and a sitting whose only record was one number per fighter had to be run again.
-        $kept = Join-Path $scratch (($entry.name -replace '[^\w.-]', '_') + '.txt')
-        $output | ForEach-Object { "$_" } | Set-Content $kept -Encoding utf8
+        $table = Join-Path $kept (($entry.name -replace '[^\w.-]', '_') + '.txt')
+        $output | ForEach-Object { "$_" } | Set-Content $table -Encoding utf8
 
         $line = $output | Select-String '^\s+won\s+\d+' | Select-Object -First 1
 
@@ -205,7 +211,7 @@ try {
     }
 
     Write-Host ''
-    Write-Host "Best first, over $Arenas fights each (each fighter's whole table is kept under $scratch):"
+    Write-Host "Best first, over $Arenas fights each (each fighter's whole table is kept under $kept):"
 
     $results | Sort-Object Won -Descending | ForEach-Object { Write-Host ('  {0,-34} {1,6:N1}%' -f $_.Network, $_.Won) }
 
