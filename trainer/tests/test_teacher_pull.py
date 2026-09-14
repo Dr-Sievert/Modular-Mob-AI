@@ -5,10 +5,13 @@
 
 from __future__ import annotations
 
+import shutil
+import tempfile
 import unittest
 from pathlib import Path
 
 import numpy as np
+import torch
 
 from mmai.model import SHARD_PRIVILEGED
 from mmai.ppo import Config, Trainer
@@ -17,9 +20,12 @@ from mmai.schema import Schema
 
 SCHEMA = Path(__file__).resolve().parents[2] / "mod" / "fabric" / "build" / "brain-parity" / "check" / "humanoid" / "schema.json"
 
+# Small enough that writing a state and reading it back takes a moment; nothing here depends on the widths.
+SMALL = dict(h1=32, hidden=16, h3=16, critic_width=32, seq_len=8, minibatch_chunks=4, epochs=1, threads=1)
+
 
 def trainer(**config) -> Trainer:
-    return Trainer(Config(device="cpu", **config), Schema.load(SCHEMA))
+    return Trainer(Config(device="cpu", **(SMALL | config)), Schema.load(SCHEMA))
 
 
 def demo(one: Trainer, steps: int = 4) -> list[Segment]:
@@ -143,6 +149,178 @@ class TeacherPullTest(unittest.TestCase):
         one.note_evaluation(50)
 
         self.assertIsNone(one.teacher_released)
+
+
+@unittest.skipUnless(SCHEMA.is_file(), "needs a schema, which scripts\\parity.ps1 writes")
+class TeacherClockTest(unittest.TestCase):
+    """Whose clock a run's pull falls on: its own, or one it inherited and can never finish.
+
+    blast8 is what this is about. Its state carried teacher_from 0, inherited through blast7 and blast6 from the imitation
+    copy the lineage began with, and it was started with --teacher-weight 0.3 at iteration 34840: every update computed
+    0.3 * max(0, 1 - 34841/1500) = 0, and the pull was dead on arrival for 1,654 iterations with nothing saying so.
+    """
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.root = Path(folder.name)
+
+    def written(self, run: str, iteration: int, teacher_from: int | None, released: int | None = None, **config) -> Path:
+        """A run of that name, saved at some iteration with some clock already running."""
+
+        one = trainer(**config)
+        one.iteration = iteration
+        one.teacher_from = teacher_from
+        one.teacher_released = released
+
+        path = self.root / run / "state.pt"
+        one.save(path)
+
+        return path
+
+    def seeded(self, source: Path, run: str) -> Path:
+        """What scripts\\train.ps1 -Seed does: the seed's best state copied into a run folder of another name."""
+
+        into = self.root / run / "state.pt"
+        into.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, into)
+
+        return into
+
+    def test_a_seeded_run_starts_with_no_clock(self):
+        into = self.seeded(self.written("blast7", 20000, teacher_from=0, released=19000, teacher_weight=0.3), "blast8")
+
+        one = trainer(teacher_weight=0.3, teacher_decay=1500)
+        one.load(into)
+
+        self.assertIsNone(one.teacher_from)
+        self.assertIsNone(one.teacher_released)
+
+        # And the first iteration it pulls is where its own fall starts, so it is pulled at what was asked for.
+        one.set_teacher(demo(one))
+
+        self.assertEqual(one.teacher_from, 20000)
+        self.assertAlmostEqual(one.teacher_pull(), 0.3, places=6)
+
+    def test_a_converted_run_starts_with_no_clock(self):
+        """train.py attend carries a run's state whole into a network of another shape. The clock is the one thing it does
+        not carry: a converted run is a new run, and this is the lineage blast8's zero came down."""
+
+        from mmai.attend import convert
+
+        source = self.root / "plain"
+        source.mkdir()
+        (source / "schema.json").write_bytes(SCHEMA.read_bytes())
+        self.written("plain", 20000, teacher_from=0, released=19000, teacher_weight=0.3)
+
+        convert(source, self.root / "attended", 3)
+        state = torch.load(self.root / "attended" / "state.pt", map_location="cpu", weights_only=False)
+
+        self.assertIsNone(state["teacher_from"])
+        self.assertIsNone(state["teacher_released"])
+
+    def test_a_state_saved_with_the_pull_off_starts_the_clock_afresh(self):
+        """A pull is only charged for the iterations it was on. This run trained for 1,653 iterations with no pull at all,
+        which is longer than the decay, and is now being given one."""
+
+        path = self.written("blast8", 36493, teacher_from=34840, released=35000, teacher_weight=0.0)
+
+        one = trainer(teacher_weight=0.3, teacher_decay=1500)
+        one.load(path)
+
+        self.assertIsNone(one.teacher_from)
+        self.assertIsNone(one.teacher_released)
+
+    def test_a_plain_resume_keeps_its_clock(self):
+        """The other half of the same rule, and the one a run must not be able to get out of: the pull was on when this was
+        saved, so it is charged for every iteration since, however little of it is left."""
+
+        path = self.written("blast8", 36493, teacher_from=35993, teacher_weight=0.3)
+
+        one = trainer(teacher_weight=0.3, teacher_decay=1500)
+        one.load(path)
+
+        self.assertEqual(one.teacher_from, 35993)
+
+        # Setting the teacher again is what a resume does, and it leaves the clock where it was.
+        one.set_teacher(demo(one))
+
+        self.assertEqual(one.teacher_from, 35993)
+        self.assertAlmostEqual(one.teacher_pull(), 0.3 * (1.0 - 500.0 / 1500.0), places=6)
+
+    def test_a_state_that_says_neither_keeps_its_clock(self):
+        """A state written before either key existed says nothing about where it came from or whether it was pulling, and
+        nothing to go on is not a reason to throw a clock away."""
+
+        source = self.written("blast7", 20000, teacher_from=0, teacher_weight=0.3)
+        state = torch.load(source, map_location="cpu", weights_only=False)
+        del state["run"], state["teacher_pulling"]
+        torch.save(state, source)
+
+        one = trainer(teacher_weight=0.3, teacher_decay=1500)
+        one.load(self.seeded(source, "blast8"))
+
+        self.assertEqual(one.teacher_from, 0)
+
+    def test_a_fall_that_has_run_out_says_so_at_startup(self):
+        """blast8's evening, in one test. The only line said about the pull was "pulling towards the teacher with weight
+        0.30", which is the configured weight and was never the effective one."""
+
+        one = trainer(teacher_weight=0.3, teacher_decay=1500)
+        one.iteration = 36493
+        one.teacher_from = 0
+
+        with self.assertLogs("mmai.ppo", "WARNING") as caught:
+            one.set_teacher(demo(one))
+
+        self.assertEqual(one.teacher_pull(), 0.0)
+        self.assertEqual(1, len(caught.records))
+
+        said = caught.records[0].getMessage()
+
+        for named in ("0.00", "iteration 0", "at 36493", "--teacher-decay 1500"):
+            self.assertIn(named, said)
+
+    def test_a_pull_with_something_left_in_it_says_nothing_at_startup(self):
+        """A warning said every start whether or not anything is wrong is a warning nobody reads."""
+
+        one = trainer(teacher_weight=0.3, teacher_decay=1500)
+        one.iteration = 36493
+        one.teacher_from = 36000
+
+        with self.assertNoLogs("mmai.ppo", "WARNING"):
+            one.set_teacher(demo(one))
+
+    def test_the_effective_weight_is_on_the_iteration_line_and_watch_still_reads_it(self):
+        """Once per iteration, beside drift, and only where the pull has left the weight that was configured. The prefix is
+        what scripts\\watch.ps1 reads field by field, and the field goes after all of it."""
+
+        # scripts\watch.ps1's $IterationPattern, without the timestamp and logger name the formatter puts in front.
+        prefix = r"iteration\s+(\d+)\s+steps\s+([\d,]+)\s+episodes\s+(\d+)\s+win\s+([\d.]+)%"
+
+        one = trainer(teacher_weight=0.3, teacher_decay=1500)
+        one.iteration = 750
+        one.teacher_from = 0
+
+        stats = {"policy": 0.0, "value": 0.0, "entropy": 0.0, "clip": 0.0, "kl": 0.0, "epochs": 1, "drift": 0.0,
+                 "seconds": 1.0, "vram": 0.0, "steps": 100}
+
+        with self.assertLogs("mmai.ppo", "INFO") as caught:
+            one.report(dict(stats))
+
+        line = next(said for said in (record.getMessage() for record in caught.records) if " steps " in said)
+
+        self.assertIn("teacher 0.15", line)
+        self.assertRegex(line, prefix)
+
+        # And at full pull the field is not there at all: a line that says the same thing every iteration says nothing.
+        one.teacher_from = 750
+
+        with self.assertLogs("mmai.ppo", "INFO") as caught:
+            one.report(dict(stats))
+
+        self.assertNotIn("teacher ", next(said for said in (record.getMessage() for record in caught.records)
+                                          if " steps " in said))
 
 
 if __name__ == "__main__":

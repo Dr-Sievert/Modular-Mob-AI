@@ -237,8 +237,12 @@ def convert(source: Path, into: Path, heads: int) -> Path:
     trainer.reward_scaler.load_state_dict(state["reward_scaler"])
     trainer.iteration = int(state["iteration"])
     trainer.total_steps = int(state["total_steps"])
-    trainer.teacher_from = state.get("teacher_from")
-    trainer.teacher_released = state.get("teacher_released")
+    # Not the teacher's clock, though. A converted run is a new run: its pull, if it is given one, falls from the first
+    # iteration it itself pulls, not from whenever the run it was carried over from first did. Carrying the clock whole is
+    # how blast8 came to be started with --teacher-weight 0.3 and a teacher_from of 0, inherited through two runs from the
+    # imitation copy the lineage began with, and to pull at exactly nothing for 1,654 iterations; see ppo.teacher_pull.
+    trainer.teacher_from = None
+    trainer.teacher_released = None
     trainer.critic_trained = bool(state.get("critic_trained", state["iteration"] > 0))
     trainer.rate = config.learning_rate * float(state.get("rate_ratio", 1.0))
 

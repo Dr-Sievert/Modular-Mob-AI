@@ -1355,6 +1355,10 @@ class Trainer:
         A teacher is a floor and not a ceiling. Held at full strength for a whole run, it beat every ordinary mob and
         still lost to the teacher itself, because an update that always carries an instruction to answer as the teacher
         would cannot arrive anywhere the teacher is not. So it starts the copy and then lets go.
+
+        **A pull is only charged for the iterations it was actually on**: a run seeded from another, and a run resumed
+        with a pull from a state that was saved with none, both start the fall afresh, while a run resumed with the pull
+        it was saved under keeps the clock it had however little is left of it. See _fresh_teacher_clock.
         """
 
         weight = self.config.teacher_weight
@@ -1425,6 +1429,23 @@ class Trainer:
         self.teacher_press_weight = self._press_weight(kept)
         logger.info("pulling towards the teacher with weight %.2f, from %d of its fights, %s steps",
                     self.config.teacher_weight, len(kept), f"{rows:,}")
+
+        # The line above says what was configured, and for 1,654 iterations of blast8 that was the only thing said about a
+        # pull that was computing zero every update. What is configured is not what is applied, and where the two differ by
+        # everything the run has to say so before it spends a night pulling nothing.
+        if self.config.teacher_weight > 0.0 and self.teacher_pull() <= 0.0:
+            logger.warning(
+                "...but the effective weight is already 0.00, so nothing is being pulled towards the teacher: the fall "
+                "started at iteration %d, this run is at %d, and it runs out over --teacher-decay %d%s. Give this run a "
+                "clock of its own or a longer horizon before spending a night on it; see docs/training.md",
+                self.teacher_from,
+                self.iteration,
+                self.config.teacher_decay,
+                ""
+                if self.teacher_released is None
+                else f", and the teacher was let go at iteration {self.teacher_released} over "
+                     f"--teacher-release-over {self.config.teacher_release_over}",
+            )
 
     def _press_weight(self, segments: list[Segment]) -> Tensor:
         """How much more a press of each button counts than not pressing it, in copying the teacher.
@@ -1552,9 +1573,16 @@ class Trainer:
             )
             return
 
+        # The effective pull, beside drift, and only where it has left the weight that was configured: a run at full pull
+        # says nothing new every iteration, and a run whose fall has run out says "teacher 0.00" until somebody notices.
+        # It goes after the last field scripts\watch.ps1 reads (the win rate) and after the one scripts\train.ps1's feed
+        # reads (the length), so neither has to change.
+        pull = self.teacher_pull()
+        teacher = "" if abs(pull - self.config.teacher_weight) < 1e-12 else f"  teacher {pull:.2f}"
+
         logger.info(
             "iteration %5d  steps %11s  episodes %5d  win %5.1f%%  return %+7.3f  length %6.1f  |  "
-            "pi %+.4f  v %.4f  ent %.3f  clip %.3f  kl %.4f  ep %d  |  drift %.1e  %s %4.1fs  vram %.2fG  |  %6.1fm",
+            "pi %+.4f  v %.4f  ent %.3f  clip %.3f  kl %.4f  ep %d  |  drift %.1e%s  %s %4.1fs  vram %.2fG  |  %6.1fm",
             self.iteration,
             f"{self.total_steps:,}",
             episodes,
@@ -1568,6 +1596,7 @@ class Trainer:
             stats["kl"],
             stats["epochs"],
             stats["drift"],
+            teacher,
             self.device.type,
             stats["seconds"],
             stats["vram"],
@@ -1688,8 +1717,16 @@ class Trainer:
                 "reward_scaler": self.reward_scaler.state_dict(),
                 "iteration": self.iteration,
                 "total_steps": self.total_steps,
+                # Which run wrote this, by the folder it went into. A state read back under another name was copied there
+                # -- a seed, a published model, another run's checkpoint -- and a seeded run is a new run, whose teacher
+                # clock is its own; see load.
+                "run": path.parent.name,
                 "teacher_from": self.teacher_from,
                 "teacher_released": self.teacher_released,
+                # Whether the run was pulling at all when this was written, which is not the same question as how much of
+                # the pull was left: the configured weight, not the effective one. A run whose pull has decayed to nothing
+                # was still pulling, and restarting it must not start its fall over; see load and teacher_pull.
+                "teacher_pulling": self.config.teacher_weight > 0.0,
                 # As a ratio to the configured rate, not an absolute: see load.
                 "rate_ratio": self.rate / self.config.learning_rate,
             },
@@ -1800,6 +1837,14 @@ class Trainer:
         # A teacher already let go stays let go, so a restart cannot win the pull back by forgetting it was released.
         self.teacher_released = state.get("teacher_released")
 
+        # ...unless this run's pull is a new one, in which case neither is its own to inherit; see _fresh_teacher_clock.
+        because = self._fresh_teacher_clock(state, path)
+
+        if because:
+            self.teacher_from = None
+            self.teacher_released = None
+            logger.info("the teacher's clock starts at this run's own first pull: %s", because)
+
         # A steered rate is carried on rather than found again -- but as a ratio to the rate that was configured, never as
         # the number itself. A seeded run loads a state written under somebody else's settings: the copy's state.pt is
         # written by imitation, whose config carries the default 3e-4, and taking that number over the seeded run's 5e-5
@@ -1824,3 +1869,37 @@ class Trainer:
             group["lr"] = self.rate
 
         logger.info("carrying on from %s at iteration %d", path, self.iteration)
+
+    def _fresh_teacher_clock(self, state: dict, path: Path) -> str:
+        """Why this run's pull starts its own fall here rather than inheriting one, or an empty string for a plain resume.
+
+        Two cases, and both are the same mistake: charging a pull for time it was not on. Measured on blast8, whose state
+        carried teacher_from 0 inherited through blast7 and blast6 from the imitation copy the lineage began with: started
+        with --teacher-weight 0.3 at iteration 34840, every update computed 0.3 * max(0, 1 - 34841/1500) = 0, and the pull
+        was dead on arrival for 1,654 iterations with nothing in the log saying so.
+
+        - **A seeded run's clock is its own.** A state loaded under a run name other than the one it was written for was
+          copied in -- scripts\\train.ps1 -Seed, -FromCopy, a published models\\<run>\\state.pt -- and a seed is a new run
+          with a new pull, however old the one it was copied from.
+        - **A pull that was off is not charged for the time it was off.** A state saved with --teacher-weight 0 and resumed
+          with a pull starts the fall afresh; a state saved while pulling keeps the clock it had, however little is left of
+          it, so a run still cannot restart its own fall by being restarted.
+
+        Both start the release afresh as well, since a release is the tail of the fall it belongs to: leaving an old one
+        standing would hold a brand new pull at zero for the whole of teacher_release_over and cost exactly the evening
+        this method exists to prevent.
+
+        A state written before either key existed says neither, and then there is nothing to go on and the clock is kept.
+        """
+
+        # The folder a state was written into. Absent from anything written before this was recorded.
+        wrote = state.get("run")
+
+        if wrote and wrote != path.parent.name:
+            return f"{path.name} was written by run '{wrote}' and this is '{path.parent.name}', so it was seeded from it"
+
+        # Absent from a state written before this was recorded, which is the "unknown" that changes nothing.
+        if state.get("teacher_pulling") is False and self.config.teacher_weight > 0.0:
+            return f"{path.name} was saved with no pull at all, and this run is asking for {self.config.teacher_weight:.2f}"
+
+        return ""
