@@ -326,13 +326,15 @@ afterEvaluate {
     // find out in the middle of a fight. See gametest/league/Published and docs/species.md.
     runTask.systemProperty('modular_mob_ai.species', trainedSpecies)
 
-    def brainTool = { List<String> toolArguments, boolean quiet = false ->
+    // One of those tools, run off the two output folders alone: no game and none of its libraries, which is what makes it
+    // start in a second and why anything in gametest/tools is written against the standard library only.
+    def javaTool = { String label, String mainClass, List<String> toolArguments, boolean quiet = false ->
 
         def javaExe = runTask.javaLauncher.get().executablePath.asFile.absolutePath
         def classes = (sourceSets.gametest.output.files + sourceSets.main.output.files).collect { it.absolutePath }
 
         def command = [javaExe, '--add-modules', 'jdk.incubator.vector',
-                       '-cp', classes.join(File.pathSeparator), 'net.sievert.modularmobai.gametest.tools.BrainTool']
+                       '-cp', classes.join(File.pathSeparator), mainClass]
         command += toolArguments
 
         def builder = new ProcessBuilder(command as String[])
@@ -350,7 +352,7 @@ afterEvaluate {
 
                 if (!quiet) {
 
-                    logger.lifecycle("[brain] " + line)
+                    logger.lifecycle("[${label}] " + line)
                 }
             }
         }
@@ -359,10 +361,22 @@ afterEvaluate {
 
         if (code != 0) {
 
-            throw new GradleException("The brain tool failed: ${toolArguments.join(' ')}\n  " + lines.join("\n  "))
+            throw new GradleException("The ${label} tool failed: ${toolArguments.join(' ')}\n  " + lines.join("\n  "))
         }
 
         return lines
+    }
+
+    def brainTool = { List<String> toolArguments, boolean quiet = false ->
+
+        return javaTool('brain', 'net.sievert.modularmobai.gametest.tools.BrainTool', toolArguments, quiet)
+    }
+
+    // The mind's two frozen models against the answer sheets mind/tools/freeze.py committed beside them. The same shape
+    // of tool for the other half of the repository; see gametest/tools/MindTool and mind/docs/port.md.
+    def mindTool = { List<String> toolArguments, boolean quiet = false ->
+
+        return javaTool('mind', 'net.sievert.modularmobai.gametest.tools.MindTool', toolArguments, quiet)
     }
 
     // Every body this build has, asked of the build rather than listed here, so that adding a species cannot leave the
@@ -2068,6 +2082,33 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
                         + (parityArgs.isEmpty() ? [] : splitArguments(parityArgs)))
                 brainTool(['parity', directory.absolutePath])
             }
+        }
+    }
+
+    // The mind's two models -- the dialogue interpreter and the learned arbitrator -- against the answer sheets frozen
+    // beside them in shared/models. Needs no Python at all, unlike brainParity: mind/tools/freeze.py already wrote 200
+    // records per model with the exact numbers its numpy reference gave, and committed them, so this side only reads.
+    //
+    //   gradlew :fabric:mindParity
+    tasks.register('mindParity') {
+
+        group = 'modular mob ai'
+        description = "Checks this build's InterpreterNet and ScorerNet against the frozen models, to a hundred thousandth."
+        dependsOn 'gametestClasses'
+
+        doLast {
+
+            // shared/ sits beside combat/, which is what repositoryRoot is; the frozen models are the one thing both
+            // halves of the repository read. See ../CLAUDE.md and mind/docs/port.md.
+            def models = new File(new File(repositoryRoot.parentFile, 'shared'), 'models')
+
+            if (!new File(models, 'MANIFEST.json').isFile()) {
+
+                throw new GradleException("No frozen models in ${models}. They are in git; a checkout that has none is "
+                        + "not a whole one. See shared/README.md.")
+            }
+
+            mindTool(['parity', models.absolutePath])
         }
     }
 
