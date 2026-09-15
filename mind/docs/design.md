@@ -512,14 +512,18 @@ single coin is worth more than a rich one's.
 
 ### The numbers
 
-| | result |
+All measured against one dwarf with nothing else happening to it, and all of them asserted in
+`tests/test_regard.py`.
+
+| | trust in the speaker, after |
 | --- | --- |
-| the same praise x20 | ends in `FLATTERY`, suspicion at the ceiling, and trust **-0.41** |
-| two genuinely different compliments | trust +0.029, more than the twenty pastes managed |
-| fifty varied compliments | trust capped at 0.10 |
-| one kept promise | trust +0.19, more than the fifty |
-| 1 gold x20, out of 40 | trust 0.10 |
-| 10 gold x1, out of 40 | trust 0.16 |
+| the same praise x20 | **-0.41**, and suspicion at the ceiling: from about the seventh it is `FLATTERY` |
+| two genuinely different compliments | +0.038, more than the twenty pastes ever managed |
+| fifty varied compliments, to a dwarf who has been working | +0.096, against a cap of 0.10 -- warmth is at 1.00, and that is the whole of what an afternoon of talk buys |
+| fifty varied compliments, to a dwarf who has done nothing | -0.78: unearned praise is suspect on its own, and fifty of it is an insult |
+| one kept promise | **+0.23**, more than any of the above |
+| 1 gold x20, out of 40 | +0.094 |
+| 10 gold x1, out of 40 | **+0.125**, off half the gold |
 
 ## The arbitrator
 
