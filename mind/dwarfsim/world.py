@@ -57,7 +57,7 @@ class Agent:
     __slots__ = ("id", "name", "place", "health", "inv", "mind", "alive",
                  "last_hit_by", "last_hit_tick", "grievances", "request",
                  "memories", "goals", "demands", "avoid", "last_struck", "external",
-                 "provocations", "condition", "regard", "last_deed")
+                 "provocations", "condition", "regard", "last_deed", "dialogue")
 
     def __init__(self, aid, name, place, rng, external=False):
         self.id = aid
@@ -88,6 +88,10 @@ class Agent:
         #: The last tick this dwarf did something worth praising, which is what decides whether
         #: praise of them is earned or flattery.
         self.last_deed = None
+        #: Per speaker, what has already been said between the two of us: the turns, the
+        #: questions I owe an answer to, and what I have used up saying it. See
+        #: :mod:`dwarfsim.dialogue`. Expires after a long silence.
+        self.dialogue = {}
 
     def hurt(self):
         """The one number for "how badly off am I": bled out, or broken, whichever is worse."""

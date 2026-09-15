@@ -405,55 +405,63 @@ def test_the_sims_own_line_is_the_answer_and_there_is_not_a_second_one():
 
 
 def test_trust_changes_the_wording():
+    """The same greeting, to a friend and to an enemy. Since the reply comes out of the bank
+    (`dwarfsim.speechplan` picks the act, `dwarfsim.replybank` the line) the thing to assert is
+    the act: a friend is greeted back, an enemy is not."""
     s = session()
     friend = _said(s, _feel(s.focus, trust=0.8), "GREET", text="Well met.")
-    enemy = _said(s, _feel(s.focus, trust=-0.5, hatred=0.8), "GREET", text="Well met.")
+    enemy = _said(s, _feel(s.focus, trust=-0.5, hatred=0.8), "GREET", text="Hello there.")
     assert friend["stance"] == "FRIEND" and enemy["stance"] == "ENEMY"
-    assert friend["text"] in _filled(replies.REPLIES["GREET"][("FRIEND", "*")])
-    # cold, or nothing at all -- but never the warm greeting
-    assert enemy["text"] not in _filled(replies.REPLIES["GREET"][("FRIEND", "*")])
+    assert friend["kind"] == "GREET_BACK"
+    assert enemy["kind"] in ("SILENCE", "DEFLECT", "MOCK")
+    assert friend["text"] != enemy["text"]
     assert enemy["text"] is not None or "said nothing" in enemy["note"]
 
 
 def test_praise_is_thanked_or_suspected_depending_on_trust():
     s = session()
     warm = _said(s, _feel(s.focus, trust=0.8), "PRAISE", text="Fine work.", valence=0.8)
-    cold = _said(s, _feel(s.focus, trust=-0.4), "PRAISE", text="Fine work.", valence=0.8)
-    assert warm["cell"][0] == "FRIEND"
-    assert cold["cell"][0] in ("COLD", "ENEMY")
+    cold = _said(s, _feel(s.focus, trust=-0.4), "PRAISE", text="Good work there.", valence=0.8)
+    assert warm["kind"] == "THANK"
+    assert cold["kind"] == "SUSPECT_FLATTERY"
+    assert warm["cell"][1] == "close" and cold["cell"][1] in ("cold", "hostile")
     assert warm["text"] != cold["text"]
 
 
 def test_mood_changes_the_wording():
+    """Anger and fear talk over whatever else the dwarf feels about you. Three different
+    greetings, because saying the identical one three times is a repetition and gets a
+    CALLBACK, which is a different test."""
     s = session()
     calm = _said(s, _feel(s.focus, trust=0.2), "GREET", text="Well met.")
-    angry = _said(s, _feel(s.focus, trust=0.2, anger=0.85), "GREET", text="Well met.")
-    afraid = _said(s, _feel(s.focus, trust=0.2, fear=0.85), "GREET", text="Well met.")
+    angry = _said(s, _feel(s.focus, trust=0.2, anger=0.85), "GREET", text="Morning to you.")
+    afraid = _said(s, _feel(s.focus, trust=0.2, fear=0.85), "GREET", text="Hello there.")
     assert (calm["mood"], angry["mood"], afraid["mood"]) == ("FLAT", "ANGRY", "AFRAID")
-    assert angry["text"] in _filled(replies.REPLIES["GREET"][("*", "ANGRY")])
-    assert afraid["text"] in _filled(replies.REPLIES["GREET"][("*", "AFRAID")])
+    assert calm["kind"] == "GREET_BACK"
+    assert angry["kind"] == "DEFLECT" and afraid["kind"] == "DEFLECT"
     assert angry["text"] != calm["text"]
 
 
-def test_a_question_is_answered_by_topic_and_coloured_by_mood():
+def test_a_question_is_answered_by_topic_and_not_invented():
     s = session()
     who = _feel(s.focus, trust=0.3, happiness=0.9)
     got = _said(s, who, "QUESTION", text="How is the mine?", topic="MINE")
-    assert got["kind"] == "ANSWER"
-    assert any(got["text"].startswith(a) for a in replies.ANSWERS["MINE"])
-    assert got["cell"] == ("MINE", "GLAD")
-    hated = _said(s, _feel(s.focus, hatred=0.8), "QUESTION", text="How is the mine?",
+    assert got["kind"] == "ANSWER_PLACE"
+    assert got["construction"].hears["about"] == "WORLD"
+    assert got["text"] and "{" not in got["text"]
+    hated = _said(s, _feel(s.focus, hatred=0.8), "QUESTION", text="What of the seam below?",
                   topic="MINE")
-    assert hated["kind"] == "QUESTION"       # it will not answer you at all
-    assert not any(str(hated["text"]).startswith(a) for a in replies.ANSWERS["MINE"])
+    assert hated["kind"] == "DEFLECT"        # it will not answer you at all
+    assert hated["text"] != got["text"]
 
 
 def test_sarcasm_is_noticed():
+    from dwarfsim import speechplan
     s = session()
     got = _said(s, _feel(s.focus, trust=0.3), "PRAISE", text="Nice swing, genius.",
                 sincerity="SARCASTIC")
-    assert got["kind"] == "SARCASM"
-    assert got["text"] in _filled(sum((list(v) for v in replies.SARCASM.values()), []))
+    assert got["kind"] in speechplan.NOTICED_SARCASM
+    assert got["construction"].rule.startswith(("sarcasm.", "flattery."))
 
 
 def test_a_third_party_named_can_be_picked_up():

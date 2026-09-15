@@ -197,7 +197,8 @@ def test_flattery_flips_the_valence_and_the_dwarf_says_so():
              if d["f"] == "rel:%s:trust" % PLAYER_ID and d["who"] == dwarf.id]
     assert moved and moved[0]["to"] < moved[0]["from"]
     answer = replies.reply(w, dwarf, PLAYER_ID, praise("wow, nice sword"))
-    assert answer["kind"] == "FLATTERY"
+    # SUSPECT_FLATTERY is the reply bank's name for the act the old FLATTERY table performed.
+    assert answer["kind"] == "SUSPECT_FLATTERY"
     assert answer["text"]
 
 
