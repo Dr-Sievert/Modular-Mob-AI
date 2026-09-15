@@ -5,7 +5,7 @@ weights from what the game recorded and hands them back. Nothing here runs insid
 
 ## Setting up
 
-Once, from the repository root:
+Once, from `combat/`:
 
 ```
 scripts\setup.ps1

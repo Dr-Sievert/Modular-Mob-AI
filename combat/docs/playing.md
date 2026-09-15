@@ -6,7 +6,7 @@ agent it can be summoned, it is saved with the world and it never despawns. The 
 `modular_mob_ai:training_agent`, stays arena-only: never saved, never summonable, and it ignores everything on this page
 except sides.
 
-Everything below runs from the repository root in Windows PowerShell once `scripts\setup.ps1` has run.
+Everything below runs from `combat/` in Windows PowerShell once `scripts\setup.ps1` has run.
 
 ## Start the game with a model
 

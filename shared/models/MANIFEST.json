@@ -1,10 +1,10 @@
 {
   "created": "2026-09-15T02:45:47",
   "created_by": "tools/freeze.py",
-  "repository": "Modular-Mob-AI, in mind/",
-  "what": "the frozen, port-ready models: numpy on this side, a .mbw brain on the mod's. See docs/port.md for the mapping and models/*/README.md for the layouts.",
+  "repository": "Modular-Mob-AI, in shared/; frozen by mind/tools/freeze.py",
+  "what": "the frozen, port-ready models: numpy on the mind's side, a .mbw brain on the combat mod's. See mind/docs/port.md for the mapping and, relative to this file, models/*/README.md for the layouts.",
   "schema_id_is": "the sha256 of that model's layout.json, the way the mod's schema id is the CRC32 of its schema.json; the short name is the model's own id",
-  "parity": "tools/check_parity.py re-runs both parity.jsonl files against the numpy implementations and fails on any drift beyond 1e-5",
+  "parity": "mind/tools/check_parity.py re-runs both parity.jsonl files against the numpy implementations and fails on any drift beyond 1e-5",
   "models": [
     {
       "name": "interpreter",

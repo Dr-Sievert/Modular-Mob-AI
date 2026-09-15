@@ -1,21 +1,26 @@
-"""Freeze the two trained models into ``models/``: the port-ready artefacts, in one command.
+"""Freeze the two trained models into ``shared/models/``: the port-ready artefacts, in one command.
 
     python -m tools.freeze                      # regenerate everything from the current exports
     python -m tools.freeze --only interpreter   # just the classifier half
 
 What it writes (all of it regenerable, none of it hand-edited):
 
-    models/interpreter/weights.npz     copied from text/models/clf
-    models/interpreter/model.json      copied, unchanged
-    models/interpreter/layout.json     the layout a port must agree on; its sha256 is the schema id
-    models/interpreter/parity.jsonl    200 fixed lines with their exact numpy outputs
-    models/interpreter/README.md       the whole model, specified for a Java port
-    models/decisions/imitator.npz      copied from runs/learn/imitator.npz
-    models/decisions/imitator.json     copied, unchanged
-    models/decisions/layout.json       ditto, for the observation and candidate layout
-    models/decisions/parity.jsonl      200 fixed (observation, candidate) pairs and their scores
-    models/decisions/README.md         ditto
-    models/MANIFEST.json               schema ids, arrays, training data hash and date, metrics
+    ../shared/models/interpreter/weights.npz   copied from text/models/clf
+    ../shared/models/interpreter/model.json    copied, unchanged
+    ../shared/models/interpreter/layout.json   the layout a port must agree on; its sha256 is the schema id
+    ../shared/models/interpreter/parity.jsonl  200 fixed lines with their exact numpy outputs
+    ../shared/models/interpreter/README.md     the whole model, specified for a Java port
+    ../shared/models/decisions/imitator.npz    copied from runs/learn/imitator.npz
+    ../shared/models/decisions/imitator.json   copied, unchanged
+    ../shared/models/decisions/layout.json     ditto, for the observation and candidate layout
+    ../shared/models/decisions/parity.jsonl    200 fixed (observation, candidate) pairs and their scores
+    ../shared/models/decisions/README.md       ditto
+    ../shared/models/MANIFEST.json             schema ids, arrays, training data hash and date, metrics
+
+The frozen artefacts are the one thing in the monorepo that both halves read, so they live in ``shared/``
+beside ``mind/`` and ``combat/`` rather than inside this module -- the only path anything here writes or reads
+outside ``mind/``. Every directory the manifest names stays relative to ``shared/``, so it reads the same from
+either side.
 
 ``runs/`` is not in git, so this is also the step that makes a trained model tracked. Nothing here
 imports torch: the frozen files are what the numpy reference and the Java port both read.
@@ -40,6 +45,14 @@ import sys
 import numpy as np
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def shared_models(root):
+    """``shared/models``, beside ``mind/`` and ``combat/``: where the frozen artefacts go, one level up from this
+    half. The only path anything in ``mind/`` writes to outside ``mind/``."""
+    return os.path.abspath(os.path.join(root, os.pardir, "shared", "models"))
+
+
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
@@ -813,12 +826,13 @@ def write_manifest(out_root: str, models: list) -> str:
     manifest = {
         "created": _dt.datetime.now().replace(microsecond=0).isoformat(),
         "created_by": "tools/freeze.py",
-        "repository": "Modular-Mob-AI, in mind/",
-        "what": "the frozen, port-ready models: numpy on this side, a .mbw brain on the mod's. "
-                "See docs/port.md for the mapping and models/*/README.md for the layouts.",
+        "repository": "Modular-Mob-AI, in shared/; frozen by mind/tools/freeze.py",
+        "what": "the frozen, port-ready models: numpy on the mind's side, a .mbw brain on the combat "
+                "mod's. See mind/docs/port.md for the mapping and, relative to this file, "
+                "models/*/README.md for the layouts.",
         "schema_id_is": "the sha256 of that model's layout.json, the way the mod's schema id is "
                         "the CRC32 of its schema.json; the short name is the model's own id",
-        "parity": "tools/check_parity.py re-runs both parity.jsonl files against the numpy "
+        "parity": "mind/tools/check_parity.py re-runs both parity.jsonl files against the numpy "
                   "implementations and fails on any drift beyond 1e-5",
         "models": models,
     }
@@ -829,14 +843,14 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", default=ROOT)
-    ap.add_argument("--out", default=None, help="default: <root>/models")
+    ap.add_argument("--out", default=None, help="default: <root>/../shared/models")
     ap.add_argument("--clf", default=None, help="default: <root>/text/models/clf")
     ap.add_argument("--imitator", default=None, help="default: <root>/runs/learn/imitator")
     ap.add_argument("--only", choices=("interpreter", "decisions"), default=None)
     args = ap.parse_args(argv)
 
     root = os.path.abspath(args.root)
-    out_root = args.out or os.path.join(root, "models")
+    out_root = args.out or shared_models(root)
     clf_dir = args.clf or os.path.join(root, "text", "models", "clf")
     imitator = args.imitator or os.path.join(root, "runs", "learn", "imitator")
     os.makedirs(out_root, exist_ok=True)

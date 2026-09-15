@@ -1,6 +1,6 @@
 # Training
 
-Everything here runs from the repository root in Windows PowerShell. `scripts\setup.ps1` must have run once.
+Everything here runs from `combat/` in Windows PowerShell. `scripts\setup.ps1` must have run once.
 
 ## The pipeline that works
 

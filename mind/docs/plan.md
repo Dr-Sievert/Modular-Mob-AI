@@ -94,7 +94,7 @@ obligations sit in their own modules).
 
 ## Port to the mod, when the time comes
 
-Both trained models are frozen, port-ready, in [`models/`](../models): weights, layout, a 200-line
+Both trained models are frozen, port-ready, in [`shared/models/`](../../shared/models): weights, layout, a 200-line
 parity file each and a specification a Java developer can implement without reading any Python.
 [docs/port.md](port.md) is the brief; `python -m tools.freeze` regenerates all of it after a retrain
 and `python -m tools.check_parity` proves it has not drifted.

@@ -66,8 +66,11 @@ Tests: `python -m pytest -q tests`.
   obligations, the arbitrator terms, the vector layouts, and how each piece maps onto the Java mod.
 - [docs/port.md](docs/port.md) -- the brief for the Java port: which `Brain` each of the two trained
   models becomes, the `.mbw` segment order proposed for each, the one seam in `BrainState`, the chat
-  hook and the parity procedure. The frozen models themselves are in [`models/`](models), each with a
-  specification and a 200-record parity file; `python -m tools.freeze` rebuilds them after a retrain.
+  hook and the parity procedure. The frozen models themselves are in [`../shared/models/`](../shared/models),
+  each with a specification and a 200-record parity file; `python -m tools.freeze` rebuilds them after a
+  retrain and `python -m tools.check_parity` proves they have not drifted. `shared/` is the one place
+  anything here writes to or reads from outside `mind/`, because those files are what the combat half
+  ports: see [../shared/README.md](../shared/README.md).
 - [text/SCHEMA.md](text/SCHEMA.md) -- the dialogue label schema, which is also the input contract for
   `dwarfsim/speech.py`, where a text classifier plugs in later. The sim adds one optional field to
   it, `ask`, documented in [docs/design.md](docs/design.md#speech). The corpus and labelling pipeline

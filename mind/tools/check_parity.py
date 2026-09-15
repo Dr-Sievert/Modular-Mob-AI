@@ -1,12 +1,14 @@
 """Re-run both frozen parity files against the numpy implementations. Fails on any drift.
 
     python -m tools.check_parity
-    python -m tools.check_parity --tolerance 1e-6 --models models
+    python -m tools.check_parity --tolerance 1e-6 --models ../shared/models
 
 This is the Python half of the contract in `docs/port.md`: the same file the Java port has to
 reproduce is first proved to still describe *this* side. It catches the two things that go wrong
-quietly -- a featurizer edit that changes the hash or the side vector, and a `models/` directory
-that no longer holds the weights its parity numbers were written from.
+quietly -- a featurizer edit that changes the hash or the side vector, and a `shared/models/`
+directory that no longer holds the weights its parity numbers were written from. The frozen models
+sit in `shared/` beside `mind/` and `combat/`, since both halves of the repository read them, and
+every directory the manifest names is relative to `shared/`.
 
 Three checks per model:
 
@@ -31,6 +33,8 @@ import sys
 import numpy as np
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# shared/models, beside mind/ and combat/: written by tools/freeze.py, read by both halves.
+SHARED_MODELS = os.path.abspath(os.path.join(ROOT, os.pardir, "shared", "models"))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
@@ -186,7 +190,7 @@ CHECKS = {"interpreter": check_interpreter, "decisions": check_decisions}
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--models", default=os.path.join(ROOT, "models"))
+    ap.add_argument("--models", default=SHARED_MODELS)
     ap.add_argument("--tolerance", type=float, default=DEFAULT_TOLERANCE)
     args = ap.parse_args(argv)
 

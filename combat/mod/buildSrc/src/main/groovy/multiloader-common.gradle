@@ -66,15 +66,16 @@ repositories {
     }
 }
 
-// The licence sits at the repository root, one level above this build.
+// The licence sits at the repository root, which since the monorepo move is two levels above this build:
+// the build is combat/mod, and LICENSE stays at the top beside combat/ and mind/.
 sourcesJar {
-    from(rootProject.file('../LICENSE')) {
+    from(rootProject.file('../../LICENSE')) {
         rename { "${it}_${mod_name}" }
     }
 }
 
 jar {
-    from(rootProject.file('../LICENSE')) {
+    from(rootProject.file('../../LICENSE')) {
         rename { "${it}_${mod_name}" }
     }
 

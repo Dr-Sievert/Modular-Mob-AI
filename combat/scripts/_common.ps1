@@ -17,6 +17,11 @@ $Runs = Join-Path $Root 'runs'
 # to clear a worktree out followed one of those junctions and mirrored the emptiness into the environment every run on the
 # machine uses: torch, numpy and pyvenv.cfg gone in seconds. Nothing that walks a worktree can be trusted not to follow a
 # reparse point, so the right answer is for there to be no reparse point to follow.
+#
+# The combat tree lives in combat\ now, so what git hands back -- the main checkout, the parent of its .git -- is the
+# repository root and not this subproject: the borrowed path gains a combat\ segment. The old location is tried after it
+# so that a worktree on this branch works while the main checkout is still the pre-monorepo layout; drop that second
+# candidate once the main checkout has moved.
 if (-not (Test-Path $Python)) {
 
     $common = & git -C $Root rev-parse --path-format=absolute --git-common-dir 2>$null
@@ -24,12 +29,22 @@ if (-not (Test-Path $Python)) {
     if ($LASTEXITCODE -eq 0 -and $common) {
 
         $main = Split-Path -Parent $common.Trim()
-        $borrowed = Join-Path $main 'trainer\.venv\Scripts\python.exe'
+        $relative = 'trainer\.venv\Scripts\python.exe'
 
-        if ($main -and $borrowed -ne $Python -and (Test-Path $borrowed)) {
+        $candidates = @()
+
+        if ($main) {
+
+            $candidates += (Join-Path $main (Join-Path 'combat' $relative))
+            $candidates += (Join-Path $main $relative)
+        }
+
+        $borrowed = $candidates | Where-Object { $_ -ne $Python -and (Test-Path $_) } | Select-Object -First 1
+
+        if ($borrowed) {
 
             $Python = $borrowed
-            Write-Host "No trainer environment in this worktree; using the one in $main"
+            Write-Host "No trainer environment in this worktree; using $Python"
         }
     }
 }

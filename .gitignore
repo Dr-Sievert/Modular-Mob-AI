@@ -25,10 +25,15 @@ build
 # other
 eclipse
 run
-# training runs at the root, and the loaders' own run folders
-runs
+# Training runs: gigabytes of rollouts, demos and checkpoints, one folder per run. A bare `runs` used to match at any
+# depth and so covered all three of these at once; named one by one now that each half owns its own folder, so that a
+# folder called runs somewhere unexpected is a question rather than a silence.
+combat/runs/
+mind/runs/
+# the loaders' own run folders, made by a dev client, a dev server or a game test server
+combat/mod/*/runs/
 # the Java and Python setup.ps1 downloads when a machine has none of its own
-.tools
+combat/.tools/
 # worktrees Claude Code makes for work in parallel
 .claude/worktrees
 
@@ -40,8 +45,7 @@ venv
 checkpoints
 logs
 
-# the mind subproject (mind/), a pure-Python testbed with no Java in it
-mind/runs/
+# the mind subproject (mind/), a pure-Python testbed with no Java in it; its runs/ is named above with the other halves'
 mind/text/data/raw/
 mind/text/data/dialogue_partial.jsonl
 mind/text/data/generated_raw/

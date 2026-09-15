@@ -1,80 +1,47 @@
 # Modular Mob AI
 
-A neural-network brain for Minecraft mobs. A player-shaped mob, the agent, is driven every tick by a small network (792
-inputs, a GRU memory, 11 controls) that runs inside the game in plain Java, one batched pass per tick for every mob on
-the same weights. It's trained offline with PyTorch PPO from what the game recorded, and new weights swap in without the
-game restarting.
-
-Its published network wins 82.7% of one-on-one fights against a league of every vanilla mob that fights fair, two points
-more than the hand-written fighter it was copied from on the same bench (80.3%). Stand a crowd of monsters around a quarter
-of those fights, which is what the league does today, and it wins 71.8% where that same fighter wins 78.3%: the crowd is
-the open problem, and it is a training one — the curriculum landed after every published network was trained. It uses
-swords, axes, bows, crossbows and shields, and mines
-and places blocks, under the same rules as a player. The league it is measured on is an Elo one: 37 mobs, 11 squads of
-several at once, a difficulty ladder, the hand-written fighter as the anchor, published networks and the run's own past
-checkpoints, with a loadout drawn every fight.
-
-## Two subprojects
-
-This repository holds two halves of one mob. They share a goal and, for now, no code.
-
-**The combat mod** is everything above and everything else in this file: `mod/`, `trainer/`, `viewer/`, `scripts/`,
-`models/`, `runs/`. It is the fighting, and it needs Java 21, Gradle and Minecraft.
-
-**The mind** is [`mind/`](mind/README.md): a pure-Python testbed, no game engine and no Gradle, for everything the fight
-is not — persistent emotional and social state, episodic memory, goals, obligations, and one arbitrator choosing among
-skills, with a log that records *why* every decision was made and a single-file HTML viewer of a run. Six dwarves in a
-settlement of six places mine, drink, gossip, hold grudges and brawl, and a feud is what happens when the numbers line
-up rather than something scripted. Two models are trained in it — an interpreter that reads a line of chat into labels,
-and a decision scorer — and both are frozen for the port in [`mind/models/`](mind/models), each with a specification a
-Java developer can implement without reading any Python and a 200-record parity file. The brief for bringing them into
-the mod, including the one seam in `BrainState` that has to open, is [`mind/docs/port.md`](mind/docs/port.md). Run it
-from `mind/`:
+Two halves of one mob. The **combat** half is a neural-network brain that fights inside Minecraft: a player-shaped agent
+driven every tick by a small network in plain Java, trained offline with PyTorch PPO from what the game recorded, using
+swords, axes, bows, crossbows and shields under a player's rules. The **mind** half is everything the fight is not —
+persistent emotional and social state, episodic memory, goals, obligations, and one arbitrator choosing among skills —
+rehearsed in a pure-Python settlement of dwarves before any of it goes near the game. They share a goal, a weight-file
+format, and, for now, no code.
 
 ```
-cd mind
-python -m dwarfsim run --scenario feud --ticks 2000 --seed 1 --out runs/feud.jsonl --html runs/feud.html
-python -m dwarfsim.talk --seed 1 --dwarves 3     talk to a dwarf yourself
-python -m pytest -q tests                        expect 212 passed
+combat/     the mod, the trainer, the viewer, the scripts, the trained networks   Java 21, Gradle, Minecraft 1.21.1
+mind/       the behaviour testbed: dwarves who remember, want, owe and brawl      Python 3, no game engine
+shared/     the frozen, port-ready models the two halves agree on, byte for byte
+docs/       how this layout came to be
 ```
 
-## Quick start
-
-Windows 10 or 11 and a clone of this repository; nothing else has to be installed first.
+## One command per half
 
 ```
-scripts\setup.ps1                                   once: Java 21, Python + PyTorch, compile, parity check
-scripts\test.ps1                                    20 fights with the scripted fighter: expect 20/20
-scripts\eval.ps1 -Weights models\blast\best.mbw     the published network's win rate
-scripts\play.ps1                                    Minecraft with the trained network; /mmai spawn in a world, see docs\playing.md
-scripts\train.ps1 -Run mine                         train a run of your own; see docs\training.md
-scripts\watch.ps1                                   live progress of every run
-scripts\viewer.ps1                                  watch recorded fights in 2D or 3D
+cd combat    scripts\setup.ps1 once, then scripts\test.ps1     20 arena fights: expect 20/20
+cd mind      python -m pytest -q tests                         expect 212 passed, 2 skipped
 ```
 
-Setup installs nothing system-wide: a machine without Java 21 or Python gets them unpacked into `.tools\`, which git
-ignores.
+The combat half installs nothing system-wide: `scripts\setup.ps1` unpacks Java 21 and Python into `combat\.tools\` on a
+machine that has neither. The mind half needs only Python 3 and the standard library to run, plus PyTorch and numpy to
+retrain.
 
-## Documentation
+## Where `shared/` fits
 
-Everything is in [docs/](docs/README.md): how it works, how to train, test, play and publish, and what was learned along
-the way. [CLAUDE.md](CLAUDE.md) is the short version for an AI assistant working in this repository.
+The port carries the mind's two trained models into the mod as `.mbw` brains, and `.mbw` is one format with one header
+and one schema-id rule that both sides have to agree on byte for byte. So the frozen artefacts live in one place rather
+than in two copies that drift: [`shared/models/`](shared/README.md) holds the interpreter and the decision scorer —
+weights, the layout whose sha256 *is* the schema id, a 200-record parity file each, and a specification a Java developer
+can implement without reading any Python. `mind/tools/freeze.py` writes them, `mind/tools/check_parity.py` proves they
+have not drifted, and [`mind/docs/port.md`](mind/docs/port.md) is the brief. Nothing goes into `shared/` until both
+halves genuinely use it.
 
-## Layout
+## Reading on
 
-```
-mod/        the Minecraft mod (MultiLoader: common, fabric, neoforge), Minecraft 1.21.1, Java 21
-trainer/    the PyTorch trainer
-viewer/     the replay viewer
-scripts/    everything you run
-models/     trained networks, in git
-docs/       documentation
-runs/       training runs (not in git)
-mind/       the mind subproject: pure Python, no Java, no Minecraft
-```
+- [combat/README.md](combat/README.md) — what the mod does, every command, the layout, how to develop in it
+- [combat/docs/](combat/docs/README.md) — architecture, training, testing, playing, publishing, and what was learned the hard way
+- [mind/README.md](mind/README.md) — what the dwarves do and every command the testbed has
+- [shared/README.md](shared/README.md) — the weight-file format, the schema-id rule, the parity procedure
+- [docs/monorepo.md](docs/monorepo.md) — why the tree is shaped this way
+- [CLAUDE.md](CLAUDE.md) — the short version for an AI assistant, including the rules about this machine
 
-## Development
-
-Open `mod/` in IntelliJ IDEA with Java 21 as the Gradle JVM and the project SDK, or run `mod\gradlew.bat -p mod <task>`
-from the root. Almost everything lives in `mod/common`, compiled against the vanilla game; `mod/fabric` and
-`mod/neoforge` hold registration and the per-level tick hook. Common code never reaches into a loader project.
+Licensed under the [LICENSE](LICENSE) at this root.

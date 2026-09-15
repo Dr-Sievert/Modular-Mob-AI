@@ -1,11 +1,11 @@
-"""Tests for the frozen models in ``models/``: the manifest describes them, and parity holds.
+"""Tests for the frozen models in ``shared/models/``: the manifest describes them, and parity holds.
 
     python -m pytest -q tests/test_freeze.py
 
 The one that matters is ``test_check_parity_script``: it runs ``tools/check_parity.py`` exactly as
 a person or CI would, and that script re-runs both ``parity.jsonl`` files through the numpy
 implementations. A featurizer edit that changes a hash, a side column or a forward pass, and a
-``models/`` directory holding weights its parity numbers were not written from, both fail here
+``shared/models/`` directory holding weights its parity numbers were not written from, both fail
 rather than in Java six months later.
 
 The rest are cheap structural checks: the manifest's shapes and hashes are the artefacts' own, and
@@ -26,14 +26,17 @@ sys.path.insert(0, ROOT)
 from dwarfsim.schema import CAND_SIZE, OBS_SIZE  # noqa: E402
 from text.classifier.features import SIDE_DIM  # noqa: E402
 
-MODELS = os.path.join(ROOT, "models")
+# shared/models, beside mind/ and combat/: the frozen models both halves of the repository read.
+MODELS = os.path.abspath(os.path.join(ROOT, os.pardir, "shared", "models"))
+# Every directory the manifest names is relative to shared/, the models folder's parent.
+SHARED = os.path.dirname(MODELS)
 
 
 @pytest.fixture(scope="module")
 def manifest():
     path = os.path.join(MODELS, "MANIFEST.json")
     if not os.path.exists(path):
-        pytest.skip("models/MANIFEST.json is not built; run python -m tools.freeze")
+        pytest.skip("shared/models/MANIFEST.json is not built; run python -m tools.freeze")
     with open(path, encoding="utf-8") as fh:
         return json.load(fh)
 
@@ -80,7 +83,7 @@ def test_check_parity_catches_drift(tmp_path, by_name):
 
 def test_manifest_matches_the_artefacts(manifest):
     for model in manifest["models"]:
-        directory = os.path.join(ROOT, model["directory"].replace("/", os.sep))
+        directory = os.path.join(SHARED, model["directory"].replace("/", os.sep))
         assert os.path.isdir(directory)
         for name in ("layout.json", "README.md", model["parity"]["file"],
                      model["weights"]["file"]):
@@ -105,7 +108,7 @@ def test_manifest_carries_the_provenance(manifest):
 
 def test_interpreter_parity_records(by_name):
     model = by_name["interpreter"]
-    records = read_jsonl(os.path.join(ROOT, model["directory"], model["parity"]["file"]))
+    records = read_jsonl(os.path.join(SHARED, model["directory"], model["parity"]["file"]))
     assert len(records) == model["parity"]["records"] == 200
     assert [r["i"] for r in records] == list(range(len(records)))
     sources = {r["source"].split(":")[0] for r in records}
@@ -125,7 +128,7 @@ def test_interpreter_parity_records(by_name):
 
 def test_decisions_parity_records(by_name):
     model = by_name["decisions"]
-    records = read_jsonl(os.path.join(ROOT, model["directory"], model["parity"]["file"]))
+    records = read_jsonl(os.path.join(SHARED, model["directory"], model["parity"]["file"]))
     assert len(records) == model["parity"]["records"] == 200
     for rec in records:
         assert len(rec["obs"]) == OBS_SIZE

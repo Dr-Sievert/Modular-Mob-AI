@@ -1,6 +1,6 @@
 # Port: the two models into the mod
 
-The brief a Java developer starts from. Both models are frozen in [`models/`](../models); each
+The brief a Java developer starts from. Both models are frozen in [`shared/models/`](../../shared/models); each
 directory's `README.md` is the full specification of that model and needs no Python. This file is
 only the mapping onto `Modular-Mob-AI`: which class each becomes, what it needs from the mod, and
 what it has to pass before it is believed.
@@ -8,7 +8,7 @@ what it has to pass before it is believed.
 Nothing in the mod (`../mod/`) is changed by reading this. The one thing that *has* to change there is
 [the seam in `BrainState`](#the-one-seam-brainstate).
 
-| Model | `models/` | In | Out | Runs |
+| Model | in `shared/models/` | In | Out | Runs |
 | --- | --- | --- | --- | --- |
 | interpreter | `models/interpreter` | one chat line, plus the previous line's intent | 4 enum heads, 3 floats, names | once per message |
 | decisions | `models/decisions` | 69 observation floats + 64 candidate floats | one score | every 10 ticks, once per candidate |

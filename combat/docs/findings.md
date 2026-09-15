@@ -345,7 +345,10 @@ are deliberate.
     nothing else on the machine deletes that folder, and the build had read it successfully twenty minutes earlier.
   - The fix is that there is nothing to follow. A worktree with no environment or library of its own now borrows the main
     checkout's, found through git — `git rev-parse --git-common-dir` in `scripts\_common.ps1`, and the `gitdir:` line of the
-    worktree's `.git` file in the build's `mainCheckout` — so no junction is ever wanted. The library is safe to share
+    worktree's `.git` file in the build's `mainCheckout` — so no junction is ever wanted. Both of those find the
+    *repository* root and join `combat\` back on, since the `.git` sits a level above this half; when the combat tree
+    moved into `combat/` that join was the whole risk of the move, because a worktree that quietly stops borrowing
+    looks fine until it is not. The library is safe to share
     because it is only ever read: every region file is hard linked into a worker's world, never written. `robocopy /XJ` also
     excludes junctions and `rmdir /s` does not follow them, but a hazard that has to be remembered is a hazard.
 

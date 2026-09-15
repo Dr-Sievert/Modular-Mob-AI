@@ -1,6 +1,8 @@
 # Documentation
 
-Start with [architecture.md](architecture.md); the rest are how-tos.
+The combat mod's docs. Start with [architecture.md](architecture.md); the rest are how-tos. Every command in them is
+run from `combat/`, this folder's parent. The mind half keeps its own docs in [../../mind/docs](../../mind/docs), and
+the repository's layout is [../../docs/monorepo.md](../../docs/monorepo.md).
 
 | Doc | Read it to |
 | --- | --- |
@@ -13,7 +15,7 @@ Start with [architecture.md](architecture.md); the rest are how-tos.
 | [viewer.md](viewer.md) | watch recorded fights in 2D and 3D, read the league standings, and delete replays |
 | [replay-format.md](replay-format.md) | read or write replay files |
 | [findings.md](findings.md) | know what was learned the hard way before changing something that looks odd |
-| [monorepo.md](monorepo.md) | move the combat tree into `combat/` beside `mind/`: the intended layout, why it is not that yet, and the checklist |
+| [../../docs/monorepo.md](../../docs/monorepo.md) | how `combat/`, `mind/` and `shared/` came to be laid out this way, and what each holds |
 
 The trainer has its own notes in [../trainer/README.md](../trainer/README.md) and the viewer's code in
 [../viewer/README.md](../viewer/README.md); both are for changing those, not for using them. Each script documents its

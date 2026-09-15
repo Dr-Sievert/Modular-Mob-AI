@@ -23,8 +23,9 @@ plugins {
 
 // This should match the folder name of the project, or else IDEA may complain (see https://youtrack.jetbrains.com/issue/IDEA-317606)
 rootProject.name = 'mod'
-// The whole Gradle build lives in mod/, one folder per loader plus the common code, so the repository root holds nothing
-// but the monorepo's top level folders. The trainer, scripts and training runs sit beside this folder, not inside it.
+// The whole Gradle build lives in combat/mod, one folder per loader plus the common code, so the combat subproject's
+// root holds nothing but its own top level folders. The trainer, scripts and training runs sit beside this folder, not
+// inside it, and the repository root above combat/ holds mind/, shared/ and the files common to both halves.
 ['common', 'fabric', 'neoforge'].each { name ->
     include(name)
 }

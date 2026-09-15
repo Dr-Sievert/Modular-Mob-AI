@@ -23,8 +23,9 @@ the page:
 - `python viewer\serve.py --export [--run NAME | --path FILE_OR_FOLDER] [--count 20]` bakes the newest replays into
   `runs\<name>\replays.html`, one file that works anywhere, its 3D view included.
 
-A checkout with no `runs\` of its own reads the main checkout's, found the way `scripts\_common.ps1` finds the trainer's
-environment: out of the `.git` file a worktree carries, never through a junction. Development happens in a worktree,
+A checkout with no `runs\` of its own reads the main checkout's `combat\runs\`, found the way `scripts\_common.ps1`
+finds the trainer's environment: out of the `.git` file a worktree carries — which sits a level above this half, so the
+`combat\` segment is joined back on — never through a junction. Development happens in a worktree,
 which has no runs at all, and a viewer there used to say the machine had never trained. Nothing is written into a
 borrowed folder, not even the lock file that says where this viewer is listening, so the viewer serving the main
 checkout keeps the port a plain start finds.

@@ -193,7 +193,7 @@ tasks.register('exportMobModels', JavaExec) {
     group = 'modular mob ai'
     description = 'Writes every mob\'s cuboid shape to viewer/models for the replay viewer'
 
-    // This build lives in mod/; the viewer sits beside it at the repository root.
+    // This build lives in combat/mod; the viewer sits beside it at the combat subproject's root.
     def output = new File(new File(rootProject.projectDir.parentFile, 'viewer'), 'models')
 
     classpath = sourceSets.gametest.runtimeClasspath
@@ -218,7 +218,9 @@ afterEvaluate {
         return
     }
 
-    // This build lives in mod/; the trainer, the scripts and the training runs sit beside it at the repository root.
+    // This build lives in combat/mod; the trainer, the scripts and the training runs sit beside it at the combat
+    // subproject's root, which is what this is. The repository root, where the .git and mind/ and shared/ are, is its
+    // parent -- see mainCheckout below, the one thing here that wants that one and not this one.
     def repositoryRoot = rootProject.projectDir.parentFile
 
     // The forward pass's explicit vector loops, worth about 15% of the pass, need jdk.incubator.vector resolved: the
@@ -231,7 +233,7 @@ afterEvaluate {
         jvmArgs '--add-modules', 'jdk.incubator.vector'
     }
 
-    // A path given on the command line, taken from the repository root unless it is already absolute.
+    // A path given on the command line, taken from the combat subproject's root unless it is already absolute.
     def fromRepositoryRoot = { String path ->
 
         def file = new File(path)
@@ -432,9 +434,13 @@ afterEvaluate {
     // environment is gigabytes of PyTorch and the terrain library is half an hour of generated ground. Both were linked in
     // by hand instead, and both were then destroyed by a recursive delete of the worktree that followed the link -- the
     // environment provably, the library on every piece of evidence but a witness. A borrowed path cannot be followed.
+    //
+    // The .git is at the repository root, which since the monorepo move is repositoryRoot's parent and not repositoryRoot:
+    // combat/ holds no .git at all, and reading it there would return null in every worktree and take the borrowing down
+    // silently. What this returns is therefore the main *repository*, and borrowedFile below joins combat/ back on.
     def mainCheckout = {
 
-        def dotGit = new File(repositoryRoot, '.git')
+        def dotGit = new File(repositoryRoot.parentFile, '.git')
 
         if (!dotGit.isFile()) {
 
@@ -456,6 +462,22 @@ afterEvaluate {
         }
 
         return directory?.parentFile
+    }
+
+    // A path inside the main checkout's copy of this subproject, or null when there is no main checkout or nothing there.
+    // The combat tree sits in combat/ now, so the borrowed path is <main>/combat/<relative>; <main>/<relative> is tried
+    // after it so that a worktree on the monorepo branch still borrows while the main checkout is on the old layout.
+    // Remove that second candidate once the main checkout has moved.
+    def borrowedFile = { String relative ->
+
+        def main = mainCheckout()
+
+        if (main == null) {
+
+            return null
+        }
+
+        return [new File(new File(main, 'combat'), relative), new File(main, relative)].find { it.exists() }
     }
 
     def readProperties = { File file ->
@@ -641,17 +663,9 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
             return own
         }
 
-        def main = mainCheckout()
+        def borrowed = borrowedFile("runs/terrain/${project.property('minecraft_version')}/library/library.properties")
 
-        if (main == null) {
-
-            return own
-        }
-
-        def borrowed = new File(new File(new File(new File(main, 'runs'), 'terrain'),
-                project.property('minecraft_version') as String), 'library')
-
-        return new File(borrowed, 'library.properties').isFile() ? borrowed : own
+        return borrowed == null ? own : borrowed.parentFile
     }()
 
     def libraryIndex = new File(terrainLibrary, 'library.properties')
@@ -784,8 +798,7 @@ if ([int]$logical -eq $count -and $wanted -gt 0 -and $wanted -lt $count -and $sl
 
         if (!venv.isFile()) {
 
-            def main = mainCheckout()
-            def borrowed = main == null ? null : new File(main, relative)
+            def borrowed = borrowedFile(relative)
 
             if (borrowed?.isFile()) {
 

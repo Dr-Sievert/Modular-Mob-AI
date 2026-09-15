@@ -139,9 +139,14 @@ def find_runs():
     own = ROOT / 'runs'
     if own.is_dir():
         return own, True
-    main = main_checkout(ROOT)
-    borrowed = (main / 'runs') if main else None
-    return (borrowed, False) if borrowed and borrowed.is_dir() else (own, True)
+    # ROOT is combat/ since the monorepo move, and the .git that names the main checkout is at its parent, the repository
+    # root; the runs folder there is under combat/. The plain <main>/runs is tried after it so that a worktree on this
+    # branch still borrows while the main checkout is on the old layout.
+    main = main_checkout(ROOT.parent)
+    for borrowed in ([main / 'combat' / 'runs', main / 'runs'] if main else []):
+        if borrowed.is_dir():
+            return borrowed, False
+    return own, True
 
 
 RUNS, OWN_RUNS = find_runs()
