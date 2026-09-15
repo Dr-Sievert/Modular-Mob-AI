@@ -63,6 +63,9 @@ python -m dwarfsim run --scenario gossip --out runs/gossip.jsonl --html runs/gos
 python -m dwarfsim run --scenario feud-chief --out runs/chief.jsonl      # authority, opt-in
 python -m dwarfsim player --out runs/player.jsonl --html runs/player.html
 python -m dwarfsim view runs/feud.jsonl -o runs/feud.html
+python -m dwarfsim.talk --seed 1 --dwarves 3                 # say something to one of them
+python text/merge_replies.py text/batches/replies_*.jsonl    # build the reply bank
+python -m dwarfsim.learn.ranker --out runs/learn/ranker      # train the learned line chooser
 ```
 
 `--scenario` is one of `default`, `feud` (two dwarves start distrustful and hot-tempered),
@@ -93,8 +96,19 @@ relationship matrix with an actual/**believed by others** toggle, and the decisi
 pick a dwarf and a tick and see every candidate the arbitrator weighed and every term that went
 into each score.
 
+They also **talk back**. What a dwarf says is two machines: a rule table picks one of 43 speech
+**acts** from what it heard, what it thinks of you, what it wants and what the two of you have
+already said; a bank of written lines then supplies the words and fills their slots from real
+state. So "I've been sick lately" gets sympathy from a friend, an offer of a shift from somebody
+warm, a shrug from a stranger and *"Ha. Hurry up about it, then"* from an enemy -- and asking the
+same question twice gets *"You asked me that already."* Nothing in it is a language model and
+nothing in it invents a fact: a line whose slot the sim cannot fill is never chosen.
+
 Tests: `python -m pytest -q tests`.
 
+- [docs/speech.md](docs/speech.md) -- the speech pipeline: the act list, the planner's rule table,
+  the slot table, how the reply bank is merged and chosen from, and how a learned chooser would
+  take over from the weighted match.
 - [docs/design.md](docs/design.md) -- the mind model, the event delta table, episodic memory, goals,
   obligations, the arbitrator terms, the vector layouts, and how each piece maps onto the Java mod.
 - [docs/port.md](docs/port.md) -- the brief for the Java port: which `Brain` each of the two trained

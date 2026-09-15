@@ -58,10 +58,10 @@ settlement without reaching for `/to` every time. After the line lands the sim r
 | `/tick N` | run N ticks and read back the narration |
 | `/give ITEM N` | hand over `gold`, `ore`, `food` or `ale` -- a `GIFT` |
 | `/hit` | swing at the focused dwarf, a few points of damage |
-| `/why` | the full term breakdown of its last decision, and what it was choosing between |
+| `/why` | the full term breakdown of its last decision, what it was choosing between, and the construction behind what it last said |
 | `/mind` | everything in its head |
 | `/all` | one line per dwarf |
-| `/labels k=v ... text=...` | say something with hand-typed labels |
+| `/labels k=v ... text=...` | say something with hand-typed labels (`about=` and `news=` included) |
 | `/log N` | print the last N exchanges in full, however long they are |
 | `/clear` | empty the conversation panel |
 | `/help`, `/quit` | |
@@ -127,27 +127,29 @@ over; after a gift or two they are taken on. Nothing about the words changes -- 
 
 ## What it says back
 
-`dwarfsim/replies.py`. The sim gives a dwarf words for the things it *does* -- a retort, a
-demand, a bargain -- because those are skills. It has nothing to say about a greeting, a
-question or a bit of praise: those move trust and the mind vector and produce silence, which on
-a screen reads as being ignored. So every line you say gets an answer, picked from a table keyed
-on three things:
+`dwarfsim/replies.py` is the door; behind it is the **speech pipeline**, which is its own document:
+[docs/speech.md](speech.md). In short, every line you say gets an answer built in two halves.
 
-* the **intent** the interpreter read -- all thirteen in `text/SCHEMA.md`;
-* the dwarf's **mood** -- `ANGRY`, `AFRAID`, `GLAD`, `FLAT`, bucketed off the same emotions the
-  arbitrator scores on;
-* its **stance** toward you -- `FRIEND`, `WARM`, `NEUTRAL`, `COLD`, `ENEMY`, bucketed off
-  `hatred` and *felt* trust, which is trust plus what warm words have bought lately. How a dwarf
-  speaks to you is a matter of how it feels about you this afternoon; what it would lend you is a
-  different question and reads the relationship directly.
+1. **What to say.** `dwarfsim/speechplan.py` picks one **act** out of 43 -- `SYMPATHIZE`,
+   `GLOAT`, `ADMIT_IGNORANCE`, `CALLBACK`, `SILENCE` and the rest -- from one readable rule table
+   over what was heard (intent, *about*, *news*, topic, sincerity, heat) and what the dwarf is
+   (trust in you, mood, condition, suspicion), plus what the two of you have already said. Every
+   choice carries its reasons, the way the arbitrator's carries its terms.
+2. **How to say it.** `dwarfsim/replybank.py` picks a written line for that act out of
+   `text/data/replies.jsonl`, and `dwarfsim/realize.py` fills its `{slots}` -- `{injury}` from the
+   dwarf's broken arm, `{culprit}` from who broke it, `{need}`, `{goal}`, `{third}`, `{price}` --
+   from real state. **A line whose slot cannot be filled is never chosen**, so nothing a dwarf says
+   is a fact it does not have.
 
-The most specific cell wins; between a cell that named the stance and one that named the mood,
-a strong mood (furious, frightened) takes it and otherwise the stance does. So a greeting from
-a friend gets a chair pulled out, the same greeting from somebody who hates you gets one word or
-nothing at all (with a note saying so), a question gets an answer about that topic coloured by
-the mood, praise gets thanks or "what is it you want?" depending on trust, and a line the
-interpreter marked `SARCASTIC` gets an answer that says the dwarf noticed. The line under each
-reply says which cell it came from.
+The same "I've been sick lately" therefore runs the whole spread: *"Sick? Get inside, and I'll not
+have you dying on my floor"* from a friend, *"Then take my shift at the forge tomorrow"* from
+somebody warm, *"That's the way of it lately"* from a stranger, *"I've enough on without hearing
+yours"* from somebody cold, *"Ha. Hurry up about it, then"* from an enemy -- and *"Poor you.
+However will the hall manage"* from one who hates you.
+
+The line under each reply on the screen says which act was chosen, which rule chose it, the top two
+reasons, the slots that were filled and which bank line was used. `/why` prints the whole of it
+under the arbitrator's own terms.
 
 Two rules keep it from lying about the sim, and they are why it is a module and not more
 templates:
@@ -160,14 +162,24 @@ templates:
    aimed at you -- a retort, a demand, an apology, a haggle -- that line *is* the answer and
    nothing is added.
 
-Two later additions ride on the same table. A dwarf who has decided you want something answers
-out of a **`FLATTERY`** cell rather than the `PRAISE` one -- *"Say it a third time and I'll start
-wondering what you want."* -- which is where suspicion becomes something you can hear rather than
-a number in a panel. And a dwarf carrying an injury tacks a clause onto whatever it was going to
-say: *"Aye. Mind the arm."*
+Three things ride on top. A dwarf who has decided you want something answers with
+**`SUSPECT_FLATTERY`** rather than `THANK` -- which is where suspicion becomes something you can
+hear rather than a number in a panel. A dwarf carrying an injury tacks a clause onto whatever it
+was going to say: *"Aye. Mind the arm."* And a dwarf **remembers this conversation**: ask the same
+question twice and you get a `CALLBACK` -- *"You asked me that already. The answer hasn't moved."*
+That memory (`dwarfsim/dialogue.py`) expires after 600 quiet ticks, so a greeting an hour ago is
+not a repetition.
 
-It changes no state: the state already moved, in `speech.hear`. Variants are drawn from
-`world.rng`, so a seed and the same typing give the same conversation.
+`text/data/replies.jsonl` is written by `text/merge_replies.py` out of the Cursor batches. Until it
+exists the bank falls back to the 314 hand-written lines in `text/data/replies_seed.jsonl` and says
+which it used; when the real one lands nothing else changes.
+
+Dwarves answer each other through the same pipeline now, so `SOCIALIZE` and `GOSSIP` read as two
+dwarves talking rather than one talking at another.
+
+It changes no state but the conversation's own memory: the rest already moved, in `speech.hear`.
+Variants are drawn from `world.rng` (and `world.speech_rng` between dwarves), so a seed and the
+same typing give the same conversation.
 
 ## The seam for the tests
 
@@ -191,6 +203,14 @@ whole screen as a string, with rich or without it.
   eats; you cannot bind anything.
 * Suspicion of you is per dwarf and has no memory of *what* you said, only that you said it before.
   Two speakers pasting the same line at the same dwarf are two unrelated strangers to it.
+* `about` and `news` are worked out by rule, not by the classifier, which has not been retrained on
+  them: `speechplan.derive` is one function and will read some sentences wrong. `/labels
+  about=THIRD news=MISFORTUNE ...` overrides it.
+* The reply bank is 314 hand-written seed lines until the Cursor batches land. Every act has at
+  least two, which is enough to test with and not enough to keep a dwarf from reaching for the same
+  line twice in a long conversation.
+* A dialogue state remembers open asks and promises, but nothing reads them back yet: a `CALLBACK`
+  comes from the ring of what was heard, not from the obligation.
 * Sincerity does nothing to the sim's state -- `speech.hear` does not read it. It only changes
   what the dwarf says back.
 * A reply is words, not an event: it moves no trust, no needs and no memory. Only what you say
