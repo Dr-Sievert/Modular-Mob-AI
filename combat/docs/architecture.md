@@ -614,22 +614,56 @@ sides. `-Pspecies=<name>` says which body a run is for; it is `humanoid` unless 
 
 ### `.mbw`: weights
 
-Written by the trainer, read by the mod. A 68-byte header, then every parameter as one float array.
+Written by the trainer, read by the mod. A 72-byte header, then every parameter as one float array.
 
 ```
 0   'MBW1'
-4   u32 format version (3)
-8   u32 schema id          which body's layout these weights were trained against
-12  u32 topology hash      CRC32 of the dimensions below
-16  u32 obsDim, h1, hidden, h3, outDim, stdDim
-40  u32 slotAt, slots, slotStride, slotHeads   attention over the enemy slots; all zero for a network without it
+4   u32 format version (4; the trainer still writes 3, which reads as kind 0)
+8   u32 schema id          which layout these weights were trained against
+12  u32 shape hash         CRC32 of the shape words this kind uses
+16  u32 shape words 0-5    the actor: obsDim, h1, hidden, h3, outDim, stdDim
+40  u32 shape words 6-9    the actor: slotAt, slots, slotStride, slotHeads; all zero without attention
 56  f32 observation clip
 60  u32 iteration
 64  u32 parameter count
-68  f32 parameters
+68  u32 kind               version 4 and later; 0 for every earlier file
+72  f32 parameters
 ```
 
-Parameters are in this order, matrices row major `[out][in]` exactly as PyTorch stores them:
+**Three kinds**, and the kind says both what the ten shape words mean and which pass the parameters are for. Kind 0 is the
+recurrent actor below, and is the only one the trainer writes or the mod's agents run; kinds 1 and 2 are the two models
+ported from [`mind/`](../../mind/README.md), loaded by `WeightFile.readMind` and never by `WeightFile.read`. The kind word
+was **appended** rather than given a place among the dimensions, so no byte of any file ever published moves and versions 1
+to 3 read exactly as they did.
+
+| kind | what | shape words | class |
+| --- | --- | --- | --- |
+| 0 | the recurrent actor, below | the ten above | `Topology`, `Forward` |
+| 1 | a plain feed-forward scorer | `inDim, h1, h2, outDim` | `ScorerShape`, `ScorerNet` |
+| 2 | an embedding-bag classifier | `buckets, dim, side, hidden` then the head widths, zero terminated | `ClassifierShape`, `InterpreterNet` |
+
+Kind 1's parameters, in the order the pass applies them:
+
+```
+fc1W[h1 x inDim]  fc1B[h1]  fc2W[h2 x h1]  fc2B[h2]  outW[outDim x h2]  outB[outDim]
+```
+
+Kind 2's:
+
+```
+emb[buckets x dim]
+fc1W[hidden x (dim + side)]  fc1B[hidden]
+headW[width x hidden]  headB[width]        per head, in order
+```
+
+Neither has a normaliser — both are built on inputs that are already scaled, so there are no statistics to travel and the
+clip word is written as 1.0 and means nothing. Their schema id is the first four bytes of their `layout.json`'s sha256 read
+big endian, where the actor's is the CRC32 of its whole `schema.json`; both are refused on a mismatch for the same reason.
+The files are `shared/models/decisions/decisions.mbw` and `shared/models/interpreter/interpreter.mbw`, written by
+`mind/tools/mbw.py`, and `scripts\parity.ps1` checks them against the 200 records each was frozen with. See
+[`mind/docs/port.md`](../../mind/docs/port.md).
+
+**Kind 0's** parameters are in this order, matrices row major `[out][in]` exactly as PyTorch stores them:
 `normMean[obs] normStd[obs]` then, where the network is attended,
 `scoreW[slotHeads x slotStride] scoreB[slotHeads] scoreEmpty[slotHeads]`, then
 `fc1W fc1B gruWih[3H x h1] gruBih gruWhh[3H x H] gruBhh fc2W fc2B outW outB logStd[std]`.
@@ -652,7 +686,8 @@ which this build no longer runs, and no such network was ever published. `script
 the attended one is different arithmetic and not merely a different size.
 
 Anything that doesn't add up is refused and never coerced: wrong magic, version or schema id, a hash that disagrees with
-the dimensions, a parameter count or file length that disagrees with the topology, a non-finite parameter.
+the dimensions, a parameter count or file length that disagrees with the shape, a non-finite parameter, and a kind that is
+not the one the caller asked for.
 
 ### `.mbr`: rollout shards
 
