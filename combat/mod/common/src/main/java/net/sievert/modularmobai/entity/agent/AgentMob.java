@@ -83,6 +83,8 @@ import net.sievert.modularmobai.brain.BrainState;
 import net.sievert.modularmobai.brain.Brains;
 import net.sievert.modularmobai.brain.schema.Species;
 import net.sievert.modularmobai.entity.ModEntities;
+import net.sievert.modularmobai.entity.agent.mind.Events;
+import net.sievert.modularmobai.entity.agent.mind.MindState;
 import net.sievert.modularmobai.menu.AgentMenu;
 import net.sievert.modularmobai.mixin.ProjectileWeaponItemInvoker;
 
@@ -114,6 +116,9 @@ public class AgentMob extends PathfinderMob {
     // Not "Brain": vanilla already saves every living entity's own Brain, its memories, under that key.
     private static final String TAG_BRAIN_NAME = "BrainName";
     private static final String TAG_LOADOUT = "Loadout";
+
+    /** Everything the agent feels, wants, is, remembers and thinks of anyone, in one compound. See {@link MindState}. */
+    private static final String TAG_MIND = "Mind";
 
     private static final float DEGREES_TO_RADIANS = (float) (Math.PI / 180.0D);
 
@@ -154,6 +159,13 @@ public class AgentMob extends PathfinderMob {
     private final ExecutedControls executed = new ExecutedControls();
 
     private final BrainState brain = new BrainState();
+
+    /**
+     * What it feels, wants, is, remembers and thinks of everyone it has met. Saved beside the brain and driven by the
+     * entity, not by a brain: nothing chooses anything from it yet, and the arbitrator that will is stage C. A training
+     * agent's is asleep and costs nothing; see {@link MindState#isAwake}.
+     */
+    private final MindState mind;
 
     /** The fight an arena put this agent in, if any. Out in the world there is none. */
     @Nullable
@@ -229,6 +241,15 @@ public class AgentMob extends PathfinderMob {
         super(type, level);
 
         this.training = ModEntities.isTraining(type);
+        this.mind = new MindState(this);
+
+        // A mind of its own, rolled from the body's own random, so two agents spawned by one command are two people. Only
+        // for an agent a player can meet: a training agent has no mind, and drawing for one it will never use would move
+        // every draw its body makes afterwards, which is a deterministic arena's business and not the mind's.
+        if (!this.training) {
+
+            this.mind.roll(this.random);
+        }
 
         // Both of the vanilla controls fight the controller on every tick if they are left in place: the look control
         // snaps the pitch back to zero and drags the head toward the body, and the move control zeroes the forward input
@@ -321,6 +342,12 @@ public class AgentMob extends PathfinderMob {
         return this.brain;
     }
 
+    /** Its mind: what it feels, wants, is, remembers and thinks of everyone. Never null, asleep for a training agent. */
+    public MindState mind() {
+
+        return this.mind;
+    }
+
     /** The name of the brain this agent was given, or null when it follows the game's default. */
     @Nullable
     public String brainName() {
@@ -403,6 +430,10 @@ public class AgentMob extends PathfinderMob {
 
             this.episode.reward().damageTaken(amount, this.getMaxHealth());
         }
+
+        // And what the blow did to the agent rather than to its body: anger, fear, a grudge against whoever threw it,
+        // scaled by how much health it actually took. See Events#struck.
+        Events.struck(this, source.getEntity(), amount);
     }
 
     /**
@@ -432,6 +463,9 @@ public class AgentMob extends PathfinderMob {
 
             this.episode.reward().lost();
         }
+
+        // Everyone who saw it takes it hard and takes a side; the dead take nothing. See Events#died.
+        Events.died(this, cause.getEntity());
 
         super.die(cause);
     }
@@ -470,6 +504,10 @@ public class AgentMob extends PathfinderMob {
         this.attackStrengthTicker++;
         this.trackMainHandForCooldown();
         this.itemCooldowns.tick();
+
+        // Last, so that what the mind reads of the body — how hurt it is, what it is holding — is what this tick left.
+        // Nine ticks in ten this is a decrement and a return, and for a training agent it is one field read.
+        this.mind.tick();
     }
 
     /**
@@ -1722,6 +1760,10 @@ public class AgentMob extends PathfinderMob {
         this.onItemPickup(item);
         this.take(item, taken);
 
+        // A drop somebody threw is a thing handed over, which is the only gesture the game has for giving; one that
+        // nobody threw is just something lying about and owes nobody anything. See Events#given.
+        Events.given(this, item.getOwner(), taken);
+
         if (dropped.isEmpty()) {
 
             item.discard();
@@ -1943,6 +1985,8 @@ public class AgentMob extends PathfinderMob {
 
             tag.putString(TAG_LOADOUT, this.loadoutName);
         }
+
+        tag.put(TAG_MIND, this.mind.save());
     }
 
     @Override
@@ -1979,6 +2023,13 @@ public class AgentMob extends PathfinderMob {
 
             this.brainName = name.isEmpty() ? null : name;
             this.brain.use(null);
+        }
+
+        // A mind that fails to load is a fresh mind and never a half loaded one; see MindState#load. An agent saved
+        // before there was a mind to save keeps the one it rolled in the constructor.
+        if (tag.contains(TAG_MIND, Tag.TAG_COMPOUND)) {
+
+            this.mind.load(tag.getCompound(TAG_MIND));
         }
 
         if (tag.contains(TAG_LOADOUT, Tag.TAG_STRING)) {

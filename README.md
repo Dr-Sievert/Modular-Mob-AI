@@ -18,7 +18,7 @@ docs/       how this layout came to be
 
 ```
 cd combat    scripts\setup.ps1 once, then scripts\test.ps1     20 arena fights: expect 20/20
-cd mind      python -m pytest -q tests                         expect 212 passed, 2 skipped
+cd mind      python -m pytest -q tests                         expect 214 passed, 2 skipped
 ```
 
 The combat half installs nothing system-wide: `scripts\setup.ps1` unpacks Java 21 and Python into `combat\.tools\` on a

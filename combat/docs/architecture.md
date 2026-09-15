@@ -563,12 +563,121 @@ and the viewer draws them: `scripts\viewer.ps1 -League`, see [viewer.md](viewer.
 | `evaluations.csv` | the trainer | every evaluated checkpoint's record against each opponent |
 | `state.json` | the trainer | what a resumed run needs to carry the league on, the rungs of the ladder it has opened included |
 
+## The mind on the entity
+
+The second half of the repository, [`mind/`](../../mind/README.md), is everything the fight is not: how an agent feels,
+what it wants, what it is like, who it knows and what it remembers. Its hand-written half is ported into the mod as
+ordinary Java in `entity/agent/mind/`, and **stage B of that port is state and rules only** - nothing chooses anything
+from it yet, the combat brain still drives the body, and the arbitrator that will read it is stage C. That order is
+deliberate: every part of it is observable on its own before anything acts on it. See
+[../../mind/docs/port.md](../../mind/docs/port.md) and [../../mind/docs/design.md](../../mind/docs/design.md), which is
+where the numbers come from.
+
+| Class | What it is |
+| --- | --- |
+| `MindState` | everything one agent carries: four emotions, four needs, eight traits, the health fraction, a five column summary of what it carries, its relationships and its memories. Saved, loaded, and ticked by the entity |
+| `MindEvent` | **the event table**: thirteen rows, six delta rows each, the numbers of `dwarfsim/mind.py` and of design.md's generated table |
+| `Events` | applies it - to the one it was done to, to whoever did it, and to every agent that could see it - and holds the hooks the game feeds it from |
+| `Relationship`, `Relationships` | trust, respect and hatred per body, keyed by entity UUID, bounded and decaying; four of them fill the observation's focus slots |
+| `Memory`, `MemoryBook` | up to 64 episodes with a salience each, and the grudge and gratitude sums derived from them |
+| `MindObservation` | the decisions model's 69 columns, from one table of column names to sources |
+| `Speech`, `Utterance` | one line of chat mapped onto the table, for stage C's chat hook to call |
+| `Temperament` | a named set of traits, for an agent that has to be somebody in particular |
+
+**The mind's own clock.** The sim ticks once per decision; the game ticks twenty times a second. One **mind tick** is ten
+game ticks, which is the rate the decisions model runs at, so every rate in `dwarfsim` - a feeling's decay, a need's
+climb, a memory's fading - carries over unchanged and means what it meant there. Nine game ticks in ten
+`MindState#tick` is a decrement and a return; on the tenth the agent looks about it (one query of the level over twelve
+blocks, at most sixteen bodies, each asked of `EnemySlots#perceives`), reads its own body, and everything decays.
+
+**A training agent has no mind.** `MindState#isAwake` is false for one: it is never ticked, never a party to an event and
+never a witness, and its traits are not even rolled, since drawing from the body's own random would move every draw the
+body made afterwards and an arena is deterministic. The combat half is fought by bodies and weights, and none of this is
+paid for by a training worker.
+
+**Three rules sit between the table and the state**, and they are what make two agents react differently to the same
+thing: the receiver modulates it (temper scales an anger gain x0.6 to x1.4, bravery scales a fear gain x1.4 down to x0.6,
+and a relationship change away from neutral is damped by the headroom left), a witness takes 45% of the row scaled by how
+much it liked the victim, and a kill makes every witness take a side - computed from how they felt about the dead, which
+is why `KILL` has no witness relationship row in the table.
+
+**Who saw it** is `EnemySlots#perceives`: the same three rules the combat view uses - seen in the 100 degree cone with a
+line of sight, heard within six blocks all round, felt because it just hit you - asked about one body. The slots keep
+their own walk over the whole view, which is what makes them flat in a crowd; this is for the callers that have exactly
+one body to ask about, and it is public so that the mod has **one** answer to "can that agent see what is going on over
+there".
+
+**What feeds each event today**, and what waits for stage C:
+
+| Event | Fed by |
+| --- | --- |
+| `HIT` | `AgentMob#actuallyHurt`, magnitude scaled by the health the blow actually took: a quarter of the bar is the table as written |
+| `KILL` | `AgentMob#die`. The dead take nothing; the witnesses take a side |
+| `HELP` | `LivingEntityMixin`, where every blow in the game lands: an ally hitting a mob whose target is an agent |
+| `GIFT` | `AgentMob#pickUpItem`, for a drop somebody threw. A drop nobody threw is not a gift |
+| `INSULT` `SLUR` `PRAISE` `SMALLTALK` `THREAT` `ACCUSE` `APOLOGY` `WARNING` | `Speech#said`, which stage C's chat hook calls with the interpreter's answer. Written and tested now |
+| `STEAL` | nothing yet: the mod has no notion of an agent's property. The one hook left open on purpose |
+
+### The observation, and the layout it is held against
+
+`MindObservation` assembles the decisions model's 69 floats from one table of column names to sources - nineteen leaf
+columns, each naming itself, its width, and the one expression that fills it. Nothing else in the mod writes an offset
+into that vector, and the offsets are computed from the widths rather than typed twice, so a column added in the middle
+moves everything after it by itself. That is how the injuries block `mind/` is about to add will land.
+
+**It is held against the file it came from.** `shared/models/decisions/layout.json` is the frozen layout, and its sha256
+is the schema id stamped into `decisions.mbw`. When that file can be found from where the game is running - every
+checkout, every game test, no shipped jar - the table is checked against it as the class loads, name, offset and width
+each, and a disagreement is a refusal to load with the column in it. A layout that moves is then a stack trace on the
+first tick instead of a model quietly reading the wrong five floats for the rest of the run.
+
+Columns the mod has nothing to fill yet - `place`, `goals`, `obligations`, `is_chief`, `chief_here` - are declared with a
+zero source rather than left out: a declared zero lines up with the file and a missing column does not, and the model
+handles an agent with none of them exactly as it handles a dwarf who has none. Two more read something the sim means
+differently: `alive_fraction` is 1 because nobody counts a world's population and a zero there would say everyone is
+dead, and `clock` is the game's own day rather than the sim's 200-tick cycle.
+
+### The NBT
+
+Saved by `AgentMob#addAdditionalSaveData` beside the brain name, the loadout and the hotbar, under one compound:
+
+| Key | Holds |
+| --- | --- |
+| `Mind` | the whole mind. Everything below is inside it |
+| `Mind.Emotions`, `Mind.Baseline` | `Anger Fear Happiness Grief`, what it feels now and where it rests |
+| `Mind.Needs` | `Hunger Thirst Fatigue Social` |
+| `Mind.Traits` | `Bravery Greed Temper Sociability Pride Forgiveness Loyalty Suspicion` |
+| `Mind.Temperament` | the preset it was given by name, absent where it rolled its own |
+| `Mind.Relationships` | a list of `{Who, Trust, Respect, Hatred}`, at most 32 |
+| `Mind.Memories` | a list of `{Tick, Kind, Actor, Target, From, Intensity, Source, Witnesses, Answered}`, at most 64 |
+| `Mind.Tick` | the mind's own clock, which every memory's age is measured against |
+| `Mind.LastHitBy`, `Mind.LastHitTick` | who hit it and when, which the hit window and the focus slots read |
+
+A mind that fails to load is a **fresh** mind and never a half loaded one: anything missing from the tag keeps what the
+roll gave it, and a relationship or a memory naming something this build does not have is dropped rather than guessed at.
+The body, the crowd and the company are not saved - they are read from the world on the first mind tick after loading.
+
+### The seam: one hidden vector per brain
+
+`BrainState` used to hold one hidden vector per agent and clear it on **any** change of brain. That was right while the
+only switch in the mod was between a scripted teacher and a network that never shared an agent. It is wrong from the
+arbitrator on: an agent under it switches constantly - fight, flee, work, fight again - and each switch would have wiped
+the combat network's 128 floats in the middle of the fight they were about.
+
+So the memory belongs to the **brain** and not to the switch. `BrainState` keeps one vector per brain, keyed by identity,
+which is the same key `AgentDriver` batches by. `use()` only says which brain is current. `reset()`, the start of an
+episode, zeroes every vector it holds **without replacing any of them**, so a brain handed one mid-batch is handed the
+array it had. A vector is dropped when the brain it belongs to has not driven that agent for 600 ticks - on a timer, not
+on the switch. A brain with `hiddenSize() == 0` never gets a vector at all, so the scripted fighter holds none and the
+ordinary agent holds exactly one for its whole life.
+
 ## The code
 
 ```
 mod/                    the Gradle build (MultiLoader: common + fabric + neoforge)
   common/src/main/java/net/sievert/modularmobai/
     entity/agent/         the agent: body, controls, the record of what executed, item and block rules, what it carries
+    entity/agent/mind/    the mind ported from mind/: state, the event table, relationships, memory, the 69 columns
     brain/                the driver, the batch, the brains (scripted, neural, demonstration) and the training link
     brain/schema/         what an agent sees and does: Species (a body's layout), the humanoid's and the beast's own
                           tables and encoders, enemy slots
@@ -614,22 +723,56 @@ sides. `-Pspecies=<name>` says which body a run is for; it is `humanoid` unless 
 
 ### `.mbw`: weights
 
-Written by the trainer, read by the mod. A 68-byte header, then every parameter as one float array.
+Written by the trainer, read by the mod. A 72-byte header, then every parameter as one float array.
 
 ```
 0   'MBW1'
-4   u32 format version (3)
-8   u32 schema id          which body's layout these weights were trained against
-12  u32 topology hash      CRC32 of the dimensions below
-16  u32 obsDim, h1, hidden, h3, outDim, stdDim
-40  u32 slotAt, slots, slotStride, slotHeads   attention over the enemy slots; all zero for a network without it
+4   u32 format version (4; the trainer still writes 3, which reads as kind 0)
+8   u32 schema id          which layout these weights were trained against
+12  u32 shape hash         CRC32 of the shape words this kind uses
+16  u32 shape words 0-5    the actor: obsDim, h1, hidden, h3, outDim, stdDim
+40  u32 shape words 6-9    the actor: slotAt, slots, slotStride, slotHeads; all zero without attention
 56  f32 observation clip
 60  u32 iteration
 64  u32 parameter count
-68  f32 parameters
+68  u32 kind               version 4 and later; 0 for every earlier file
+72  f32 parameters
 ```
 
-Parameters are in this order, matrices row major `[out][in]` exactly as PyTorch stores them:
+**Three kinds**, and the kind says both what the ten shape words mean and which pass the parameters are for. Kind 0 is the
+recurrent actor below, and is the only one the trainer writes or the mod's agents run; kinds 1 and 2 are the two models
+ported from [`mind/`](../../mind/README.md), loaded by `WeightFile.readMind` and never by `WeightFile.read`. The kind word
+was **appended** rather than given a place among the dimensions, so no byte of any file ever published moves and versions 1
+to 3 read exactly as they did.
+
+| kind | what | shape words | class |
+| --- | --- | --- | --- |
+| 0 | the recurrent actor, below | the ten above | `Topology`, `Forward` |
+| 1 | a plain feed-forward scorer | `inDim, h1, h2, outDim` | `ScorerShape`, `ScorerNet` |
+| 2 | an embedding-bag classifier | `buckets, dim, side, hidden` then the head widths, zero terminated | `ClassifierShape`, `InterpreterNet` |
+
+Kind 1's parameters, in the order the pass applies them:
+
+```
+fc1W[h1 x inDim]  fc1B[h1]  fc2W[h2 x h1]  fc2B[h2]  outW[outDim x h2]  outB[outDim]
+```
+
+Kind 2's:
+
+```
+emb[buckets x dim]
+fc1W[hidden x (dim + side)]  fc1B[hidden]
+headW[width x hidden]  headB[width]        per head, in order
+```
+
+Neither has a normaliser — both are built on inputs that are already scaled, so there are no statistics to travel and the
+clip word is written as 1.0 and means nothing. Their schema id is the first four bytes of their `layout.json`'s sha256 read
+big endian, where the actor's is the CRC32 of its whole `schema.json`; both are refused on a mismatch for the same reason.
+The files are `shared/models/decisions/decisions.mbw` and `shared/models/interpreter/interpreter.mbw`, written by
+`mind/tools/mbw.py`, and `scripts\parity.ps1` checks them against the 200 records each was frozen with. See
+[`mind/docs/port.md`](../../mind/docs/port.md).
+
+**Kind 0's** parameters are in this order, matrices row major `[out][in]` exactly as PyTorch stores them:
 `normMean[obs] normStd[obs]` then, where the network is attended,
 `scoreW[slotHeads x slotStride] scoreB[slotHeads] scoreEmpty[slotHeads]`, then
 `fc1W fc1B gruWih[3H x h1] gruBih gruWhh[3H x H] gruBhh fc2W fc2B outW outB logStd[std]`.
@@ -652,7 +795,8 @@ which this build no longer runs, and no such network was ever published. `script
 the attended one is different arithmetic and not merely a different size.
 
 Anything that doesn't add up is refused and never coerced: wrong magic, version or schema id, a hash that disagrees with
-the dimensions, a parameter count or file length that disagrees with the topology, a non-finite parameter.
+the dimensions, a parameter count or file length that disagrees with the shape, a non-finite parameter, and a kind that is
+not the one the caller asked for.
 
 ### `.mbr`: rollout shards
 

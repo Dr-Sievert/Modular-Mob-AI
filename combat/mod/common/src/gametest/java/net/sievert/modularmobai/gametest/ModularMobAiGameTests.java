@@ -11,6 +11,7 @@ import net.sievert.modularmobai.gametest.tests.AgentEnemyOrderGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentHordeGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentLeagueGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentMeleeGameTest;
+import net.sievert.modularmobai.gametest.tests.AgentMindGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentPackFightGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentShotsGameTest;
 import net.sievert.modularmobai.gametest.tests.AgentPerceptionGameTest;
@@ -62,7 +63,8 @@ public class ModularMobAiGameTests {
             // which is why the suite prints how many it found.
             case "mechanics" -> new Class<?>[] {AgentDrawnWeaponGameTest.class, AgentMeleeGameTest.class,
                     AgentBlockGameTest.class, AgentPerceptionGameTest.class, AgentTeacherGameTest.class,
-                    AgentCrowdGameTest.class, AgentEnemyOrderGameTest.class, FightSetupGameTest.class};
+                    AgentCrowdGameTest.class, AgentEnemyOrderGameTest.class, FightSetupGameTest.class,
+                    AgentMindGameTest.class};
 
             // The agent in a real game: networks by name, /mmai, sides and the loadouts that keep a bow firing.
             case "play" -> new Class<?>[] {PlayGameTest.class};

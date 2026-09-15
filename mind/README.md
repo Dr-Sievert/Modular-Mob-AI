@@ -112,10 +112,12 @@ Tests: `python -m pytest -q tests`.
 - [docs/design.md](docs/design.md) -- the mind model, the event delta table, episodic memory, goals,
   obligations, the arbitrator terms, the vector layouts, and how each piece maps onto the Java mod.
 - [docs/port.md](docs/port.md) -- the brief for the Java port: which `Brain` each of the two trained
-  models becomes, the `.mbw` segment order proposed for each, the one seam in `BrainState`, the chat
-  hook and the parity procedure. The frozen models themselves are in [`../shared/models/`](../shared/models),
-  each with a specification and a 200-record parity file; `python -m tools.freeze` rebuilds them after a
-  retrain and `python -m tools.check_parity` proves they have not drifted. `shared/` is the one place
+  models becomes, the `.mbw` segment order each was given, the one seam in `BrainState`, the chat
+  hook and the parity procedure, plus what **stage A** settled and the plan for stages B and C.
+  The frozen models themselves are in [`../shared/models/`](../shared/models),
+  each with a specification, a `.mbw` the mod loads and a 200-record parity file; `python -m tools.freeze`
+  rebuilds them after a retrain (`python -m tools.mbw` converts alone), and `python -m tools.check_parity`
+  proves they have not drifted. `shared/` is the one place
   anything here writes to or reads from outside `mind/`, because those files are what the combat half
   ports: see [../shared/README.md](../shared/README.md).
 - [text/SCHEMA.md](text/SCHEMA.md) -- the dialogue label schema, which is also the input contract for

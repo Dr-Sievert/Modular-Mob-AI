@@ -106,7 +106,25 @@
             ]
           }
         ],
-        "parameters": 2102819
+        "parameters": 2102819,
+        "weight_file": {
+          "file": "interpreter.mbw",
+          "bytes": 8411348,
+          "sha256": "458d83e82acd2a2c82396056e3be57cdcd9cd1ac3600481235c0d07c37c66d82",
+          "format_version": 4,
+          "schema_id": "09a397c9",
+          "shape_words": [
+            65536,
+            32,
+            20,
+            64,
+            13,
+            12,
+            4,
+            3,
+            3
+          ]
+        }
       },
       "training_data": {
         "path": "text/data/dialogue_partial.jsonl",
@@ -204,7 +222,20 @@
             ]
           }
         ],
-        "parameters": 12801
+        "parameters": 12801,
+        "weight_file": {
+          "file": "decisions.mbw",
+          "bytes": 51276,
+          "sha256": "2df05e8ea917ff765d4f2b7e88dc7167d5ae9ccebda60965d8d31f4f14816390",
+          "format_version": 4,
+          "schema_id": "b7dba1c4",
+          "shape_words": [
+            133,
+            64,
+            64,
+            1
+          ]
+        }
       },
       "training_data": {
         "path": "runs/learn/teacher_v2.npz",

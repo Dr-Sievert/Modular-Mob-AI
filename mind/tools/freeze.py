@@ -9,13 +9,20 @@ What it writes (all of it regenerable, none of it hand-edited):
     ../shared/models/interpreter/model.json    copied, unchanged
     ../shared/models/interpreter/layout.json   the layout a port must agree on; its sha256 is the schema id
     ../shared/models/interpreter/parity.jsonl  200 fixed lines with their exact numpy outputs
+    ../shared/models/interpreter/interpreter.mbw  the same weights in the mod's own format, kind 2
     ../shared/models/interpreter/README.md     the whole model, specified for a Java port
     ../shared/models/decisions/imitator.npz    copied from runs/learn/imitator.npz
     ../shared/models/decisions/imitator.json   copied, unchanged
     ../shared/models/decisions/layout.json     ditto, for the observation and candidate layout
     ../shared/models/decisions/parity.jsonl    200 fixed (observation, candidate) pairs and their scores
+    ../shared/models/decisions/decisions.mbw   the same weights in the mod's own format, kind 1
     ../shared/models/decisions/README.md       ditto
     ../shared/models/MANIFEST.json             schema ids, arrays, training data hash and date, metrics
+
+The ``.mbw`` files are :mod:`tools.mbw`'s, which is runnable on its own against whatever is already
+frozen. They are written here as well so a retrain cannot leave the mod reading last week's weights:
+the ``.npz`` and the ``.mbw`` come out of the same arrays in the same breath, and the manifest
+carries the sha256 of both.
 
 The frozen artefacts are the one thing in the monorepo that both halves read, so they live in ``shared/``
 beside ``mind/`` and ``combat/`` rather than inside this module -- the only path anything here writes or reads
@@ -43,6 +50,8 @@ import shutil
 import sys
 
 import numpy as np
+
+from . import mbw
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -438,6 +447,9 @@ def freeze_interpreter(root: str, clf_dir: str, out_dir: str) -> dict:
 
     layout_sha = write_json(os.path.join(out_dir, "layout.json"), interpreter_layout(meta))
 
+    # After layout.json, never before: the weight file stamps that file's sha256 as its schema id.
+    weight_file = mbw.write_interpreter(out_dir)
+
     clf = Classifier.load(out_dir)
     lines = parity_texts(root)
     records = interpreter_parity(clf, lines)
@@ -462,6 +474,7 @@ def freeze_interpreter(root: str, clf_dir: str, out_dir: str) -> dict:
                        for n, _ in CLF_ARRAY_ORDER],
             "parameters": int(sum(int(np.prod(meta["weights"]["shapes"][n]))
                                   for n, _ in CLF_ARRAY_ORDER)),
+            "weight_file": weight_file,
         },
         "training_data": {
             "path": data.get("path"),
@@ -763,6 +776,9 @@ def freeze_decisions(root: str, imitator_prefix: str, out_dir: str) -> dict:
 
     layout_sha = write_json(os.path.join(out_dir, "layout.json"), decisions_layout(meta))
 
+    # After layout.json, never before: the weight file stamps that file's sha256 as its schema id.
+    weight_file = mbw.write_decisions(out_dir)
+
     scorer = LearnedScorer.load(out_dir)
     pairs, collect_meta = decision_pairs(root)
     for pair in pairs:
@@ -793,6 +809,7 @@ def freeze_decisions(root: str, imitator_prefix: str, out_dir: str) -> dict:
             "arrays": [{"name": a["name"], "shape": meta["weights"]["shapes"][a["name"]]}
                        for a in meta["weights"]["arrays"]],
             "parameters": meta["dims"]["parameters"],
+            "weight_file": weight_file,
         },
         "training_data": {
             "path": ("runs/learn/" + str(data.get("file"))) if data.get("file") else None,
