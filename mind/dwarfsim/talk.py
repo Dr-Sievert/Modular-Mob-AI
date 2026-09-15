@@ -43,6 +43,11 @@ FEED_CAP = 80
 DEFAULT_CLASSIFIER = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "text", "models", "clf")
 
+#: What to say when the classifier cannot even be imported. The sim itself has no dependencies;
+#: the classifier's numpy is the one thing a fresh clone is missing, and this is the one line
+#: the app prints about it. It is the same string ``text/classifier/infer`` raises.
+NUMPY_HINT = "numpy is required for the classifier: pip install -r requirements.txt"
+
 INTENTS = tuple(speech.INTENT_EVENT)
 TOPICS = tuple(speech.TOPIC_PLACE)
 ADDRESSED = ("LISTENER", "THIRD", "GROUP", "NONE")
@@ -177,6 +182,10 @@ class Interpreter:
     ``text/models/clf`` is rewritten in place by a retrain, so it can be missing, half-written
     or trained on a different label set. All three come back as :attr:`error` and a clear
     message; the app stays usable through ``/labels``.
+
+    A fresh clone with nothing installed is the fourth case, and the commonest: the classifier
+    runs on numpy, so an ``ImportError`` here is a missing dependency rather than a broken
+    model, and it comes back as the one line :data:`NUMPY_HINT` instead of a traceback.
     """
 
     def __init__(self, path=DEFAULT_CLASSIFIER):
@@ -200,6 +209,8 @@ class Interpreter:
         try:
             from text.classifier.infer import Classifier
             self.clf = Classifier.load(self.path)
+        except ImportError as exc:                        # nothing pip-installed yet
+            self.error = str(exc) if NUMPY_HINT in str(exc) else NUMPY_HINT
         except Exception as exc:                          # missing, half-written, incompatible
             self.error = "%s: %s" % (type(exc).__name__, exc)
         return self.clf
@@ -209,7 +220,8 @@ class Interpreter:
         clf = self.load()
         if clf is None:
             return None, [
-                "no classifier at %s -- %s" % (self.path, self.error),
+                self.error if self.error == NUMPY_HINT
+                else "no classifier at %s -- %s" % (self.path, self.error),
                 "type the labels by hand instead, e.g.",
                 "  /labels intent=INSULT aggression=0.8 valence=-0.8 text=%s" % (text or "..."),
             ]

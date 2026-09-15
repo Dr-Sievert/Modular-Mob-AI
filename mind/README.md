@@ -8,7 +8,26 @@ emotional and social state** plus **one arbitrator choosing among skills**, with
 Nothing here needs Java, Gradle or Minecraft. **Every command below is run from this directory**
 (`cd mind` from the repository root).
 
-No game engine, no neural net, no dependencies: Python 3 and the standard library. It is a rehearsal
+## Setup
+
+Python 3.10 or newer.
+
+```
+pip install -r requirements.txt        # run the sim and the talk app
+pip install -r requirements-dev.txt    # and train a model or run the suite
+```
+
+The sim proper (`python -m dwarfsim run`) needs nothing but the standard library. The runtime file
+adds the two the talk app wants: **numpy**, which runs the shipped text classifier, and **rich**,
+which draws its panels. Both degrade rather than crash -- without rich the app prints plain text,
+without numpy the classifier says so in one line and `/labels` still lets you type the labels by
+hand. The dev file adds **torch** (only `dwarfsim/learn` and classifier training) and **pytest**.
+
+**Nothing has to be built.** The shipped classifier weights are in git (`text/models/clf`), as are
+the two frozen models in [`../shared/models/`](../shared/models); both run on numpy alone.
+
+No game engine, no neural net, and nothing the sim itself imports: Python 3 and the standard
+library. It is a rehearsal
 for "tiny learned specialists + persistent emotional/social state + one action selector", with the
 arbitrator hand-weighted for now and sitting behind the interface a network would use
 (`score(observation, candidate_features) -> float`, both flat float vectors with fixed layouts).

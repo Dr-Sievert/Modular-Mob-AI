@@ -172,6 +172,27 @@ def test_a_missing_classifier_is_a_message_not_a_crash():
     assert s.snapshot()["classifier"] == "unavailable"
 
 
+def test_a_missing_numpy_is_one_line_not_a_traceback(monkeypatch):
+    """A fresh clone with nothing pip-installed is told what to install, and keeps /labels."""
+    real_import = __builtins__["__import__"] if isinstance(__builtins__, dict) \
+        else __builtins__.__import__
+
+    def no_numpy(name, *args, **kw):
+        if name == "numpy" or name.startswith("numpy."):
+            raise ImportError("No module named 'numpy'")
+        return real_import(name, *args, **kw)
+
+    monkeypatch.delitem(sys.modules, "text.classifier.infer", raising=False)
+    monkeypatch.setattr("builtins.__import__", no_numpy)
+    interp = talk.Interpreter(path=MISSING)
+    assert interp.load() is None
+    assert interp.error == talk.NUMPY_HINT
+    parsed, notes = interp.parse("you are a fool")
+    assert parsed is None
+    assert notes[0] == talk.NUMPY_HINT
+    assert any("/labels" in n for n in notes)
+
+
 def test_hand_labels_work_with_no_classifier():
     s = session()
     who = s.focus.id

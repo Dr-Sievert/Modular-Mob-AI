@@ -25,7 +25,15 @@ import os
 import random
 import time
 
-import numpy as np
+#: The one line to print when numpy is not installed. Importing this module is the only thing
+#: in the subproject that needs it, and a fresh clone with no `pip install` should be told what
+#: to do rather than shown a traceback out of the middle of a forward pass.
+NUMPY_HINT = "numpy is required for the classifier: pip install -r requirements.txt"
+
+try:
+    import numpy as np
+except ImportError as exc:                                  # pragma: no cover - env dependent
+    raise ImportError(NUMPY_HINT) from exc
 
 from .features import SIDE_DIM, buckets, side_features
 from .labels import FLOAT_FIELDS, names_in_text
