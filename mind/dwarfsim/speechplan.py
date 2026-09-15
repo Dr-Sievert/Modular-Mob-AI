@@ -158,12 +158,20 @@ def heat_key(parsed):
 # about / news, until the classifier labels them
 # ---------------------------------------------------------------------------
 
-_SECOND_PERSON = ("you", "your", "you're", "youre", "yours", "ye", "yer", "thee", "thy")
-#: ``mine`` is deliberately **not** here. In a mining settlement it is a hole in the ground far
-#: more often than it is a possessive, and reading "how is the mine?" as a question about the
-#: speaker sent every such question to ADMIT_IGNORANCE. The possessive is carried by ``my``.
-_FIRST_PERSON = ("i", "i'm", "im", "i've", "ive", "i'll", "ill", "my", "me",
-                 "we", "our", "us", "we've", "weve")
+#: Apostrophes are stripped before these are looked up, so ``you've`` is ``youve`` and ``I'm``
+#: is ``im``. That keeps one spelling per word instead of four.
+_SECOND_PERSON = frozenset((
+    "you", "your", "youre", "youve", "youll", "youd", "yours", "ye", "yer", "thee", "thy"))
+
+#: Three words are deliberately **not** in the first-person list, and each one cost something:
+#:
+#: * ``mine`` -- in a mining settlement it is a hole in the ground far more often than it is a
+#:   possessive, and reading "how is the mine?" as a question about the speaker sent every such
+#:   question to ADMIT_IGNORANCE;
+#: * ``ill`` (I'll) -- indistinguishable from ill, which is in half the misfortune lines;
+#: * ``id`` (I'd) and ``were`` (we're) -- the same collision, with an identifier and a past
+#:   tense. All four are carried by the other markers in the same sentence when they matter.
+_FIRST_PERSON = frozenset(("i", "im", "ive", "my", "me", "we", "our", "us", "weve", "ours"))
 
 #: Words that make a statement a piece of bad news about whoever it is about.
 _MISFORTUNE_WORDS = frozenset((
@@ -192,9 +200,10 @@ _OPINION_WORDS = frozenset((
 
 
 def _words(text):
+    """The line as bare alphabetic words, apostrophes of either shape removed."""
     out = []
-    for raw in (text or "").lower().replace("'", "'").split():
-        word = "".join(ch for ch in raw if ch.isalpha() or ch == "'")
+    for raw in (text or "").lower().split():
+        word = "".join(ch for ch in raw if ch.isalpha())
         if word:
             out.append(word)
     return out
@@ -216,7 +225,9 @@ def derive(parsed, dwarf=None, speaker=None, world=None):
     4. a hostile intent aimed at the listener -- ``LISTENER``;
     5. a topic that names a thing (treasure, food, drink, weapon, trade) -- ``OBJECT``;
     6. a topic that names the settlement (mine, forge, home, clan, monster, work) -- ``WORLD``;
-    7. otherwise ``NONE``, which is what a greeting and a fragment are.
+    7. a question with nothing else to go on -- ``LISTENER``, because that is what asking
+       somebody a question is ("How's the arm?" names nobody and means you);
+    8. otherwise ``NONE``, which is what a greeting and a fragment are.
 
     ``news``: a question is ``SEEKING``, a greeting is ``NONE``, an ask is ``PLAN``, a threat is
     ``PLAN``, a warning is ``FACT``, praise and blame are ``OPINION``; and a plain statement is
@@ -243,9 +254,9 @@ def derive(parsed, dwarf=None, speaker=None, world=None):
             about, why = "NONE", "a greeting is about nobody"
         elif third:
             about, why = "THIRD", "names %s, who is neither of us" % third[0]
-        elif words & set(_SECOND_PERSON):
+        elif words & _SECOND_PERSON:
             about, why = "LISTENER", "second person: it is about me"
-        elif words & set(_FIRST_PERSON):
+        elif words & _FIRST_PERSON:
             about, why = "SPEAKER", "first person: it is about them"
         elif intent in ("INSULT", "THREAT", "ACCUSE") \
                 and parsed.get("addressed", "LISTENER") == "LISTENER":
@@ -254,6 +265,10 @@ def derive(parsed, dwarf=None, speaker=None, world=None):
             about, why = "OBJECT", "the topic is a thing"
         elif parsed.get("topic") in ("MINE", "FORGE", "HOME", "CLAN", "MONSTER", "WORK"):
             about, why = "WORLD", "the topic is the settlement"
+        elif intent == "QUESTION":
+            # "How's the arm?" names nobody and means you. A question with nothing else to go
+            # on is about the one being asked -- that is what asking somebody a question is.
+            about, why = "LISTENER", "a question with no other subject is about the one asked"
         else:
             about, why = "NONE", "nothing in particular"
         reasons.append(("about=" + about, why))
