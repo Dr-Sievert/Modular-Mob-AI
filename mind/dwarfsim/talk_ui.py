@@ -269,6 +269,42 @@ def _terms_text(terms):
     return ", ".join("%s %+.2f" % (k, v) for k, v in terms)
 
 
+def construction_lines(plan, indent=2, full=False):
+    """How the reply was built, as screen rows: the act, the top two reasons, the slots and
+    the bank line.
+
+    Short by default -- one row under the line that was said -- and the whole thing for
+    ``/why``, which is the place a person goes when the short version was not enough.
+    """
+    if not plan:
+        return []
+    out = []
+    tags = plan.get("hears") or {}
+    state = plan.get("state") or {}
+    out.append((indent, "term", "act %s  by rule %s" % (plan.get("act"), plan.get("rule"))))
+    reasons = plan.get("why") or []
+    for row in reasons[:(6 if full else 2)]:
+        out.append((indent + 1, "dim", "- %s: %s" % (row["rule"], row["why"])))
+    used = plan.get("used") or {}
+    if used:
+        out.append((indent + 1, "dim", "slots: " + ", ".join(
+            "{%s}=%s" % (k, v) for k, v in sorted(used.items()))))
+    if plan.get("line"):
+        out.append((indent + 1, "dim", "line %s out of %s"
+                    % (plan["line"], plan.get("bank") or "the bank")))
+    if full:
+        out.append((indent + 1, "dim", "heard: %s about %s, news %s, topic %s, %s, %s" % (
+            tags.get("intent"), tags.get("about"), tags.get("news"), tags.get("topic"),
+            tags.get("sincerity"), tags.get("heat"))))
+        out.append((indent + 1, "dim", "state: trust %s, mood %s, %s, suspicion %s" % (
+            state.get("trust"), state.get("mood"), state.get("condition"),
+            state.get("suspicion"))))
+        spare = {k: v for k, v in (plan.get("slots") or {}).items() if k not in used}
+        if spare:
+            out.append((indent + 1, "dim", "could also have filled: " + ", ".join(sorted(spare))))
+    return out
+
+
 def decision_lines(decisions, highlight=None, keep=16):
     """What the focused dwarf did, with runs of the same action folded into one line.
 
@@ -374,6 +410,7 @@ def entry_lines(entry):
         if line["kind"] == "REPLY" and answer.get("kind"):
             out.append((2, "dim", "answering as %s, %s (%s)" % (
                 answer["stance"].lower(), answer["mood"].lower(), answer["kind"])))
+            out.extend(construction_lines(answer.get("construction"), indent=2))
     if len(lines) > SPOKEN_CAP:
         out.append((1, "dim", "(%d more lines were said)" % (len(lines) - SPOKEN_CAP)))
 
@@ -390,15 +427,19 @@ def entry_lines(entry):
                         row["player"], row["goals"])))
 
     if kind == "why":
-        out.append((0, "title", "%s chose %s (%.2f) because:" % (
-            entry["who"], entry["action"], entry["score"])))
-        for k, v in entry.get("terms") or ():
-            out.append((1, "term", "%-22s %+.3f" % (k, v)))
-        out.append((1, "dim", "it was choosing between:"))
-        for c in entry.get("candidates") or ():
-            out.append((2, "npc" if c["won"] else "dim",
-                        "%-28s %+.2f%s" % (c["action"], c["score"],
-                                           "  <-- won" if c["won"] else "")))
+        if entry.get("action"):
+            out.append((0, "title", "%s chose %s (%.2f) because:" % (
+                entry["who"], entry["action"], entry["score"])))
+            for k, v in entry.get("terms") or ():
+                out.append((1, "term", "%-22s %+.3f" % (k, v)))
+            out.append((1, "dim", "it was choosing between:"))
+            for c in entry.get("candidates") or ():
+                out.append((2, "npc" if c["won"] else "dim",
+                            "%-28s %+.2f%s" % (c["action"], c["score"],
+                                               "  <-- won" if c["won"] else "")))
+        if entry.get("construction"):
+            out.append((0, "title", "and it said what it said because:"))
+            out.extend(construction_lines(entry["construction"], indent=1, full=True))
 
     if kind == "mind":
         out.append((0, "title", "everything in %s's head" % entry["who"]))

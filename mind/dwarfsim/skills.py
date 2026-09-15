@@ -364,6 +364,11 @@ class Socialize(Skill):
         if intent == "INSULT":
             agent.grievances.add(other.id)
         speech.hear(world, agent.id, other.id, parsed)
+        # And the other one answers, out of the same pipeline the player's reply comes from.
+        # An ask is deliberately left alone: the arbitrator has not weighed it yet, and a line
+        # here would be the one thing the rules forbid -- words that get ahead of a decision.
+        if ask is None:
+            speech.answer(world, other, agent, parsed)
 
 
 class Steal(Skill):
@@ -795,6 +800,12 @@ class Gossip(Skill):
                                   speech.PLACE_TOPIC.get(agent.place, "NONE"), world.rng,
                                   about=about.name, place=mem.place,
                                   swear=profanity.for_speaker(world, agent, about))
+        # Gossip is the one utterance the sim can label the two new columns for itself, so it
+        # does: the planner's rule-based `derive` is only ever a stand-in, and anything that
+        # actually knows what it is talking about should say so. See `speechplan.derive`.
+        parsed["about"] = "THIRD"
+        parsed["news"] = ("MISFORTUNE" if mem.kind in HARM_KINDS
+                          else "FORTUNE" if mem.kind in HELP_KINDS else "FACT")
         agent.mind.satisfy("social", 0.26)
         listener.mind.satisfy("social", 0.20)
         # What the listener takes away is scaled by what they think of the teller.
@@ -816,6 +827,10 @@ class Gossip(Skill):
         shift = shift_opinion(listener, mem.actor, table, credence * sal) if landed else []
         if shift:
             ev.setdefault("deltas", []).extend(shift)
+        # Gossip is the one thing in the sim that is always *about* somebody else, so it is
+        # where the bank's THIRD lines earn their keep: agreed with, doubted, or turned back on
+        # the teller, depending on what the listener makes of them.
+        speech.answer(world, listener, agent, parsed)
 
 
 # ---------------------------------------------------------------------------

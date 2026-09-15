@@ -138,6 +138,10 @@ class World:
         #: Swearing draws from its own stream, so turning it on moves no other draw in the run
         #: and a seed still reproduces a settlement word for word.
         self.swear_rng = random.Random((seed or 0) * 7919 + 104729)
+        #: And so does what a dwarf says back to another dwarf, for the same reason: giving the
+        #: settlement a conversation should not move a single other draw in the run. See
+        #: :func:`dwarfsim.speech.answer`.
+        self.speech_rng = random.Random((seed or 0) * 6151 + 92821)
         self.scenario = scenario
         self.temperature = temperature
         #: ``None`` for the hand-written weight table, or a learned scorer (see

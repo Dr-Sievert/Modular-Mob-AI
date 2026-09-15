@@ -226,6 +226,38 @@ def hear(world, speaker_id, listener_id, parsed):
                       parsed=parsed, magnitude=magnitude, extra=extra)
 
 
+def answer(world, listener, speaker, parsed, decided=None, already=None):
+    """The other half of a conversation: what the one spoken to says back, out loud.
+
+    The player has had this since the talk app existed; a dwarf spoken to by another dwarf has
+    not, which is why the settlement's small talk reads as one dwarf talking *at* another. This
+    runs the same pipeline the player's reply comes out of -- :mod:`dwarfsim.speechplan`,
+    :mod:`dwarfsim.replybank`, :mod:`dwarfsim.realize` -- and puts the line in the log.
+
+    A reply is **words**: it is emitted with ``apply=False``, so it moves no trust, no needs and
+    no memory. Only what was *said to* the listener does that, and :func:`hear` has already done
+    it. And it draws from ``world.speech_rng`` rather than ``world.rng``, so giving the
+    settlement a conversation moves no other draw in the run and a seed still replays word for
+    word -- the same trick swearing uses.
+    """
+    from . import replies
+    if listener is None or not listener.alive or speaker is None:
+        return None
+    if listener.id == speaker.id:
+        return None
+    out = replies.reply(world, listener, speaker.id, parsed, decided=decided, already=already,
+                        rng=getattr(world, "speech_rng", None) or world.rng)
+    if not out.get("text"):
+        return None
+    extra = {"act": out["kind"], "reply_to": speaker.id}
+    if out.get("bank"):
+        extra["bank"] = out["bank"]
+    if out.get("profanity"):
+        extra["profanity"] = list(out["profanity"])
+    return world.emit("REPLY", listener, speaker, place=listener.place,
+                      dialogue=out["text"], apply=False, extra=extra)
+
+
 def _weigh(world, speaker, target, event, parsed, magnitude):
     """What this line is *still* worth to the one hearing it, and what to log about that.
 

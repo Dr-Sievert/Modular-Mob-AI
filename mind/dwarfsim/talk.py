@@ -52,6 +52,11 @@ INTENTS = tuple(speech.INTENT_EVENT)
 TOPICS = tuple(speech.TOPIC_PLACE)
 ADDRESSED = ("LISTENER", "THIRD", "GROUP", "NONE")
 SINCERITY = ("SINCERE", "SARCASTIC", "JOKING")
+#: The two columns `text/CURSOR_UNDERSTANDING_PROMPT.md` adds. The classifier does not label them
+#: yet -- `dwarfsim.speechplan.derive` works them out by rule -- but both this and `/labels` pass
+#: them straight through when they are there, which is the whole of the seam.
+ABOUT = ("SPEAKER", "LISTENER", "THIRD", "WORLD", "OBJECT", "NONE")
+NEWS = ("MISFORTUNE", "FORTUNE", "PLAN", "OPINION", "FACT", "SEEKING", "NONE")
 
 GIVEABLE = ("gold", "ore", "food", "ale")
 
@@ -150,6 +155,18 @@ def clean_parsed(raw, text, pool=NAME_POOL):
 
     sincerity = str(raw.get("sincerity", "SINCERE")).upper()
     out["sincerity"] = sincerity if sincerity in SINCERITY else "SINCERE"
+
+    # `about` and `news` are optional and are carried through only when they are legal. A
+    # classifier that does not produce them loses nothing: `speechplan.derive` fills them in by
+    # rule and says in the reasons that it did.
+    for field, allowed in (("about", ABOUT), ("news", NEWS)):
+        if raw.get(field) is None:
+            continue
+        value = str(raw[field]).upper()
+        if value in allowed:
+            out[field] = value
+        else:
+            notes.append("unknown %s %r, worked out by rule instead" % (field, raw[field]))
 
     names = [n for n in (raw.get("names") or []) if n in pool]
     for n in pool:                      # exact match, the same rule the classifier uses
@@ -262,6 +279,10 @@ class Session:
         self.focus = self.world.agents[0]
         self.world.player.place = self.focus.place
         self.last_decision = {}       # agent id -> the arbitrator's last full explain() record
+        #: agent id -> the last speech construction it answered with, as plain data. The same
+        #: idea as ``last_decision`` and for the same reason: ``/why`` has to be able to say
+        #: why the dwarf said *that*, not only why it did what it did.
+        self.last_construction = {}
         self.deltas = {}              # agent id -> {field: (before, after)} for the last action
         self.running = True
         self.turns = 0
@@ -503,13 +524,27 @@ class Session:
     def _answer(self, entry, parsed):
         """Every line you say gets an answer, unless the dwarf already gave you one.
 
-        The wording comes from :mod:`dwarfsim.replies`, which is told what the arbitrator
-        chose so it cannot say yes to an ask the dwarf refused. It moves no state: the state
-        already moved, in ``speech.hear``.
+        The wording comes out of the speech pipeline through :func:`dwarfsim.replies.reply`,
+        which is told what the arbitrator chose so it cannot say yes to an ask the dwarf
+        refused. It moves no state but the conversation's own memory: the rest already moved,
+        in ``speech.hear``.
+
+        The **construction** -- the act, the rule that picked it, the tags, the slots that were
+        filled and which bank line was used -- is kept beside the reply as plain data, because
+        that is what the screen draws and what ``/why`` reads back.
         """
         answer = replies.reply(self.world, self.focus, PLAYER_ID, parsed,
                                decided=entry.get("answer_skill"),
                                already=entry.get("answered"))
+        con = answer.pop("construction", None)
+        if con is not None:
+            plan = con.snapshot()
+            plan["bank"] = answer.get("bank")
+            plan["line"] = answer.get("line")
+            plan["said"] = answer.get("text")
+            plan["used"] = dict(answer.get("slots") or {})
+            answer["construction"] = plan
+            self.last_construction[self.focus.id] = plan
         entry["reply"] = answer
         if answer["text"]:
             entry.setdefault("lines", []).append(
@@ -673,16 +708,24 @@ class Session:
         return self._push(entry)
 
     def _cmd_why(self, args, body):
+        """Why it did that, and -- since the reply came out of a rule table too -- why it said
+        that. The two are separate machines and the screen keeps them separate."""
         record = self.last_decision.get(self.focus.id)
+        said = self.last_construction.get(self.focus.id)
         if record is None:
-            return self._push({"kind": "info", "you": "/why",
-                               "notes": ["%s has not decided anything yet -- /tick 1"
-                                         % self.focus.name]})
+            if said is None:
+                return self._push({"kind": "info", "you": "/why",
+                                   "notes": ["%s has not decided anything yet -- /tick 1"
+                                             % self.focus.name]})
+            return self._push({"kind": "why", "you": "/why", "who": self.focus.name,
+                               "action": None, "score": 0.0, "terms": [], "candidates": [],
+                               "construction": said})
         runners = [{"action": self.pretty(e["action"]), "score": e["score"],
                     "won": bool(e.get("won"))} for e in record.get("top", ())]
         return self._push({"kind": "why", "you": "/why", "who": self.focus.name,
                            "action": self.pretty(record["chosen"]), "score": record["score"],
-                           "terms": self._terms(record), "candidates": runners})
+                           "terms": self._terms(record), "candidates": runners,
+                           "construction": said})
 
     def _cmd_mind(self, args, body):
         return self._push({"kind": "mind", "you": "/mind",
@@ -735,6 +778,9 @@ class Session:
             "sincerity": fields.get("sincerity", "SINCERE"),
             "names": [n for n in NAME_POOL if n in text],
         }
+        for field in ("about", "news"):
+            if fields.get(field):
+                parsed[field] = fields[field]
         if ask_spec and ask_spec.lower() not in ("none", "no", "0"):
             ask = parse_ask(ask_spec)
             if ask is None:
