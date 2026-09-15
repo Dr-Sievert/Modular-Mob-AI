@@ -36,6 +36,19 @@ Six dwarves in a settlement of six places. They mine, smith, farm, drink, rest, 
 grudges, apologise, brawl and fight whatever turns up at the gate. Nothing in here is scripted: a
 feud is what happens when the numbers line up.
 
+A brawl is **not** a death sentence. A blow mostly leaves an injury -- a black eye, a sprained hand,
+a broken arm, cracked ribs -- and only a little health; weapons, monsters and hitting somebody who
+is already broken are what kill. An injury does something: a broken arm takes mining, forging and
+the weapon away, a broken leg makes every walk between places a gamble, a concussion makes the
+decisions noisier and the memories fainter, and everything mends over days, faster with rest and
+food. Two hundred unarmed brawls end in **no deaths at all**, and in bruises most of the time.
+
+And there is **no farming approval**. The same compliment pasted twenty times is worth almost
+nothing by the third: praise and small talk buy a capped, decaying *warmth*, while trust moves
+through deeds -- helping, a gift that cost the giver something, a promise kept. Praise that is
+repeated or unearned makes a dwarf suspicious of you, and past a threshold it stops hearing praise
+at all: *"Say it a third time and I'll start wondering what you want."*
+
 They also **remember** (a bounded list of episodes that fade at a rate set by a forgiveness trait),
 **want things for longer than a tick** (get rich, avenge somebody, repay somebody), **owe each other
 favours** (an ask with a deadline, which can be accepted, refused, haggled over, kept or broken),
@@ -74,10 +87,11 @@ Runs are deterministic from `--seed`; 6 dwarves for 2,000 ticks takes about a se
 
 Open the HTML from `file://`, no server. Six views: the auto-narrated story, a filterable timeline
 with the dialogue, per-dwarf traces of emotions, needs and health, the **Mind panel** (what one
-dwarf feels, wants, owes and remembers at the tick you are on, with each memory's salience and
-whether it was suffered, seen or heard from somebody), the relationship matrix with an
-actual/**believed by others** toggle, and the decision inspector -- pick a dwarf and a tick and see
-every candidate the arbitrator weighed and every term that went into each score.
+dwarf feels, wants, owes, remembers and is carrying a broken bone about at the tick you are on,
+with each memory's salience and whether it was suffered, seen or heard from somebody), the
+relationship matrix with an actual/**believed by others** toggle, and the decision inspector --
+pick a dwarf and a tick and see every candidate the arbitrator weighed and every term that went
+into each score.
 
 Tests: `python -m pytest -q tests`.
 

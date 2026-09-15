@@ -346,7 +346,8 @@ class Socialize(Skill):
                     intent = "COMMAND"
                 else:
                     intent = "REQUEST"
-            elif regard.felt_trust(agent, other.id) > 0.25                     or mind.emotions["happiness"] > 0.62:
+            elif (regard.felt_trust(agent, other.id) > 0.25
+                  or mind.emotions["happiness"] > 0.62):
                 intent = "PRAISE"
             else:
                 intent = "SMALLTALK"

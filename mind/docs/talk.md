@@ -13,9 +13,24 @@ decision. It adds no rules. Words go in through the classifier, the labels go th
 ## What is on the screen
 
 Left, the dwarf you are talking to: traits, the four emotions as bars with an arrow and the size
-of the last change, the four needs, health and place, its `trust / respect / hatred` toward
-`player` and toward each other dwarf, the goals it currently holds, the three loudest memories
-with their salience, and any open obligation it is on either end of.
+of the last change, the four needs, health and place, **what is broken** and how badly, its
+`trust / respect / hatred` toward `player` and toward each other dwarf, the goals it currently
+holds, the three loudest memories with their salience, and any open obligation it is on either
+end of.
+
+Under the relationship numbers there are two more, and they are the anti-farming model made
+visible (see [design.md](design.md#no-approval-farming)):
+
+* **warmth** -- what words buy. It is capped, it fades on its own, and it is what makes a dwarf
+  *feel* friendly toward you without believing anything about you. Trust is what deeds buy.
+* **suspicion** -- what saying the same thing too often buys. Past 0.50 the panel says *it thinks
+  you want something*, and your next compliment lands as a `FLATTERY` rather than a `PRAISE`.
+
+The conversation panel shows the **newest** exchanges: it walks the feed backwards, measures each
+entry as it will really be drawn, and stops when the next would not fit, always drawing the latest
+one whole. `/log N` prints the last N in full however long they are, and `/clear` empties the
+panel. Under `--no-rich` there is no panel to fit anything into, so the prompt prints only what
+has happened since the last one and lets the terminal scroll.
 
 Right, the conversation. Per line: what you typed, what the interpreter read out of it
 (`intent topic addressed aggression valence urgency sincerity names`, one line), the event it
@@ -47,6 +62,8 @@ settlement without reaching for `/to` every time. After the line lands the sim r
 | `/mind` | everything in its head |
 | `/all` | one line per dwarf |
 | `/labels k=v ... text=...` | say something with hand-typed labels |
+| `/log N` | print the last N exchanges in full, however long they are |
+| `/clear` | empty the conversation panel |
 | `/help`, `/quit` | |
 
 `--script FILE` (or `-` for stdin) plays a file of those lines and prints the transcript instead
@@ -119,8 +136,10 @@ on three things:
 * the **intent** the interpreter read -- all thirteen in `text/SCHEMA.md`;
 * the dwarf's **mood** -- `ANGRY`, `AFRAID`, `GLAD`, `FLAT`, bucketed off the same emotions the
   arbitrator scores on;
-* its **stance** toward you -- `FRIEND`, `WARM`, `NEUTRAL`, `COLD`, `ENEMY`, bucketed off the
-  same `trust` and `hatred`.
+* its **stance** toward you -- `FRIEND`, `WARM`, `NEUTRAL`, `COLD`, `ENEMY`, bucketed off
+  `hatred` and *felt* trust, which is trust plus what warm words have bought lately. How a dwarf
+  speaks to you is a matter of how it feels about you this afternoon; what it would lend you is a
+  different question and reads the relationship directly.
 
 The most specific cell wins; between a cell that named the stance and one that named the mood,
 a strong mood (furious, frightened) takes it and otherwise the stance does. So a greeting from
@@ -141,6 +160,12 @@ templates:
    aimed at you -- a retort, a demand, an apology, a haggle -- that line *is* the answer and
    nothing is added.
 
+Two later additions ride on the same table. A dwarf who has decided you want something answers
+out of a **`FLATTERY`** cell rather than the `PRAISE` one -- *"Say it a third time and I'll start
+wondering what you want."* -- which is where suspicion becomes something you can hear rather than
+a number in a panel. And a dwarf carrying an injury tacks a clause onto whatever it was going to
+say: *"Aye. Mind the arm."*
+
 It changes no state: the state already moved, in `speech.hear`. Variants are drawn from
 `world.rng`, so a seed and the same typing give the same conversation.
 
@@ -160,8 +185,12 @@ whole screen as a string, with rich or without it.
   really moves it), but `ore`, `food` and `ale` come out of nowhere.
 * A dwarf that haggles (`BARGAIN`) with you is making a counter-offer you have no command to
   answer. It lapses after 40 ticks. Ask again with a payment if you want the deal.
-* `/hit` is a plain `HIT` event with fixed damage: no weapon, no roll, no retaliation logic
-  beyond the ones the arbitrator already has.
+* `/hit` is a plain `HIT` event with fixed damage: it does not go through the injury model, so
+  you cannot break a dwarf's arm from the keyboard, only wear its health down.
+* There is no command for tending a wound. You can feed a hurt dwarf with `/give food` and hope it
+  eats; you cannot bind anything.
+* Suspicion of you is per dwarf and has no memory of *what* you said, only that you said it before.
+  Two speakers pasting the same line at the same dwarf are two unrelated strangers to it.
 * Sincerity does nothing to the sim's state -- `speech.hear` does not read it. It only changes
   what the dwarf says back.
 * A reply is words, not an event: it moves no trust, no needs and no memory. Only what you say
