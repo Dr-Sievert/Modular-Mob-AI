@@ -23,7 +23,7 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from dwarfsim.schema import CAND_SIZE, OBS_SIZE  # noqa: E402
+from dwarfsim.schema import CAND_SIZE, OBS_SIZE, SCHEMA_ID  # noqa: E402
 from text.classifier.features import SIDE_DIM  # noqa: E402
 
 # shared/models, beside mind/ and combat/: the frozen models both halves of the repository read.
@@ -127,13 +127,31 @@ def test_interpreter_parity_records(by_name):
 
 
 def test_decisions_parity_records(by_name):
+    """The records are the widths the *frozen* layout promises, not today's.
+
+    A frozen model is a snapshot of one schema, and the sim's layout moves on without it: the
+    injury stage took the observation from 69 to 77 and the candidate features from 64 to 65,
+    and ``shared/models`` is deliberately not re-frozen for it -- stage B of the port takes the
+    new layout on. So the widths come out of the model's own ``layout.json``, and the check
+    that still has teeth -- that these weights still produce these exact scores -- is
+    ``test_check_parity_script`` above.
+    """
     model = by_name["decisions"]
-    records = read_jsonl(os.path.join(SHARED, model["directory"], model["parity"]["file"]))
+    directory = os.path.join(SHARED, model["directory"])
+    with open(os.path.join(directory, "layout.json"), encoding="utf-8") as fh:
+        layout = json.load(fh)
+    frozen_obs = layout["input"]["obs_size"]
+    frozen_cand = layout["input"]["cand_size"]
+    records = read_jsonl(os.path.join(directory, model["parity"]["file"]))
     assert len(records) == model["parity"]["records"] == 200
     for rec in records:
-        assert len(rec["obs"]) == OBS_SIZE
-        assert len(rec["cand"]) == CAND_SIZE
+        assert len(rec["obs"]) == frozen_obs
+        assert len(rec["cand"]) == frozen_cand
         assert isinstance(rec["score"], float)
+    if (frozen_obs, frozen_cand) != (OBS_SIZE, CAND_SIZE):
+        # Behind the live schema is allowed; claiming to be the live schema while being behind
+        # it is not, because that is what a forgotten re-freeze looks like.
+        assert layout["dwarfsim_schema_id"] != SCHEMA_ID
     # Round-robin over the skills: no skill may take more than a handful of the 200.
     counts = {}
     for rec in records:

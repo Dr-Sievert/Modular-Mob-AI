@@ -42,7 +42,7 @@ The template generator at the bottom exists only so the log has a readable line 
 training data and it is not meant to be clever.
 """
 
-from . import profanity
+from . import profanity, regard
 from .obligations import normalise_ask
 from .schema import NAME_POOL
 
@@ -187,9 +187,10 @@ def hear(world, speaker_id, listener_id, parsed):
     # A slur is what the line was, whatever else it was carrying: not an insult, not a request
     # with a bad word in it. It goes through as its own event, which is a heavier row.
     if top_tier(parsed) >= 3 and target is not None and target.alive and target.id != speaker.id:
+        magnitude, extra = _weigh(world, speaker, target, "SLUR", parsed, magnitude)
+        extra["profanity"] = list(parsed.get("profanity") or ())
         return world.emit("SLUR", speaker, target, dialogue=parsed.get("text"), parsed=parsed,
-                          magnitude=magnitude,
-                          extra={"profanity": list(parsed.get("profanity") or ())})
+                          magnitude=magnitude, extra=extra)
 
     # A structured ask turns any of the three asking intents into an obligation as well.
     ask = normalise_ask(parsed.get("ask")) if intent in ASKING_INTENTS else None
@@ -217,8 +218,48 @@ def hear(world, speaker_id, listener_id, parsed):
 
     if target is None or not target.alive:
         return None
-    return world.emit(event, speaker, target, dialogue=parsed.get("text"),
-                      parsed=parsed, magnitude=magnitude)
+    if speaker.id == target.id:
+        return world.emit(event, speaker, target, dialogue=parsed.get("text"),
+                          parsed=parsed, magnitude=magnitude)
+    magnitude, extra = _weigh(world, speaker, target, event, parsed, magnitude)
+    return world.emit(extra.pop("_event", event), speaker, target, dialogue=parsed.get("text"),
+                      parsed=parsed, magnitude=magnitude, extra=extra)
+
+
+def _weigh(world, speaker, target, event, parsed, magnitude):
+    """What this line is *still* worth to the one hearing it, and what to log about that.
+
+    Two mechanics out of :mod:`dwarfsim.regard`, and they are the whole of the anti-farming
+    answer at this seam:
+
+    * **habituation** -- the same signature from the same mouth is worth near nothing by the
+      third time. It multiplies the magnitude, so the event table lands quieter without a single
+      row of it changing;
+    * **flattery** -- praise that is unearned, frequent or repeated raises the listener's
+      suspicion of the speaker, and past the threshold the ``PRAISE`` becomes a ``FLATTERY``:
+      the same words read as a manipulation, which costs trust instead of buying it.
+
+    Returns ``(magnitude, extra)``; ``extra["_event"]`` overrides the event kind when there is
+    one. Everything it works out goes in the log, so the "why" stays complete.
+    """
+    tick = world.tick
+    factor, sig = regard.habituate(target, speaker.id, tick, event, parsed)
+    regard.note(target, speaker.id, tick, sig)
+    extra = {"habit": round(factor, 3)}
+    if factor < 1.0:
+        extra["said_before"] = True
+
+    if event == "PRAISE":
+        trust = target.mind.rel(speaker.id)["trust"]
+        level, flattering = regard.flattery(target, speaker, tick, trust, factor)
+        extra["suspicion"] = round(level, 3)
+        if flattering:
+            extra["_event"] = "FLATTERY"
+            extra["flattery"] = True
+            # Being seen through does not get quieter with repetition: the third identical
+            # compliment is exactly the one that gives the game away.
+            factor = max(factor, 0.60)
+    return max(0.0, magnitude * factor), extra
 
 
 # ---------------------------------------------------------------------------
@@ -1429,8 +1470,30 @@ _PLACE_THING = {"FORGE": "forge", "MINE": "mine", "TAVERN": "tavern", "HALL": "h
                 "FARM": "farm", "GATE": "gate"}
 
 
+#: What a hurt dwarf tacks on, by where the dialogue's own momentum leaves it. ``{it}`` is the
+#: :meth:`dwarfsim.condition.Condition.complaint` phrase -- "my arm", "these ribs".
+HURT_TAILS = (
+    "Mind {it}.",
+    "Go easy, {it} is still bad.",
+    "Not with {it} the way it is.",
+    "I'd help if it weren't for {it}.",
+    "{it} is killing me, if you want the truth.",
+)
+
+#: How often a hurt dwarf mentions it at all. Often enough to notice in the story, rarely enough
+#: that the settlement is not a hospital ward.
+HURT_TAIL_CHANCE = 0.35
+
+
+def hurt_tail(rng, hurt, chance=HURT_TAIL_CHANCE):
+    """The clause a hurt dwarf adds, or ``""``. ``hurt`` is a complaint phrase or ``None``."""
+    if not hurt or rng.random() >= chance:
+        return ""
+    return " " + HURT_TAILS[rng.randrange(len(HURT_TAILS))].format(it=hurt)
+
+
 def utterance(act, speaker_name, listener_name, topic, rng, about=None, place=None, gold=0,
-              item="a hand", swear=None):
+              item="a hand", swear=None, hurt=None):
     """A line of dialogue plus its parsed labels, in the SCHEMA.md shape.
 
     ``act`` is either one of the thirteen schema intents or one of the sim's own speech acts
@@ -1460,6 +1523,10 @@ def utterance(act, speaker_name, listener_name, topic, rng, about=None, place=No
             aggression = 1.0 if tier >= 3 else max(aggression, max(h.strength for h in hits))
             if tier >= 3:
                 valence = min(valence, -0.8)
+    # A dwarf with a broken arm says so, sooner or later, whatever else they are saying.
+    tail = hurt_tail(rng, hurt)
+    if tail:
+        text += tail
     names = [n for n in NAME_POOL if n in text]
     intent = act if act in INTENT_EVENT else ACT_INTENT.get(act, "SMALLTALK")
     out = {

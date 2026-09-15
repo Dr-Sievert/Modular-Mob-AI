@@ -29,7 +29,7 @@ It changes no state: it is words for state that already moved. Every variant is 
 ``world.rng``, so a seed and the same typing give the same conversation.
 """
 
-from . import profanity
+from . import profanity, regard
 from .schema import NAME_POOL
 
 MOODS = ("ANGRY", "AFRAID", "GLAD", "FLAT")
@@ -57,17 +57,23 @@ def mood_of(dwarf):
 
 
 def stance_of(dwarf, other_id):
-    """One word for what the dwarf makes of you, off ``trust`` and ``hatred``."""
+    """One word for what the dwarf makes of you, off felt trust and ``hatred``.
+
+    Felt trust rather than trust: how a dwarf *speaks* to you is a matter of how it feels about
+    you this afternoon, which is exactly what warmth is (:mod:`dwarfsim.regard`). What it would
+    lend you is a different question and reads the relationship directly.
+    """
     r = dwarf.mind.rels.get(other_id)
     if r is None:
         return "NEUTRAL"
+    trust = regard.felt_trust(dwarf, other_id)
     if r["hatred"] >= 0.35:
         return "ENEMY"
-    if r["trust"] >= 0.40 and r["hatred"] < 0.15:
+    if trust >= 0.40 and r["hatred"] < 0.15:
         return "FRIEND"
-    if r["trust"] >= 0.12 and r["hatred"] < 0.20:
+    if trust >= 0.12 and r["hatred"] < 0.20:
         return "WARM"
-    if r["trust"] <= -0.15 or r["hatred"] >= 0.15:
+    if trust <= -0.15 or r["hatred"] >= 0.15:
         return "COLD"
     return "NEUTRAL"
 

@@ -74,17 +74,27 @@ class LearnedScorer:
     ``run --scorer`` and the weight table stops being consulted.
     """
 
-    __slots__ = ("w1o", "w1c", "b1", "w2", "b2", "w3", "b3", "meta")
+    __slots__ = ("w1o", "w1c", "b1", "w2", "b2", "w3", "b3", "meta", "obs_size", "cand_size")
 
-    def __init__(self, arrays, meta=None):
+    def __init__(self, arrays, meta=None, live=True):
         w1 = np.asarray(arrays["fc1.weight"], dtype=np.float32)
-        if w1.shape[1] != OBS_SIZE + CAND_SIZE:
+        obs_size, cand_size = OBS_SIZE, CAND_SIZE
+        if not live:
+            # A frozen model read on its own terms: the layout it was written against rather
+            # than this sim's. That is what lets `tools/check_parity` keep proving a v1 model
+            # still reproduces its own answer sheet after the live schema has moved on. Nothing
+            # loaded this way may be handed to the sim -- see `load(live=...)`.
+            dims = (meta or {}).get("dims") or {}
+            obs_size = int(dims.get("obs", obs_size))
+            cand_size = int(dims.get("cand", int(w1.shape[1]) - obs_size))
+        if w1.shape[1] != obs_size + cand_size:
             raise ValueError("fc1 expects %d inputs, this model wants %d -- stale weights?"
-                             % (OBS_SIZE + CAND_SIZE, w1.shape[1]))
+                             % (obs_size + cand_size, w1.shape[1]))
+        self.obs_size, self.cand_size = obs_size, cand_size
         # The observation half and the candidate half of the first layer, split once so a whole
         # decision shares one observation product.
-        self.w1o = np.ascontiguousarray(w1[:, :OBS_SIZE].T)     # (OBS_SIZE, hidden1)
-        self.w1c = np.ascontiguousarray(w1[:, OBS_SIZE:].T)     # (CAND_SIZE, hidden1)
+        self.w1o = np.ascontiguousarray(w1[:, :obs_size].T)     # (obs_size, hidden1)
+        self.w1c = np.ascontiguousarray(w1[:, obs_size:].T)     # (cand_size, hidden1)
         self.b1 = np.asarray(arrays["fc1.bias"], dtype=np.float32)
         self.w2 = np.ascontiguousarray(np.asarray(arrays["fc2.weight"], dtype=np.float32).T)
         self.b2 = np.asarray(arrays["fc2.bias"], dtype=np.float32)
@@ -95,8 +105,15 @@ class LearnedScorer:
     # -- loading -----------------------------------------------------------
 
     @classmethod
-    def load(cls, path):
-        """Load from a prefix (``runs/learn/imitator``) or the directory holding the pair."""
+    def load(cls, path, live=True):
+        """Load from a prefix (``runs/learn/imitator``) or the directory holding the pair.
+
+        ``live=True`` is a model about to be given to the sim: it must agree with *this*
+        schema, and a stale one is refused rather than quietly scoring nonsense. ``live=False``
+        is a frozen model being replayed against its own parity file, which is a different
+        question -- there the model's own recorded layout is the truth, and a schema id from
+        an older stage is the expected answer, not a fault.
+        """
         npz_path, json_path = resolve(path)
         with np.load(npz_path) as fh:
             arrays = {name: fh[name] for name, _ in ARRAY_ORDER}
@@ -105,16 +122,16 @@ class LearnedScorer:
             with open(json_path, encoding="utf-8") as fh:
                 meta = json.load(fh)
             got = meta.get("dwarfsim_schema_id")
-            if got not in (None, SCHEMA_ID):
+            if live and got not in (None, SCHEMA_ID):
                 raise ValueError("model was trained against %s, this sim is %s" % (got, SCHEMA_ID))
-        return cls(arrays, meta)
+        return cls(arrays, meta, live=live)
 
     # -- scoring -----------------------------------------------------------
 
     def score_all(self, observation, features):
         """Every candidate of one decision at once. Returns a ``(n,)`` float32 array."""
-        cand = np.asarray(features, dtype=np.float32).reshape(-1, CAND_SIZE)
-        obs = np.asarray(observation, dtype=np.float32).reshape(OBS_SIZE)
+        cand = np.asarray(features, dtype=np.float32).reshape(-1, self.cand_size)
+        obs = np.asarray(observation, dtype=np.float32).reshape(self.obs_size)
         h = cand @ self.w1c
         h += obs @ self.w1o + self.b1
         np.maximum(h, 0.0, out=h)

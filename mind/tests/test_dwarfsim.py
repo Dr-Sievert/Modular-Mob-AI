@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from dwarfsim import arbitrator, goals, memory, mind, obligations, schema  # noqa: E402
+from dwarfsim import arbitrator, condition, goals, memory, mind, obligations, schema  # noqa: E402
 from dwarfsim import skills, speech  # noqa: E402
 from dwarfsim import log as log_mod  # noqa: E402
 from dwarfsim import run_sim  # noqa: E402
@@ -1032,7 +1032,7 @@ def test_the_player_is_a_speaker_with_a_neutral_row_in_every_dwarf():
     assert w.agent(schema.PLAYER_ID) is w.player
     assert w.player not in w.agents and w.player.external
     for a in w.agents:
-        assert a.mind.rels[schema.PLAYER_ID] == {"trust": 0.0, "respect": 0.0, "hatred": 0.0}
+        assert a.mind.rels[schema.PLAYER_ID] == mind.NEUTRAL_REL
     roster = {r["id"]: r for r in w.roster()}
     assert roster[schema.PLAYER_ID]["external"] is True
     # the player never decides and never ages
@@ -1144,8 +1144,14 @@ def test_the_schema_carries_the_new_skills_terms_and_blocks():
     assert schema.MIND_HEALTH == schema.MIND_TRAITS + len(mind.TRAITS)
     assert schema.MIND_SIZE == schema.MIND_FOCUS + schema.FOCUS_SLOTS * schema.FOCUS_STRIDE
     assert schema.CAND_SIZE == schema.N_SKILLS + schema.N_TERMS
-    assert schema.SCHEMA_ID == "dwarfsim-v1"
+    assert schema.SCHEMA_ID == "dwarfsim-v2"
     assert len(mind.TRAITS) == 6 and "pride" in mind.TRAITS and "forgiveness" in mind.TRAITS
+    # v2: the injury block sits at the end of the observation, and strength stayed derived --
+    # the trait block is still the six it always was.
+    assert "impairment" in schema.TERM_NAMES
+    assert schema.OBS_CONDITION == schema.OBS_CHIEF_HERE + 1
+    assert schema.OBS_SIZE == schema.OBS_CONDITION + schema.CONDITION_SIZE
+    assert schema.CONDITION_SIZE == len(condition.Condition().block())
 
 
 def test_the_observation_carries_goals_obligations_and_memory():

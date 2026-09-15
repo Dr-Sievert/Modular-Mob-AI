@@ -161,7 +161,10 @@ def check_decisions(model: dict, root: str, tolerance: float) -> Result:
     if not result.ok:
         return result
     directory = os.path.join(root, model["directory"].replace("/", os.sep))
-    scorer = LearnedScorer.load(directory)
+    # `live=False`: this is the frozen model replayed against its own answer sheet, so its own
+    # recorded layout is the truth. A model written against an older `dwarfsim` schema is exactly
+    # what this check exists to keep honest; refusing to load it would prove nothing.
+    scorer = LearnedScorer.load(directory, live=False)
     records = read_jsonl(os.path.join(directory, model["parity"]["file"]))
     result.records = len(records)
     if len(records) != model["parity"]["records"]:

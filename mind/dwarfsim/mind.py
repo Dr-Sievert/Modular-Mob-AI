@@ -10,23 +10,33 @@ Ranges
 * emotions  ``anger fear happiness grief``     0..1, decay toward a per-dwarf baseline
 * needs     ``hunger thirst fatigue social``   0..1, rise every tick, dropped by skills
 * traits    ``bravery greed temper sociability pride forgiveness`` 0..1, static, rolled per seed
-* relationships, one triple per other dwarf (and for the player):
+* relationships, one row per other dwarf (and for the player):
     - ``trust``   -1..1   would I leave my ore with them
     - ``respect`` -1..1   do they matter, are they dangerous, did they stand at the gate
     - ``hatred``   0..1   would I swing at them
-  all three decay slowly toward 0.
+    - ``warmth``   0..1   how well disposed do I *feel* right now, as against what I believe
+  the first three decay slowly toward 0; warmth decays about four times as fast. Only the first
+  three are in the observation vector.
 
 ``pride`` is how much being humiliated in front of others costs; ``forgiveness`` is how fast an
 episodic memory's salience fades (:mod:`dwarfsim.memory`), which is what lets two dwarves with the
 same relationship numbers hold a grudge for very different lengths of time.
 """
 
+from . import regard
 from .schema import INVENTORY, INVENTORY_SCALE, MAX_HEALTH, MIND_SIZE, FOCUS_SLOTS
 
 EMOTIONS = ("anger", "fear", "happiness", "grief")
 NEEDS = ("hunger", "thirst", "fatigue", "social")
 TRAITS = ("bravery", "greed", "temper", "sociability", "pride", "forgiveness")
 REL_FIELDS = ("trust", "respect", "hatred")
+
+#: The fourth number in a relationship row, and the odd one out: see :mod:`dwarfsim.regard`.
+#: ``warmth`` 0..1 is how well disposed a dwarf *feels* toward another right now, as against
+#: what it believes about them. Words buy warmth; deeds buy trust. It decays much faster than
+#: the other three, it is not in the observation vector, and everything that asks "do I like
+#: this dwarf" reads it while everything that asks "do I rely on this dwarf" does not.
+WARMTH_DECAY = 0.003
 
 #: How fast each need climbs per tick with nothing done about it.
 NEED_RATES = {"hunger": 0.0035, "thirst": 0.0050, "fatigue": 0.0030, "social": 0.0035}
@@ -38,7 +48,7 @@ EMOTION_DECAY = {"anger": 0.030, "fear": 0.055, "happiness": 0.020, "grief": 0.0
 #: quarrel that made it, but not forever.
 REL_DECAY = 0.0015
 
-NEUTRAL_REL = {"trust": 0.0, "respect": 0.0, "hatred": 0.0}
+NEUTRAL_REL = {"trust": 0.0, "respect": 0.0, "hatred": 0.0, "warmth": 0.0}
 
 
 def _clamp01(x):
@@ -78,7 +88,7 @@ class MindState:
     def rel(self, other_id):
         r = self.rels.get(other_id)
         if r is None:
-            r = {"trust": 0.0, "respect": 0.0, "hatred": 0.0}
+            r = {"trust": 0.0, "respect": 0.0, "hatred": 0.0, "warmth": 0.0}
             self.rels[other_id] = r
         return r
 
@@ -87,7 +97,8 @@ class MindState:
         r = self.rels.get(other_id)
         if r is None:
             return 0.0
-        return _clamp11(r["trust"] * 0.7 + r["respect"] * 0.3 - r["hatred"])
+        return _clamp11(r["trust"] * 0.7 + r["respect"] * 0.3 - r["hatred"]
+                        + r["warmth"] * 0.4)
 
     # -- per-tick drift -----------------------------------------------------
 
@@ -101,6 +112,7 @@ class MindState:
         for r in self.rels.values():
             for f in REL_FIELDS:
                 r[f] *= (1.0 - REL_DECAY)
+            r["warmth"] *= (1.0 - WARMTH_DECAY)
 
     def satisfy(self, need, amount):
         self.needs[need] = _clamp01(self.needs[need] - amount)
@@ -209,6 +221,17 @@ EVENT_TABLE = {
         "witness_rel": {"trust": +0.03, "respect": +0.02},
         "actor": {"happiness": +0.04},
         "actor_rel": {"trust": +0.03},
+    },
+    "FLATTERY": {
+        # The same words, read for what they are. Once a dwarf is suspicious of a speaker
+        # (:mod:`dwarfsim.regard`), praise from them stops being praise: the valence flips, the
+        # room is not impressed either, and saying it again makes it worse rather than better.
+        "target": {"anger": +0.05, "happiness": -0.03},
+        "target_rel": {"trust": -0.05, "respect": -0.04, "hatred": +0.02},
+        "witness": {},
+        "witness_rel": {"trust": -0.01, "respect": -0.02},
+        "actor": {},
+        "actor_rel": {},
     },
     "SMALLTALK": {
         "target": {"happiness": +0.05},
@@ -466,13 +489,48 @@ def shift_opinion(agent, about_id, table, scale=1.0):
     return deltas
 
 
-def apply_event(kind, actor=None, target=None, witnesses=(), magnitude=1.0):
+def _target_rel(deltas, target, actor, kind, row, magnitude, tick):
+    """How the one it was done to now sees whoever did it -- words rationed, deeds not.
+
+    This is the "words against deeds" half of :mod:`dwarfsim.regard`. A word's *positive* trust
+    and respect are cut to :data:`~dwarfsim.regard.WORD_TRUST_FRACTION`, the rest becomes warmth,
+    and trust is additionally held under a rolling cap, so no amount of talking does what one
+    kept promise does. Nothing damps a word's *negative* deltas: an insult is a deed to whoever
+    it lands on, and habituation has already quietened a repeated one before it gets here.
+    """
+    words = kind in regard.WORD_EVENTS
+    reg = regard.of(target, actor.id) if (words or kind in regard.DEED_EVENTS) else None
+    for f, a in row.get("target_rel", {}).items():
+        amount = a * magnitude
+        if words and a > 0.0 and f in ("trust", "respect"):
+            amount, warm = reg.word_gain(tick, f, amount)
+            if warm > 0.0:
+                row_ = target.mind.rel(actor.id)
+                before = row_["warmth"]
+                row_["warmth"] = min(1.0, before + warm)
+                if row_["warmth"] != before:
+                    deltas.append({"who": target.id, "f": "rel:%s:warmth" % actor.id,
+                                   "from": before, "to": row_["warmth"]})
+        _relate(deltas, target, actor.id, f, amount, 1.0)
+    if reg is not None and kind in regard.DEED_EVENTS and magnitude > 0.0:
+        # Evidence. Suspicion of a speaker does not survive them actually doing something.
+        before = reg.suspicion
+        reg.deed(tick)
+        if before:
+            deltas.append({"who": target.id, "f": "suspicion:%s" % actor.id,
+                           "from": round(before, 4), "to": 0.0})
+
+
+def apply_event(kind, actor=None, target=None, witnesses=(), magnitude=1.0, tick=0):
     """Apply one social event and return the list of state deltas it caused.
 
     ``actor`` is whoever did it (``None`` for the world itself: a monster's THREAT), ``target``
     whoever it was done to, ``witnesses`` everyone else present. Each delta is
     ``{"who": agent id, "f": field, "from": x, "to": y}`` and goes straight into the log, which is
     what makes an event in the viewer say what it actually changed.
+
+    ``tick`` is when, which the rolling windows in :mod:`dwarfsim.regard` need; it defaults to 0
+    so a bare ``apply_event`` in a test still works, with every window starting at the beginning.
     """
     row = EVENT_TABLE[kind]
     deltas = []
@@ -481,8 +539,7 @@ def apply_event(kind, actor=None, target=None, witnesses=(), magnitude=1.0):
         for f, a in row["target"].items():
             _emote(deltas, target, f, a, magnitude)
         if actor is not None and actor.id != target.id:
-            for f, a in row.get("target_rel", {}).items():
-                _relate(deltas, target, actor.id, f, a, magnitude)
+            _target_rel(deltas, target, actor, kind, row, magnitude, tick)
 
     if actor is not None and actor.alive:
         for f, a in row.get("actor", {}).items():
