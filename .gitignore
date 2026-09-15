@@ -46,7 +46,9 @@ checkpoints
 logs
 
 # the mind subproject (mind/), a pure-Python testbed with no Java in it; its runs/ is named above with the other halves'
-mind/text/data/raw/
+# its contents rather than the folder, so that the provenance note for what was downloaded there can be tracked
+mind/text/data/raw/*
+!mind/text/data/raw/SOURCES.md
 mind/text/data/dialogue_partial.jsonl
 mind/text/data/generated_raw/
 # trained checkpoints are regenerable; the exported weights.npz + model.json are what ships

@@ -390,7 +390,7 @@ why a new knob in the trainer needs no change here at all.
 | `--aux-horizon` | 32 | ticks ahead that "the fight ends soon" looks |
 | `--seq-len` | 32 | ticks of GRU unrolled per training chunk |
 | `--h1 --hidden --h3` | 256, 128, 128 | network widths; only for a new run, and the game needs no change |
-| `--slot-heads` | 0 | how many heads read the ten enemy slots, or 0 for a first layer that takes every slot's numbers where they sit. Each head picks one occupied slot out by a learned score and hands the first layer that slot, with the slot it chose taken away from the heads after it, so what the layer sees does not depend on which slot a body is in or on how many idle bodies stand about — which is worth 22 degrees of aim a tick per bystander, see [`train.py attend`](#trainpy-attend-carry-a-plain-run-into-attention-over-the-slots). It is part of the network's shape and not a setting: a state trained with heads cannot be read into a network without them, which is why `-Seed` reads the count out of the state it is seeding from. A run already training is converted rather than reconfigured |
+| `--slot-heads` | 0 | how many heads read the ten enemy slots, or 0 for a first layer that takes every slot's numbers where they sit. Each head picks one occupied slot out by a learned score and hands the first layer that slot, with the slot it chose taken away from the heads after it, so what the layer sees does not depend on which slot a body is in or on how many idle bodies stand about — which is worth 22 degrees of aim a tick per bystander, see [`train.py attend`](#trainpy-attend-carry-a-plain-run-into-attention-over-the-slots). It is part of the network's shape and not a setting: a state trained with heads cannot be read into a network without them, so the trainer builds to the shape of whatever state it loads, and `train.ps1` prints that shape on every start; the flags name the shape of a run's first start only. A run already training is converted rather than reconfigured |
 | `--scale-rewards` | true | divide rewards by the running spread of the return, so the value loss is the same size whatever the reward is measured in |
 | `--skip-limit` | 3 | updates in a row that may go non-finite before the run stops. One such update is abandoned whole — every parameter and every one of Adam's moments back where it was, the iteration reported as `NOT LEARNED FROM`, the same weights out again under the next number — and the run carries on; three in a row stops it **without writing a state**, so the last good one stays on disk. Rows that are not finite are dropped before any of that, with a line naming the field they came from. See [findings.md](findings.md) for the breeze that made this necessary |
 | `--eval-fights` | 500 | fights per judged checkpoint (2,000 tells 99.6% from 99.9%) |
@@ -680,9 +680,10 @@ scripts\train.ps1 -Run blast-8 -Suite league -Seed blast-8                    th
 
 `--from` reads that run's `state.pt` and `schema.json` and touches nothing; `--into` is written whole — `state.pt`,
 `schema.json` and the weight file for the iteration it converted, which is the one the workers are handed. `-Seed <itself>`
-is what makes `train.ps1` read the widths **and the head count** out of the state it is about to load, exactly as it always
-read them: the shape is a property of the weights and not a setting, and a run resuming without it builds the default
-network around a state of another shape and dies on the load.
+seeds the run from its own converted state. The widths **and the head count** are read out of the state on every start
+after that, with or without `-Seed`: by `train.ps1`, which prints them, and by the trainer itself as it loads, since the
+shape is a property of the weights and not a setting. Until 2026-09-15 only `-Seed` read them, and a resume that left it
+off built the default network around an attended state and died on the load; see findings.md.
 
 **Where the old network's slot k held what head k now reads, the conversion is exact.** Head k keeps slot k's columns,
 rescaled per column to the statistics the attended network normalises every slot with, and the first layer's bias folds in

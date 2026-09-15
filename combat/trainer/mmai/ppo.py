@@ -322,48 +322,11 @@ class Trainer:
                 logger.warning("under 2 GB of GPU memory is free; something else is using the card and updates may be slow")
 
         self.heads = PolicyHeads(schema.heads)
-        self.actor = Actor.for_schema(schema, config.h1, config.hidden, config.h3, config.obs_clip,
-                                      config.slot_heads).to(self.device)
-        self.critic = self._new_critic((config.critic_gru_width or config.hidden) if config.critic_gru else 0)
-
-        self.optimizer = torch.optim.Adam(
-            list(self.actor.parameters()) + list(self.critic.parameters()), lr=config.learning_rate, eps=1e-5
-        )
+        self._build()
 
         # What the optimizer is actually running at, which steer_rate moves and the run's state keeps.
         self.rate = config.learning_rate
 
-        # The auxiliary predictions, with an optimizer of their own; see model.AuxiliaryHeads and Config.aux_coef. Built
-        # only where they are asked for, and kept out of the optimizer above, which buys two things:
-        #  - every state.pt written before these existed resumes without complaint. Adam refuses a saved state whose
-        #    parameter group is a different size from the one it is being loaded into, so putting these in the same group
-        #    would end every run that is training today the moment it restarted;
-        #  - a predictor has no KL, so its rate has no business being steered by how far the policy moved. It learns at the
-        #    configured rate throughout.
-        # Their gradient still reaches the actor either way: the loss is one loss, and the path back through the memory is
-        # what shapes anything at all here.
-        body = schema.block("self")
-
-        self.aux = (
-            AuxiliaryHeads(self.actor.topology.hidden, body.size if body else 0, self.actor.topology.hidden)
-            .to(self.device)
-            if config.aux_coef > 0.0
-            else None
-        )
-
-        self.aux_optimizer = (
-            torch.optim.Adam(self.aux.parameters(), lr=config.learning_rate, eps=1e-5) if self.aux is not None else None
-        )
-
-        # An attended network's slots share one set of statistics, taken from the occupied slots alone; see
-        # model.RunningNormalizer. A plain one keeps the untied statistics it has always had.
-        topology = self.actor.topology
-
-        self.normalizer = RunningNormalizer(
-            schema.obs_dim,
-            slots=(topology.slot_at, topology.slots, topology.slot_stride) if topology.attended() else None,
-        )
-        self.normalizer.into(self.actor)
         self.reward_scaler = RewardScaler(config.gamma)
 
         self.iteration = 0
@@ -415,6 +378,54 @@ class Trainer:
                 f"{sum(parameter.numel() for parameter in self.aux.parameters()):,}",
                 self.aux.describe(),
             )
+
+    def _build(self) -> None:
+        """Everything whose shape is the network's: the actor, the critic that reads its topology, the optimizer over the two,
+        the auxiliary heads on its hidden width, and the normalizer that ties the slots' statistics when it is attended. Built
+        from ``self.config`` once on construction, and again on a load whose state holds a network of another shape; see
+        load."""
+
+        config, schema = self.config, self.schema
+
+        self.actor = Actor.for_schema(schema, config.h1, config.hidden, config.h3, config.obs_clip,
+                                      config.slot_heads).to(self.device)
+        self.critic = self._new_critic((config.critic_gru_width or config.hidden) if config.critic_gru else 0)
+
+        self.optimizer = torch.optim.Adam(
+            list(self.actor.parameters()) + list(self.critic.parameters()), lr=config.learning_rate, eps=1e-5
+        )
+
+        # The auxiliary predictions, with an optimizer of their own; see model.AuxiliaryHeads and Config.aux_coef. Built
+        # only where they are asked for, and kept out of the optimizer above, which buys two things:
+        #  - every state.pt written before these existed resumes without complaint. Adam refuses a saved state whose
+        #    parameter group is a different size from the one it is being loaded into, so putting these in the same group
+        #    would end every run that is training today the moment it restarted;
+        #  - a predictor has no KL, so its rate has no business being steered by how far the policy moved. It learns at the
+        #    configured rate throughout.
+        # Their gradient still reaches the actor either way: the loss is one loss, and the path back through the memory is
+        # what shapes anything at all here.
+        body = schema.block("self")
+
+        self.aux = (
+            AuxiliaryHeads(self.actor.topology.hidden, body.size if body else 0, self.actor.topology.hidden)
+            .to(self.device)
+            if config.aux_coef > 0.0
+            else None
+        )
+
+        self.aux_optimizer = (
+            torch.optim.Adam(self.aux.parameters(), lr=config.learning_rate, eps=1e-5) if self.aux is not None else None
+        )
+
+        # An attended network's slots share one set of statistics, taken from the occupied slots alone; see
+        # model.RunningNormalizer. A plain one keeps the untied statistics it has always had.
+        topology = self.actor.topology
+
+        self.normalizer = RunningNormalizer(
+            schema.obs_dim,
+            slots=(topology.slot_at, topology.slots, topology.slot_stride) if topology.attended() else None,
+        )
+        self.normalizer.into(self.actor)
 
     def _new_critic(self, gru: int, privileged: int | None = None) -> Critic:
         """The critic of a given width of memory, or the plain feed-forward one at zero. Built here rather than inline
@@ -1754,6 +1765,25 @@ class Trainer:
                     else ""
                 )
             )
+
+        # The actor's shape comes from the state and not from the flags, for a plainer reason than the critic's below: weights
+        # of one shape cannot be loaded into a network of another at all. A run that resumed without repeating the widths it
+        # was seeded with used to build the default network and stop on a wall of size mismatches, and it did so three
+        # times, the last on 2026-09-15 when a restart under a moved checkout left -Seed off the command. A state says what
+        # it holds, so the trainer is built to that and the flags only ever name the shape of a run's first start; the shape
+        # asked for is logged where it differs, since a widened network is a new run and not a resume.
+        saved_config = state.get("config") or {}
+        saved_shape = tuple(int(saved_config.get(name, 0)) for name in ("h1", "hidden", "h3", "slot_heads"))
+        shape = (self.config.h1, self.config.hidden, self.config.h3, self.config.slot_heads)
+
+        if all(saved_shape[:3]) and saved_shape != shape:
+            logger.info(
+                "%s holds a network of --h1 %d --hidden %d --h3 %d --slot-heads %d where these settings ask for --h1 %d "
+                "--hidden %d --h3 %d --slot-heads %d; the run carries on with the shape it has",
+                path.name, *saved_shape, *shape,
+            )
+            self.config.h1, self.config.hidden, self.config.h3, self.config.slot_heads = saved_shape
+            self._build()
 
         # A critic's shape comes from the state and not from the flags, because a critic is learned rather than
         # configured: swapping its architecture under a run in progress throws away everything it knew about the fight and

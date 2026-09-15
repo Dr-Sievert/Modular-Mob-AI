@@ -147,6 +147,9 @@ if ($FromCopy) {
     $Extra = "--learning-rate 5e-5 --clip 0.1 --target-kl 0.01 --critic-warmup 30 --entropy-coef 0.001 --teacher-weight 0.5 $Extra"
 }
 
+$shapeFrom = $null
+$seeded = $false
+
 if ($Seed) {
 
     if (-not $PSBoundParameters.ContainsKey('RolloutSteps')) {
@@ -165,7 +168,6 @@ if ($Seed) {
     # not a setting but a property of the weights, so a seeded run resuming without it builds the default network around a
     # state of another shape and dies on the load. Read below, from whichever state is about to be loaded.
     $shapeFrom = Join-Path $directory 'state.pt'
-    $seeded = $false
 
     if (-not (Test-Path (Join-Path $directory 'state.pt'))) {
 
@@ -198,6 +200,15 @@ if ($Seed) {
         $shapeFrom = $state
         $seeded = $true
     }
+}
+
+elseif (Test-Path (Join-Path $directory 'state.pt')) {
+
+    # A run carrying on without -Seed has a state of its own, and its shape is read from that one just the same.
+    $shapeFrom = Join-Path $directory 'state.pt'
+}
+
+if ($shapeFrom) {
 
     # Iterations carry on from the seed's, so the critic's time alone is counted from there. Whatever torch says on its way
     # in goes to stderr, which Windows PowerShell would take for an error.
@@ -211,8 +222,10 @@ if ($Seed) {
     # what decides the first layer's width.
     #
     # And it is read on every start, not only the first, from whichever state is about to be loaded -- the run's own once it
-    # has one. A seeded run resuming without this builds the default network around a state of another shape, which is the
-    # third time the same lesson would have cost a run.
+    # has one, with or without -Seed on the command. A resume that left -Seed off used to build the default network around
+    # an attended state, which was the third time the same lesson cost a run a start (2026-09-15). The trainer now reads the
+    # shape out of whatever state it loads as well (ppo.Trainer.load), so this is belt and braces: what it still buys is the
+    # shape on the console, and a width named in -Extra overriding it.
     $ErrorActionPreference = 'Continue'
     $read = & $Python -c "import sys, torch; s = torch.load(sys.argv[1], map_location='cpu', weights_only=False); c = s.get('config') or {}; print(s['iteration'], c.get('h1', 0), c.get('hidden', 0), c.get('h3', 0), c.get('slot_heads', 0))" $shapeFrom 2>$null
     $ErrorActionPreference = 'Stop'
@@ -250,7 +263,12 @@ if ($Seed) {
         Write-Host ("Carrying '$Run' on from iteration $iteration" + $(if ($widths) { ", $widths" }))
     }
 
-    $Extra = "--learning-rate 5e-5 --clip 0.1 --target-kl 0.01 --entropy-coef 0.001 $warmup $Extra"
+    # The seeded lineage's settings, on its first start and on every resume that says -Seed; a run carrying on without it
+    # keeps whatever its own command says.
+    if ($Seed) {
+
+        $Extra = "--learning-rate 5e-5 --clip 0.1 --target-kl 0.01 --entropy-coef 0.001 $warmup $Extra"
+    }
 }
 
 # Where the record to be pulled towards is. A run seeded from another one's copy has none of its own, and the record it

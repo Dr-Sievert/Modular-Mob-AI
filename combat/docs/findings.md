@@ -1334,6 +1334,16 @@ are deliberate.
 
 ## Learning
 
+- **A network's shape comes out of the state it loads, never off the command line.** Three starts were lost the same way:
+  a run seeded from a state of another shape (a wider one, then an attended one) was resumed by a command that did not
+  repeat the widths, `train.ps1` built the default network, and the trainer stopped on a wall of size mismatches. The last
+  was `provocator-1`'s restart after the monorepo move on 2026-09-15, with `-Seed` left off. The script had been reading
+  the shape out of the state only on the `-Seed` path, while its comment said "on every start". Now `Trainer.load` reads
+  `h1`, `hidden`, `h3` and `slot_heads` out of the state's own config and rebuilds the actor, the critic that reads its
+  topology, the optimizer over both, the auxiliary heads and the normalizer to that shape before anything is loaded,
+  logging the shape the flags asked for where it differs (`tests/test_attention.py::ResumeTest`); and `train.ps1` reads
+  and prints the shape from a run's own state with or without `-Seed`. The flags name the shape of a first start only; a
+  widened network is a new run, not a resume.
 - **A run's "best" cannot see a roster that grew under it, and the release rule cannot see a pack.** `blast8` set its best at
   36350 and then met fifteen new players and a stronger anchor at 37306; every checkpoint after that was judged on the
   opponents both had met, which the new ones were not, and forty of them in a row failed to beat 36350 by a point while the

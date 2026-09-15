@@ -520,3 +520,63 @@ class UpdateTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(SCHEMA.is_file(), "needs a schema, which scripts\\parity.ps1 writes")
+class ResumeTest(unittest.TestCase):
+    """The shape of a network is a property of its state, not a setting: a trainer built to the flags' shape and handed a
+    state of another one carries on with the state's, rather than stopping on a wall of size mismatches. Three restarts were
+    lost to a command that did not repeat the widths a run was seeded with; see load."""
+
+    HEADS = 3
+
+    def setUp(self):
+        self.schema = Schema.load(SCHEMA)
+
+    def test_a_plain_trainer_carries_on_an_attended_state(self):
+        attended = Trainer(Config(device="cpu", **SMALL, slot_heads=self.HEADS), self.schema)
+        attended.iteration = 7
+
+        # One observation through both, deterministically, so that what the plain trainer runs after the load can be held
+        # against what the attended one saved.
+        obs = torch.randn(1, 4, self.schema.obs_dim)
+        hidden = torch.zeros(1, SMALL["hidden"])
+
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "state.pt"
+            attended.save(path)
+
+            plain = Trainer(Config(device="cpu", **SMALL), self.schema)
+            self.assertFalse(plain.actor.topology.attended())
+
+            plain.load(path)
+
+        self.assertTrue(plain.actor.topology.attended())
+        self.assertEqual(plain.actor.topology, attended.actor.topology)
+        self.assertEqual(plain.config.slot_heads, self.HEADS)
+        self.assertEqual(plain.iteration, 7)
+
+        # The critic and the auxiliary heads were rebuilt to the same topology and loaded, the normalizer ties its slots.
+        self.assertEqual(plain.critic.gru_width, attended.critic.gru_width)
+        self.assertIsNotNone(plain.normalizer.tied_mean)
+
+        with torch.no_grad():
+            mine, _ = attended.actor(obs, hidden)
+            theirs, _ = plain.actor(obs, hidden)
+
+        self.assertTrue(torch.allclose(mine, theirs, atol=1e-6))
+
+    def test_a_wider_state_is_carried_on_at_its_own_width(self):
+        wide = Trainer(Config(device="cpu", **(SMALL | dict(h1=48))), self.schema)
+
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "state.pt"
+            wide.save(path)
+
+            narrow = Trainer(Config(device="cpu", **SMALL), self.schema)
+            narrow.load(path)
+
+        self.assertEqual(narrow.actor.topology.h1, 48)
+        self.assertEqual(narrow.config.h1, 48)
+        self.assertEqual(len(narrow.optimizer.param_groups[0]["params"]),
+                         len(list(narrow.actor.parameters())) + len(list(narrow.critic.parameters())))
