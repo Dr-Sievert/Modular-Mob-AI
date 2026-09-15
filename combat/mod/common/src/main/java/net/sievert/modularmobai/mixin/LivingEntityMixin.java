@@ -11,6 +11,7 @@ import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.LivingEntity;
 import net.sievert.modularmobai.allegiance.Allegiance;
 import net.sievert.modularmobai.entity.agent.AgentMob;
+import net.sievert.modularmobai.entity.agent.mind.Events;
 
 @Mixin(LivingEntity.class)
 public abstract class LivingEntityMixin {
@@ -46,10 +47,17 @@ public abstract class LivingEntityMixin {
     private void modular_mob_ai$payTheAgent(DamageSource source, float amount, CallbackInfoReturnable<Boolean> cir,
             @Share("healthBefore") LocalFloatRef healthBefore) {
 
+        LivingEntity hurt = (LivingEntity) (Object) this;
+
         if (source.getEntity() instanceof AgentMob agent) {
 
-            LivingEntity hurt = (LivingEntity) (Object) this;
             agent.dealtDamage(hurt, healthBefore.get() - hurt.getHealth());
         }
+
+        // Somebody hitting whatever is fighting an agent is help, and this is the one place in the game every swing,
+        // arrow, bolt and sweep arrives at. It costs two field reads on a blow that is not one: what it asks is whether
+        // the body that was hit has an agent as its target, which is a field, and never whether there is an agent near
+        // the body, which would be a query of the world on every blow struck anywhere. See Events#blowLanded.
+        Events.blowLanded(hurt, source.getEntity());
     }
 }

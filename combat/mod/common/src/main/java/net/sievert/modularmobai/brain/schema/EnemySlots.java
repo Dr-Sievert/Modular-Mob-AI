@@ -393,7 +393,7 @@ public final class EnemySlots {
      * <p>A body the agent is standing in, or one directly above it, has no horizontal direction to compare — the vector is
      * nothing at all — and is counted as inside rather than left to a division by zero.
      */
-    private static boolean inCone(LivingEntity owner, LivingEntity other, double lookX, double lookZ, double cosHalfCone) {
+    private static boolean inCone(LivingEntity owner, Entity other, double lookX, double lookZ, double cosHalfCone) {
 
         double toX = other.getX() - owner.getX();
         double toZ = other.getZ() - owner.getZ();
@@ -535,6 +535,55 @@ public final class EnemySlots {
     static boolean hostile(LivingEntity owner, LivingEntity other) {
 
         return Allegiance.isEnemy(owner, other);
+    }
+
+    /**
+     * Whether that body is perceived at all, by the three rules {@link #perceive} uses and with the sides left out:
+     * seen inside the cone about the aim with a line of sight, heard within {@link ObservationSchema#HEARING_DISTANCE}
+     * all round, or felt because it is what last hurt the agent.
+     *
+     * <p>The slots themselves never ask this — they walk the whole view at once and share the sort, the clip budget and
+     * the memory between every candidate, which is what keeps them flat as a world fills up. This is the same question
+     * asked about <b>one</b> body, for the two things that have exactly one to ask about: who saw an event happen, and
+     * who is standing with an agent. It is here so that there is one answer in the mod to "can that agent tell what is
+     * going on over there" instead of two that can drift apart; see {@code entity/agent/mind/Events}.
+     *
+     * <p>It costs at most one clip through the world, and only for a body that is in front of the agent and further off
+     * than hearing. Ask it of a handful of bodies, never of a crowd: a caller with a crowd in front of it should be
+     * reading the slots.
+     */
+    public static boolean perceives(LivingEntity owner, Entity other) {
+
+        if (other == owner || !other.isAlive()) {
+
+            return false;
+        }
+
+        double distanceSq = owner.distanceToSqr(other);
+
+        if (distanceSq > ObservationSchema.VIEW_DISTANCE * ObservationSchema.VIEW_DISTANCE) {
+
+            return false;
+        }
+
+        // Felt, then heard: neither needs the cone and neither needs a clip. Whoever hits you, you know about.
+        if (other == owner.getLastHurtByMob()
+                || distanceSq <= ObservationSchema.HEARING_DISTANCE * ObservationSchema.HEARING_DISTANCE) {
+
+            return true;
+        }
+
+        float yaw = owner.getYRot() * ((float) Math.PI / 180.0F);
+        double cosHalfCone = Math.cos(Math.toRadians(ObservationSchema.VIEW_CONE_DEGREES / 2.0D));
+
+        if (!inCone(owner, other, -Mth.sin(yaw), Mth.cos(yaw), cosHalfCone)) {
+
+            return false;
+        }
+
+        clips++;
+
+        return owner.hasLineOfSight(other);
     }
 
     /**
