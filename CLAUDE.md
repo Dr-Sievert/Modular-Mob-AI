@@ -11,8 +11,9 @@ found to be the representation and not the curriculum: the first layer read ever
 of the ten had never been trained, and one bystander bent the aim by 22° a tick. A network now reads its slots through
 attention heads (weight file version 3), a plain network converts in place with no retraining, and the converted network
 went from 35% to 82% with four to nine idle monsters about it while its one-on-one rate did not move. **Packs that all
-attack are the open problem now**: the scripted fighter kites and gives ground and wins 68% of them, the network 47%, and
-the run is being pulled towards a record of the fighter's answers on pack-heavy fights. Bows, crossbows,
+attack are the open problem now**: the scripted fighter kites and gives ground and wins 66% of them, the network 55%, and
+what has moved that row is the pack share of the training draw after the teacher pull ran its course, not more of the
+teacher. Bows, crossbows,
 shields, axes, mining and placing work under a player's rules. That league is an Elo one and it is what a run trains and is
 judged on: 48 mobs, 11 squads, 2 jockeys, a difficulty ladder, the hand-written fighter held at 1500 as the anchor, published networks
 and the run's own checkpoints.
