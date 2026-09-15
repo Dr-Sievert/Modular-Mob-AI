@@ -1019,8 +1019,17 @@ def test_a_chief_means_fewer_fights_and_more_going_through_him(tmp_path):
     ruled = totals("feud-chief")
     assert ruled["hits"] < loose["hits"] * 0.90, (loose, ruled)
     assert loose["punishments"] == 0 and ruled["punishments"] > 0, (loose, ruled)
+    # "More going through him" is a *share*, not a count. Under a chief there is much less to
+    # complain about in the first place, so the absolute number of complaints can fall while
+    # the settlement answers far more of what does happen with words instead of a fist.
+    # Counting them raw made this test read the chief working as the chief failing.
     channels = ("complaints", "demands", "apologies", "punishments")
-    assert sum(ruled[k] for k in channels) > sum(loose[k] for k in channels), (loose, ruled)
+
+    def share(got):
+        spoken = sum(got[k] for k in channels)
+        return spoken / max(1.0, spoken + got["hits"])
+
+    assert share(ruled) > share(loose) * 1.2, (loose, ruled)
 
 
 # ---------------------------------------------------------------------------

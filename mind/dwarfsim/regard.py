@@ -122,9 +122,11 @@ DEED_WINDOW = 250
 #: How far back praise counts as "frequent", and how many are free before it starts to.
 PRAISE_WINDOW = 300
 FREE_PRAISES = 2
+#: How suspect praise is on the unearned count alone, with nothing repeated about it.
+UNEARNED_SIGNAL = 0.55
 
 #: Gifts: how fast repeats lose their value, and how long a hand is remembered.
-GIFT_REPEAT = 0.60
+GIFT_REPEAT = 0.50
 GIFT_WINDOW = 600
 #: What one of each is worth when the giver's wealth is weighed.
 ITEM_VALUE = {"gold": 1.0, "ore": 0.5, "ale": 0.4, "food": 0.4, "weapon": 6.0}
@@ -170,7 +172,7 @@ class Regard:
     # -- habituation --------------------------------------------------------
 
     def repetition(self, tick, sig):
-        """What a fresh event with this signature is still worth to me, 0..1."""
+        """``(what this is still worth to me 0..1, how many times I have heard it exactly)``."""
         same = similar = 0
         for when, old in self.ring:
             age = tick - when
@@ -181,8 +183,8 @@ class Regard:
             elif old[:3] == sig[:3] and age <= SIMILAR_WINDOW:
                 similar += 1
         if same:
-            return IDENTICAL[same] if same < len(IDENTICAL) else 0.0
-        return max(SIMILAR_FLOOR, SIMILAR_BASE ** similar)
+            return (IDENTICAL[same] if same < len(IDENTICAL) else 0.0), same
+        return max(SIMILAR_FLOOR, SIMILAR_BASE ** similar), 0
 
     def note(self, tick, sig):
         self.ring.append((tick, sig))
@@ -291,47 +293,49 @@ def decay(agent):
 
 
 def habituate(listener, speaker_id, tick, kind, parsed=None):
-    """``(factor, signature)``: what this line is still worth, and what it was.
+    """``(factor, signature, exact repeats)``: what this line is still worth, and what it was.
 
     The caller multiplies the event's magnitude by the factor and files the signature with
-    :func:`note`, once the event is known to have happened.
+    :func:`note`, once the event is known to have happened. The third value is how many times
+    this dwarf has heard these exact words from this mouth already, which is what
+    :func:`flattery` means by *repeated* -- a paste, not a subject somebody keeps coming back
+    to.
     """
     reg = of(listener, speaker_id)
     sig = signature(kind, parsed)
-    return reg.repetition(tick, sig), sig
+    factor, same = reg.repetition(tick, sig)
+    return factor, sig, same
 
 
 def note(listener, speaker_id, tick, sig):
     of(listener, speaker_id).note(tick, sig)
 
 
-def flattery(listener, speaker, tick, trust, habit=1.0):
+def flattery(listener, speaker, tick, trust, repeats=0):
     """Take one piece of praise. Returns ``(suspicion now, is it read as flattery)``.
 
-    Three things make praise suspect, and they *multiply*, so any one of them on its own gets
-    nowhere:
+    Two things make praise suspect, and either is enough:
 
+    * **repeated** -- ``repeats`` is how many times these exact words have come out of this
+      mouth already. The identical compliment for the third time is the one that gives the game
+      away, and it is the whole of the pasting case;
     * **unearned** -- the dwarf being praised has done nothing lately worth praising, not even a
-      shift that produced something;
-    * **repetitive** -- ``habit`` is what habituation already worked out about this line, and
-      one minus it is how much of a paste this was. The identical compliment for the third time
-      is precisely the one that gives the game away;
-    * **frequent** -- past :data:`FREE_PRAISES` from this mouth inside :data:`PRAISE_WINDOW`.
+      shift that produced something.
 
-    A dwarf who already trusts the speaker discounts all of it: a friend who watched you kill a
-    creeper may say so all evening.
+    Both are then gated on *frequency*: the first :data:`FREE_PRAISES` from one mouth inside
+    :data:`PRAISE_WINDOW` are free, whatever they are. And a dwarf who already trusts the
+    speaker discounts all of it -- a friend who watched you kill a creeper may say so all
+    evening. Making these multiply instead of taking the larger, in an early draft, meant a
+    dwarf who had done a shift could be pasted at forever; making any one of them sufficient
+    without the frequency gate had sociable dwarves reading each other as manipulators inside a
+    few hundred ticks. This is the shape that survived both.
     """
     reg = of(listener, speaker.id)
     earned = (listener.last_deed is not None
               and tick - listener.last_deed <= DEED_WINDOW)
-    unearned = 0.0 if earned else 1.0
-    repeats = reg.praises_in(tick)
-    ramp = min(1.0, max(0.0, repeats - FREE_PRAISES + 1) / 3.0)
-    gain = (SUSPICION_GAIN
-            * (0.15 + 0.85 * unearned)
-            * (0.20 + 0.80 * (1.0 - min(1.0, max(0.0, habit))))
-            * ramp
-            * (1.0 - 0.60 * max(0.0, trust)))
+    signal = max(min(1.0, repeats / 2.0), 0.0 if earned else UNEARNED_SIGNAL)
+    frequency = min(1.0, max(0.0, reg.praises_in(tick) - FREE_PRAISES + 1) / 3.0)
+    gain = SUSPICION_GAIN * signal * frequency * (1.0 - 0.60 * max(0.0, trust))
     reg.suspicion = min(1.0, reg.suspicion + gain)
     reg.note_praise(tick)
     return reg.suspicion, reg.suspicion >= SUSPICION_THRESHOLD
@@ -356,7 +360,7 @@ def gift_magnitude(giver, receiver, item, count, tick):
         return 0.0
     reg = of(receiver, giver.id)
     share = min(1.0, value / wealth_of(giver))
-    magnitude = 0.30 + 1.70 * share
+    magnitude = 0.25 + 2.20 * share
     magnitude *= GIFT_REPEAT ** reg.gift_repeats(tick)
     reg.note_gift(tick, value)
     reg.deed(tick)

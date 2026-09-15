@@ -763,7 +763,7 @@ class Session:
                 continue
             r = a.mind.rel(o.id)
             others.append({"name": o.name, "trust": r["trust"], "respect": r["respect"],
-                           "hatred": r["hatred"]})
+                           "hatred": r["hatred"], "warmth": round(r["warmth"], 3)})
         mem = []
         for m in a.memories.top(world.tick, forgiveness, 3):
             mem.append({"kind": m["kind"], "actor": self.name(m["actor"]),
@@ -778,12 +778,20 @@ class Session:
                         "with": self.name(ob.frm if ob.to == a.id else ob.to),
                         "what": ob.label(self.name), "payment": ob.payment(),
                         "deadline": ob.deadline})
+        reg = a.regard.get(PLAYER_ID)
         return {
             "id": a.id, "name": a.name, "alive": a.alive, "place": a.place, "health": a.health,
             "chief": a.id == world.chief_id,
             "emotions": dict(a.mind.emotions), "needs": dict(a.mind.needs),
             "traits": dict(a.mind.traits), "inv": dict(a.inv),
-            "player": {"trust": rel["trust"], "respect": rel["respect"], "hatred": rel["hatred"]},
+            # What is broken, and what talking to this dwarf has been worth lately: warmth
+            # is what words buy, suspicion is what saying the same thing too often buys.
+            "condition": a.condition.describe(),
+            "injuries": a.condition.snapshot(),
+            "pain": round(a.condition.pain(), 3),
+            "player": {"trust": rel["trust"], "respect": rel["respect"], "hatred": rel["hatred"],
+                       "warmth": round(rel["warmth"], 3),
+                       "suspicion": round(reg.suspicion, 3) if reg is not None else 0.0},
             "others": others,
             "goals": [{"kind": g.kind, "target": self.name(g.target),
                        "strength": round(g.strength, 3)} for g in a.goals],

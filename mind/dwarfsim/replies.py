@@ -183,6 +183,21 @@ REPLIES = {
         ("*", "ANGRY"): ["Fine words don't mend it, {you}.", "Don't."],
         ("*", "*"): ["Hm. Thanks, {you}.", "Aye. It was nothing."],
     },
+    # Praise from somebody the dwarf has decided wants something. The intent on the wire is
+    # still PRAISE; what changed is that the listener stopped reading it that way. See
+    # :mod:`dwarfsim.regard`.
+    "FLATTERY": {
+        ("FRIEND", "*"): ["You've said that twice now, {you}. What is it you're after?",
+                          "Aye, aye. And the favour?"],
+        ("ENEMY", "*"): ["Save it, {you}. I know what you are.",
+                         "Sweet words out of that mouth. No."],
+        ("*", "ANGRY"): ["Say it a third time and I'll start wondering what you want.",
+                         "Enough, {you}. Nobody talks like that for nothing."],
+        ("*", "AFRAID"): ["Why are you being so kind, {you}? What have you done?"],
+        ("*", "*"): ["Say it a third time and I'll start wondering what you want.",
+                     "You've been laying it on thick, {you}. Out with it.",
+                     "Flattery's cheap, {you}, and you're spending it fast."],
+    },
     "APOLOGY": {
         ("FRIEND", "*"): ["Let it lie, {you}. It's forgotten.", "Say no more, {you}."],
         ("ENEMY", "*"): ["Words, {you}.", "I'll believe it when I see it.",
@@ -449,7 +464,11 @@ def reply(world, dwarf, speaker_id, parsed, decided=None, already=None, rng=None
     sincerity = (parsed.get("sincerity") or "SINCERE").upper()
 
     table, kind = None, intent
-    if decided in DECIDED and (intent in ASKING or decided in ALWAYS_DECIDED):
+    if intent == "PRAISE" and regard.suspicion(dwarf, speaker_id) >= regard.SUSPICION_THRESHOLD:
+        # The words were praise. This dwarf stopped hearing them that way some compliments
+        # ago, and the answer is where that becomes visible.
+        table, kind = REPLIES["FLATTERY"], "FLATTERY"
+    elif decided in DECIDED and (intent in ASKING or decided in ALWAYS_DECIDED):
         # Rule 1: the arbitrator has spoken, so the words come from its cell and no other.
         table, kind = {("*", "*"): DECIDED[decided]}, decided
     elif sincerity == "SARCASTIC":
@@ -486,6 +505,7 @@ def reply(world, dwarf, speaker_id, parsed, decided=None, already=None, rng=None
     out["text"] = _fill(chosen, dwarf.name, you, topic, them)
     if "{them}" not in chosen:
         _add_name_tail(out, rng, dwarf, you, topic, them)
+    _add_hurt_tail(out, rng, dwarf)
     return swear(world, dwarf, speaker_id, out)
 
 
@@ -510,6 +530,17 @@ def swear(world, dwarf, speaker_id, out):
         out["text"] = text
         out["profanity"] = profanity.rows(hits)
     return out
+
+
+def _add_hurt_tail(out, rng, dwarf):
+    """A dwarf with a broken arm mentions it, whatever else it was going to say."""
+    if not out.get("text"):
+        return
+    from . import speech
+    tail = speech.hurt_tail(rng, dwarf.condition.complaint())
+    if tail:
+        out["text"] += tail
+        out["hurt"] = dwarf.condition.describe()
 
 
 def _add_name_tail(out, rng, dwarf, you, topic, them):

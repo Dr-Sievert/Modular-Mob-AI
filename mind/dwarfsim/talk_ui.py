@@ -157,6 +157,12 @@ def mind_lines(snap, full=BAR_FULL_PLAIN, empty=BAR_EMPTY_PLAIN):
     if hp:
         out.append((0, "bad" if hp[1] < hp[0] else "good",
                     "health %.1f -> %.1f" % hp))
+    # Health says how close to dying; the condition says what it can still do.
+    if d.get("injuries"):
+        out.append((0, "bad", "hurt: %s" % d.get("condition", "hurt")))
+        for inj in d["injuries"]:
+            out.append((1, "dim", "%-14s %s %.2f" % (
+                inj["kind"], bar(inj["severity"], 8, full, empty), inj["severity"])))
 
     out.append((0, "title", "emotions"))
     for k in ("anger", "fear", "happiness", "grief"):
@@ -178,6 +184,14 @@ def mind_lines(snap, full=BAR_FULL_PLAIN, empty=BAR_EMPTY_PLAIN):
         text, style = arrow(deltas.get("player_" + k))
         out.append((1, style or "",
                     "%-9s %s %s" % (k, _fmt(p[k]), text)))
+    # What words bought, and what saying the same thing too often bought. Trust is deeds.
+    out.append((1, "dim", "%-9s %s   (words; it fades)" % ("warmth", _fmt(p.get("warmth", 0.0),
+                                                                         False))))
+    if p.get("suspicion"):
+        out.append((1, "warn" if p["suspicion"] >= 0.5 else "dim",
+                    "%-9s %s   %s" % ("suspicion", _fmt(p["suspicion"], False),
+                                      "it thinks you want something"
+                                      if p["suspicion"] >= 0.5 else "")))
     out.append((1, "dim", "your gold: %d" % snap.get("player_gold", 0)))
 
     if d["others"]:

@@ -478,7 +478,7 @@ def blow_magnitude(lost, injuries):
     The grudge is for what was broken, not for the arithmetic: a punch that takes two health and
     leaves nothing behind fades, and a broken arm is remembered whether or not it bled.
     """
-    m = 0.28 + 0.18 * min(4.0, lost)
+    m = 0.28 + 0.12 * min(4.0, lost)
     for inj in injuries:
         m += GRUDGE_PER_SEVERITY * inj.severity * (0.35 if inj.kind == "bruised" else 1.0) * 0.30
     return round(min(1.80, m), 3)

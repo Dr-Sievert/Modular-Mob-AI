@@ -21,6 +21,7 @@ doubles the file for nothing.
 
 import json
 
+from . import condition
 from .schema import (ASK_ACTIONS, CAND_SIZE, GOAL_KINDS, MEMORY_CAP, MEMORY_SOURCES, OBS_SIZE,
                      PLACES, REACTION_SKILLS, SCHEMA_ID, SKILL_NAMES, TERM_NAMES)
 
@@ -106,6 +107,10 @@ class Recorder:
                          "refused": 0, "bargained": 0, "gold": 0}
         self.punishments = []
         self.goals_adopted = 0
+        #: Injuries dealt, by kind, and how many of them mended before the run ended. The
+        #: settlement's casualty list, which is the honest answer to "was that brawl bad".
+        self.injuries = {}
+        self.recoveries = 0
         self.swears = 0
         self.swear_tiers = {1: 0, 2: 0, 3: 0}
         self._open_prov = {}         # (victim, provoker) -> tick, until it is answered
@@ -214,13 +219,16 @@ class Recorder:
             # A brawl is thirty blows. Tell the first, the ones that nearly finish someone, and
             # every fourth in between; the timeline still has all of them.
             nearly = ev.get("health", 20.0) <= 5.0
-            if first or nearly or self.hit_pairs[pair] % 4 == 0:
+            hurt = self._injured(tick, ev, target)
+            if first or nearly or hurt or self.hit_pairs[pair] % 4 == 0:
                 d = _delta(ev, ev["target"], "fear")
                 tail = "; %s's fear %.2f -> %.2f" % (target, d[0], d[1]) if d else ""
-                self._add(tick, 3 if first else (2 if nearly else 1),
-                          "%s%s struck %s at the %s for %.1f (down to %.1f hp)%s" % (
-                              actor, " first" if first else "", target, place,
-                              ev.get("damage", 0.0), ev.get("health", 0.0), tail))
+                with_what = " with an edge" if ev.get("armed") else ""
+                self._add(tick, 4 if self._serious(ev) else (3 if (first or hurt) else
+                                                             (2 if nearly else 1)),
+                          "%s%s struck %s%s at the %s for %.1f (down to %.1f hp)%s%s" % (
+                              actor, " first" if first else "", target, with_what, place,
+                              ev.get("damage", 0.0), ev.get("health", 0.0), hurt, tail))
         elif kind == "KILL":
             by = ("%s killed" % actor) if actor else "the %s killed" % ev.get("cause", "dark")
             witnesses = sorted({d["who"] for d in ev.get("deltas", ()) if d["f"] == "grief"}
@@ -362,6 +370,30 @@ class Recorder:
             self._add(tick, 4, "%s, the chief, %s for %s at the %s: \"%s\"" % (
                 actor, how, str(ev.get("for", "it")).lower(), place, ev.get("text", "...")))
 
+        # -- the body --------------------------------------------------------------
+        elif kind == "RECOVERED":
+            self.recoveries += 1
+            self._add(tick, 2, "%s's %s" % (actor, condition.day_phrase(ev.get("injury", ""))))
+        elif kind == "MONSTER_ATTACK":
+            hurt = self._injured(tick, ev, target)
+            if hurt:
+                self._add(tick, 3 if self._serious(ev) else 1,
+                          "the %s caught %s at the %s%s" % (
+                    str(ev.get("kind", "thing")).lower(), target, place, hurt))
+        elif kind == "FLEE" and ev.get("limped"):
+            self._add(tick, 2, "%s tried to get away from the %s and could not: %s" % (
+                actor, place, ev.get("hurt", "the leg")))
+        elif kind == "MOVE" and ev.get("limped"):
+            self._add(tick, 1, "%s set off for the %s and got no further than the %s" % (
+                actor, str(ev.get("toward", "hall")).lower(), place))
+
+        # -- words that did not land the way they were meant to ---------------------
+        elif kind == "FLATTERY":
+            d = _delta(ev, ev["target"], "rel:%s:trust" % ev["actor"])
+            tail = "; %s's trust in %s %.2f -> %.2f" % (target, actor, d[0], d[1]) if d else ""
+            self._add(tick, 3, "%s complimented %s once too often at the %s, and %s heard it "
+                               "for what it was%s" % (actor, target, place, target, tail))
+
         # -- wants -----------------------------------------------------------------
         elif kind == "GOAL_ADOPTED":
             self.goals_adopted += 1
@@ -370,6 +402,29 @@ class Recorder:
         elif kind == "GOAL_DROPPED":
             self._add(tick, 1, "%s stopped wanting to %s" % (
                 actor, _goal_phrase(ev.get("goal"), target)))
+
+    #: The injuries the story always makes room for. Bruises and a black eye are colour; a
+    #: broken bone changes what a dwarf can do tomorrow.
+    SERIOUS = ("broken_arm", "broken_leg", "concussion", "bleeding", "cracked_ribs")
+
+    def _serious(self, ev):
+        return any(i.get("kind") in self.SERIOUS for i in (ev.get("injuries") or ()))
+
+    def _injured(self, tick, ev, whom):
+        """Tally the injuries one blow caused and return the clause the story reads.
+
+        This is where a fight stops being arithmetic: "down to 14.2 hp" says nothing a reader
+        cares about, and "and broke his arm" says all of it.
+        """
+        got = ev.get("injuries") or ()
+        if not got:
+            return ""
+        words = []
+        for inj in got:
+            kind = inj.get("kind")
+            self.injuries[kind] = self.injuries.get(kind, 0) + 1
+            words.append(condition.PHRASE.get(kind, (kind, kind))[0])
+        return " and left %s with %s" % (whom, " and ".join(words))
 
     def _react(self, kind):
         self.reactions[kind] = self.reactions.get(kind, 0) + 1
@@ -414,6 +469,10 @@ class Recorder:
                        "tick": f["tick"], "hatred": f["hatred"]}
                       for f in sorted(self.feuds.values(), key=lambda f: f["tick"])],
             "monsters": {"arrived": self.monsters_arrived, "slain": self.monsters_slain},
+            # What a fight actually costs now, which is mostly not health.
+            "injuries": {"dealt": dict(self.injuries), "mended": self.recoveries,
+                         "carried": {a.name: a.condition.describe()
+                                     for a in world.living() if a.condition}},
             # How the settlement answered being provoked. The spread is the whole point: one
             # reaction kind dominating would mean the terms are not doing any work.
             "reactions": {k: self.reactions.get(k, 0) for k in REACTION_KINDS},

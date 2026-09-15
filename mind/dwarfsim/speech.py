@@ -243,7 +243,7 @@ def _weigh(world, speaker, target, event, parsed, magnitude):
     one. Everything it works out goes in the log, so the "why" stays complete.
     """
     tick = world.tick
-    factor, sig = regard.habituate(target, speaker.id, tick, event, parsed)
+    factor, sig, repeats = regard.habituate(target, speaker.id, tick, event, parsed)
     regard.note(target, speaker.id, tick, sig)
     extra = {"habit": round(factor, 3)}
     if factor < 1.0:
@@ -251,7 +251,7 @@ def _weigh(world, speaker, target, event, parsed, magnitude):
 
     if event == "PRAISE":
         trust = target.mind.rel(speaker.id)["trust"]
-        level, flattering = regard.flattery(target, speaker, tick, trust, factor)
+        level, flattering = regard.flattery(target, speaker, tick, trust, repeats)
         extra["suspicion"] = round(level, 3)
         if flattering:
             extra["_event"] = "FLATTERY"
