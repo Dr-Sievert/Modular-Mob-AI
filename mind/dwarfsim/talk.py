@@ -85,6 +85,8 @@ HELP = (
     ("/mind", "everything in its head right now"),
     ("/all", "one line per dwarf"),
     ("/labels k=v ... text=...", "speak with hand-typed labels (no classifier needed)"),
+    ("/log N", "print the last N exchanges in full, however long they are"),
+    ("/clear", "empty the conversation panel"),
     ("/help", "this"),
     ("/quit", "leave"),
 )
@@ -375,6 +377,9 @@ class Session:
 
     def _push(self, entry):
         entry.setdefault("tick", self.world.tick)
+        # A number that never repeats and never shifts, unlike the feed's index: the renderer
+        # uses it to print only what is new since the last prompt.
+        entry.setdefault("n", self.turns)
         self.feed.append(entry)
         del self.feed[:-FEED_CAP]
         self.turns += 1
@@ -532,6 +537,27 @@ class Session:
             return self._push({"kind": "help", "you": line, "notes": ["no such command: /%s" % cmd],
                                "help": list(HELP)})
         return fn(args, body)
+
+    def _cmd_log(self, args, body):
+        """``/log N`` -- the last N exchanges in full.
+
+        The panel shows what fits; this shows what happened. Entries come back as they are,
+        and :func:`dwarfsim.talk_ui.entry_lines` draws them, so nothing about the layering
+        changes: the session hands over data, the renderer decides how it looks.
+        """
+        try:
+            want = max(1, int(args[0])) if args else 10
+        except ValueError:
+            return self._push({"kind": "error", "you": "/log " + " ".join(args),
+                               "notes": ["how many? e.g. /log 20"]})
+        shown = [e for e in self.feed if e.get("kind") != "log"][-want:]
+        return self._push({"kind": "log", "you": "/log %d" % want, "show": shown,
+                           "notes": ["nothing said yet"] if not shown else []})
+
+    def _cmd_clear(self, args, body):
+        self.feed = []
+        return self._push({"kind": "info", "you": "/clear",
+                           "notes": ["conversation cleared"]})
 
     def _cmd_help(self, args, body):
         return self._push({"kind": "help", "you": "/help", "help": list(HELP),

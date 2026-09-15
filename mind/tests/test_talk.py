@@ -286,6 +286,60 @@ def test_render_survives_an_empty_session():
     assert "nothing worth remembering yet" in talk_ui.render(session(), use_rich=False)
 
 
+def _chatty_session(n=200):
+    """A session with a long conversation behind it, longer than any panel."""
+    s = session(ticks_per_say=0)
+    for i in range(n):
+        s.command("/labels intent=SMALLTALK text=line number %d, about the ore and the seam" % i)
+    return s
+
+
+def test_the_conversation_panel_shows_the_newest_not_the_oldest():
+    """200 exchanges: the last one is on screen and the first one is long gone."""
+    s = _chatty_session()
+    lines = talk_ui.conversation_lines(s.snapshot(), limit=40, height=20, width=70)
+    text = " ".join(t for _, _, t in lines)
+    assert "line number 199" in text
+    assert "line number 0," not in text
+    # and it really did fit: the tail is measured as it will be drawn, wrapping included
+    assert talk_ui.rendered_height(lines, 70) <= 20 + talk_ui.rendered_height(
+        talk_ui.entry_lines(s.feed[-1]), 70)
+    plain = talk_ui.render(s, use_rich=False, width=90)
+    assert "line number 199" in plain and "line number 0," not in plain
+
+
+def test_the_newest_exchange_is_drawn_whole_even_when_it_does_not_fit():
+    s = _chatty_session(3)
+    lines = talk_ui.conversation_lines(s.snapshot(), limit=40, height=1, width=70)
+    assert " ".join(t for _, _, t in lines).count("line number 2,") >= 1
+
+
+def test_the_no_rich_prompt_prints_only_what_is_new():
+    s = _chatty_session(5)
+    mark = s.feed[-1]["n"]
+    s.command("/labels intent=SMALLTALK text=one more word about the forge")
+    out = talk_ui.render(s, use_rich=False, width=90, since=mark)
+    assert "SINCE THE LAST PROMPT" in out
+    assert "one more word about the forge" in out
+    assert "line number 0," not in out
+    # nothing new at all says so rather than reprinting the lot
+    assert "(nothing new)" in talk_ui.render(s, use_rich=False, width=90,
+                                             since=s.feed[-1]["n"])
+
+
+def test_log_prints_the_tail_in_full_and_clear_empties_the_panel():
+    s = _chatty_session(20)
+    entry = s.command("/log 3")
+    assert entry["kind"] == "log" and len(entry["show"]) == 3
+    out = talk_ui.render(s, use_rich=False, width=90)
+    for i in (17, 18, 19):
+        assert ("line number %d," % i) in out
+    assert s.command("/log x")["kind"] == "error"
+    s.command("/clear")
+    assert [e["kind"] for e in s.feed] == ["info"]
+    assert "line number 19," not in talk_ui.render(s, use_rich=False, width=90)
+
+
 def test_run_script_prints_a_transcript():
     import io
     s = session()
