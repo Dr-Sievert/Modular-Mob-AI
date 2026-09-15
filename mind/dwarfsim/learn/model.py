@@ -1,10 +1,11 @@
 """The student: a tiny MLP over ``observation ++ candidate_features``.
 
-    133 -> 64 -> ReLU -> 64 -> ReLU -> 1
+    OBS_SIZE + CAND_SIZE -> 64 -> ReLU -> 64 -> ReLU -> 1        (142 -> 64 -> 64 -> 1 today)
 
 Three Linears and nothing else. No normalisation layer, no embedding table, no residual: the
 whole point is that the Java port is six float arrays and two matrix products, the same shape the
-combat brain already loads. About 13k parameters, 50 KB on disk.
+combat brain already loads. About 13k parameters, 54 KB on disk. The input width is read off
+:mod:`dwarfsim.schema`, never typed here: it was 133 on the v1 layout and is 142 on v2.
 
 The observation is the same for every candidate of one decision, so the forward pass takes the
 two halves separately: ``forward(obs, cand)`` with ``obs`` shaped ``(B, OBS_SIZE)`` and ``cand``

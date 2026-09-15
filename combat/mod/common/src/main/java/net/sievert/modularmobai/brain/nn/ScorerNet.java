@@ -9,7 +9,7 @@ import java.util.Locale;
  * every candidate its skills proposed and takes the highest, or samples among them.
  *
  * <pre>
- *   x     = observation ++ candidate                         133 floats
+ *   x     = observation ++ candidate                         142 floats
  *   h     = max(x fc1W' + fc1B, 0)                           64
  *   h     = max(h fc2W' + fc2B, 0)                           64
  *   score = (h outW' + outB)[0]
@@ -31,25 +31,27 @@ import java.util.Locale;
  *
  * <p>Plain loops over flat arrays in {@link Forward}'s style, and its arithmetic: every output starts from its bias and
  * takes its inputs one at a time, a multiply rounded and then an add rounded. Nothing here is transposed or vectorised,
- * because 12,801 parameters against the combat network's 350,000 is not where a tick goes, and the layout Forward needs
+ * because 13,377 parameters against the combat network's 350,000 is not where a tick goes, and the layout Forward needs
  * for its vectoriser would be one more thing to keep honest for no measurable gain.
  */
 public final class ScorerNet {
 
-    /** The observation block of the input, {@code dwarfsim-v1}: the first columns of the first layer. */
-    public static final int OBSERVATION = 69;
+    /** The observation block of the input, {@code dwarfsim-v2}: the first columns of the first layer. */
+    public static final int OBSERVATION = 77;
 
-    /** The candidate block: 22 skill one-hot columns then 42 raw term values. */
-    public static final int CANDIDATE = 64;
+    /** The candidate block: 22 skill one-hot columns then 43 raw term values. */
+    public static final int CANDIDATE = 65;
 
     /**
      * The layout these weights were trained against: the first four bytes of
      * {@code shared/models/decisions/layout.json}'s sha256, read big endian, which is
-     * {@code b7dba1c41f7d3e908f47118533714b55ed2060af7da3e8c8811d0ca3bf35b69e}. A layout that changes moves this, and the
+     * {@code e13153f5ec0edf2d443b25d6a7a4942444c539fc639c874739e19d613c8c68b7}. A layout that changes moves this, and the
      * weight file is then refused rather than read into the wrong columns; the parity check holds this constant against
-     * {@code shared/models/MANIFEST.json} so the two cannot drift apart quietly.
+     * {@code shared/models/MANIFEST.json} so the two cannot drift apart quietly. It moved once already, when the injury
+     * block grew the observation from 69 floats to 77 and {@code impairment} grew the candidate from 64 to 65: that is
+     * the mechanism working, not a nuisance.
      */
-    public static final int SCHEMA_ID = 0xb7dba1c4;
+    public static final int SCHEMA_ID = 0xe13153f5;
 
     private final String id;
     private final ScorerShape shape;

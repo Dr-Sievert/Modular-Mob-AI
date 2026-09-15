@@ -22,13 +22,14 @@ import net.minecraft.util.Mth;
 import net.sievert.modularmobai.Constants;
 
 /**
- * The decisions model's observation: 69 floats, assembled from one table of column names to sources.
+ * The decisions model's observation: 77 floats, assembled from one table of column names to sources.
  *
  * <p>The table below <b>is</b> the layout as far as this half of the port is concerned, and it is the whole of what
  * knows where anything goes. Every column names itself, says where it starts and how wide it is, and carries the one
  * expression that fills it; nothing else in the mod writes an offset into this vector. That is what makes a column
- * cheap to add: a block the {@code mind/} side grows — the injuries block it is about to grow — is one more line here,
- * and every line after it moves because the offsets are computed from the widths rather than typed twice.
+ * cheap to add, and the injuries block is the proof: when {@code mind/} grew it the whole of this side's change was one
+ * more line at the end of the table and one number, because the offsets are computed from the widths rather than typed
+ * twice.
  *
  * <p><b>The table is held against the file it came from.</b> {@code shared/models/decisions/layout.json} is the frozen
  * layout and its sha256 is the schema id stamped into {@code decisions.mbw}. When that file can be found from where the
@@ -38,16 +39,20 @@ import net.sievert.modularmobai.Constants;
  * the rest of the run. Where the file is not there, the table still checks itself: contiguous offsets, no repeated
  * names, and a total that is the size the model was built for.
  *
- * <p><b>Columns that read zero, and why that is not a hole.</b> Goals, obligations, the chief, and where an agent is
- * standing are all things {@code mind/} has and the mod does not have yet — they arrive with the arbitrator and with a
- * world that has named places in it. The model handles an agent with none of them exactly as it handles a dwarf who has
- * none, which {@code mind/docs/port.md} says in as many words. They are declared here with a zero source rather than
- * left out, because a declared zero lines up with the file and a missing column does not.
+ * <p><b>Columns that read zero, and why that is not a hole.</b> Goals, obligations, the chief, where an agent is
+ * standing and what is broken about it are all things {@code mind/} has and the mod does not have yet — they arrive
+ * with the arbitrator, with a world that has named places in it, and with the injury model. The model handles an agent
+ * with none of them exactly as it handles a dwarf who has none, which {@code mind/docs/port.md} says in as many words.
+ * They are declared here with a zero source rather than left out, because a declared zero lines up with the file and a
+ * missing column does not.
  */
 public final class MindObservation {
 
     /** The whole vector, which is the number the frozen model was built for. */
-    public static final int OBS_SIZE = 69;
+    public static final int OBS_SIZE = 77;
+
+    /** The injuries block's width, {@code dwarfsim.schema.CONDITION_SIZE}. It reads zero until the mod has injuries. */
+    private static final int CONDITION_COLUMNS = 8;
 
     /** Where the frozen layout lives, relative to the repository root, and what is read from it. */
     private static final String LAYOUT = "shared/models/decisions/layout.json";
@@ -167,7 +172,13 @@ public final class MindObservation {
             }),
 
             column("is_chief", 1, ZERO),
-            column("chief_here", 1, ZERO));
+            column("chief_here", 1, ZERO),
+
+            // What is broken, which is not the same question as how close to dying: pain, the worst single severity,
+            // how many injuries are carried, then a broken arm, a broken leg, a concussion, bleeding, cracked ribs.
+            // The mod has no injury model yet — vanilla damage is one number — so these read zero the way the goals
+            // and the chief do, and the model treats an agent with nothing broken as it treats a whole dwarf.
+            column("condition", CONDITION_COLUMNS, ZERO));
 
     /** What the frozen layout said when this class loaded, for the game test that holds the two together. */
     @Nullable

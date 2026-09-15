@@ -400,7 +400,7 @@ public class AgentMindGameTest {
     // ---------------------------------------------------------------------------------------------------------------
 
     /**
-     * The 69 columns, in the order the frozen layout gives them, filled from the mind that is carrying them.
+     * The 77 columns, in the order the frozen layout gives them, filled from the mind that is carrying them.
      *
      * <p>The first assertion is the one that matters most and is not about any agent: this build's table of columns was
      * held against {@code shared/models/decisions/layout.json} as it loaded. A layout that moves is then a refusal to
@@ -468,7 +468,7 @@ public class AgentMindGameTest {
 
             // And the columns the mod has nothing to fill yet read zero rather than being left out of the table, which
             // is what keeps every column after them at the offset the frozen layout gives it.
-            for (String empty : List.of("place", "goals", "obligations", "is_chief", "chief_here")) {
+            for (String empty : List.of("place", "goals", "obligations", "is_chief", "chief_here", "condition")) {
 
                 int at = MindObservation.offsetOf(empty);
 

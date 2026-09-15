@@ -1,16 +1,16 @@
 {
   "model": "decisions",
   "schema_id": "dwarfsim-imitator-v1",
-  "dwarfsim_schema_id": "dwarfsim-v1",
+  "dwarfsim_schema_id": "dwarfsim-v2",
   "input": {
     "layout": "observation ++ candidate_features",
-    "obs_size": 69,
-    "cand_size": 64,
-    "size": 133,
+    "obs_size": 77,
+    "cand_size": 65,
+    "size": 142,
     "schema": "dwarfsim.schema -- OBS_* and CAND_* offsets"
   },
   "observation": {
-    "size": 69,
+    "size": 77,
     "blocks": [
       {
         "name": "mind",
@@ -132,11 +132,17 @@
         "at": 68,
         "size": 1,
         "what": "the chief is standing here"
+      },
+      {
+        "name": "condition",
+        "at": 69,
+        "size": 8,
+        "what": "what is broken, not how close to dying: pain, the worst single severity, how many are carried / 4, then the severity of a broken arm, a broken leg, a concussion, bleeding and cracked ribs"
       }
     ]
   },
   "candidate": {
-    "size": 64,
+    "size": 65,
     "skill_one_hot_at": 0,
     "skills": [
       "WORK",
@@ -205,7 +211,8 @@
       "ask_cost",
       "payment_offered",
       "gossip_value",
-      "punish_pressure"
+      "punish_pressure",
+      "impairment"
     ]
   },
   "forward": [
@@ -219,7 +226,7 @@
       "name": "fc1.weight",
       "shape": [
         64,
-        133
+        142
       ],
       "dtype": "float32",
       "role": "first hidden layer, (hidden1, OBS_SIZE + CAND_SIZE)"

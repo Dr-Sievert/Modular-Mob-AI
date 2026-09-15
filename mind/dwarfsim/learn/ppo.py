@@ -4,14 +4,15 @@
         --iterations 45 --ticks 400
 
 **The policy is the imitator.** Same architecture, same file format, started from the imitator's
-weights: ``observation ++ candidate_features -> 133 -> 64 -> 64 -> 1``. One decision's candidates
+weights: ``observation ++ candidate_features -> 142 -> 64 -> 64 -> 1`` (133 on the v1 layout; the
+width comes off :mod:`dwarfsim.schema` and is never typed into the model). One decision's candidates
 are one categorical distribution -- ``softmax(scores / 0.25)``, the sim's own sampling temperature
 -- so the "action space" is ragged, different at every step, and the policy head is a score per
 candidate rather than a fixed-width logit vector. That is the whole reason this can be trained at
 all with 13k parameters: the candidate features carry what the action *is*.
 
 **The value net is separate and tiny**: ``observation ++ the mean of this decision's candidate
-features -> 133 -> 64 -> 1``. It reads the same 133 floats the policy does, but the candidate half
+features -> 142 -> 64 -> 1``. It reads the same 142 floats the policy does, but the candidate half
 is averaged over the decision instead of taken one candidate at a time, which makes it a function
 of the state (what is on offer right now) and not of the choice.
 

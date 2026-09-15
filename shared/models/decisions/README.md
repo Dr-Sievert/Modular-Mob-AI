@@ -2,18 +2,18 @@
 
 What to do next. One observation plus one candidate action in, one score out; the highest score
 wins, or a softmax at T = 0.25 samples among them the way the sim does. Schema id
-`dwarfsim-imitator-v1` against world layout `dwarfsim-v1`, layout sha256
-`b7dba1c41f7d3e908f47118533714b55ed2060af7da3e8c8811d0ca3bf35b69e` (the sha256 of `layout.json`).
+`dwarfsim-imitator-v1` against world layout `dwarfsim-v2`, layout sha256
+`e13153f5ec0edf2d443b25d6a7a4942444c539fc639c874739e19d613c8c68b7` (the sha256 of `layout.json`).
 
 Files: `imitator.npz` (six float32 arrays), `imitator.json` (dims, layout, training run, metrics),
 `layout.json`, `parity.jsonl` (200 pairs with their exact scores), this file.
 
-It was trained to imitate the hand-written weight table and makes 97.8% of
-its choices on held-out seeds (43,128 decisions, chance
-5.9%). The table is still the teacher and still the readable
+It was trained to imitate the hand-written weight table and makes 96.4% of
+its choices on held-out seeds (41,381 decisions, chance
+6.0%). The table is still the teacher and still the readable
 explanation; this is the same function with the terms folded in.
 
-## 1. The observation: 69 floats
+## 1. The observation: 77 floats
 
 | block | at | size | what |
 | --- | --- | --- | --- |
@@ -37,15 +37,16 @@ explanation; this is the same function with the terms folded in.
 | `memory` | 65 | 2 | memories held / 64, mean salience |
 | `is_chief` | 67 | 1 | am I the chief (0 when nobody is) |
 | `chief_here` | 68 | 1 | the chief is standing here |
+| `condition` | 69 | 8 | what is broken, not how close to dying: pain, the worst single severity, how many are carried / 4, then the severity of a broken arm, a broken leg, a concussion, bleeding and cracked ribs |
 
 Everything is roughly 0..1 (a few relationship columns are signed). There is no normaliser and no
 clip: the vector is built already scaled, which is why nothing about a normaliser travels with the
 weights the way the combat network's does.
 
-## 2. The candidate: 64 floats
+## 2. The candidate: 65 floats
 
 One proposed action. `[0, 22)` is a **skill one-hot**, `[22,
-64)` are the **raw, unweighted term values** the hand-written table would have
+65)` are the **raw, unweighted term values** the hand-written table would have
 multiplied by its weights.
 
 Skills, in the frozen order (appended to, never reordered):
@@ -54,7 +55,7 @@ Skills, in the frozen order (appended to, never reordered):
 
 Terms, in the frozen order:
 
-0 `base`, 1 `need_hunger`, 2 `need_thirst`, 3 `need_fatigue`, 4 `need_social`, 5 `anger`, 6 `fear`, 7 `happiness`, 8 `grief`, 9 `bravery`, 10 `greed`, 11 `temper`, 12 `sociability`, 13 `anger_at_target`, 14 `hatred_target`, 15 `trust_target`, 16 `respect_target`, 17 `being_attacked`, 18 `monster_threat`, 19 `hurt`, 20 `wealth_drive`, 21 `supply_pressure`, 22 `request_pull`, 23 `distance_cost`, 24 `noise`, 25 `pride`, 26 `forgiveness`, 27 `grudge_target`, 28 `gratitude_target`, 29 `reputation_target`, 30 `provoked_by_target`, 31 `publicity`, 32 `humiliation`, 33 `chief_present`, 34 `expected_punishment`, 35 `fear_target`, 36 `goal_bias`, 37 `obligation_pressure`, 38 `ask_cost`, 39 `payment_offered`, 40 `gossip_value`, 41 `punish_pressure`
+0 `base`, 1 `need_hunger`, 2 `need_thirst`, 3 `need_fatigue`, 4 `need_social`, 5 `anger`, 6 `fear`, 7 `happiness`, 8 `grief`, 9 `bravery`, 10 `greed`, 11 `temper`, 12 `sociability`, 13 `anger_at_target`, 14 `hatred_target`, 15 `trust_target`, 16 `respect_target`, 17 `being_attacked`, 18 `monster_threat`, 19 `hurt`, 20 `wealth_drive`, 21 `supply_pressure`, 22 `request_pull`, 23 `distance_cost`, 24 `noise`, 25 `pride`, 26 `forgiveness`, 27 `grudge_target`, 28 `gratitude_target`, 29 `reputation_target`, 30 `provoked_by_target`, 31 `publicity`, 32 `humiliation`, 33 `chief_present`, 34 `expected_punishment`, 35 `fear_target`, 36 `goal_bias`, 37 `obligation_pressure`, 38 `ask_cost`, 39 `payment_offered`, 40 `gossip_value`, 41 `punish_pressure`, 42 `impairment`
 
 `base` is always 1.0. `noise` is one draw per candidate per decision, from the sim's own RNG: in the
 game it is what keeps identical agents from moving in lockstep, and a port that wants determinism
@@ -64,7 +65,7 @@ sets it to 0 for every candidate rather than dropping the column.
 
 | # | array | shape | role |
 | --- | --- | --- | --- |
-| 0 | `fc1.weight` | 64x133 | first hidden layer, (hidden1, OBS_SIZE + CAND_SIZE) |
+| 0 | `fc1.weight` | 64x142 | first hidden layer, (hidden1, OBS_SIZE + CAND_SIZE) |
 | 1 | `fc1.bias` | 64 | (hidden1,) |
 | 2 | `fc2.weight` | 64x64 | second hidden layer, (hidden2, hidden1) |
 | 3 | `fc2.bias` | 64 | (hidden2,) |
@@ -75,17 +76,17 @@ Linears are stored the way torch stores them, `weight` is `(out, in)` row major,
 + bias`.
 
 ```
-x     = observation ++ candidate                         # 133 floats
+x     = observation ++ candidate                         # 142 floats
 h     = max(x @ fc1.weight.T + fc1.bias, 0)              # 64
 h     = max(h @ fc2.weight.T + fc2.bias, 0)              # 64
 score = (h @ out.weight.T + out.bias)[0]                 # one float
 ```
 
-No normalisation, no embedding, no residual, no recurrence: six arrays, 12801
+No normalisation, no embedding, no residual, no recurrence: six arrays, 13377
 parameters, two matrix products and a dot.
 
 **One decision, many candidates.** The observation is the same for every candidate, so split the
-first layer's weight in two at column 69: the observation half times the observation
+first layer's weight in two at column 77: the observation half times the observation
 is computed once and added to the candidate half times each candidate row. That is what the numpy
 reference does and what the port should do, because a decision is 8 to 30 candidates.
 
@@ -104,8 +105,8 @@ the skills so the rare reactions are represented as heavily as `WORK`: 21 of the
 | `scenario`, `seed`, `decision`, `candidate` | where it came from; not input |
 | `skill` | the candidate's skill, the one-hot's name; not input |
 | `chosen` | whether the sim actually took this candidate; not input |
-| `obs` | the 69 observation floats, exactly as they go in |
-| `cand` | the 64 candidate floats, exactly as they go in |
+| `obs` | the 77 observation floats, exactly as they go in |
+| `cand` | the 65 candidate floats, exactly as they go in |
 | `teacher` | the hand-written table's score, for context; **not** what parity checks |
 | `score` | **the answer**: this model's score for that pair |
 

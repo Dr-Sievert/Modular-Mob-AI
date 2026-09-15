@@ -181,8 +181,9 @@ CAND_SIZE = N_SKILLS + N_TERMS  # 65
 #: refuses a schema mismatch.
 #:
 #: ``v2`` is the injury stage: the observation grew the condition block (69 -> 77) and the
-#: candidate features grew ``impairment`` (64 -> 65). The two frozen models in ``shared/models``
-#: were written against ``v1`` and are deliberately **not** re-frozen here -- they still replay
-#: against their own answer sheets, which is what ``tools/check_parity`` proves, and stage B of
-#: the port takes the new layout on.
+#: candidate features grew ``impairment`` (64 -> 65). ``shared/models/decisions`` has been
+#: re-frozen against it -- 142 inputs, 13,377 parameters, a new ``layout.json`` and so a new schema
+#: id stamped into ``decisions.mbw`` -- and the mod's ``MindObservation`` grew the matching
+#: ``condition`` column, which it fills with zeros until the game has injuries of its own. The
+#: interpreter reads none of this layout and did not move.
 SCHEMA_ID = "dwarfsim-v2"

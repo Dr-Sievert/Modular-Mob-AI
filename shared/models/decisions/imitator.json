@@ -1,11 +1,11 @@
 {
-  "created": "2026-09-15T02:02:39",
+  "created": "2026-09-15T22:57:50",
   "created_by": "dwarfsim.learn.imitate",
   "teacher": "dwarfsim.arbitrator.WEIGHTS, the hand-written table",
   "data": {
     "file": "teacher_v2.npz",
     "decisions": 220000,
-    "candidates": 3784768,
+    "candidates": 3786274,
     "seeds": [
       1,
       2,
@@ -30,14 +30,14 @@
     ]
   },
   "dims": {
-    "obs": 69,
-    "cand": 64,
-    "input": 133,
+    "obs": 77,
+    "cand": 65,
+    "input": 142,
     "hidden": [
       64,
       64
     ],
-    "parameters": 12801
+    "parameters": 13377
   },
   "training": {
     "epochs": 30,
@@ -51,538 +51,538 @@
       7,
       8
     ],
-    "seconds": 138.3,
+    "seconds": 134.02,
     "history": [
       {
         "epoch": 1,
-        "loss": 0.70452,
-        "ce": 0.63702,
-        "mse": 0.33748,
-        "seconds": 2.6
+        "loss": 0.73811,
+        "ce": 0.66087,
+        "mse": 0.38622,
+        "seconds": 2.2
       },
       {
         "epoch": 2,
-        "loss": 0.33189,
-        "ce": 0.28766,
-        "mse": 0.22117,
-        "seconds": 4.8
+        "loss": 0.3833,
+        "ce": 0.32985,
+        "mse": 0.26723,
+        "seconds": 4.4
       },
       {
         "epoch": 3,
-        "loss": 0.27128,
-        "ce": 0.23086,
-        "mse": 0.20211,
-        "seconds": 9.1
+        "loss": 0.31409,
+        "ce": 0.26381,
+        "mse": 0.25141,
+        "seconds": 7.7
       },
       {
         "epoch": 4,
-        "loss": 0.2556,
-        "ce": 0.21608,
-        "mse": 0.19758,
-        "seconds": 13.9
+        "loss": 0.28732,
+        "ce": 0.24019,
+        "mse": 0.23566,
+        "seconds": 12.4
       },
       {
         "epoch": 5,
-        "loss": 0.23774,
-        "ce": 0.20019,
-        "mse": 0.18778,
-        "seconds": 18.9
+        "loss": 0.26471,
+        "ce": 0.22009,
+        "mse": 0.22307,
+        "seconds": 17.0
       },
       {
         "epoch": 6,
-        "loss": 0.22577,
-        "ce": 0.18985,
-        "mse": 0.1796,
-        "seconds": 23.5
+        "loss": 0.24027,
+        "ce": 0.19854,
+        "mse": 0.20867,
+        "seconds": 21.7
       },
       {
         "epoch": 7,
-        "loss": 0.21734,
-        "ce": 0.18297,
-        "mse": 0.17184,
-        "seconds": 28.3
+        "loss": 0.23602,
+        "ce": 0.19481,
+        "mse": 0.20608,
+        "seconds": 26.4
       },
       {
         "epoch": 8,
-        "loss": 0.20232,
-        "ce": 0.16999,
-        "mse": 0.16165,
-        "seconds": 33.1
+        "loss": 0.21969,
+        "ce": 0.18031,
+        "mse": 0.19692,
+        "seconds": 31.1
       },
       {
         "epoch": 9,
-        "loss": 0.19818,
-        "ce": 0.16613,
-        "mse": 0.16024,
-        "seconds": 37.9
+        "loss": 0.21335,
+        "ce": 0.17446,
+        "mse": 0.19444,
+        "seconds": 35.8
       },
       {
         "epoch": 10,
-        "loss": 0.18563,
-        "ce": 0.15482,
-        "mse": 0.15404,
-        "seconds": 42.7
+        "loss": 0.20879,
+        "ce": 0.17004,
+        "mse": 0.19376,
+        "seconds": 40.5
       },
       {
         "epoch": 11,
-        "loss": 0.18807,
-        "ce": 0.15729,
-        "mse": 0.15389,
-        "seconds": 47.4
+        "loss": 0.205,
+        "ce": 0.16735,
+        "mse": 0.18822,
+        "seconds": 45.2
       },
       {
         "epoch": 12,
-        "loss": 0.17695,
-        "ce": 0.14623,
-        "mse": 0.15364,
-        "seconds": 52.4
+        "loss": 0.20051,
+        "ce": 0.16428,
+        "mse": 0.18114,
+        "seconds": 49.9
       },
       {
         "epoch": 13,
-        "loss": 0.16756,
-        "ce": 0.13744,
-        "mse": 0.1506,
-        "seconds": 57.0
+        "loss": 0.19286,
+        "ce": 0.15732,
+        "mse": 0.17771,
+        "seconds": 54.6
       },
       {
         "epoch": 14,
-        "loss": 0.16422,
-        "ce": 0.13505,
-        "mse": 0.14585,
-        "seconds": 61.9
+        "loss": 0.19051,
+        "ce": 0.15509,
+        "mse": 0.1771,
+        "seconds": 59.3
       },
       {
         "epoch": 15,
-        "loss": 0.16132,
-        "ce": 0.13233,
-        "mse": 0.14493,
-        "seconds": 66.6
+        "loss": 0.18802,
+        "ce": 0.15443,
+        "mse": 0.16797,
+        "seconds": 64.0
       },
       {
         "epoch": 16,
-        "loss": 0.15769,
-        "ce": 0.1298,
-        "mse": 0.13943,
-        "seconds": 71.4
+        "loss": 0.17674,
+        "ce": 0.14426,
+        "mse": 0.16243,
+        "seconds": 68.7
       },
       {
         "epoch": 17,
-        "loss": 0.15621,
-        "ce": 0.12705,
-        "mse": 0.14579,
-        "seconds": 76.3
+        "loss": 0.17377,
+        "ce": 0.14146,
+        "mse": 0.16155,
+        "seconds": 73.4
       },
       {
         "epoch": 18,
-        "loss": 0.16234,
-        "ce": 0.13419,
-        "mse": 0.14073,
-        "seconds": 81.0
+        "loss": 0.1749,
+        "ce": 0.14232,
+        "mse": 0.16292,
+        "seconds": 78.0
       },
       {
         "epoch": 19,
-        "loss": 0.14733,
-        "ce": 0.11942,
-        "mse": 0.13953,
-        "seconds": 85.7
+        "loss": 0.16824,
+        "ce": 0.13643,
+        "mse": 0.15906,
+        "seconds": 82.7
       },
       {
         "epoch": 20,
-        "loss": 0.14583,
-        "ce": 0.11761,
-        "mse": 0.14109,
-        "seconds": 90.6
+        "loss": 0.16471,
+        "ce": 0.13221,
+        "mse": 0.16252,
+        "seconds": 87.4
       },
       {
         "epoch": 21,
-        "loss": 0.14365,
-        "ce": 0.11594,
-        "mse": 0.13853,
-        "seconds": 95.3
+        "loss": 0.16703,
+        "ce": 0.1354,
+        "mse": 0.15813,
+        "seconds": 91.9
       },
       {
         "epoch": 22,
-        "loss": 0.1452,
-        "ce": 0.11785,
-        "mse": 0.13675,
-        "seconds": 100.2
+        "loss": 0.16282,
+        "ce": 0.13107,
+        "mse": 0.15876,
+        "seconds": 96.7
       },
       {
         "epoch": 23,
-        "loss": 0.13839,
-        "ce": 0.11099,
-        "mse": 0.13702,
-        "seconds": 105.0
+        "loss": 0.16588,
+        "ce": 0.13381,
+        "mse": 0.16034,
+        "seconds": 101.4
       },
       {
         "epoch": 24,
-        "loss": 0.13766,
-        "ce": 0.11099,
-        "mse": 0.13336,
-        "seconds": 109.7
+        "loss": 0.15411,
+        "ce": 0.12249,
+        "mse": 0.15807,
+        "seconds": 106.0
       },
       {
         "epoch": 25,
-        "loss": 0.136,
-        "ce": 0.10861,
-        "mse": 0.13695,
-        "seconds": 114.5
+        "loss": 0.15574,
+        "ce": 0.1246,
+        "mse": 0.15567,
+        "seconds": 110.7
       },
       {
         "epoch": 26,
-        "loss": 0.13037,
-        "ce": 0.10366,
-        "mse": 0.13352,
-        "seconds": 119.1
+        "loss": 0.1515,
+        "ce": 0.12023,
+        "mse": 0.15636,
+        "seconds": 115.4
       },
       {
         "epoch": 27,
-        "loss": 0.13447,
-        "ce": 0.10775,
-        "mse": 0.13361,
-        "seconds": 124.0
+        "loss": 0.14792,
+        "ce": 0.11699,
+        "mse": 0.15465,
+        "seconds": 120.0
       },
       {
         "epoch": 28,
-        "loss": 0.12894,
-        "ce": 0.10261,
-        "mse": 0.13163,
-        "seconds": 128.6
+        "loss": 0.15147,
+        "ce": 0.12057,
+        "mse": 0.15452,
+        "seconds": 124.7
       },
       {
         "epoch": 29,
-        "loss": 0.10712,
-        "ce": 0.08215,
-        "mse": 0.12488,
-        "seconds": 133.5
+        "loss": 0.12666,
+        "ce": 0.09789,
+        "mse": 0.14387,
+        "seconds": 129.3
       },
       {
         "epoch": 30,
-        "loss": 0.09787,
-        "ce": 0.07354,
-        "mse": 0.12166,
-        "seconds": 138.3
+        "loss": 0.11779,
+        "ce": 0.08873,
+        "mse": 0.14529,
+        "seconds": 134.0
       }
     ],
     "loss": "CE(pred / T, teacher pick) + mse_weight * mean((pred - teacher)^2)"
   },
   "metrics": {
     "held_out": {
-      "decisions": 43128,
-      "top1": 0.9783,
-      "chance": 0.0593,
-      "mean_candidates": 17.48,
-      "score_mae": 0.1862,
+      "decisions": 41381,
+      "top1": 0.9643,
+      "chance": 0.0602,
+      "mean_candidates": 17.64,
+      "score_mae": 0.2204,
       "hard": {
-        "decisions": 27128,
-        "fraction": 0.629,
-        "top1": 0.9656,
+        "decisions": 26607,
+        "fraction": 0.643,
+        "top1": 0.9448,
         "chance": 0.0595
       },
       "per_skill": {
         "WORK": {
-          "decisions": 38239,
-          "recall": 0.9858,
-          "chosen": 37772
+          "decisions": 33530,
+          "recall": 0.9792,
+          "chosen": 32973
         },
         "EAT": {
-          "decisions": 92,
-          "recall": 0.9022,
-          "chosen": 123
+          "decisions": 167,
+          "recall": 0.9042,
+          "chosen": 226
         },
         "DRINK": {
-          "decisions": 275,
-          "recall": 0.9564,
-          "chosen": 335
+          "decisions": 315,
+          "recall": 0.9333,
+          "chosen": 411
         },
         "REST": {
-          "decisions": 2250,
-          "recall": 0.9827,
-          "chosen": 2383
+          "decisions": 2285,
+          "recall": 0.965,
+          "chosen": 2408
         },
         "SOCIALIZE": {
-          "decisions": 582,
-          "recall": 0.9399,
-          "chosen": 645
+          "decisions": 1335,
+          "recall": 0.9363,
+          "chosen": 1383
         },
         "STEAL": {
-          "decisions": 99,
-          "recall": 0.9394,
-          "chosen": 146
+          "decisions": 646,
+          "recall": 0.8978,
+          "chosen": 680
         },
         "ATTACK": {
-          "decisions": 119,
-          "recall": 0.8908,
-          "chosen": 115
+          "decisions": 422,
+          "recall": 0.8318,
+          "chosen": 418
         },
         "FLEE": {
-          "decisions": 55,
-          "recall": 0.8,
-          "chosen": 53
+          "decisions": 283,
+          "recall": 0.8728,
+          "chosen": 274
         },
         "APOLOGIZE": {
-          "decisions": 20,
-          "recall": 0.85,
-          "chosen": 35
+          "decisions": 14,
+          "recall": 0.7143,
+          "chosen": 18
         },
         "FIGHT_MONSTER": {
-          "decisions": 542,
-          "recall": 0.9797,
-          "chosen": 594
+          "decisions": 450,
+          "recall": 0.9178,
+          "chosen": 480
         },
         "IGNORE": {
-          "decisions": 8,
-          "recall": 0.125,
-          "chosen": 5
+          "decisions": 28,
+          "recall": 0.3929,
+          "chosen": 16
         },
         "RETORT": {
-          "decisions": 36,
-          "recall": 0.8056,
-          "chosen": 34
+          "decisions": 178,
+          "recall": 0.8652,
+          "chosen": 214
         },
         "DEMAND_APOLOGY": {
-          "decisions": 24,
-          "recall": 0.7917,
-          "chosen": 21
+          "decisions": 32,
+          "recall": 0.8438,
+          "chosen": 39
         },
         "REFUSE_APOLOGY": {
-          "decisions": 11,
-          "recall": 1.0,
-          "chosen": 17
+          "decisions": 24,
+          "recall": 0.875,
+          "chosen": 25
         },
         "COMPLAIN_TO": {
-          "decisions": 72,
-          "recall": 0.9306,
-          "chosen": 78
+          "decisions": 289,
+          "recall": 0.917,
+          "chosen": 279
         },
         "AVOID": {
-          "decisions": 20,
-          "recall": 0.85,
-          "chosen": 20
+          "decisions": 71,
+          "recall": 0.7042,
+          "chosen": 67
         },
         "GOSSIP": {
-          "decisions": 414,
-          "recall": 0.9034,
-          "chosen": 440
+          "decisions": 1033,
+          "recall": 0.9371,
+          "chosen": 1148
         },
         "ACCEPT": {
-          "decisions": 68,
-          "recall": 0.9412,
-          "chosen": 77
+          "decisions": 63,
+          "recall": 0.9048,
+          "chosen": 75
         },
         "REFUSE": {
-          "decisions": 51,
-          "recall": 0.7843,
-          "chosen": 50
+          "decisions": 38,
+          "recall": 0.8684,
+          "chosen": 37
         },
         "BARGAIN": {
-          "decisions": 60,
-          "recall": 0.8833,
-          "chosen": 70
+          "decisions": 55,
+          "recall": 0.8182,
+          "chosen": 55
         },
         "FULFIL": {
-          "decisions": 91,
-          "recall": 0.978,
-          "chosen": 115
+          "decisions": 123,
+          "recall": 0.9024,
+          "chosen": 155
         }
       },
       "per_scenario": {
         "default": {
-          "decisions": 5571,
-          "top1": 0.984,
-          "chance": 0.0558,
-          "hard_decisions": 2935,
-          "hard_top1": 0.97
+          "decisions": 4623,
+          "top1": 0.9634,
+          "chance": 0.0597,
+          "hard_decisions": 2415,
+          "hard_top1": 0.9304
         },
         "feud": {
-          "decisions": 4196,
-          "top1": 0.9795,
-          "chance": 0.0667,
-          "hard_decisions": 2191,
-          "hard_top1": 0.9612
+          "decisions": 4139,
+          "top1": 0.9657,
+          "chance": 0.0657,
+          "hard_decisions": 2206,
+          "hard_top1": 0.9361
         },
         "gossip": {
-          "decisions": 5214,
-          "top1": 0.9825,
-          "chance": 0.0578,
-          "hard_decisions": 2892,
-          "hard_top1": 0.9685
+          "decisions": 4887,
+          "top1": 0.9517,
+          "chance": 0.0576,
+          "hard_decisions": 2817,
+          "hard_top1": 0.9173
         },
         "player": {
-          "decisions": 5631,
-          "top1": 0.986,
-          "chance": 0.0549,
-          "hard_decisions": 2941,
-          "hard_top1": 0.9735
+          "decisions": 5722,
+          "top1": 0.9738,
+          "chance": 0.0543,
+          "hard_decisions": 3084,
+          "hard_top1": 0.9514
         },
         "friends": {
-          "decisions": 9559,
-          "top1": 0.972,
-          "chance": 0.0526,
-          "hard_decisions": 7138,
-          "hard_top1": 0.9625
+          "decisions": 9693,
+          "top1": 0.9685,
+          "chance": 0.0534,
+          "hard_decisions": 7414,
+          "hard_top1": 0.9589
         },
         "bully": {
-          "decisions": 5131,
-          "top1": 0.9727,
-          "chance": 0.0761,
-          "hard_decisions": 3542,
-          "hard_top1": 0.9613
+          "decisions": 4237,
+          "top1": 0.9452,
+          "chance": 0.0856,
+          "hard_decisions": 2838,
+          "hard_top1": 0.9197
         },
         "thief": {
-          "decisions": 7826,
-          "top1": 0.9764,
-          "chance": 0.059,
-          "hard_decisions": 5489,
-          "hard_top1": 0.9663
+          "decisions": 8080,
+          "top1": 0.9698,
+          "chance": 0.0585,
+          "hard_decisions": 5833,
+          "hard_top1": 0.9582
         }
       }
     },
     "train": {
       "decisions": 20000,
-      "top1": 0.988,
-      "chance": 0.0625,
-      "mean_candidates": 16.8,
-      "score_mae": 0.1815,
+      "top1": 0.9843,
+      "chance": 0.0657,
+      "mean_candidates": 16.23,
+      "score_mae": 0.2068,
       "hard": {
-        "decisions": 10275,
-        "fraction": 0.5138,
-        "top1": 0.9767,
-        "chance": 0.0629
+        "decisions": 10402,
+        "fraction": 0.5201,
+        "top1": 0.9699,
+        "chance": 0.0654
       },
       "per_skill": {
         "WORK": {
-          "decisions": 18066,
-          "recall": 0.9918,
-          "chosen": 17921
+          "decisions": 17009,
+          "recall": 0.9876,
+          "chosen": 16809
         },
         "EAT": {
-          "decisions": 53,
-          "recall": 0.9623,
-          "chosen": 70
+          "decisions": 79,
+          "recall": 1.0,
+          "chosen": 108
         },
         "DRINK": {
-          "decisions": 110,
-          "recall": 0.9909,
-          "chosen": 142
+          "decisions": 127,
+          "recall": 0.9843,
+          "chosen": 155
         },
         "REST": {
-          "decisions": 956,
-          "recall": 0.9979,
-          "chosen": 1008
+          "decisions": 994,
+          "recall": 0.9849,
+          "chosen": 1027
         },
         "SOCIALIZE": {
-          "decisions": 14,
+          "decisions": 40,
+          "recall": 0.95,
+          "chosen": 44
+        },
+        "STEAL": {
+          "decisions": 311,
+          "recall": 0.9871,
+          "chosen": 330
+        },
+        "ATTACK": {
+          "decisions": 326,
+          "recall": 0.9785,
+          "chosen": 326
+        },
+        "FLEE": {
+          "decisions": 158,
+          "recall": 1.0,
+          "chosen": 164
+        },
+        "APOLOGIZE": {
+          "decisions": 11,
           "recall": 1.0,
           "chosen": 16
         },
-        "STEAL": {
-          "decisions": 40,
-          "recall": 1.0,
-          "chosen": 48
-        },
-        "ATTACK": {
-          "decisions": 161,
-          "recall": 0.9441,
-          "chosen": 155
-        },
-        "FLEE": {
-          "decisions": 59,
-          "recall": 0.9661,
-          "chosen": 58
-        },
-        "APOLOGIZE": {
-          "decisions": 9,
-          "recall": 1.0,
-          "chosen": 13
-        },
         "FIGHT_MONSTER": {
-          "decisions": 248,
-          "recall": 0.996,
-          "chosen": 254
+          "decisions": 220,
+          "recall": 0.9773,
+          "chosen": 226
         },
         "IGNORE": {
-          "decisions": 14,
-          "recall": 1.0,
-          "chosen": 15
+          "decisions": 11,
+          "recall": 0.9091,
+          "chosen": 12
         },
         "RETORT": {
-          "decisions": 25,
-          "recall": 1.0,
-          "chosen": 31
+          "decisions": 122,
+          "recall": 0.9754,
+          "chosen": 123
         },
         "DEMAND_APOLOGY": {
-          "decisions": 17,
-          "recall": 1.0,
-          "chosen": 18
+          "decisions": 35,
+          "recall": 0.9714,
+          "chosen": 36
         },
         "REFUSE_APOLOGY": {
-          "decisions": 11,
+          "decisions": 24,
           "recall": 1.0,
-          "chosen": 14
+          "chosen": 27
         },
         "COMPLAIN_TO": {
-          "decisions": 28,
-          "recall": 0.8571,
-          "chosen": 26
+          "decisions": 198,
+          "recall": 0.9899,
+          "chosen": 201
         },
         "AVOID": {
-          "decisions": 28,
-          "recall": 0.9643,
-          "chosen": 31
+          "decisions": 47,
+          "recall": 0.9362,
+          "chosen": 45
         },
         "GOSSIP": {
-          "decisions": 115,
-          "recall": 0.9826,
-          "chosen": 128
+          "decisions": 248,
+          "recall": 0.996,
+          "chosen": 310
         },
         "ACCEPT": {
-          "decisions": 2,
-          "recall": 1.0,
-          "chosen": 2
-        },
-        "REFUSE": {
-          "decisions": 19,
-          "recall": 0.9474,
-          "chosen": 19
-        },
-        "BARGAIN": {
-          "decisions": 21,
-          "recall": 1.0,
-          "chosen": 24
-        },
-        "FULFIL": {
           "decisions": 4,
           "recall": 1.0,
-          "chosen": 7
+          "chosen": 4
+        },
+        "REFUSE": {
+          "decisions": 22,
+          "recall": 1.0,
+          "chosen": 23
+        },
+        "BARGAIN": {
+          "decisions": 11,
+          "recall": 0.9091,
+          "chosen": 10
+        },
+        "FULFIL": {
+          "decisions": 3,
+          "recall": 1.0,
+          "chosen": 4
         }
       },
       "per_scenario": {
         "default": {
-          "decisions": 15211,
-          "top1": 0.9891,
-          "chance": 0.0583,
-          "hard_decisions": 7812,
-          "hard_top1": 0.9789
+          "decisions": 13685,
+          "top1": 0.9842,
+          "chance": 0.0625,
+          "hard_decisions": 7174,
+          "hard_top1": 0.97
         },
         "feud": {
-          "decisions": 4789,
+          "decisions": 6315,
           "top1": 0.9845,
-          "chance": 0.0758,
-          "hard_decisions": 2463,
-          "hard_top1": 0.97
+          "chance": 0.0725,
+          "hard_decisions": 3228,
+          "hard_top1": 0.9696
         }
       }
     },
     "torch_numpy_max_abs_diff": 2.15e-06
   },
   "schema_id": "dwarfsim-imitator-v1",
-  "dwarfsim_schema_id": "dwarfsim-v1",
+  "dwarfsim_schema_id": "dwarfsim-v2",
   "input": {
     "layout": "observation ++ candidate_features",
-    "obs_size": 69,
-    "cand_size": 64,
-    "size": 133,
+    "obs_size": 77,
+    "cand_size": 65,
+    "size": 142,
     "schema": "dwarfsim.schema -- OBS_* and CAND_* offsets"
   },
   "forward": [
@@ -595,7 +595,7 @@
     "file": "imitator.npz",
     "dtype": "float32",
     "linear_layout": "torch: weight is (out, in), y = x @ weight.T + bias",
-    "bytes": 52726,
+    "bytes": 55030,
     "arrays": [
       {
         "name": "fc1.weight",
@@ -625,7 +625,7 @@
     "shapes": {
       "fc1.weight": [
         64,
-        133
+        142
       ],
       "fc1.bias": [
         64
@@ -644,7 +644,6 @@
       "out.bias": [
         1
       ]
-    },
-    "source_file": "imitator_b035.npz"
+    }
   }
 }

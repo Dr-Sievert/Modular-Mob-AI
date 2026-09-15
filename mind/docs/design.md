@@ -739,8 +739,8 @@ still says why.
       --out runs/feud_learned.jsonl --html runs/feud_learned.html
 ```
 
-**Collecting.** One *decision* is one dwarf on one tick: the 69-float observation, every candidate
-its skills proposed as 64 floats, the table's score for each, and which one the softmax took.
+**Collecting.** One *decision* is one dwarf on one tick: the 77-float observation, every candidate
+its skills proposed as 65 floats, the table's score for each, and which one the softmax took.
 `World.collector` is a list; when it is set, `arbitrator.decide` builds the full feature vectors and
 appends one tuple per decision. Recording does not change the run -- `candidate_features` draws
 exactly the one `noise` value per candidate that the table draws, in the same order, so a collected
@@ -754,9 +754,11 @@ tick recorded.
 them. `--targeted-seeds 9-13` runs `friends`, `bully` and `thief` over five more seeds each, and
 `--hard-gap 0.5` records *every* tick of those runs rather than every second one wherever the
 teacher's best two candidates were that close -- the close decisions are where the tails live, and
-building the feature vectors is what costs, not keeping them. Together: **220,000 decisions, 3.8 M
-candidates, 370 MB, 119 s**, of which the three targeted settlements are 144,042 against the four
-ordinary ones' 75,958. (The first collection, which `runs/learn/imitator_v1` and both PPO runs came
+building the feature vectors is what costs, not keeping them. Together, on the v2 layout: **220,000 decisions, 3.79 M
+candidates, 381 MB, 145 s**, of which the three targeted settlements are 146,173 against the four
+ordinary ones' 73,827. (On the v1 layout the same command gave 3.78 M candidates, 370 MB, 119 s,
+split 144,042 / 75,958: the injuries slowed the tick and moved a little of the draw, and nothing
+else changed. The first collection, which `runs/learn/imitator_v1` and both PPO runs came
 from, was four scenarios x eight seeds x 2,000 ticks: 145,254 decisions, 237 MB, 70 s.)
 
 The file is one ragged `.npz` -- decisions have 8 to 30 candidates and padding them all to the
@@ -764,9 +766,9 @@ widest would have doubled it:
 
 | Array | Shape | Type | What |
 | --- | --- | --- | --- |
-| `obs` | (D, 69) | float16 | one observation per decision |
+| `obs` | (D, 77) | float16 | one observation per decision |
 | `offsets` | (D+1,) | int64 | decision `d` owns candidates `offsets[d]:offsets[d+1]` |
-| `cand_terms` | (C, 42) | float16 | the raw term values of one candidate |
+| `cand_terms` | (C, 43) | float16 | the raw term values of one candidate |
 | `cand_skill` | (C,) | int8 | its skill; the 22-wide one-hot is rebuilt on load |
 | `teacher` | (C,) | float32 | the table's score, full precision |
 | `chosen` | (D,) | int16 | which candidate the softmax took, within the decision |
@@ -776,8 +778,8 @@ float16 for the inputs and float32 for the target is the whole size trick, with 
 an index rather than 22 floats: numbers in roughly 0..1 whose third decimal never mattered, against
 the thing being fitted.
 
-**The student.** `observation ++ candidate_features` -> 133 -> 64 -> ReLU -> 64 -> ReLU -> 1.
-Three Linears, 12,801 parameters, 53 KB. No normalisation layer, no embedding, no residual, because
+**The student.** `observation ++ candidate_features` -> 142 -> 64 -> ReLU -> 64 -> ReLU -> 1.
+Three Linears, 13,377 parameters, 54 KB. No normalisation layer, no embedding, no residual, because
 the point is that the Java port is six float arrays and two matrix products -- the same shape the
 combat brain already loads. The observation is the same for every candidate of one decision, so the
 forward pass splits the first layer in two and broadcasts the observation half across the
@@ -806,22 +808,32 @@ thing it holds still. At 0.35 the heaviest classes are `REFUSE_APOLOGY` and `IGN
 
 **Held out.** Seeds 7 and 8 entirely, not two random slices: consecutive decisions inside one run
 are nearly the same decision, so a random split measures memorisation. 30 epochs, Adam at 3e-3,
-batch 512, single-threaded CPU: **138 s** on 220k decisions.
+batch 512, single-threaded CPU: **134 s** on 220k decisions.
 
-| Held out (43,128 decisions) | Top-1 vs the teacher | Hard decisions | Top-1 on those |
+| Held out (41,381 decisions) | Top-1 vs the teacher | Hard decisions | Top-1 on those |
 | --- | --- | --- | --- |
-| overall | **97.8%** (chance 5.9%) | 27,128 | **96.6%** |
-| `default` | 98.4% | 2,935 | 97.0% |
-| `feud` | 98.0% | 2,191 | 96.1% |
-| `gossip` | 98.2% | 2,892 | 96.9% |
-| `player` | 98.6% | 2,941 | 97.4% |
-| `friends` | 97.2% | 7,138 | 96.2% |
-| `bully` | 97.3% | 3,542 | 96.1% |
-| `thief` | 97.6% | 5,489 | 96.6% |
+| overall | **96.4%** (chance 6.0%) | 26,607 | **94.5%** |
+| `default` | 96.3% | 2,415 | 93.0% |
+| `feud` | 96.6% | 2,206 | 93.6% |
+| `gossip` | 95.2% | 2,817 | 91.7% |
+| `player` | 97.4% | 3,084 | 95.1% |
+| `friends` | 96.9% | 7,414 | 95.9% |
+| `bully` | 94.5% | 2,838 | 92.0% |
+| `thief` | 97.0% | 5,833 | 95.8% |
+
+**Those are the v2 layout's numbers, and they are 1.4 points below the v1 model's 97.8%. The model
+is not worse; the held-out set is harder.** Injuries made the settlement rougher and the mix moved
+with it: `WORK` fell from 38,239 held-out decisions to 33,530 -- from 89% of them to 81% -- and what
+it gave up went to the classes that were always the hard ones. `ATTACK` went 119 -> 422, `FLEE`
+55 -> 283, `RETORT` 36 -> 178, `COMPLAIN_TO` 72 -> 289, `STEAL` 99 -> 646. The number that did
+*not* move is the one the balancing knob is for: mean recall over the same fifteen rarest skills is
+0.831 before and 0.821 after. And `IGNORE`, which the paragraph below says wants a scenario built
+for it, got one by accident -- 0.12 on 8 decisions before, **0.39 on 28** now, because a dwarf with
+a broken leg lets things go.
 
 A *hard* decision is one where the teacher's best two candidates were within 0.5 of each other --
 just under two thirds of them here, and the ones where a wrong pick is a different action rather
-than a tie broken differently. Mean absolute error on the raw scores is 0.19, which is what keeps
+than a tie broken differently. Mean absolute error on the raw scores is 0.22, which is what keeps
 the sampling temperature meaningful.
 
 **Exporting.** `runs/learn/imitator.npz` (six float32 arrays in a fixed order) plus
@@ -829,7 +841,7 @@ the sampling temperature meaningful.
 pair and the same spirit as `text/classifier/export.py`. `LearnedScorer.load(path)` reads them with
 numpy and nothing else -- torch is needed to train, never to run -- and offers the arbitrator's own
 `score(observation, candidate_features) -> float` plus a `score_all` for a whole decision at once.
-It matches the torch model to 1.8e-6.
+It matches the torch model to 2.2e-6.
 
 **Running on it.** `World(scorer=...)`, or `run --scorer`. Every candidate's logged breakdown is
 then a single term named `learned`, so the viewer's "why" panel still renders -- it just has one bar
@@ -856,7 +868,10 @@ where the teacher chose this skill, the share where the student chose it too -- 
 97.9% overall figure hides, because the tails are a few dozen decisions in forty thousand. Four
 models on the same held-out set (seeds 7 and 8, all seven scenarios, 43,128 decisions): `v1` is the
 first imitator, trained on the first collection; the other three are the second collection with the
-balancing knob at 0, 0.35 and 0.5.
+balancing knob at 0, 0.35 and 0.5. **All four are the v1 layout**, 69 + 64 columns; the table is
+kept as the record of what the two knobs were worth, and the shipped model is its 0.35 column
+retrained on v2, whose own per-skill recalls are in `shared/models/decisions/imitator.json` and
+summarised above.
 
 | Skill | N | v1 | plain | **0.35** | 0.5 |
 | --- | --- | --- | --- | --- | --- |
@@ -1010,7 +1025,7 @@ out. Nothing scripts an insult.
 
 | Setting | Value |
 | --- | --- |
-| policy | the imitator's `133 -> 64 -> 64 -> 1`, initialised from `runs/learn/imitator.npz` |
+| policy | the imitator's `133 -> 64 -> 64 -> 1` -- the v1 layout, which is what both PPO runs were on -- initialised from `runs/learn/imitator.npz` |
 | distribution | `softmax(scores / 0.25)` over *this decision's* candidates -- the sim's own sampling temperature, so the policy is literally what the sim does |
 | value net | `observation ++ mean(this decision's candidate features) -> 64 -> 1`, 133 in, trained alongside |
 | advantages | GAE, gamma 0.99, lambda 0.95; bootstrapped off the state each living dwarf is left in, zero on death |
@@ -1354,7 +1369,7 @@ The two halves line up like this:
 | `memory.MemoryBook` | a bounded NBT list on the entity; the same eviction rule |
 | `goals`, `obligations` | more NBT, and the one thing that has to survive a chunk unload |
 
-The shape a learned arbitrator would take: `observation (69) -> hidden -> a score per candidate`,
+The shape a learned arbitrator would take: `observation (77) -> hidden -> a score per candidate`,
 run once per dwarf per tick over the candidate list, sampled the same way. Candidate ordering is
 stable (`Candidate.key()` sorts by skill, place, target and what it is about), which is what lets a
 fixed-width head line up with a variable-length proposal list. The skills stay hand-written or

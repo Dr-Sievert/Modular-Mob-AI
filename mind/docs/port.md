@@ -14,7 +14,7 @@ was written, corrected where a stage found it wrong.
 | Model | in `shared/models/` | In | Out | Runs |
 | --- | --- | --- | --- | --- |
 | interpreter | `models/interpreter` | one chat line, plus the previous line's intent | 4 enum heads, 3 floats, names | once per message |
-| decisions | `models/decisions` | 69 observation floats + 64 candidate floats | one score | every 10 ticks, once per candidate |
+| decisions | `models/decisions` | 77 observation floats + 65 candidate floats | one score | every 10 ticks, once per candidate |
 
 Neither has recurrence, so neither needs a hidden vector of its own. Both are float32 throughout,
 both store Linears as PyTorch does (`weight` is `(out, in)`, row major, `y = x @ weight.T + bias`),
@@ -53,8 +53,10 @@ same two methods is the cheaper answer; what must not happen is a layout written
 **decisions.** Blocks in offset order, straight out of `models/decisions/layout.json`:
 `mind` (44: emotions 4, needs 4, traits 6, health 1, inventory 5, focus 4 slots x 6), `place` (6
 one-hot), `crowd`, `monster`, `monster_hp`, `under_attack`, `hit_age`, `alive_fraction`, `clock`,
-`goals` (6), `obligations` (2), `memory` (2), `is_chief`, `chief_here` — 69 floats. The action side
-is not a head table: it is the **candidate** block, 22 skill one-hot + 42 term values = 64 floats,
+`goals` (6), `obligations` (2), `memory` (2), `is_chief`, `chief_here`, `condition` (8) — 77 floats.
+The last of those is the injury block, and the mod fills it with zeros until it has injuries of its
+own, exactly as it does `place`, `goals`, `obligations` and the chief. The action side
+is not a head table: it is the **candidate** block, 22 skill one-hot + 43 term values = 65 floats,
 and the skill and term name lists are as much part of the layout as the observation blocks are. The
 four relationship slots are the same idea as the combat body's enemy slots (fixed slots, filled by
 salience, padded with zeros) and the same weakness applies — if they ever grow past four, attend them
@@ -81,13 +83,13 @@ so nothing is ever decided by what a file claims to be.
 GRU, so both have a shape with no `gruWih`/`gruWhh`/`logStd` segments and no normaliser — the
 inputs are already scaled and there are no statistics to travel.
 
-**decisions** (`kind = 1`, dims `inDim = 133`, `h1 = 64`, `h2 = 64`, `outDim = 1`):
+**decisions** (`kind = 1`, dims `inDim = 142`, `h1 = 64`, `h2 = 64`, `outDim = 1`):
 
 ```
-fc1W[64 x 133]  fc1B[64]  fc2W[64 x 64]  fc2B[64]  outW[1 x 64]  outB[1]
+fc1W[64 x 142]  fc1B[64]  fc2W[64 x 64]  fc2B[64]  outW[1 x 64]  outB[1]
 ```
 
-12,801 floats, 51 KB. Identical to `models/decisions/imitator.npz`'s array order, which is
+13,377 floats, 52 KB. Identical to `models/decisions/imitator.npz`'s array order, which is
 deliberate: the export is already in `.mbw` order and the converter is a header plus a concatenation.
 
 **interpreter** (`kind = 2`, dims `buckets = 65536`, `dim = 32`, `side = 20`, `hidden = 64`, plus the
@@ -350,7 +352,7 @@ Everything below has a call site now, because stage B built the thing each one c
    loop; if a message ever costs more than a tick's budget, queue it, do not thread it.
 2. **The arbitrator brain** — `brain/ArbitratorBrain.java`, a `Brain` with `hiddenSize() == 0` that
    runs every tenth tick, which is `MindState.MIND_TICK` and is already the rate the mind moves at.
-   Its observation is `MindState#observe(float[])`, which fills the 69 columns and is tested. Its
+   Its observation is `MindState#observe(float[])`, which fills the 77 columns and is tested. Its
    skills are hand written and propose candidates per tick; it stacks the candidate rows of the whole
    batch into one matrix, shares each agent's observation product across its own slice, and splits the
    result back. `ScorerNet.observe` and `scoreObserved` are already that shape. It then either takes

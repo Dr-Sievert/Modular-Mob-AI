@@ -631,11 +631,21 @@ def observation_blocks() -> list:
         ("memory", schema.OBS_MEMORY, 2, "memories held / %d, mean salience" % schema.MEMORY_CAP),
         ("is_chief", schema.OBS_IS_CHIEF, 1, "am I the chief (0 when nobody is)"),
         ("chief_here", schema.OBS_CHIEF_HERE, 1, "the chief is standing here"),
+        ("condition", schema.OBS_CONDITION, schema.CONDITION_SIZE,
+         "what is broken, not how close to dying: pain, the worst single severity, how many are "
+         "carried / 4, then the severity of a broken arm, a broken leg, a concussion, bleeding "
+         "and cracked ribs"),
     ]
     blocks = [{"name": "mind", "at": schema.OBS_MIND, "size": schema.MIND_SIZE,
                "parts": [{"name": n, "at": at, "size": size, "what": what}
                          for n, at, size, what in mind]}]
     blocks += [{"name": n, "at": at, "size": size, "what": what} for n, at, size, what in rest]
+
+    total = sum(b["size"] for b in blocks)
+    if total != schema.OBS_SIZE or blocks[-1]["at"] + blocks[-1]["size"] != schema.OBS_SIZE:
+        raise AssertionError("the layout table adds up to %d and the schema says %d: a block was "
+                             "added to dwarfsim.schema and not to this table"
+                             % (total, schema.OBS_SIZE))
     return {"size": schema.OBS_SIZE, "blocks": blocks}
 
 

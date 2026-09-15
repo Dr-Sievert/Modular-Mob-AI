@@ -1,5 +1,5 @@
 {
-  "created": "2026-09-15T02:45:47",
+  "created": "2026-09-15T23:01:34",
   "created_by": "tools/freeze.py",
   "repository": "Modular-Mob-AI, in shared/; frozen by mind/tools/freeze.py",
   "what": "the frozen, port-ready models: numpy on the mind's side, a .mbw brain on the combat mod's. See mind/docs/port.md for the mapping and, relative to this file, models/*/README.md for the layouts.",
@@ -173,20 +173,20 @@
       "directory": "models/decisions",
       "source": "runs/learn/imitator.npz",
       "schema_id": "dwarfsim-imitator-v1",
-      "world_schema_id": "dwarfsim-v1",
-      "layout_sha256": "b7dba1c41f7d3e908f47118533714b55ed2060af7da3e8c8811d0ca3bf35b69e",
-      "exported": "2026-09-15T02:02:39",
+      "world_schema_id": "dwarfsim-v2",
+      "layout_sha256": "e13153f5ec0edf2d443b25d6a7a4942444c539fc639c874739e19d613c8c68b7",
+      "exported": "2026-09-15T22:57:50",
       "weights": {
         "file": "imitator.npz",
         "dtype": "float32",
-        "bytes": 52726,
-        "sha256": "758d3a3f780534a55cb0afc3a0597ced0425f65f58a06ff8b42d8cd5b88b491a",
+        "bytes": 55030,
+        "sha256": "a2bab48a8c926ae77ce77689c9039a342374347f04f24a4c97e9ef4c0c630547",
         "arrays": [
           {
             "name": "fc1.weight",
             "shape": [
               64,
-              133
+              142
             ]
           },
           {
@@ -222,15 +222,15 @@
             ]
           }
         ],
-        "parameters": 12801,
+        "parameters": 13377,
         "weight_file": {
           "file": "decisions.mbw",
-          "bytes": 51276,
-          "sha256": "2df05e8ea917ff765d4f2b7e88dc7167d5ae9ccebda60965d8d31f4f14816390",
+          "bytes": 53580,
+          "sha256": "18d745e532c2029a3eae550f9905c3c1835fdcc2817a481a9c296e0097c82ede",
           "format_version": 4,
-          "schema_id": "b7dba1c4",
+          "schema_id": "e13153f5",
           "shape_words": [
-            133,
+            142,
             64,
             64,
             1
@@ -239,9 +239,9 @@
       },
       "training_data": {
         "path": "runs/learn/teacher_v2.npz",
-        "sha256": "2e595f0e8699774a84002056a37649111cea3ec0870cc2f13daa9787ee71ea17",
+        "sha256": "1e716b2e30593785c0f4ff93ea79ab78a8d0c6249585ecea381165df60bdf608",
         "decisions": 220000,
-        "candidates": 3784768,
+        "candidates": 3786274,
         "scenarios": [
           "default",
           "feud",
@@ -251,14 +251,14 @@
           "bully",
           "thief"
         ],
-        "date": "2026-09-15T02:02:39"
+        "date": "2026-09-15T22:57:50"
       },
       "metrics": {
-        "held_out_top1": 0.9783,
-        "held_out_decisions": 43128,
-        "chance": 0.0593,
-        "hard_top1": 0.9656,
-        "score_mae": 0.1862,
+        "held_out_top1": 0.9643,
+        "held_out_decisions": 41381,
+        "chance": 0.0602,
+        "hard_top1": 0.9448,
+        "score_mae": 0.2204,
         "torch_numpy_max_abs_diff": 2.15e-06
       },
       "parity": {
@@ -277,8 +277,8 @@
             10
           ],
           "hard_gap": 0.5,
-          "decisions": 15944,
-          "candidates": 282786
+          "decisions": 16776,
+          "candidates": 301462
         }
       }
     }

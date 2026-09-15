@@ -52,7 +52,7 @@ checkpoints they come from live in `mind/runs/` and `mind/text/models/`, which a
 | Model | What it does | In | Out |
 | --- | --- | --- | --- |
 | `interpreter` | reads one line of chat into the `text/SCHEMA.md` label set | one chat line, plus the previous line's intent | 4 enum heads, 3 floats, names |
-| `decisions` | scores one candidate action for the arbitrator | 69 observation floats + 64 candidate floats | one score |
+| `decisions` | scores one candidate action for the arbitrator | 77 observation floats + 65 candidate floats | one score |
 
 Each folder holds its weights twice (`weights.npz` / `imitator.npz`, and `interpreter.mbw` / `decisions.mbw`), the
 exported metadata it came with, `layout.json`,

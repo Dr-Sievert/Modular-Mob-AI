@@ -620,10 +620,12 @@ there".
 
 ### The observation, and the layout it is held against
 
-`MindObservation` assembles the decisions model's 69 floats from one table of column names to sources - nineteen leaf
+`MindObservation` assembles the decisions model's 77 floats from one table of column names to sources - twenty leaf
 columns, each naming itself, its width, and the one expression that fills it. Nothing else in the mod writes an offset
 into that vector, and the offsets are computed from the widths rather than typed twice, so a column added in the middle
-moves everything after it by itself. That is how the injuries block `mind/` is about to add will land.
+moves everything after it by itself. That is how the injuries block landed: `mind/` grew a `condition` block of eight,
+the observation went 69 -> 77, and the whole of this side's change was one more line in the table and one number. The
+mod has no injuries of its own, so those eight read zero, exactly as `place`, `goals`, `obligations` and the chief do.
 
 **It is held against the file it came from.** `shared/models/decisions/layout.json` is the frozen layout, and its sha256
 is the schema id stamped into `decisions.mbw`. When that file can be found from where the game is running - every

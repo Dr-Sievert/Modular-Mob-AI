@@ -40,7 +40,7 @@ import net.sievert.modularmobai.entity.agent.MobControls;
  *
  * <p><b>Nothing here decides anything yet.</b> Stage B is the state and the rules that move it, with the combat brain
  * still driving the body. The arbitrator that reads {@link #observe} and chooses a skill is stage C, which is why every
- * part of this is observable on its own — through {@code /mmai}, through a game test, and through the 69 columns — before
+ * part of this is observable on its own — through {@code /mmai}, through a game test, and through the 77 columns — before
  * anything acts on it.
  *
  * <p><b>The mind's own clock.</b> The sim ticks once per decision; the game ticks twenty times a second. One
@@ -642,7 +642,7 @@ public final class MindState {
     // ---------------------------------------------------------------------------------------------------------------
 
     /**
-     * Fills in the decisions model's 69 observation columns, in the offset order
+     * Fills in the decisions model's 77 observation columns, in the offset order
      * {@code shared/models/decisions/layout.json} gives them. See {@link MindObservation}, which is where the table of
      * columns to sources lives and where it is held against that file.
      */
