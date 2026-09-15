@@ -191,11 +191,17 @@ class DialogueState:
         self.questions = [q for q in self.questions if tick - q["tick"] <= QUESTION_TTL]
         return list(self.questions)
 
-    def note_ask(self, tick, oid, what, mine, payment=0):
-        """One ask between the two of us. ``mine`` is true when this dwarf is the one asked."""
+    def note_ask(self, tick, oid, what, mine, payment=0, ask=None):
+        """One ask between the two of us. ``mine`` is true when this dwarf is the one asked.
+
+        ``ask`` is the structured ask off the obligation itself, kept whole so the slot
+        resolvers can read ``item``, ``quantity`` and ``payment`` off it later. Everything here
+        is written by :mod:`dwarfsim.world` as the obligation moves; nothing invents one.
+        """
         self.asks = [a for a in self.asks if a["oid"] != oid]
         self.asks.append({"tick": tick, "oid": oid, "what": what, "mine": bool(mine),
-                          "payment": payment, "status": "PENDING"})
+                          "payment": payment, "status": "PENDING",
+                          "ask": dict(ask) if ask else None})
         if len(self.asks) > OPEN_CAP:
             del self.asks[0]
 
@@ -215,6 +221,22 @@ class DialogueState:
 
     def open_asks(self, mine=None):
         return [a for a in self.asks if mine is None or a["mine"] == mine]
+
+    def latest_ask(self, mine=None, status=None):
+        """The freshest ask still open between us, or ``None``.
+
+        ``mine`` picks the direction -- ``True`` for one this dwarf was asked to do, ``False``
+        for one it asked of them -- and ``status`` narrows to ``PENDING`` (not answered yet) or
+        ``ACCEPTED`` (taken on and not yet done). This is the read-back the reply side needs:
+        "about that axe you wanted" is only honest when there is an ask here to be about.
+        """
+        for a in reversed(self.asks):
+            if mine is not None and a["mine"] != mine:
+                continue
+            if status is not None and a["status"] != status:
+                continue
+            return a
+        return None
 
     # -- housekeeping -------------------------------------------------------
 

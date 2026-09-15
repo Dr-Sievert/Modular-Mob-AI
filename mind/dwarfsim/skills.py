@@ -905,6 +905,7 @@ class RefuseAsk(Skill):
         ob.status = "REFUSED"
         if ob in world._open_obl:
             world._open_obl.remove(ob)
+        world.note_obligation(ob)
         parsed = speech.utterance("REFUSE", agent.name, other.name if other else "you",
                                   speech.PLACE_TOPIC.get(agent.place, "NONE"), world.rng,
                                   swear=profanity.for_speaker(world, agent, other))

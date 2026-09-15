@@ -373,6 +373,22 @@ def _owes_answer(scene):
     return scene.facts.get("owed", 0) >= 1
 
 
+def _ask_still_pending(scene):
+    """They have an ask on the table that I have not answered, and here they are asking again.
+
+    Only an ask made *of* this dwarf counts. One this dwarf made of them is their business to
+    call back on, not its own.
+    """
+    got = scene.facts.get("open_ask")
+    return bool(got) and got.get("mine") and got.get("status") == "PENDING"
+
+
+def _ask_taken_on(scene):
+    """I took their ask on and it is not done yet: "about that axe you wanted"."""
+    got = scene.facts.get("open_ask")
+    return bool(got) and got.get("mine") and got.get("status") == "ACCEPTED"
+
+
 def _cannot_know(scene):
     return not knows_answer(scene)
 
@@ -469,6 +485,14 @@ def _asks_why(scene):
 # written first. Nothing else decides an act, and nothing outside this list is consulted.
 
 RULES = (
+    # -- 31: the obligation book, which beats the ring below it because it is a record and not
+    # a count. The ring says "you have said that before"; these two say what was actually asked
+    # and where it stands, so the slots are filled from the ask itself and the line can name it.
+    Rule("callback.ask_open", "CALLBACK", "that ask is still on the table and unanswered",
+         priority=31, intent=("REQUEST", "COMMAND"), when=_ask_still_pending),
+    Rule("callback.ask_taken_on", "CALLBACK", "I took that on already and it is not done yet",
+         priority=31, intent=("REQUEST", "COMMAND", "QUESTION"), when=_ask_taken_on),
+
     # -- 30: the conversation's own memory. These beat every other consideration, because a
     # dwarf that answers "I've told you" with fresh small talk is a dwarf with no memory. -----
     Rule("callback.same_question", "CALLBACK", "you have asked me that already",
@@ -775,6 +799,10 @@ def scene_for(world, dwarf, speaker_id, parsed, state=None):
         "suspicion": regard.suspicion(dwarf, speaker_id),
         "repeats": state.heard_before(tick, sig),
         "owed": len(state.owed(tick)),
+        # The obligation these two already have between them, as the dialogue book has it. It is
+        # what makes a CALLBACK about an ask a fact rather than a flourish; see
+        # dwarfsim.world.World.note_obligation, which is the only thing that writes it.
+        "open_ask": state.latest_ask(mine=True) or state.latest_ask(mine=False),
         "grudge": dwarf.memories.grudge(tick, dwarf, speaker_id),
         "gratitude": dwarf.memories.gratitude(tick, dwarf, speaker_id),
         "sig": sig,

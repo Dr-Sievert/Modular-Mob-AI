@@ -329,9 +329,16 @@ This writes its own pair and does **not** re-freeze `shared/models`.
   `text/CURSOR_REPLIES_PROMPT.md` is 6,000.
 * **A reply still moves no state.** It is words. Nothing a dwarf says back changes anybody's mind,
   including its own; only what is *said to* it does.
-* **Open asks and promises are tracked but nothing reads them yet.** `DialogueState` files them and
-  the `CALLBACK` rules use the heard ring rather than the ask list; wiring `obligations.py` into
-  `note_ask` / `close_ask` is the next obvious step and would give `CALLBACK` "about that {item}
-  you wanted" for real.
+* ~~**Open asks and promises are tracked but nothing reads them yet.**~~ **Done.**
+  `World.note_obligation` is the one place an obligation is mirrored into both dwarves'
+  `DialogueState`, called at every point the status moves — proposed, accepted, kept, broken,
+  refused, expired — and `DialogueState.latest_ask` is the read-back. Two rules sit at priority
+  **31**, above the heard-ring callbacks, because a record beats a count: `callback.ask_open`
+  when they are asking again for something already on the table ("Still no, {speaker}."), and
+  `callback.ask_taken_on` when this dwarf took it on and has not done it yet ("About that {item}
+  you wanted. It's seen to."). Both want the ask to have been made *of* this dwarf; one it made
+  of them is theirs to call back on. The `{item}`, `{qty}` and `{price}` slots fall back to the
+  open obligation's ask when the line heard carries none of its own, so a line that names an item
+  can still only be chosen when there really is one to name.
 * **One construction per line heard.** A dwarf does not volunteer anything, interrupt, or start a
   subject of its own.

@@ -17,7 +17,8 @@ Two inhabitants are not ordinary dwarves:
 
 import random
 
-from . import arbitrator, condition, goals, mind, obligations, profanity, regard, skills, speech
+from . import (arbitrator, condition, dialogue, goals, mind, obligations, profanity, regard,
+               skills, speech)
 from .condition import Condition
 from .memory import Memory, MemoryBook
 from .obligations import Obligation, RESPONSE_TTL
@@ -383,6 +384,43 @@ class World:
 
     # -- obligations --------------------------------------------------------
 
+    def _namer(self, who):
+        got = self.agent(who)
+        return got.name if got is not None else str(who)
+
+    def note_obligation(self, ob):
+        """Mirror one obligation into both dwarves' memory of the conversation.
+
+        :mod:`dwarfsim.obligations` is the record that *decides* things -- who owes what, by
+        when, and whether it was kept. :mod:`dwarfsim.dialogue` is what the two of them can
+        honestly *refer to*. This is the one place the second is written from the first, and it
+        is called at every point the status moves, so "about that axe you wanted" and "still no"
+        are never said about an ask that is not there.
+
+        A party that is not an agent -- the player -- keeps no book of its own; the dwarf's row
+        for it is the one that matters and the one that is written.
+        """
+        what = ob.label(self._namer)
+        for who, other, mine in ((ob.to, ob.frm, True), (ob.frm, ob.to, False)):
+            agent = self.agent(who)
+            if agent is None:
+                continue
+            state = dialogue.of(agent, other, self.tick)
+            if ob.status == "PENDING":
+                state.note_ask(self.tick, ob.oid, what, mine=mine, payment=ob.payment(),
+                               ask=ob.ask)
+            elif ob.status == "ACCEPTED":
+                if state.close_ask(ob.oid, "ACCEPTED") is None:
+                    # A conversation that expired between the ask and the answer: file it again
+                    # rather than lose it, because the promise outlives the small talk.
+                    state.note_ask(self.tick, ob.oid, what, mine=mine, payment=ob.payment(),
+                                   ask=ob.ask)
+                    state.close_ask(ob.oid, "ACCEPTED")
+                if mine:
+                    state.note_promise(self.tick, what, ob.oid)
+            else:
+                state.close_ask(ob.oid, ob.status)
+
     def propose_obligation(self, asker, obliged, ask, deadline=None):
         """Somebody has asked somebody for something. Returns the new, PENDING obligation."""
         if deadline is None:
@@ -391,6 +429,7 @@ class World:
         self._next_obl += 1
         self.obligations.append(ob)
         self._open_obl.append(ob)
+        self.note_obligation(ob)
         return ob
 
     def obligations_for(self, agent):
@@ -418,6 +457,7 @@ class World:
             asker.inv["gold"] -= moved
             obliged.inv["gold"] += moved
             ob.paid = moved
+        self.note_obligation(ob)
         place = (by.place if by is not None else None)
         return self.emit("ACCEPT", by, self.agent(ob.frm if by.id == ob.to else ob.to),
                          place=place, extra={"obl": ob.oid, "paid": ob.paid,
@@ -430,6 +470,7 @@ class World:
         ob.status = "KEPT"
         if ob in self._open_obl:
             self._open_obl.remove(ob)
+        self.note_obligation(ob)
         place = obliged.place if obliged is not None else (
             asker.place if asker is not None else None)
         return self.emit("PROMISE_KEPT", obliged, asker, place=place,
@@ -442,6 +483,7 @@ class World:
         ob.status = "BROKEN"
         if ob in self._open_obl:
             self._open_obl.remove(ob)
+        self.note_obligation(ob)
         if obliged is None or asker is None or not asker.alive:
             return None
         place = asker.place
@@ -457,10 +499,12 @@ class World:
             if obliged is None or not obliged.alive or asker is None or not asker.alive:
                 ob.status = "EXPIRED"
                 self._open_obl.remove(ob)
+                self.note_obligation(ob)
                 continue
             if ob.status == "PENDING" and self.tick - ob.made > RESPONSE_TTL:
                 ob.status = "EXPIRED"
                 self._open_obl.remove(ob)
+                self.note_obligation(ob)
                 self.emit("OBLIGATION_LAPSED", asker, obliged, place=asker.place, apply=False,
                           extra={"obl": ob.oid, "ask": dict(ob.ask)})
                 continue

@@ -10,7 +10,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from dwarfsim import dialogue, replies                    # noqa: E402
+from dwarfsim import dialogue, obligations, replies, speechplan   # noqa: E402
 from dwarfsim.schema import PLAYER_ID                     # noqa: E402
 from dwarfsim.world import World                          # noqa: E402
 
@@ -210,3 +210,90 @@ def test_the_dwarf_does_not_repeat_the_same_line_inside_the_window():
     assert len(said) >= 4
     for a, b in zip(said, said[1:]):
         assert a != b, "it said the same line twice running"
+
+
+# ---------------------------------------------------------------------------
+# the obligation book, read back
+# ---------------------------------------------------------------------------
+
+
+def test_an_obligation_is_written_into_both_dwarves_dialogue_books():
+    """``World.note_obligation`` is the one place the record becomes something to refer to."""
+    w = world()
+    asker, obliged = w.living()[0], w.living()[1]
+    ask = obligations.make_ask("BRING", item="ore", quantity=2, payment=3)
+    ob = w.propose_obligation(asker, obliged, ask)
+
+    theirs = dialogue.peek(obliged, asker.id)
+    mine = dialogue.peek(asker, obliged.id)
+    assert theirs is not None and mine is not None
+    assert theirs.latest_ask(mine=True)["oid"] == ob.oid, "the asked dwarf owns it"
+    assert mine.latest_ask(mine=False)["oid"] == ob.oid, "the asker knows it is theirs"
+    assert theirs.latest_ask(mine=True)["ask"]["item"] == "ore"
+
+    w.accept_obligation(ob, obliged)
+    assert theirs.latest_ask(mine=True)["status"] == "ACCEPTED"
+    assert [p["oid"] for p in theirs.promises] == [ob.oid], "taking it on is a promise"
+
+    w.fulfil_obligation(ob)
+    assert theirs.latest_ask(mine=True) is None, "a kept ask is closed on both sides"
+    assert mine.latest_ask(mine=False) is None
+
+
+def test_a_broken_and_a_refused_ask_are_both_closed():
+    w = world()
+    asker, obliged = w.living()[0], w.living()[1]
+    ob = w.propose_obligation(asker, obliged, obligations.make_ask("BRING", item="ale"))
+    w.accept_obligation(ob, obliged)
+    w.break_obligation(ob)
+    assert dialogue.peek(obliged, asker.id).open_asks() == []
+
+    other = w.propose_obligation(asker, obliged, obligations.make_ask("GIVE", item="gold"))
+    assert dialogue.peek(obliged, asker.id).latest_ask(mine=True)["oid"] == other.oid
+    other.status = "REFUSED"
+    w.note_obligation(other)
+    assert dialogue.peek(obliged, asker.id).open_asks() == []
+
+
+def test_callback_says_still_no_from_an_ask_that_is_really_open():
+    """The rule fires off the obligation, not off the repetition ring: one asking, once."""
+    w = world()
+    dwarf = w.living()[0]
+    heard = labels("REQUEST", "Fetch me two ore.", topic="MINE", about="SPEAKER", news="PLAN")
+
+    plain = speechplan.plan(dwarf, PLAYER_ID, heard, w)
+    assert plain.rule != "callback.ask_open", "nothing is open yet, so there is nothing to recall"
+
+    state = dialogue.of(dwarf, PLAYER_ID, w.tick)
+    state.note_ask(w.tick, "o1", "BRING 2x ore for outsider", mine=True,
+                   ask=obligations.make_ask("BRING", item="ore", quantity=2))
+    again = speechplan.plan(dwarf, PLAYER_ID, heard, w)
+    assert again.act == "CALLBACK" and again.rule == "callback.ask_open"
+
+
+def test_callback_names_the_item_off_the_ask_it_took_on():
+    """"About that {item} you wanted" is filled from the obligation, not from the line."""
+    w = world()
+    dwarf = w.living()[0]
+    state = dialogue.of(dwarf, PLAYER_ID, w.tick)
+    state.note_ask(w.tick, "o1", "BRING 1x axe for outsider", mine=True,
+                   ask=obligations.make_ask("BRING", item="axe"))
+    state.close_ask("o1", "ACCEPTED")
+
+    # A line with no ask of its own: the slot can only come from the open obligation.
+    heard = labels("REQUEST", "Well?", topic="NONE", about="SPEAKER", news="PLAN")
+    got = speechplan.plan(dwarf, PLAYER_ID, heard, w)
+    assert got.act == "CALLBACK" and got.rule == "callback.ask_taken_on"
+    assert got.slots["item"] == "axe"
+
+
+def test_an_ask_this_dwarf_made_is_not_its_own_callback():
+    """What I asked of you is yours to answer. I do not tell myself "still no"."""
+    w = world()
+    dwarf = w.living()[0]
+    state = dialogue.of(dwarf, PLAYER_ID, w.tick)
+    state.note_ask(w.tick, "o1", "BRING 1x axe for me", mine=False,
+                   ask=obligations.make_ask("BRING", item="axe"))
+    heard = labels("REQUEST", "Fetch me an axe.", topic="NONE", about="SPEAKER", news="PLAN")
+    got = speechplan.plan(dwarf, PLAYER_ID, heard, w)
+    assert got.rule not in ("callback.ask_open", "callback.ask_taken_on")

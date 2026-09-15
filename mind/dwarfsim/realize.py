@@ -269,8 +269,31 @@ def _place(scene):
 
 
 def _ask(scene):
+    """The structured ask this line is about: the one just said, or the one still open.
+
+    A line that carries its own ask is about that ask. A line that does not may still be about
+    one, and that is what a ``CALLBACK`` is: "about that axe you wanted" is filled from the
+    obligation these two already have between them, which :meth:`dwarfsim.world.World.note_obligation`
+    put on the dialogue state as it was made. No open ask, no slot, and the bank then cannot
+    choose a line that names one -- which is the whole point of resolving slots before choosing.
+    """
     ask = scene.parsed.get("ask")
-    return ask if isinstance(ask, dict) else None
+    if isinstance(ask, dict):
+        return ask
+    return open_ask(scene)
+
+
+def open_ask(scene):
+    """The ask of an obligation still open between these two, freshest first, or ``None``.
+
+    Mine first -- what I was asked to do is what I am most likely to be answering about -- then
+    what I asked of them.
+    """
+    state = getattr(scene, "state", None)
+    if state is None:
+        return None
+    got = state.latest_ask(mine=True) or state.latest_ask(mine=False)
+    return got.get("ask") if got else None
 
 
 def _item(scene):
