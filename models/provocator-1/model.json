@@ -1,0 +1,12 @@
+{
+    "run":  "provocator-1",
+    "published":  "2026-09-15T10:56:18+02:00",
+    "code":  "9d08bc7",
+    "weights":  "best evaluated, iteration 42500",
+    "iteration":  42500,
+    "fights":  1017,
+    "won":  85.5,
+    "lost":  12,
+    "timed_out":  2.5,
+    "state":  true
+}
