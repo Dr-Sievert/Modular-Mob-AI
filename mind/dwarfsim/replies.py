@@ -1,4 +1,4 @@
-"""What a dwarf says back when you talk to it.
+"""What a dwarf says back when you talk to it: the door onto the speech pipeline.
 
 ``speech._TEMPLATES`` gives a dwarf a line for the things it *does* -- a retort, a demand, a
 bargain -- because those are skills, and a skill knows what it is doing. But most of what a
@@ -6,16 +6,24 @@ player says is not a provocation: a greeting, a question, a bit of praise. The s
 those in state (trust moves, the mind vector changes) and says nothing, which reads as being
 ignored.
 
-This module fills that gap and nothing else. One function, :func:`reply`, keyed on
+This module fills that gap. :func:`reply` is the one function everything calls, and behind it are
+the four modules that actually build the answer -- see ``docs/speech.md``:
 
-* the **intent** the interpreter read -- all thirteen in ``text/SCHEMA.md``;
-* the dwarf's **mood** -- ``ANGRY``, ``AFRAID``, ``GLAD`` or ``FLAT``, bucketed off the same
-  emotions the arbitrator scores on;
-* its **stance** toward the speaker -- ``FRIEND``, ``WARM``, ``NEUTRAL``, ``COLD`` or
-  ``ENEMY``, bucketed off the same ``trust`` and ``hatred`` the arbitrator scores on.
+* :mod:`dwarfsim.speechplan` decides **what to say**: one act out of 43, from a rule table over
+  what was heard, what this dwarf feels about the speaker, what it wants, what is broken and what
+  the two of them have already said;
+* :mod:`dwarfsim.replybank` decides **how to say it**: which written line, out of
+  ``text/data/replies.jsonl``;
+* :mod:`dwarfsim.realize` fills its ``{slots}`` from real state;
+* :mod:`dwarfsim.dialogue` remembers the conversation, which is what makes a CALLBACK honest.
 
-Two rules keep this honest, and they are the whole reason it is a separate module rather than
-more templates in ``speech.py``:
+The tables further down this module are the **floor** under that: what is said when the bank has
+no sayable line for an act. They are also where the mood and stance words the panels print come
+from (``ANGRY`` / ``AFRAID`` / ``GLAD`` / ``FLAT``, and ``FRIEND`` through ``ENEMY``), which is a
+coarser reading of the same state the planner buckets more finely.
+
+Two rules keep this honest, they are older than the pipeline, and they are checked here before
+any of it is consulted:
 
 1. **It never contradicts the arbitrator.** For a request, an order or an offer the caller
    passes ``decided``: the skill the dwarf actually chose in answer. The wording is picked from
@@ -25,8 +33,9 @@ more templates in ``speech.py``:
    (``RETORT``, ``DEMAND``, ``APOLOGY``, ``BARGAIN``, ``ACCEPT``, ``REFUSE`` ...), the caller
    passes it as ``already`` and this returns nothing at all. The skill's line is the answer.
 
-It changes no state: it is words for state that already moved. Every variant is drawn from
-``world.rng``, so a seed and the same typing give the same conversation.
+It changes no state but the conversation's own memory: the rest is words for state that already
+moved, in ``speech.hear``. Every variant is drawn from ``world.rng`` (or ``world.speech_rng``
+between two dwarves), so a seed and the same typing give the same conversation.
 """
 
 from . import dialogue, profanity, regard
@@ -540,14 +549,16 @@ def _from_tables(world, dwarf, speaker_id, parsed, rng, mood, stance):
 
 
 def _table_reply(world, dwarf, speaker_id, parsed, decided=None, already=None, rng=None):
-    """What ``dwarf`` says back to ``speaker_id``. Returns a dict; changes no state.
+    """The answer out of the tables below, which is the **floor** under the pipeline.
 
-    ``decided`` is the skill the arbitrator chose in answer (``ACCEPT``, ``REFUSE``,
-    ``BARGAIN``, ``FULFIL``, ``IGNORE``, ``AVOID``) or ``None`` if it has not decided. It wins
-    over everything else for an ask, which is rule 1 at the top of this module.
+    This was the whole of ``reply`` before :mod:`dwarfsim.speechplan` and
+    :mod:`dwarfsim.replybank` existed, and it is kept for the one case they cannot cover: an act
+    the bank has no sayable line for -- an empty bank, a seed bank with a gap, a dwarf whose
+    state fills none of the slots any line wants. Something is always said, and this is what it
+    is. ``reply`` reaches it through :func:`_from_tables`; nothing else should call it.
 
-    ``already`` is a line the sim's own skill has already put in this dwarf's mouth in answer.
-    When there is one, this says nothing: rule 2.
+    ``decided`` and ``already`` are the same two arguments as ``reply``'s and mean the same
+    things; ``reply`` has already handled both by the time this is reached.
 
     The result:
 
