@@ -14,32 +14,60 @@ models\<run>\
 ```
 
 One lineage, each carried on from the one before it: `blast` → `blast2` → `blast3` (not published) → `blast4` →
-`blast5` (not published) → `blast6` → `blast7` (not published) → `blast8`.
+`blast5` (not published) → `blast6` → `blast7` (not published) → `blast-8`.
 
 | Model | What | Evaluated |
 | --- | --- | --- |
-| `blast8` | `blast7`'s weights, which were `blast6` carried on for 21,000 iterations on the crowded league, **converted to read the enemy slots through attention heads** (weight file version 3, see [architecture.md](architecture.md)) and trained on from there | 81.7% won by its own run (iteration 34600, 1,009 league fights). Benched on this build, 2026-09-14, one sitting, one worker, 2,000 fights each, the crowd and the packs drawn as a run draws them: **79.1% of the league against the scripted fighter's 79.1% and `blast6`'s 71.6%**; by kind of fight, one on one 85.2% (fighter 81.0, `blast6` 82.4), one to nine idle monsters standing about **80.9% (fighter 78.5, `blast6` 54.6)**, packs of two to six all attacking 46.5% (fighter 67.9, `blast6` 41.2), squads 69.6% (fighter 80.8, `blast6` 70.6) |
+| `blast-8` | `blast7`'s weights, which were `blast6` carried on for 21,000 iterations on the crowded league, **converted to read the enemy slots through attention heads** (weight file version 3, see [architecture.md](architecture.md)) and trained on from there | 81.7% won by its own run (iteration 34600, 1,009 league fights). Benched on this build, 2026-09-14, one sitting, one worker, 2,000 fights each, the crowd and the packs drawn as a run draws them: **79.1% of the league against the scripted fighter's 79.1% and `blast6`'s 71.6%**; by kind of fight, one on one 85.2% (fighter 81.0, `blast6` 82.4), one to nine idle monsters standing about **80.9% (fighter 78.5, `blast6` 54.6)**, packs of two to six all attacking 46.5% (fighter 67.9, `blast6` 41.2), squads 69.6% (fighter 80.8, `blast6` 70.6) |
 
 **The crowd was the whole difference, and it is gone.** `blast6` read every enemy slot through its own first-layer
 weights, and the nine slots that are empty in a one-on-one fight had never been trained, so a bystander standing about
-bent its aim; with four to nine idle monsters in view it won 35% of its fights on the bench above where `blast8` wins 82%.
+bent its aim; with four to nine idle monsters in view it won 35% of its fights on the bench above where `blast-8` wins 82%.
 That is the same lineage with the slots read through attention and no retraining in between; the numbers and the
-mechanism are in [findings.md](findings.md#perception). What `blast8` has not learned yet is the pack: several hostiles
+mechanism are in [findings.md](findings.md#perception). What `blast-8` has not learned yet is the pack: several hostiles
 all attacking at once, where the scripted fighter, which now kites and gives ground, is twenty points ahead of it. That is
 where the run is being trained now, pulled towards a record of that fighter's answers on pack-heavy fights.
 
 `blast7` was `blast6` carried on and was never published: its judged best read 1.7 points up on the crowd and 1.7 down
-without it against `blast6`, inside what a sitting resolves. Its final weights are what `blast8` was converted from.
+without it against `blast6`, inside what a sitting resolves. Its final weights are what `blast-8` was converted from.
 
-And every number here is one bench in the older sense too: `blast8` fights the whole league roster, wardens and evokers
+And every number here is one bench in the older sense too: `blast-8` fights the whole league roster, wardens and evokers
 included, where the retired networks below fought a vindicator. The two are not comparable, and **nothing in `models\` is
 comparable to anything measured in another sitting**, since each run judges against the opponents its own matchmaking drew.
 See the win rate section below, and `scripts\bench.ps1` in
 [testing.md](testing.md) for the only way to put two networks on one scale.
 
+## Names
+
+The league is a *ludus*, the scripted fighter that every network is copied from is its *lanista*, and from here on each
+generation of network is named for a gladiator class, in Latin, in this order. A **generation** is a lineage: it starts
+when a network cannot be carried on from the one before it, because its shape or its layout changed, or when a lineage is
+deliberately started afresh; the runs inside a generation are numbered as they are carried on from one another's state,
+`secutor-1`, `secutor-2`, and the published network is `models\<generation>`, its `model.json` naming the run it came
+from. The first eight runs of the current lineage were `blast` to `blast8`; the published one is `blast-8` and the run
+carries on under that name, and the next lineage started from it is the first name below.
+
+| Generation | The class | Why the name |
+| --- | --- | --- |
+| `provocator` | the challenger | the first of the new names, and the one the others are measured from |
+| `secutor` | the pursuer | closes on what it fights, which is most of the league |
+| `murmillo` | the heavy shield | the armoured and shielded loadouts |
+| `thraex` | the curved sword | the sword fight, the one it must always win |
+| `hoplomachus` | spear and small shield | reach and the guard together |
+| `retiarius` | net and trident | fights at a distance and on the move: the kite |
+| `sagittarius` | the archer | the bow and the crossbow |
+| `dimachaerus` | two swords | the swap between hands and slots |
+| `essedarius` | the charioteer | mobility: the ground, the drop, the sprint |
+| `crupellarius` | the armoured one | what stands in a horde |
+
+A name is used once; when a generation ends its name is not reused for another. `scripts\publish.ps1 -Run <run>`
+publishes under the run's name, so a run is named `<generation>-<n>` from its first iteration and its network lands in
+`models\<generation>-<n>`; the one to load by generation name is whichever `model.json` reads the highest win rate, as
+`best` already is.
+
 ## What was retired, and why
 
-`blast6` (iteration 12450, 83.1% by its own run) went when `blast8` was published on 2026-09-14, benched 7.5 points below
+`blast6` (iteration 12450, 83.1% by its own run) went when `blast-8` was published on 2026-09-14, benched 7.5 points below
 it in one sitting of 2,000 fights each, and 27 points below it with a crowd standing about. It was the last network with
 a plain first layer over the slots; the build still reads such a file, and git history keeps this one.
 

@@ -407,7 +407,7 @@ are deliberate.
     idle monsters in view — the row where the old network was losing half its fights it now wins as it wins alone, above
     the scripted fighter's 61% on the same row — and nothing about the one-on-one fight moved beyond a sitting's noise. No
     training happened between the two rows; it is the representation alone. The run carried on from the converted state as
-    `blast8`, and its own evaluation over its first 400 iterations reads the same story: 86% plain, 80 to 84% with any
+    `blast-8`, and its own evaluation over its first 400 iterations reads the same story: 86% plain, 80 to 84% with any
     number standing about, against `blast7`'s 76% at one and 38% at nine over its last 4,000.
   - **The packs are the teacher's to teach.** On that bench the scripted fighter wins 79% of the packs of two to four where
     the converted network wins 49% — the fighter simply fights the nearest and swings when its blow is ready, and the
@@ -962,7 +962,7 @@ are deliberate.
   | --- | --- | --- | --- | --- | --- | --- | --- | --- |
   | Teacher before | 71.7% | 57.8% | 46.4% | 35.2% | 30.9% | **57.5%** | 35.5% | 4.5% |
   | Teacher after | 77.8% | 64.0% | 45.1% | 40.8% | 40.2% | **62.7%** | 29.5% | 5.6% |
-  | blast8 033457, unchanged by any of this | 60.3% | 29.5% | 27.3% | 28.0% | 21.8% | 42.1% | 42.6% | 12.8% |
+  | blast-8 033457, unchanged by any of this | 60.3% | 29.5% | 27.3% | 28.0% | 21.8% | 42.1% | 42.6% | 12.8% |
 
   The network's row is the one that says the sitting did not move: 41.8% before, 42.1% after. The whole league, packs and all,
   went 64.2% to 66.7%; the plain one-on-one bench went 80.8% to 82.1% over 1,445 fights each, which is inside a sitting's own
@@ -1020,10 +1020,10 @@ are deliberate.
   | --- | --- | --- | --- | --- | --- | --- | --- |
   | slow walkers, before | 94.7% | 94.6% | 82.9% | 77.8% | 74.0% | **89.5%** | 2.1% |
   | slow walkers, after | 95.9% | 95.2% | 91.0% | 78.1% | 86.0% | **92.1%** | 3.0% |
-  | slow walkers, `blast8` 035575, unchanged by any of this | 97.9% | 84.9% | 91.1% | 64.7% | 59.5% | 87.1% | 5.2% |
+  | slow walkers, `blast-8` 035575, unchanged by any of this | 97.9% | 84.9% | 91.1% | 64.7% | 59.5% | 87.1% | 5.2% |
   | fast melee, before | 64.0% | 50.5% | 51.0% | 43.1% | 25.0% | **53.2%** | 2.5% |
   | fast melee, after | 78.2% | 61.1% | 54.2% | 48.8% | 43.7% | **64.2%** | 2.7% |
-  | fast melee, `blast8` 035575 | 73.0% | 35.4% | 28.3% | 5.6% | 19.2% | 45.8% | 6.9% |
+  | fast melee, `blast-8` 035575 | 73.0% | 35.4% | 28.3% | 5.6% | 19.2% | 45.8% | 6.9% |
 
   Slow walkers are `zombie,husk,drowned,zombie_villager` and fast melee `vindicator,spider,wolf,piglin_brute`, of which the
   wolf never makes a pack at all — it is not a monster, and `HostilePacks` only packs monsters. Eleven points at the fast
@@ -1239,7 +1239,7 @@ are deliberate.
     moved: ratings earned against the old anchor and ratings earned against this one are not the same number.
 
   **The published network was already ahead of its teacher here, and still is.** The same harness under
-  `-Weights models\blast8\best.mbw`, 240 fights, 60 an opponent: it sends back **0.67** fireballs a fight, which is the
+  `-Weights models\blast-8\best.mbw`, 240 fights, 60 an opponent: it sends back **0.67** fireballs a fight, which is the
   teacher's new 0.70 to within the sample, so the rule has caught the teacher up rather than taught it anything new. What
   it has not caught up on is being hit at all — against a ghast the network takes 1.02 shots and 4.45 health where the
   teacher now takes 1.71 and 8.76 and ends on 11.1 health against the network's 14.6, and the same gap runs down the arrow
@@ -1331,7 +1331,7 @@ are deliberate.
 
 ## Learning
 
-- **A teacher pull that was configured but never applied, for 1,654 iterations, and the log said it was on.** `blast8`'s
+- **A teacher pull that was configured but never applied, for 1,654 iterations, and the log said it was on.** `blast-8`'s
   `state.pt` carried `teacher_from = 0` — inherited through `blast7` and `blast6` from the imitation copy the lineage
   began with, whose first pull really was at iteration 0, thousands of iterations ago. Started with `-TeacherWeight 0.3`
   at iteration 34840 and again at 36493 after a fresh DAgger record, every update computed

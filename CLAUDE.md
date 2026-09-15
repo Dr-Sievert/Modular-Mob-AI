@@ -2,7 +2,7 @@
 
 A neural-network brain for Minecraft mobs. A player-shaped mob, the **agent**, is driven every tick by a small network
 running inside the game in plain Java. The network is trained offline with PyTorch PPO from what the game recorded.
-Today its published network, `blast8`, wins **79.1%** of a league of every vanilla mob that fights fair, with a crowd of
+Today its published network, `blast-8`, wins **79.1%** of a league of every vanilla mob that fights fair, with a crowd of
 idle monsters standing about a quarter of the fights and packs of a mob all attacking in a tenth — level with the
 hand-written fighter it descends from (79.1%) on the same bench, one sitting, one worker, 2,000 fights each on 2026-09-14;
 by kind, 85.2% one on one (that fighter 81.0), **80.9% with one to nine idle monsters in view (78.5)**, and 46.5% against
@@ -26,7 +26,7 @@ Read these before changing anything:
 | [docs/training.md](docs/training.md) | How to train: teacher, imitation, PPO, evaluation, best weights, every script and flag |
 | [docs/testing.md](docs/testing.md) | Game tests, the mechanics suite, evaluation, the parity check, writing tests |
 | [docs/species.md](docs/species.md) | Giving another body a brain: the one place a body is declared, and what follows from it |
-| [docs/models.md](docs/models.md) | Trained networks in git (`models/`), publishing, loading one |
+| [docs/models.md](docs/models.md) | Trained networks in git (`models/`), publishing, loading one, and the names the generations go by |
 | [docs/playing.md](docs/playing.md) | Starting the game with a model, spawning agents, loadouts, allies and enemies |
 | [docs/viewer.md](docs/viewer.md) | The replay viewer |
 | [docs/findings.md](docs/findings.md) | What was learned the hard way; read before "fixing" something that looks odd |
@@ -89,7 +89,7 @@ Read these before changing anything:
 scripts\setup.ps1                      once per machine: Java 21, Python + PyTorch, compile, parity check
 scripts\test.ps1                       20 arena fights with the scripted fighter: expect 20/20, 54 ticks each
 scripts\test.ps1 -Mechanics            the item and block rules against a player's numbers: expect 70 passed
-scripts\test.ps1 -Crowd -Weights models\blast8\best.mbw    one fight with 0, 1, 3 and 9 monsters standing about it, tick by tick
+scripts\test.ps1 -Crowd -Weights models\blast-8\best.mbw    one fight with 0, 1, 3 and 9 monsters standing about it, tick by tick
 scripts\test.ps1 -Pack                 the teacher, or -Weights, against packs of 2, 3 and 4 zombies and 2 and 3 vindicators, tick by tick
 scripts\test.ps1 -Shots                the teacher, or -Weights, against a skeleton, a stray, a pillager and a ghast: what became of every shot
 scripts\test.ps1 -Horde                20, 100, 500 and 2,000 mobs round one agent: clips a tick, time to perceive, ticks lived

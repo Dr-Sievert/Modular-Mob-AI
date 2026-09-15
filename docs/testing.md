@@ -258,7 +258,7 @@ many were sent back, and how often the agent's feet went across an arriving shot
 
 ```
 scripts\test.ps1 -Shots                                    240 fights: four opponents and ten loadouts, six of each pairing
-scripts\test.ps1 -Shots -Weights models\blast8\best.mbw     a network in the teacher's place
+scripts\test.ps1 -Shots -Weights models\blast-8\best.mbw     a network in the teacher's place
 scripts\test.ps1 -Shots -Arenas 480                         tighter; the pairings go round in turn, so use a multiple of forty
 ```
 

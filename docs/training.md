@@ -139,7 +139,7 @@ to copy a hand-written fighter first, then improve the copy with reinforcement l
      another and a run converted by `train.py attend` start with no clock and begin their fall at the first iteration
      *they* pull, and a state saved with `--teacher-weight 0` that is resumed with a pull starts the fall afresh, while a
      run resumed with the pull it was saved under keeps the clock it had however little is left of it. Measured on
-     `blast8`: its state carried `teacher_from = 0`, inherited through `blast7` and `blast6` from the imitation copy the
+     `blast-8`: its state carried `teacher_from = 0`, inherited through `blast7` and `blast6` from the imitation copy the
      lineage began with, so `--teacher-weight 0.3` at iteration 34840 computed `0.3 * max(0, 1 - 34841/1500)` = **0** on
      every update and the pull was dead on arrival for 1,654 iterations. Nothing said so: the only line about the pull was
      the startup `pulling towards the teacher with weight 0.30`, which is the configured weight and never was the
@@ -674,8 +674,8 @@ The first layer's pre-activation shift from that one idle zombie was 1.0 in slot
 `--slot-heads K` is the answer, and this is how a run that has already learned to fight gets it without starting again:
 
 ```
-python train.py attend --from runs\blast7 --into runs\blast8 --heads 3      from trainer\, with its .venv
-scripts\train.ps1 -Run blast8 -Suite league -Seed blast8                    then carry on training it
+python train.py attend --from runs\blast7 --into runs\blast-8 --heads 3      from trainer\, with its .venv
+scripts\train.ps1 -Run blast-8 -Suite league -Seed blast-8                    then carry on training it
 ```
 
 `--from` reads that run's `state.pt` and `schema.json` and touches nothing; `--into` is written whole — `state.pt`,
