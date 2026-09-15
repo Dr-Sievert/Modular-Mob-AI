@@ -103,6 +103,24 @@ def check_artefacts(result: Result, model: dict, root: str) -> None:
         result.fail("layout.json sha256 is %s, the manifest says %s -- the schema id moved"
                     % (layout_sha[:16], model["layout_sha256"][:16]))
 
+    # The .mbw the mod loads is the same weights in the mod's own format, so it goes stale the
+    # moment the .npz moves and is worth the same two lines. A manifest written before
+    # tools/mbw.py existed simply names none, and this is skipped.
+    weight_file = model["weights"].get("weight_file")
+    if not weight_file:
+        return
+    mbw_path = os.path.join(directory, weight_file["file"])
+    if not os.path.exists(mbw_path):
+        result.fail("missing %s -- run python -m tools.mbw" % os.path.relpath(mbw_path, root))
+        return
+    got_mbw = sha256_file(mbw_path)
+    if got_mbw != weight_file["sha256"]:
+        result.fail("%s sha256 is %s, the manifest says %s -- re-run tools/mbw.py"
+                    % (weight_file["file"], got_mbw[:16], weight_file["sha256"][:16]))
+    if weight_file["schema_id"] != layout_sha[:8]:
+        result.fail("%s carries schema %s but layout.json hashes to %s -- the weight file is stale"
+                    % (weight_file["file"], weight_file["schema_id"], layout_sha[:8]))
+
 
 def check_interpreter(model: dict, root: str, tolerance: float) -> Result:
     result = Result(model["name"])

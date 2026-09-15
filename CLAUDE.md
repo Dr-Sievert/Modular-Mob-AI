@@ -53,7 +53,7 @@ and none of them belongs to one half.
 
 ```
 cd combat    scripts\test.ps1              20 arena fights: expect 20/20
-cd mind      python -m pytest -q tests     expect 212 passed, 2 skipped
+cd mind      python -m pytest -q tests     expect 214 passed, 2 skipped
 ```
 
 Everything else each half has is in its own notes: [combat/CLAUDE.md](combat/CLAUDE.md) and

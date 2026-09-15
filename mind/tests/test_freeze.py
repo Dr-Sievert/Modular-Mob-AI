@@ -14,8 +14,10 @@ the parity records carry the widths the layout promises.
 
 import json
 import os
+import struct
 import subprocess
 import sys
+import zlib
 
 import numpy as np
 import pytest
@@ -140,3 +142,63 @@ def test_decisions_parity_records(by_name):
         counts[rec["skill"]] = counts.get(rec["skill"], 0) + 1
     assert len(counts) >= 15
     assert max(counts.values()) <= 15
+
+
+def test_weight_files_are_the_same_arrays_as_the_npz(by_name):
+    """The ``.mbw`` the mod loads holds exactly what the ``.npz`` holds, in the documented order.
+
+    The Java side has its own parity check against the same answer sheets, run by
+    ``combat/scripts/parity.ps1``, so this is not about the forward pass. It is about the one thing
+    that check cannot see: that the converter put the arrays in the right order and stamped the
+    right header. A transposed segment would fail over there with no clue which side moved it.
+    """
+    from tools import mbw
+
+    orders = {"interpreter": mbw.INTERPRETER_ARRAYS, "decisions": mbw.DECISIONS_ARRAYS}
+
+    for name, order in orders.items():
+        model = by_name[name]
+        directory = os.path.join(SHARED, model["directory"].replace("/", os.sep))
+        recorded = model["weights"]["weight_file"]
+        path = os.path.join(directory, recorded["file"])
+        assert os.path.exists(path), recorded["file"]
+
+        data = open(path, "rb").read()
+        assert len(data) == recorded["bytes"]
+
+        magic, version = struct.unpack_from("<4sI", data)
+        schema_id, shape_hash = struct.unpack_from("<II", data, 8)
+        words = struct.unpack_from("<%dI" % mbw.SHAPE_WORDS, data, 16)
+        count, kind = struct.unpack_from("<II", data, 64)
+
+        assert magic == mbw.MAGIC
+        assert version == mbw.VERSION == 4
+        assert kind == (mbw.KIND_CLASSIFIER if name == "interpreter" else mbw.KIND_SCORER)
+        assert "%08x" % schema_id == model["layout_sha256"][:8] == recorded["schema_id"]
+        assert list(words[:len(recorded["shape_words"])]) == recorded["shape_words"]
+        assert shape_hash == zlib.crc32(struct.pack("<%dI" % len(recorded["shape_words"]),
+                                                    *recorded["shape_words"]))
+
+        params = np.frombuffer(data, dtype="<f4", offset=72)
+        assert len(params) == count
+
+        with np.load(os.path.join(directory, model["weights"]["file"])) as npz:
+            wanted = np.concatenate([npz[a].astype(np.float32).reshape(-1) for a in order])
+
+        assert np.array_equal(params, wanted), name
+
+
+def test_converting_again_writes_the_same_bytes(tmp_path, by_name):
+    """A conversion is a pure function of the frozen arrays, so a second run cannot move the file."""
+    import shutil
+
+    from tools import mbw
+
+    copy = tmp_path / "models"
+    shutil.copytree(MODELS, copy)
+
+    for name in ("interpreter", "decisions"):
+        recorded = by_name[name]["weights"]["weight_file"]
+        info = mbw.WRITERS[name](str(copy / name))
+        assert info["sha256"] == recorded["sha256"], name
+        assert info["bytes"] == recorded["bytes"]
