@@ -73,6 +73,10 @@ public final class AgentBatch {
 
         int memory = this.brain.hiddenSize();
 
+        // What the timer that drops a brain's unused memory is measured against; see BrainState#FORGET_TICKS. Read once
+        // for the batch, since every agent in one is in the same level on the same tick.
+        long now = this.agents.get(0).level().getGameTime();
+
         this.step.ensureCapacity(this.species, count, memory);
         this.step.count = count;
 
@@ -115,7 +119,10 @@ public final class AgentBatch {
 
             if (memory > 0) {
 
-                float[] hidden = state.hidden(memory);
+                // This brain's memory of this agent, and not the agent's one memory: an agent whose brain can change
+                // between ticks has one of these per brain, so a spell under another one does not wipe the fight it was
+                // in the middle of. See BrainState.
+                float[] hidden = state.hidden(this.brain, memory, now);
 
                 if (fresh) {
 
@@ -142,7 +149,7 @@ public final class AgentBatch {
 
             if (memory > 0) {
 
-                System.arraycopy(this.step.hidden, index * memory, state.hidden(memory), 0, memory);
+                System.arraycopy(this.step.hidden, index * memory, state.hidden(this.brain, memory, now), 0, memory);
             }
 
             state.stepped();
