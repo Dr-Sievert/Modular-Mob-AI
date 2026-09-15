@@ -2,11 +2,11 @@
 
 A neural-network brain for Minecraft mobs. A player-shaped mob, the **agent**, is driven every tick by a small network
 running inside the game in plain Java. The network is trained offline with PyTorch PPO from what the game recorded.
-Today its published network, `blast-8`, wins **79.1%** of a league of every vanilla mob that fights fair, with a crowd of
-idle monsters standing about a quarter of the fights and packs of a mob all attacking in a tenth — level with the
-hand-written fighter it descends from (79.1%) on the same bench, one sitting, one worker, 2,000 fights each on 2026-09-14;
-by kind, 85.2% one on one (that fighter 81.0), **80.9% with one to nine idle monsters in view (78.5)**, and 46.5% against
-packs of two to six all attacking (67.9); see docs/models.md. The crowd was the open problem until 2026-09-14, when it was
+Today its published network, `provocator-1`, wins **85.5%** of a league of every vanilla mob that fights fair, with a crowd
+of idle monsters standing about a quarter of the fights and packs of a mob all attacking in a fifth — two and a half points
+*above* the hand-written fighter it descends from (83.0%) on the same bench, one sitting, one worker, 2,000 fights each on
+2026-09-15; by kind, 88.7% one on one (that fighter 85.0), **87.9% with one to nine idle monsters in view (82.8)**, and 55.3%
+against packs of two to six all attacking (65.8); see docs/models.md. The crowd was the open problem until 2026-09-14, when it was
 found to be the representation and not the curriculum: the first layer read every enemy slot through its own weights, nine
 of the ten had never been trained, and one bystander bent the aim by 22° a tick. A network now reads its slots through
 attention heads (weight file version 3), a plain network converts in place with no retraining, and the converted network

@@ -18,15 +18,15 @@ One lineage, each carried on from the one before it: `blast` → `blast2` → `b
 
 | Model | What | Evaluated |
 | --- | --- | --- |
-| `blast-8` | `blast7`'s weights, which were `blast6` carried on for 21,000 iterations on the crowded league, **converted to read the enemy slots through attention heads** (weight file version 3, see [architecture.md](architecture.md)) and trained on from there | 81.7% won by its own run (iteration 34600, 1,009 league fights). Benched on this build, 2026-09-14, one sitting, one worker, 2,000 fights each, the crowd and the packs drawn as a run draws them: **79.1% of the league against the scripted fighter's 79.1% and `blast6`'s 71.6%**; by kind of fight, one on one 85.2% (fighter 81.0, `blast6` 82.4), one to nine idle monsters standing about **80.9% (fighter 78.5, `blast6` 54.6)**, packs of two to six all attacking 46.5% (fighter 67.9, `blast6` 41.2), squads 69.6% (fighter 80.8, `blast6` 70.6) |
+| `provocator-1` | the first run of the new lineage: `blast8`'s last state carried on under a fresh name after that run finished on patience, pulled for 1,500 iterations towards two records of the rebuilt teacher on pack-heavy draws, then PPO alone with a fifth of its one-mob fights as packs | 85.6% won by its own run (iteration 42500, 1,017 league fights). Benched on this build, 2026-09-15, one sitting, one worker, 2,000 fights each, the crowd and the packs drawn as a run draws them: **85.5% of the league against the scripted fighter's 83.0% and `blast-8`'s 79.0%** — the first network above the anchor on the whole league; by kind of fight, one on one 88.7% (fighter 85.0, `blast-8` 84.5), one to nine idle monsters standing about **87.9% (82.8, 80.4)**, packs of two to six all attacking 55.3% (65.8, 43.1), squads 81.7% (84.6, 67.7) |
 
-**The crowd was the whole difference, and it is gone.** `blast6` read every enemy slot through its own first-layer
-weights, and the nine slots that are empty in a one-on-one fight had never been trained, so a bystander standing about
-bent its aim; with four to nine idle monsters in view it won 35% of its fights on the bench above where `blast-8` wins 82%.
-That is the same lineage with the slots read through attention and no retraining in between; the numbers and the
-mechanism are in [findings.md](findings.md#perception). What `blast-8` has not learned yet is the pack: several hostiles
-all attacking at once, where the scripted fighter, which now kites and gives ground, is twenty points ahead of it. That is
-where the run is being trained now, pulled towards a record of that fighter's answers on pack-heavy fights.
+**The crowd is no longer the difference, and the pack is where the fighter still leads.** `blast-8` read every enemy slot through
+its own first-layer weights, and the nine slots that are empty in a one-on-one fight had never been trained, so a bystander
+standing about bent its aim; with four to nine idle monsters in view it won 35% of its fights on the bench that replaced it.
+The same lineage with the slots read through attention won 79% of those the day of the conversion and 86% two days on
+(`provocator-1`); the numbers and the mechanism are in [findings.md](findings.md#perception). What it has not learned yet
+is the pack: several hostiles all attacking at once, where the scripted fighter, which kites and gives ground, is ten
+points ahead of it, and what closes that is the pack share of the training draw rather than more of the teacher.
 
 `blast7` was `blast6` carried on and was never published: its judged best read 1.7 points up on the crowd and 1.7 down
 without it against `blast6`, inside what a sitting resolves. Its final weights are what `blast-8` was converted from.
@@ -44,7 +44,7 @@ generation of network is named for a gladiator class, in Latin, in this order. A
 when a network cannot be carried on from the one before it, because its shape or its layout changed, or when a lineage is
 deliberately started afresh; the runs inside a generation are numbered as they are carried on from one another's state,
 `secutor-1`, `secutor-2`, and the published network is `models\<generation>`, its `model.json` naming the run it came
-from. The first eight runs of the current lineage were `blast` to `blast8`; the published one is `blast-8`. `blast8` finished on
+from. The first eight runs of the previous lineage were `blast` to `blast8`, published last as `blast-8`. `blast8` finished on
 2026-09-15 at iteration 38738, forty judged checkpoints without beating a best judged on the roster before that night's
 fifteen new players, and the lineage carries on as `provocator-1`, seeded from its latest state rather than that best.
 
@@ -67,6 +67,10 @@ publishes under the run's name, so a run is named `<generation>-<n>` from its fi
 `best` already is.
 
 ## What was retired, and why
+
+`blast-8` (iteration 34600, 81.7% by its own run) went when `provocator-1` was published on 2026-09-15, benched 6.5 points
+below it in one sitting of 2,000 fights each and behind on every kind of fight. It was the network the attention
+conversion was proved on; git history keeps it.
 
 `blast6` (iteration 12450, 83.1% by its own run) went when `blast-8` was published on 2026-09-14, benched 7.5 points below
 it in one sitting of 2,000 fights each, and 27 points below it with a crowd standing about. It was the last network with
