@@ -8,7 +8,26 @@ emotional and social state** plus **one arbitrator choosing among skills**, with
 Nothing here needs Java, Gradle or Minecraft. **Every command below is run from this directory**
 (`cd mind` from the repository root).
 
-No game engine, no neural net, no dependencies: Python 3 and the standard library. It is a rehearsal
+## Setup
+
+Python 3.10 or newer.
+
+```
+pip install -r requirements.txt        # run the sim and the talk app
+pip install -r requirements-dev.txt    # and train a model or run the suite
+```
+
+The sim proper (`python -m dwarfsim run`) needs nothing but the standard library. The runtime file
+adds the two the talk app wants: **numpy**, which runs the shipped text classifier, and **rich**,
+which draws its panels. Both degrade rather than crash -- without rich the app prints plain text,
+without numpy the classifier says so in one line and `/labels` still lets you type the labels by
+hand. The dev file adds **torch** (only `dwarfsim/learn` and classifier training) and **pytest**.
+
+**Nothing has to be built.** The shipped classifier weights are in git (`text/models/clf`), as are
+the two frozen models in [`../shared/models/`](../shared/models); both run on numpy alone.
+
+No game engine, no neural net, and nothing the sim itself imports: Python 3 and the standard
+library. It is a rehearsal
 for "tiny learned specialists + persistent emotional/social state + one action selector", with the
 arbitrator hand-weighted for now and sitting behind the interface a network would use
 (`score(observation, candidate_features) -> float`, both flat float vectors with fixed layouts).
@@ -16,6 +35,19 @@ arbitrator hand-weighted for now and sitting behind the interface a network woul
 Six dwarves in a settlement of six places. They mine, smith, farm, drink, rest, gossip, steal, hold
 grudges, apologise, brawl and fight whatever turns up at the gate. Nothing in here is scripted: a
 feud is what happens when the numbers line up.
+
+A brawl is **not** a death sentence. A blow mostly leaves an injury -- a black eye, a sprained hand,
+a broken arm, cracked ribs -- and only a little health; weapons, monsters and hitting somebody who
+is already broken are what kill. An injury does something: a broken arm takes mining, forging and
+the weapon away, a broken leg makes every walk between places a gamble, a concussion makes the
+decisions noisier and the memories fainter, and everything mends over days, faster with rest and
+food. Two hundred unarmed brawls end in **no deaths at all**, and in bruises most of the time.
+
+And there is **no farming approval**. The same compliment pasted twenty times is worth almost
+nothing by the third: praise and small talk buy a capped, decaying *warmth*, while trust moves
+through deeds -- helping, a gift that cost the giver something, a promise kept. Praise that is
+repeated or unearned makes a dwarf suspicious of you, and past a threshold it stops hearing praise
+at all: *"Say it a third time and I'll start wondering what you want."*
 
 They also **remember** (a bounded list of episodes that fade at a rate set by a forgiveness trait),
 **want things for longer than a tick** (get rich, avenge somebody, repay somebody), **owe each other
@@ -31,6 +63,9 @@ python -m dwarfsim run --scenario gossip --out runs/gossip.jsonl --html runs/gos
 python -m dwarfsim run --scenario feud-chief --out runs/chief.jsonl      # authority, opt-in
 python -m dwarfsim player --out runs/player.jsonl --html runs/player.html
 python -m dwarfsim view runs/feud.jsonl -o runs/feud.html
+python -m dwarfsim.talk --seed 1 --dwarves 3                 # say something to one of them
+python text/merge_replies.py text/batches/replies_*.jsonl    # build the reply bank
+python -m dwarfsim.learn.ranker --out runs/learn/ranker      # train the learned line chooser
 ```
 
 `--scenario` is one of `default`, `feud` (two dwarves start distrustful and hot-tempered),
@@ -55,13 +90,25 @@ Runs are deterministic from `--seed`; 6 dwarves for 2,000 ticks takes about a se
 
 Open the HTML from `file://`, no server. Six views: the auto-narrated story, a filterable timeline
 with the dialogue, per-dwarf traces of emotions, needs and health, the **Mind panel** (what one
-dwarf feels, wants, owes and remembers at the tick you are on, with each memory's salience and
-whether it was suffered, seen or heard from somebody), the relationship matrix with an
-actual/**believed by others** toggle, and the decision inspector -- pick a dwarf and a tick and see
-every candidate the arbitrator weighed and every term that went into each score.
+dwarf feels, wants, owes, remembers and is carrying a broken bone about at the tick you are on,
+with each memory's salience and whether it was suffered, seen or heard from somebody), the
+relationship matrix with an actual/**believed by others** toggle, and the decision inspector --
+pick a dwarf and a tick and see every candidate the arbitrator weighed and every term that went
+into each score.
+
+They also **talk back**. What a dwarf says is two machines: a rule table picks one of 43 speech
+**acts** from what it heard, what it thinks of you, what it wants and what the two of you have
+already said; a bank of written lines then supplies the words and fills their slots from real
+state. So "I've been sick lately" gets sympathy from a friend, an offer of a shift from somebody
+warm, a shrug from a stranger and *"Ha. Hurry up about it, then"* from an enemy -- and asking the
+same question twice gets *"You asked me that already."* Nothing in it is a language model and
+nothing in it invents a fact: a line whose slot the sim cannot fill is never chosen.
 
 Tests: `python -m pytest -q tests`.
 
+- [docs/speech.md](docs/speech.md) -- the speech pipeline: the act list, the planner's rule table,
+  the slot table, how the reply bank is merged and chosen from, and how a learned chooser would
+  take over from the weighted match.
 - [docs/design.md](docs/design.md) -- the mind model, the event delta table, episodic memory, goals,
   obligations, the arbitrator terms, the vector layouts, and how each piece maps onto the Java mod.
 - [docs/port.md](docs/port.md) -- the brief for the Java port: which `Brain` each of the two trained

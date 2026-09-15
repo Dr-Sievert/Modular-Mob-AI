@@ -1,0 +1,9 @@
+# Everything in requirements.txt, plus what training a model and running the suite need.
+#
+#   pip install -r requirements-dev.txt
+#
+# torch is only used by dwarfsim/learn (imitation and PPO) and text/classifier training; the
+# frozen models in ../shared/models and the shipped classifier weights run on numpy alone.
+-r requirements.txt
+torch>=2.0
+pytest>=7.0

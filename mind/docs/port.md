@@ -143,6 +143,44 @@ The player is a relationship row like any other (`PLAYER_ID` in `dwarfsim/schema
 neutral. Classification is microseconds and off the tick loop, but it is still I/O-shaped work on the
 server thread: if a message ever costs more than a tick's budget, queue it, do not thread it.
 
+## What stage C needs: saying something back
+
+Steps 1 to 4 above get a message *into* a mob. Answering is stage C, and it is deliberately the last
+thing, because a mob that does not answer is quiet and a mob that answers wrongly is a bug everybody
+sees. It is **not a third model**. The whole of it is in [docs/speech.md](speech.md); what the Java
+side has to carry across is four things, and none of them is weights.
+
+1. **The 43 acts**, as an enum, in `speechplan.ACTS`' order. An act is what a reply *does*
+   (`SYMPATHIZE`, `GLOAT`, `ADMIT_IGNORANCE`, `CALLBACK`, `SILENCE` …) and it is the only thing the
+   two halves of the pipeline agree on. Appended to, never reordered — a bank file and a trained
+   ranker are both indexed on it.
+2. **The bank format**, which is a resource, not a model: `text/data/replies.jsonl`, one JSON object
+   per line, `{hears, state, act, slots, text}` over the ten tag enums in `speechplan`. Ship it as a
+   data pack file so a server can add lines without a rebuild. The loader is the only code: filter
+   by act, drop any line whose `{slot}` cannot be filled, drop any line more than one step away on
+   the trust spread, then score `match - repeat + slots` with the weights in `replybank.WEIGHTS`.
+   That is twenty lines of Java and no matrix products.
+3. **The slot resolvers**, one method each, reading the mob rather than the sim: `{injury}` from
+   whatever the mod's damage model calls a broken arm, `{culprit}` from the last attacker, `{third}`
+   from a nearby named mob, `{place}` from the biome or the structure, `{item}` `{qty}` `{price}`
+   from the inventory, `{need}` `{goal}` `{memory}` `{time}` `{work}` from `BrainState`. A resolver
+   with nothing to say returns null, and **a line with a null slot is never spoken** — that is the
+   rule that keeps a mob from naming a player it never met.
+4. **The dialogue state**, per (mob, speaker), in `BrainState` beside the relationship rows: six
+   turns, the questions owed, and two rings of signatures. It is what `CALLBACK` is made of and the
+   only new persistent state. It expires after 600 ticks of silence, so it does not grow.
+
+The planner itself (`speechplan.RULES`) ports as ordinary Java from the table in
+[docs/speech.md](speech.md), the same way the arbitrator's weight table does: it is rules, not
+weights, and a person is meant to be able to read and tune it in either language.
+
+Two things are explicitly *not* in stage C. The learned line chooser (`dwarfsim/learn/ranker.py`)
+exists and is measured but is not the default on either side, so the port takes the weighted match
+and nothing else. And `about`/`news` are still derived by rule (`speechplan.derive`); when the
+interpreter is retrained on them they become two more heads on the model already in
+`shared/models/interpreter`, which moves the `.mbw` segment order and is a re-freeze, not a port
+change.
+
 ## Parity, which the port must pass
 
 The mod already has this procedure for the combat network (`scripts\parity.ps1`, Java against

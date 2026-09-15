@@ -410,6 +410,16 @@ var EMO = [["anger","var(--anger)"],["fear","var(--fear)"],
            ["happiness","var(--happiness)"],["grief","var(--grief)"]];
 var NEED = [["hunger","var(--anger)"],["thirst","var(--fear)"],
             ["fatigue","var(--happiness)"],["social","var(--grief)"]];
+/* What each injury is called out loud. Same words the story uses. */
+var INJURY_WORD = {bruised:"bruises", cut:"a cut", black_eye:"a black eye",
+                   sprained_hand:"a sprained hand", broken_arm:"a broken arm",
+                   broken_leg:"a broken leg", concussion:"a cracked head",
+                   cracked_ribs:"cracked ribs", bleeding:"a bleeding wound"};
+function injuryWords(list){
+  return list.slice().sort(function(a,b){ return b.severity - a.severity; })
+             .slice(0, 3).map(function(i){ return INJURY_WORD[i.kind] || i.kind; })
+             .join(" and ");
+}
 var W = 600, HH = 96, STEP = Math.max(1, Math.ceil(T.length / 700));
 function series(aid, get){
   var pts = [];
@@ -587,8 +597,10 @@ function drawMind(){
     document.getElementById("mind-note").textContent = "";
     return;
   }
+  var injuries = now.injuries || [];
   document.getElementById("mind-note").textContent =
     "tick " + cur + " at the " + now.place + ", " + now.health.toFixed(1) + " hp" +
+    (injuries.length ? ", " + injuryWords(injuries) : ", unhurt") +
     (mind ? "; goals, memories and obligations as at tick " + slow.tick : "");
 
   var out = "<div class='row'>";
@@ -605,7 +617,18 @@ function drawMind(){
   Object.keys(traits).forEach(function(k){ out += meter(k, traits[k]); });
   out += "<h3>CARRIES</h3><div class='pill'>";
   out += Object.keys(now.inv).map(function(k){ return k + " " + now.inv[k]; }).join(" &middot; ");
-  out += "</div></div></div>";
+  out += "</div>";
+  // What is broken. Health says how close to dying; this says what the dwarf can still do.
+  out += "<h3>CONDITION</h3>";
+  if (!injuries.length) {
+    out += "<p class='muted'>unhurt</p>";
+  } else {
+    injuries.forEach(function(i){
+      out += meter(INJURY_WORD[i.kind] || i.kind, i.severity, "var(--anger)");
+    });
+    if (now.pain !== undefined) out += meter("pain", now.pain, "var(--grief)");
+  }
+  out += "</div></div>";
 
   out += "<div class='col'><div class='card'><h3>WANTS</h3>";
   var goals = (mind && mind.goals) || [];

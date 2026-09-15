@@ -1,0 +1,13 @@
+# What running the mind needs.
+#
+#   pip install -r requirements.txt
+#
+# The sim itself (python -m dwarfsim run) is standard library only. These two are for the
+# talk app: numpy runs the shipped text classifier, rich draws the panels. Without rich the
+# app falls back to plain text; without numpy the classifier is unavailable and /labels still
+# lets you type the labels by hand.
+#
+# torch and pytest are NOT here: they are only needed to train a model or run the suite.
+# See requirements-dev.txt.
+numpy>=1.21
+rich>=13.0

@@ -24,6 +24,14 @@ not a relationship number*: a bounded list of episodes, a handful of standing wa
 who owes what to whom. All three feed the arbitrator as ordinary named terms, so the log still says
 exactly why, and a learned scorer still sees one flat vector.
 
+v2 adds two more of the same shape, and both of them are about a number that meant too much. A blow
+used to spend *health* and only health, so every quarrel was a step toward a funeral: dwarves now
+carry a **condition** -- see [Injuries](#injuries) -- and a fist fight ends in a black eye. And a
+kind word used to buy *trust* however many times it had been said before, so the cheapest way to be
+adored was a clipboard: words now buy a decaying **warmth** while deeds buy trust, and a listener
+learns to hear a repeated compliment for what it is. See
+[No approval farming](#no-approval-farming).
+
 ## The mind
 
 Per dwarf, all persistent, all in `dwarfsim/mind.py`:
@@ -33,7 +41,8 @@ Per dwarf, all persistent, all in `dwarfsim/mind.py`:
 | emotions | anger, fear, happiness, grief | 0..1 | decay toward a per-dwarf baseline every tick; fear burns off fastest (5.5% of the gap a tick), grief slowest (0.6%) |
 | needs | hunger, thirst, fatigue, social | 0..1 | rise every tick (0.003 to 0.005), dropped by EAT, DRINK, REST, SOCIALIZE |
 | traits | bravery, greed, temper, sociability, pride, forgiveness | 0..1 | static, rolled from the seed |
-| relationships | trust, respect (-1..1), hatred (0..1) per other dwarf *and for the player* | | decay toward 0 at 0.15% a tick, a half-life of about 460 ticks |
+| relationships | trust, respect (-1..1), hatred (0..1), **warmth** (0..1) per other dwarf *and for the player* | | the first three decay toward 0 at 0.15% a tick, a half-life of about 460 ticks; warmth at 0.3%, about 230 ticks |
+| condition | the injuries this dwarf is carrying, each with a kind, a severity and a healing rate | | `dwarfsim/condition.py`, below |
 | memory | up to 64 episodes, each with its own salience | | `dwarfsim/memory.py`, below |
 | goals | up to 4 standing wants, each with a strength | 0..1 | `dwarfsim/goals.py`, below |
 | obligations | the open asks this dwarf is on either end of | | `dwarfsim/obligations.py`, below |
@@ -45,7 +54,11 @@ grudge for wildly different lengths of time.
 
 `trust` is "would I leave my ore with them", `respect` is "do they matter, are they dangerous, did
 they stand at the gate", `hatred` is "would I swing at them". They are separate because they move
-separately: being hit costs trust *and* buys respect.
+separately: being hit costs trust *and* buys respect. `warmth` is the odd one out and the newest:
+it is how well disposed a dwarf *feels* right now, as against what it believes. Words buy warmth,
+deeds buy trust -- see [No approval farming](#no-approval-farming) -- and everything that asks "do
+I like this dwarf" reads **felt trust** (`regard.felt_trust`, trust plus 0.6 of warmth) while
+everything that asks "do I rely on this dwarf" reads trust alone.
 
 Three modulators apply to every delta, and they are what make two dwarves react differently to the
 same event:
@@ -332,6 +345,186 @@ and strength as written. When the file is absent, empty or unreadable, `IN_WORLD
 `dwarfsim/profanity.py` stands instead. Terms that also sit in the recognition file are kept;
 recognition and speech may share a list.
 
+## Injuries
+
+`dwarfsim/condition.py`. Before this, a fight was arithmetic on one number: twenty health, a blow
+took two of it, and the tenth blow was a funeral -- so two dwarves who had had a drink and a
+disagreement killed each other about as often as not, which is not what a brawl is.
+
+Health stays, and it still means *how close to dying*. What changed is what a blow spends. An
+unarmed blow mostly produces an **injury** and very little health; weapons, monsters, and hitting
+somebody who is already broken are what kill. Each dwarf carries a `Condition`: a set of injuries,
+each with a kind, a severity 0..1 and its own healing rate.
+
+### The injury table
+
+One row per kind, and nothing outside this table decides what an injury means. Each row is the
+effect at severity 1.0 and scales linearly down to nothing.
+
+| Kind | Heals (severity/tick) | What it does |
+| --- | --- | --- |
+| `bruised` | 0.0200 | sore, and nothing else: pain 0.10 |
+| `cut` | 0.0120 | pain 0.18, work -5%, bleeds a trickle (0.004 hp/tick) |
+| `black_eye` | 0.0100 | pain 0.15, weapon quality -10%, decisions 10% noisier |
+| `sprained_hand` | 0.0070 | pain 0.30, **work halved, weapon quality halved** |
+| `broken_arm` | 0.0022 | pain 0.60, work -80%, weapon -80%, and **blocks every skill that needs two hands** past severity 0.25: no mining, no forging, no farming, no fighting at the gate. Eating, talking, walking, gossiping and buying ale are untouched |
+| `broken_leg` | 0.0020 | pain 0.60, work -35%, **blocks every skill that needs legs** past severity 0.30 (FIGHT_MONSTER), and gives up to a 75% chance per tick that a walk between places gets nowhere -- which is also what makes fleeing barely work |
+| `concussion` | 0.0050 | pain 0.45, work -30%, **doubles the arbitrator's softmax temperature** and multiplies a new memory's intensity by 0.45 |
+| `cracked_ribs` | 0.0040 | pain 0.50, work -30%, **attack force -45%**, and adds 0.30 to the `fear` *term* -- a flinch, not a mood, so the emotion itself is untouched |
+| `bleeding` | 0.0060 | pain 0.35, attack -15%, **0.030 health a tick until it is treated** |
+
+`pain` is summed over every injury and then softened (`x / (x + 1)`), so ten bruises are not a
+broken leg. Everything heals on its own each tick, scaled by how fed and watered the dwarf is;
+`REST` takes 0.020 off every injury at once and `EAT` 0.012, and both take **four times** that off
+bleeding, which is the only thing that reliably stops a wound. When an injury finally goes the
+world emits `RECOVERED` and the story says so: *Hrolf's arm has mended*.
+
+### Resolving a blow
+
+`condition.resolve_blow(rng, attacker, defender)` returns `(health lost, injuries, profile)` and
+applies both. Three inputs:
+
+* **strength**, 0..1, and it is *not* a new trait: `0.25 + 0.50 x bravery + 0.25 x rested`, times
+  whatever the attacker's own injuries leave of it. Deriving it is what keeps the mind vector's
+  trait block at six.
+* **the weapon**, but only if it is *drawn*. Whether a dwarf is carrying an edge and whether they
+  pull it are different questions, and the second is the line between a brawl and a killing:
+  `draws_weapon` wants hatred past 0.55 before steel comes out at all, and then scales with hatred
+  and with quality. Getting this wrong was the first version's whole problem -- every dwarf in the
+  settlement carries something, so every blow was an armed one and nothing had changed.
+* **how broken the defender already is**: the health cost is multiplied by `1 + 1.2 x pain`. This
+  is the "repeated blows on somebody already badly hurt" clause, and it is what eventually kills.
+
+One unarmed blow, measured over 8,000 of them: **65.1%** nothing at all, 17.3% bruised, 5.2% a
+black eye, 3.4% a cut, 3.1% a sprained hand, 2.2% cracked ribs, 1.6% a concussion, 0.9% a broken
+leg, 0.7% a broken arm, 0.6% bleeding. An armed blow reverses it -- 8% nothing, and the mass sits
+on cuts, bleeding and broken bones -- and a monster's bite is its own profile again.
+
+### What the rest of the sim makes of it
+
+* **The arbitrator sees it.** The observation grew a compact eight-float condition block (see
+  [The vectors](#the-vectors)), `hurt` now reads `max(how close to dying, pain)` rather than health
+  alone, and a new term `impairment` prices how much *this candidate in particular* is hampered --
+  a broken leg makes walking to the mine hopeless and saying sorry no harder at all.
+* **Skills declare what a body has to be able to do.** `Skill.needs_two_hands` and
+  `Skill.needs_legs`, with a per-candidate override, which is how buying ale at the tavern stays
+  available to a dwarf who cannot swing a pick. A blocked candidate is not proposed at all, and the
+  decision record names what was dropped, so the inspector does not show a dwarf mysteriously never
+  choosing to mine.
+* **The grudge is for what was broken, not for the arithmetic.** A `HIT`'s magnitude comes from
+  `blow_magnitude(health lost, injuries)`, which weights an injury far above the health: a punch
+  that takes two health and leaves nothing fades, and a broken arm is remembered whether or not it
+  bled. Each injury records who caused it.
+* **A hurt dwarf stops swinging.** `hurt` is -3.40 on ATTACK, -2.40 on FIGHT_MONSTER, and +2.40 on
+  FLEE, +1.90 on AVOID, +1.40 on REST; `impairment` is -1.80 on ATTACK and -2.60 on FIGHT_MONSTER.
+  Badly broken, the scorer's answer is to flee, avoid, complain or lie down.
+* **They mention it.** A hurt dwarf adds a clause to whatever it was going to say ("Mind the arm."),
+  the viewer's Mind panel and the talk app show the condition beside the health, and the story
+  narrates both the break and the mending.
+
+**200 unarmed brawls** -- full health, fists, three to twelve exchanges, stopping when one of them
+is down to a quarter -- end in **0 deaths**, and 376 of the 400 participants carry something away.
+Over ten seeds of 2,000 ticks the settlement as a whole is as deadly as it was before any of this:
+19 kills against 18, 41 survivors of 60 against 42, off roughly twice the blows. That is the result
+the model was for: the same mortality, arrived at through fights that are fights.
+
+## No approval farming
+
+`dwarfsim/regard.py`. "Wow, nice sword" pasted twenty times used to buy as much trust as twenty
+different kindnesses, which made the cheapest way to be adored a clipboard. The answer is four
+mechanics rather than a list of banned strings, all of them per *(listener, speaker)* and all of
+them living on the listener, in `agent.regard`.
+
+### Habituation
+
+Every social event carries a **signature**: `(event kind, intent, topic, hash of the normalised
+text)`. Normalising is lower-case, strip punctuation, collapse spaces; the hash is a SHA-1 prefix,
+because Python's `hash()` is not stable across processes. A line with no text -- a skill's own
+event -- has an empty hash and is carried by its labels alone, which is right: a dwarf saying the
+same kind of thing about the same thing is repeating itself either way.
+
+Each relationship keeps a ring of the last 12 signatures. A fresh event is worth:
+
+| | worth |
+| --- | --- |
+| the same signature, 1st / 2nd / 3rd / 4th / after, within 400 ticks | 1.0 / 0.35 / 0.06 / 0.02 / 0.0 |
+| a different line, same intent and topic, within 120 ticks | `0.80^n`, floored at 0.35 |
+
+The factor multiplies the event's **magnitude**, so the event table lands quieter without a single
+row of it changing. Two things keep the second row gentle, and both were learned the hard way: its
+window is much shorter than the identical one, and its floor is high. Six dwarves in six rooms make
+small talk about the mine all day; treating that as spam took the settlement's goodwill away and
+the killings went up by half. Saying the same *words* again is repetition. Saying another true
+thing about the same subject is conversation.
+
+### Words against deeds
+
+`PRAISE`, `SMALLTALK` and `GOSSIP` are words. Only 25% of a word's positive trust or respect is
+real; the rest becomes **warmth**, and trust is additionally held under a rolling cap of 0.10 per
+speaker per 400 ticks. `HELP`, `GIFT` and `PROMISE_KEPT` are deeds, and move trust in full.
+
+An **apology** is deliberately not a word here, and neither is an accepted ask. Both cost the one
+making them, and an apology is the only thing in the sim that ends a feud; rationing it, in an
+early draft, left the settlement with no way back from a quarrel. Habituation still quietens a
+repeated apology, which is the right answer to somebody who keeps saying sorry and keeps doing it.
+
+Warmth is why rationing words did not turn the settlement into a knife fight. It is *real*: it sits
+in the relationship row beside trust, respect and hatred, it decays about four times as fast, and
+it is read by `regard.felt_trust` (trust + 0.6 x warmth), by `MindState.likes`, by the arbitrator's
+`trust_target`, by whether small talk comes out friendly, by who counts as a confidant, and by how
+a dwarf speaks to you (`replies.stance_of`). What it is not is *evidence*: nothing that decides
+whether to hand somebody your ore ever looks at it.
+
+One consequence worth writing down, because it cost a day: a chief's deterrent used to lean on
+respect alone, and respect stopped being replenished by chatter, so his standing drained away and a
+settlement with a chief fought exactly as much as one without. `expected_punishment` now takes the
+larger of what a dwarf thinks of the chief and **what it has actually watched him do** -- every
+`PUNISH` it remembers, faded by age. An opinion drains; a record does not.
+
+### Flattery suspicion
+
+Two things make praise suspect, and **either is enough**:
+
+* **repeated** -- how many times these exact words have come out of this mouth already. Nothing for
+  the first, half for the second, all of it from the third. Varied praise never counts here;
+* **unearned** -- 0.55, when the dwarf being praised has done nothing inside the last 250 ticks
+  worth praising. A shift that produced something counts, which is what keeps an honest compliment
+  about the ore from being read as flattery.
+
+Both are gated on **frequency** -- the first two praises from one mouth inside 300 ticks are free,
+whatever they are -- and discounted by 0.6 x whatever trust the listener already has, because a
+friend who watched you kill a creeper may say so all evening. The three used to multiply, which
+meant a dwarf who had done a shift could be pasted at forever; making any one of them sufficient
+without the frequency gate had sociable dwarves reading each other as manipulators inside a few
+hundred ticks.
+
+Past a suspicion of 0.50 the next compliment stops being one. The event emitted is `FLATTERY`
+rather than `PRAISE` -- its own row in the event table, costing trust and respect instead of buying
+them -- and the answer comes out of the `FLATTERY` cell: *"Say it a third time and I'll start
+wondering what you want."* Suspicion decays at 0.0015 a tick, and a genuine deed clears it outright.
+
+### Gifts
+
+A gift is worth what it cost the giver relative to what they had, divided by how many times they
+have done it: `(0.25 + 2.2 x share of the giver's wealth) x 0.5^(prior gifts inside 600 ticks)`.
+Twenty coins handed over one at a time are worth less than one gift of ten, and a poor dwarf's
+single coin is worth more than a rich one's.
+
+### The numbers
+
+All measured against one dwarf with nothing else happening to it, and all of them asserted in
+`tests/test_regard.py`.
+
+| | trust in the speaker, after |
+| --- | --- |
+| the same praise x20 | **-0.41**, and suspicion at the ceiling: from about the seventh it is `FLATTERY` |
+| two genuinely different compliments | +0.038, more than the twenty pastes ever managed |
+| fifty varied compliments, to a dwarf who has been working | +0.096, against a cap of 0.10 -- warmth is at 1.00, and that is the whole of what an afternoon of talk buys |
+| fifty varied compliments, to a dwarf who has done nothing | -0.78: unearned praise is suspect on its own, and fifty of it is an insult |
+| one kept promise | **+0.23**, more than any of the above |
+| 1 gold x20, out of 40 | +0.094 |
+| 10 gold x1, out of 40 | **+0.125**, off half the gold |
+
 ## The arbitrator
 
 Every tick, for every living dwarf: every skill proposes, every candidate is scored, one is sampled.
@@ -375,6 +568,7 @@ though only the listed terms are ever computed. The term names are fixed in `dwa
 | `payment_offered` | gold on the table, over 8 |
 | `gossip_value` | salience of the best story I could tell this listener |
 | `punish_pressure` | how strong the case in front of the chief is |
+| `impairment` | how much *this candidate* is hampered by what is broken -- see [Injuries](#injuries) |
 
 **Aimed at, and about.** `trust_target`, `respect_target`, `hatred_target` and `fear_target` read
 whoever the candidate is *aimed at*. The memory-derived four -- `grudge_target`,
@@ -471,7 +665,11 @@ The player can fill a slot like anyone else. The two new floats are the memory-d
 learned scorer sees not just what a dwarf feels about the one that matters most but what it is
 holding against them.
 
-**Observation, 69 floats** (`arbitrator.observation_vector`), one row per dwarf per tick:
+The relationship row carries a fourth number, `warmth`, and it is deliberately **not** in the
+vector: it is a mood, the scorer gets it folded into `trust_target` instead, and keeping it out is
+what left the mind block at 44 across the injury stage.
+
+**Observation, 77 floats** (`arbitrator.observation_vector`), one row per dwarf per tick:
 
 | Offset | Size | Contents |
 | --- | --- | --- |
@@ -486,15 +684,41 @@ holding against them.
 | 63 | 2 | open obligations on me / 3; open asks I made / 3 |
 | 65 | 2 | memories held / 64; their mean salience |
 | 67 | 2 | I am the chief; the chief is standing here (both 0 when there is none) |
+| 69 | 8 | **the condition block**, below |
 
-**Candidate features, 64 floats** (`arbitrator.candidate_features`): a 22-wide skill one-hot, then
-all 42 term values raw. `arbitrator.score(observation, features)` reproduces the hand table exactly,
-because the table *is* a linear model over this block. That is the seam, and it is unchanged: the
-blocks got wider, the contract did not.
+The condition block, all 0..1, added by the injury stage. Health is already in the mind vector and
+says how close to dying a dwarf is; this says what is *broken*, which is a different question and
+the one a scorer has to answer to know whether the mine is worth walking to. The three named bones
+are here and the mild kinds are not, because those three are what change what a dwarf *can do*; the
+rest reach the scorer through pain and worst.
 
-The schema id is `dwarfsim-v1`. Offsets were appended to, never reordered, so the skill one-hot and
-the term order from v0 still mean what they meant -- but every offset after `MIND_TRAITS` moved, so
-a v0 weight file must be refused, which is what the id is for.
+| Offset | Contents |
+| --- | --- |
+| 69 | pain: every injury's pain summed and softened |
+| 70 | worst: the severity of the worst single injury |
+| 71 | how many injuries are being carried, / 4 |
+| 72 | broken arm severity -- past 0.25, no two-handed work and no weapon |
+| 73 | broken leg severity -- past 0.30, no fleeing well and no monsters |
+| 74 | concussion severity -- noisier decisions, less remembered |
+| 75 | bleeding severity -- health draining until it is rested or eaten off |
+| 76 | cracked ribs severity -- more fear, less force |
+
+**Candidate features, 65 floats** (`arbitrator.candidate_features`): a 22-wide skill one-hot, then
+all 43 term values raw. The 43rd is `impairment`, which the injury stage appended.
+`arbitrator.score(observation, features)` reproduces the hand table exactly, because the table *is*
+a linear model over this block. That is the seam, and it is unchanged: the blocks got wider, the
+contract did not.
+
+The schema id is `dwarfsim-v2`. Offsets are appended to, never reordered, so the skill one-hot and
+the term order still mean what they meant -- but the observation grew from 69 to 77 and the
+candidate features from 64 to 65, so a v1 weight file must be refused, which is what the id is for.
+
+**The two frozen models in `../shared/models/` are deliberately not re-frozen for v2.** They are a
+snapshot of v1 and they still reproduce their own 200-record answer sheets, which is exactly what
+`tools/check_parity` proves: `LearnedScorer.load(..., live=False)` reads a frozen model on the
+layout *it* was written against rather than on this sim's, and `live=True` -- the only way the sim
+itself ever loads one -- still refuses a mismatch. Stage B of the port takes the new layout on; see
+[port.md](port.md).
 
 ## The learned scorer
 
@@ -1167,6 +1391,13 @@ moved. The summary also carries the tallies that make claims about a run checkab
 | `goals_adopted` | how many wants were taken up |
 | `reputation` | the settlement's final opinion of everyone, the player included |
 
+### What the summary counts
+
+The run summary grew one block with the injury stage, `injuries`: every injury dealt by kind, how
+many mended before the run ended, and what each survivor is still carrying. It is the honest answer
+to "was that brawl bad", which the hit count on its own stopped being the moment a blow stopped
+meaning two health.
+
 ## Known simplifications
 
 * The arbitrator is linear and hand-weighted. That is the whole point of v0, but it means every
@@ -1201,8 +1432,20 @@ moved. The summary also carries the tallies that make claims about a run checkab
 * A retort settles the score: it is filed as a harm but cannot itself be answered, and a demand
   cannot be repeated at the same dwarf for 90 ticks. Both are dampers on a feedback loop that
   otherwise ran to the death every time, not claims about how people work.
-* One monster at a time, only at the gate, and combat is abstract: damage is a roll scaled by weapon
-  quality, with no positioning, reach or timing.
+* One monster at a time, only at the gate, and combat is still abstract: a blow is one roll for
+  health and one for an injury, with no positioning, reach or timing. What is new is only what the
+  roll *produces*.
+* An injury is a kind and a severity and nothing else: there is no left arm and right arm, no scar
+  that stays after it heals, no infection, and no dwarf who is worse at healing than another beyond
+  being hungrier. A second broken arm deepens the first rather than being a second arm.
+* Nobody treats anybody. Resting and eating are the whole of medicine; there is no skill for
+  binding a wound, so a dwarf who cannot walk cannot be carried and nobody thinks to feed them.
+* Habituation is per *(listener, speaker)* and knows nothing about content beyond a hash and two
+  labels. "Nice sword" and "what a fine blade" are different signatures, so a determined farmer with
+  a thesaurus does better than one with a clipboard -- the speech trust cap is what actually stops
+  them, not the habituation.
+* Suspicion is about one speaker at a time. Six dwarves all flattering the same one, in turn, never
+  add up to anything, and nobody gossips about a flatterer.
 * Skills do not compose. There is no plan longer than one tick, so "go to the forge, make an axe,
   then go to the gate" only happens because the terms happen to line up three ticks running.
 * No economy beyond counting: prices are fixed, the forge turns ore into gold without limit, and

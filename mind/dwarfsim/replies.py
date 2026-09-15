@@ -1,4 +1,4 @@
-"""What a dwarf says back when you talk to it.
+"""What a dwarf says back when you talk to it: the door onto the speech pipeline.
 
 ``speech._TEMPLATES`` gives a dwarf a line for the things it *does* -- a retort, a demand, a
 bargain -- because those are skills, and a skill knows what it is doing. But most of what a
@@ -6,16 +6,24 @@ player says is not a provocation: a greeting, a question, a bit of praise. The s
 those in state (trust moves, the mind vector changes) and says nothing, which reads as being
 ignored.
 
-This module fills that gap and nothing else. One function, :func:`reply`, keyed on
+This module fills that gap. :func:`reply` is the one function everything calls, and behind it are
+the four modules that actually build the answer -- see ``docs/speech.md``:
 
-* the **intent** the interpreter read -- all thirteen in ``text/SCHEMA.md``;
-* the dwarf's **mood** -- ``ANGRY``, ``AFRAID``, ``GLAD`` or ``FLAT``, bucketed off the same
-  emotions the arbitrator scores on;
-* its **stance** toward the speaker -- ``FRIEND``, ``WARM``, ``NEUTRAL``, ``COLD`` or
-  ``ENEMY``, bucketed off the same ``trust`` and ``hatred`` the arbitrator scores on.
+* :mod:`dwarfsim.speechplan` decides **what to say**: one act out of 43, from a rule table over
+  what was heard, what this dwarf feels about the speaker, what it wants, what is broken and what
+  the two of them have already said;
+* :mod:`dwarfsim.replybank` decides **how to say it**: which written line, out of
+  ``text/data/replies.jsonl``;
+* :mod:`dwarfsim.realize` fills its ``{slots}`` from real state;
+* :mod:`dwarfsim.dialogue` remembers the conversation, which is what makes a CALLBACK honest.
 
-Two rules keep this honest, and they are the whole reason it is a separate module rather than
-more templates in ``speech.py``:
+The tables further down this module are the **floor** under that: what is said when the bank has
+no sayable line for an act. They are also where the mood and stance words the panels print come
+from (``ANGRY`` / ``AFRAID`` / ``GLAD`` / ``FLAT``, and ``FRIEND`` through ``ENEMY``), which is a
+coarser reading of the same state the planner buckets more finely.
+
+Two rules keep this honest, they are older than the pipeline, and they are checked here before
+any of it is consulted:
 
 1. **It never contradicts the arbitrator.** For a request, an order or an offer the caller
    passes ``decided``: the skill the dwarf actually chose in answer. The wording is picked from
@@ -25,11 +33,12 @@ more templates in ``speech.py``:
    (``RETORT``, ``DEMAND``, ``APOLOGY``, ``BARGAIN``, ``ACCEPT``, ``REFUSE`` ...), the caller
    passes it as ``already`` and this returns nothing at all. The skill's line is the answer.
 
-It changes no state: it is words for state that already moved. Every variant is drawn from
-``world.rng``, so a seed and the same typing give the same conversation.
+It changes no state but the conversation's own memory: the rest is words for state that already
+moved, in ``speech.hear``. Every variant is drawn from ``world.rng`` (or ``world.speech_rng``
+between two dwarves), so a seed and the same typing give the same conversation.
 """
 
-from . import profanity
+from . import dialogue, profanity, regard
 from .schema import NAME_POOL
 
 MOODS = ("ANGRY", "AFRAID", "GLAD", "FLAT")
@@ -57,17 +66,23 @@ def mood_of(dwarf):
 
 
 def stance_of(dwarf, other_id):
-    """One word for what the dwarf makes of you, off ``trust`` and ``hatred``."""
+    """One word for what the dwarf makes of you, off felt trust and ``hatred``.
+
+    Felt trust rather than trust: how a dwarf *speaks* to you is a matter of how it feels about
+    you this afternoon, which is exactly what warmth is (:mod:`dwarfsim.regard`). What it would
+    lend you is a different question and reads the relationship directly.
+    """
     r = dwarf.mind.rels.get(other_id)
     if r is None:
         return "NEUTRAL"
+    trust = regard.felt_trust(dwarf, other_id)
     if r["hatred"] >= 0.35:
         return "ENEMY"
-    if r["trust"] >= 0.40 and r["hatred"] < 0.15:
+    if trust >= 0.40 and r["hatred"] < 0.15:
         return "FRIEND"
-    if r["trust"] >= 0.12 and r["hatred"] < 0.20:
+    if trust >= 0.12 and r["hatred"] < 0.20:
         return "WARM"
-    if r["trust"] <= -0.15 or r["hatred"] >= 0.15:
+    if trust <= -0.15 or r["hatred"] >= 0.15:
         return "COLD"
     return "NEUTRAL"
 
@@ -177,6 +192,21 @@ REPLIES = {
         ("*", "ANGRY"): ["Fine words don't mend it, {you}.", "Don't."],
         ("*", "*"): ["Hm. Thanks, {you}.", "Aye. It was nothing."],
     },
+    # Praise from somebody the dwarf has decided wants something. The intent on the wire is
+    # still PRAISE; what changed is that the listener stopped reading it that way. See
+    # :mod:`dwarfsim.regard`.
+    "FLATTERY": {
+        ("FRIEND", "*"): ["You've said that twice now, {you}. What is it you're after?",
+                          "Aye, aye. And the favour?"],
+        ("ENEMY", "*"): ["Save it, {you}. I know what you are.",
+                         "Sweet words out of that mouth. No."],
+        ("*", "ANGRY"): ["Say it a third time and I'll start wondering what you want.",
+                         "Enough, {you}. Nobody talks like that for nothing."],
+        ("*", "AFRAID"): ["Why are you being so kind, {you}? What have you done?"],
+        ("*", "*"): ["Say it a third time and I'll start wondering what you want.",
+                     "You've been laying it on thick, {you}. Out with it.",
+                     "Flattery's cheap, {you}, and you're spending it fast."],
+    },
     "APOLOGY": {
         ("FRIEND", "*"): ["Let it lie, {you}. It's forgotten.", "Say no more, {you}."],
         ("ENEMY", "*"): ["Words, {you}.", "I'll believe it when I see it.",
@@ -280,6 +310,12 @@ ALWAYS_DECIDED = ("IGNORE", "AVOID")
 #: dwarf that swears at "good morning" is a different feature. Nothing swears unless the
 #: world's ``max_tier`` allows it -- see :mod:`dwarfsim.profanity`.
 SWEARING_KINDS = ("INSULT", "THREAT", "ACCUSE", "REFUSE_APOLOGY")
+
+#: And the same rule in the pipeline's vocabulary: the acts that are an answer to a provocation.
+#: A greeting, an answer and an accepted ask stay civil whatever the dwarf feels, which is the
+#: line the old table drew and the line the bank draws too.
+SWEARING_ACTS = ("INSULT_BACK", "THREATEN_BACK", "ACCUSE_BACK", "MOCK", "GLOAT",
+                 "DEMAND_APOLOGY", "BELITTLE_FORTUNE")
 
 #: Full insult sentences mixed into a provocation answer when the world's swearing
 #: ceiling allows that tier. Existing cells stay; these are added, not replacements.
@@ -399,15 +435,130 @@ def third_party(parsed, world, dwarf, speaker_id):
     return None
 
 
-def reply(world, dwarf, speaker_id, parsed, decided=None, already=None, rng=None):
-    """What ``dwarf`` says back to ``speaker_id``. Returns a dict; changes no state.
+def reply(world, dwarf, speaker_id, parsed, decided=None, already=None, rng=None, bank=None,
+          ranker=None, remember=True):
+    """What ``dwarf`` says back to ``speaker_id``. Returns a dict; changes no state but the
+    conversation's own memory.
 
-    ``decided`` is the skill the arbitrator chose in answer (``ACCEPT``, ``REFUSE``,
-    ``BARGAIN``, ``FULFIL``, ``IGNORE``, ``AVOID``) or ``None`` if it has not decided. It wins
-    over everything else for an ask, which is rule 1 at the top of this module.
+    The words come from the **speech pipeline** -- :mod:`dwarfsim.speechplan` decides the act,
+    :mod:`dwarfsim.replybank` picks the line, :mod:`dwarfsim.realize` fills its slots -- and the
+    tables in this module are what is left when the bank has nothing sayable for an act. The two
+    rules at the top of this module are unchanged and are enforced here, before the pipeline is
+    consulted at all: an arbitrator's decision wins, and a skill's own line wins over both.
 
-    ``already`` is a line the sim's own skill has already put in this dwarf's mouth in answer.
-    When there is one, this says nothing: rule 2.
+    ``bank`` and ``ranker`` are the two seams. ``bank`` defaults to
+    :func:`dwarfsim.replybank.load`; ``ranker`` is a trained chooser (see
+    :mod:`dwarfsim.learn.ranker`) and, when it is ``None``, the documented weighted match picks.
+    """
+    from . import replybank, speechplan
+
+    speaker = world.agent(speaker_id)
+    mood = mood_of(dwarf)
+    stance = stance_of(dwarf, speaker_id)
+    out = {"text": None, "note": None, "kind": None, "mood": mood, "stance": stance,
+           "cell": None, "who": dwarf.name, "construction": None}
+    if already:
+        out["kind"] = "ALREADY"
+        out["note"] = "%s answered with its own line" % dwarf.name
+        return out
+    if not dwarf.alive:
+        out["note"] = "%s is past answering" % dwarf.name
+        return out
+
+    rng = rng or world.rng
+    state = dialogue.of(dwarf, speaker_id, world.tick)
+    construction = speechplan.plan(dwarf, speaker_id, parsed, world, state=state,
+                                   decided=decided)
+    scene = construction.scene
+    out["construction"] = construction
+    out["kind"] = construction.act
+    out["cell"] = (construction.act, construction.state["trust"])
+    out["why"] = construction.top_reasons(2)
+
+    if remember:
+        state.note_heard(world.tick, construction.hears["intent"], construction.about,
+                         construction.news, construction.hears["topic"],
+                         entities=parsed.get("names") or (), text=parsed.get("text"))
+        if construction.hears["intent"] == "QUESTION":
+            state.open_question(world.tick, construction.about, construction.hears["topic"],
+                                scene.facts["sig"], parsed.get("text"))
+
+    # Rule 1, in its original words: for an ask the arbitrator has answered, the line comes out
+    # of that skill's cell and no other. The construction still says what the act was, so /why
+    # is complete, but nothing in the bank may overrule a decision the log already records.
+    if construction.forced:
+        variants = _usable(DECIDED[construction.forced], None, None)
+        chosen = _pick(rng, variants)
+        out["kind"] = construction.forced
+        out["cell"] = (construction.forced, construction.state["trust"])
+        if chosen is SILENCE:
+            out["note"] = "%s looked at you and said nothing" % dwarf.name
+        else:
+            out["text"] = _fill(chosen, dwarf.name, scene.speaker_name, None, None)
+        _finish(world, dwarf, speaker_id, out, rng, state, construction, None, remember)
+        return out
+
+    picked = replybank.choose(construction, dwarf, speaker, world, bank=bank, state=state,
+                              rng=rng, ranker=ranker)
+    out["bank"] = picked["source"]
+    out["slots"] = picked["slots"]
+    out["line"] = picked["line"].lid if picked["line"] is not None else None
+    out["runners"] = picked["runners"]
+    if picked["notes"]:
+        out.setdefault("notes", []).extend(picked["notes"])
+
+    text = picked["text"]
+    if text is None:
+        # The bank had nothing this dwarf could say. The old tables are the floor under it.
+        legacy = _from_tables(world, dwarf, speaker_id, parsed, rng, mood, stance)
+        out["text"], out["note"] = legacy["text"], legacy["note"]
+        out["kind"] = legacy["kind"] or out["kind"]
+        out["fallback"] = "tables"
+    elif text == replybank.SILENT_TEXT or construction.act == "SILENCE":
+        out["note"] = "%s looked at you and said nothing" % dwarf.name
+        out["text"] = None
+    else:
+        out["text"] = text
+    _finish(world, dwarf, speaker_id, out, rng, state, construction, picked["line"], remember)
+    return out
+
+
+def _finish(world, dwarf, speaker_id, out, rng, state, construction, line, remember):
+    """The tail every answer gets: the hurt tail, the swearing, and the turn filed."""
+    if out.get("text"):
+        _add_hurt_tail(out, rng, dwarf)
+        swear(world, dwarf, speaker_id, out)
+    if remember:
+        state.note_said(world.tick, construction.act,
+                        line.lid if line is not None else None,
+                        about=construction.about, news=construction.news,
+                        topic=construction.hears["topic"])
+        if construction.act in speechplan_answering():
+            state.answer_question(construction.scene.facts.get("sig"))
+    return out
+
+
+def speechplan_answering():
+    from .speechplan import ANSWERING
+    return ANSWERING
+
+
+def _from_tables(world, dwarf, speaker_id, parsed, rng, mood, stance):
+    """The pre-bank answer, kept as the floor under an act the bank cannot say."""
+    return _table_reply(world, dwarf, speaker_id, parsed, rng=rng)
+
+
+def _table_reply(world, dwarf, speaker_id, parsed, decided=None, already=None, rng=None):
+    """The answer out of the tables below, which is the **floor** under the pipeline.
+
+    This was the whole of ``reply`` before :mod:`dwarfsim.speechplan` and
+    :mod:`dwarfsim.replybank` existed, and it is kept for the one case they cannot cover: an act
+    the bank has no sayable line for -- an empty bank, a seed bank with a gap, a dwarf whose
+    state fills none of the slots any line wants. Something is always said, and this is what it
+    is. ``reply`` reaches it through :func:`_from_tables`; nothing else should call it.
+
+    ``decided`` and ``already`` are the same two arguments as ``reply``'s and mean the same
+    things; ``reply`` has already handled both by the time this is reached.
 
     The result:
 
@@ -443,7 +594,11 @@ def reply(world, dwarf, speaker_id, parsed, decided=None, already=None, rng=None
     sincerity = (parsed.get("sincerity") or "SINCERE").upper()
 
     table, kind = None, intent
-    if decided in DECIDED and (intent in ASKING or decided in ALWAYS_DECIDED):
+    if intent == "PRAISE" and regard.suspicion(dwarf, speaker_id) >= regard.SUSPICION_THRESHOLD:
+        # The words were praise. This dwarf stopped hearing them that way some compliments
+        # ago, and the answer is where that becomes visible.
+        table, kind = REPLIES["FLATTERY"], "FLATTERY"
+    elif decided in DECIDED and (intent in ASKING or decided in ALWAYS_DECIDED):
         # Rule 1: the arbitrator has spoken, so the words come from its cell and no other.
         table, kind = {("*", "*"): DECIDED[decided]}, decided
     elif sincerity == "SARCASTIC":
@@ -480,6 +635,7 @@ def reply(world, dwarf, speaker_id, parsed, decided=None, already=None, rng=None
     out["text"] = _fill(chosen, dwarf.name, you, topic, them)
     if "{them}" not in chosen:
         _add_name_tail(out, rng, dwarf, you, topic, them)
+    _add_hurt_tail(out, rng, dwarf)
     return swear(world, dwarf, speaker_id, out)
 
 
@@ -492,7 +648,7 @@ def swear(world, dwarf, speaker_id, out):
     """
     if not out.get("text"):
         return out
-    if out.get("kind") not in SWEARING_KINDS:
+    if out.get("kind") not in SWEARING_KINDS and out.get("kind") not in SWEARING_ACTS:
         return out
     sw = profanity.for_speaker(world, dwarf, world.agent(speaker_id))
     if sw is None:
@@ -504,6 +660,17 @@ def swear(world, dwarf, speaker_id, out):
         out["text"] = text
         out["profanity"] = profanity.rows(hits)
     return out
+
+
+def _add_hurt_tail(out, rng, dwarf):
+    """A dwarf with a broken arm mentions it, whatever else it was going to say."""
+    if not out.get("text"):
+        return
+    from . import speech
+    tail = speech.hurt_tail(rng, dwarf.condition.complaint())
+    if tail:
+        out["text"] += tail
+        out["hurt"] = dwarf.condition.describe()
 
 
 def _add_name_tail(out, rng, dwarf, you, topic, them):

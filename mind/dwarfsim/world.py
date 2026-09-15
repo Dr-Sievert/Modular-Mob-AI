@@ -17,7 +17,8 @@ Two inhabitants are not ordinary dwarves:
 
 import random
 
-from . import arbitrator, goals, mind, obligations, profanity, skills, speech
+from . import arbitrator, condition, goals, mind, obligations, profanity, regard, skills, speech
+from .condition import Condition
 from .memory import Memory, MemoryBook
 from .obligations import Obligation, RESPONSE_TTL
 from .schema import MAX_HEALTH, NAME_POOL, PLACES, PLAYER_ID
@@ -56,7 +57,7 @@ class Agent:
     __slots__ = ("id", "name", "place", "health", "inv", "mind", "alive",
                  "last_hit_by", "last_hit_tick", "grievances", "request",
                  "memories", "goals", "demands", "avoid", "last_struck", "external",
-                 "provocations")
+                 "provocations", "condition", "regard", "last_deed", "dialogue")
 
     def __init__(self, aid, name, place, rng, external=False):
         self.id = aid
@@ -78,6 +79,23 @@ class Agent:
         self.avoid = {}          # who I am steering clear of -> the tick I stop
         self.last_struck = {}    # who I have hit -> when
         self.external = external  # the player: never ticks, never decides
+        #: What is broken. See :mod:`dwarfsim.condition`: health says how close to dying this
+        #: dwarf is, the condition says what they can still do.
+        self.condition = Condition()
+        #: Per speaker, what repetition, warmth, suspicion and gifts have taught me about them.
+        #: See :mod:`dwarfsim.regard`.
+        self.regard = {}
+        #: The last tick this dwarf did something worth praising, which is what decides whether
+        #: praise of them is earned or flattery.
+        self.last_deed = None
+        #: Per speaker, what has already been said between the two of us: the turns, the
+        #: questions I owe an answer to, and what I have used up saying it. See
+        #: :mod:`dwarfsim.dialogue`. Expires after a long silence.
+        self.dialogue = {}
+
+    def hurt(self):
+        """The one number for "how badly off am I": bled out, or broken, whichever is worse."""
+        return condition.hurt_term(self)
 
     def heal(self, amount):
         self.health = min(MAX_HEALTH, round(self.health + amount, 2))
@@ -120,6 +138,10 @@ class World:
         #: Swearing draws from its own stream, so turning it on moves no other draw in the run
         #: and a seed still reproduces a settlement word for word.
         self.swear_rng = random.Random((seed or 0) * 7919 + 104729)
+        #: And so does what a dwarf says back to another dwarf, for the same reason: giving the
+        #: settlement a conversation should not move a single other draw in the run. See
+        #: :func:`dwarfsim.speech.answer`.
+        self.speech_rng = random.Random((seed or 0) * 6151 + 92821)
         self.scenario = scenario
         self.temperature = temperature
         #: ``None`` for the hand-written weight table, or a learned scorer (see
@@ -251,7 +273,11 @@ class World:
         is earlier than now; it is what lets two heads recognise the same episode. Returns
         the memory, or ``None`` if this head already had it.
         """
-        if holder is None or not holder.alive or intensity <= 0.02:
+        if holder is None or not holder.alive:
+            return None
+        # A concussed head takes less in. This is the only place an injury touches memory.
+        intensity *= holder.condition.recall_mult()
+        if intensity <= 0.02:
             return None
         when = self.tick if at_tick is None else at_tick
         return holder.memories.remember(
@@ -289,8 +315,12 @@ class World:
             witnesses = [o for o in self.at(place)] if place is not None else []
         deltas = []
         if apply and kind in mind.EVENT_TABLE:
-            deltas = mind.apply_event(kind, actor, target, witnesses, magnitude)
+            deltas = mind.apply_event(kind, actor, target, witnesses, magnitude, self.tick)
             self._remember_event(kind, actor, target, witnesses, magnitude, place)
+        if actor is not None and kind in regard.ACHIEVEMENTS:
+            # Something worth praising. Praise of somebody who has done nothing lately is what
+            # the flattery rule is looking for, so the door into it is one line here.
+            actor.last_deed = self.tick
         ev = {
             "type": kind,
             "actor": actor.id if actor is not None else None,
@@ -460,14 +490,28 @@ class World:
 
     def player_give(self, dwarf, gold=3):
         """The player handed over gold. It actually moves."""
-        dwarf = self.agent(self._id_of(dwarf))
-        moved = min(gold, self.player.inv["gold"])
-        self.player.inv["gold"] -= moved
-        dwarf.inv["gold"] += moved
-        self.player.place = dwarf.place
-        return self.emit("GIFT", self.player, dwarf, place=dwarf.place,
-                         magnitude=min(1.6, 0.5 + 0.25 * moved),
-                         extra={"item": "gold", "count": moved, "by": "player"})
+        return self.give(self.player, dwarf, "gold", gold, by="player")
+
+    def give(self, giver, receiver, item="gold", count=3, by=None):
+        """One gift, priced by :mod:`dwarfsim.regard`. The only door for a thing changing hands.
+
+        What it is worth is what it cost the giver relative to what they had, divided by how
+        many times they have done this already, which is why twenty coins one at a time buy
+        less than one gift of ten.
+        """
+        giver = self.agent(self._id_of(giver)) or giver
+        receiver = self.agent(self._id_of(receiver)) or receiver
+        moved = min(count, giver.inv.get(item, 0))
+        if moved <= 0:
+            return None
+        magnitude = regard.gift_magnitude(giver, receiver, item, moved, self.tick)
+        giver.inv[item] -= moved
+        receiver.inv[item] = receiver.inv.get(item, 0) + moved
+        if giver.external:
+            giver.place = receiver.place
+        return self.emit("GIFT", giver, receiver, place=receiver.place, magnitude=magnitude,
+                         extra={"item": item, "count": moved, "worth": magnitude,
+                               **({"by": by} if by else {})})
 
     def player_promise(self, dwarf, ask, deadline=None):
         """The player promises a dwarf something: an obligation with the player on the hook."""
@@ -513,6 +557,10 @@ class World:
                 continue
             a.mind.decay()
             a.memories.invalidate()
+            regard.decay(a)
+            self._tick_condition(a)
+            if not a.alive:
+                continue
             if a.mind.needs["fatigue"] < 0.6 and a.health < MAX_HEALTH:
                 a.heal(0.06)
             if a.mind.needs["hunger"] > 0.95 or a.mind.needs["thirst"] > 0.97:
@@ -545,18 +593,46 @@ class World:
             if chosen is None:
                 continue
             record = arbitrator.explain(cands, chosen)
+            blocked = condition.blocked_skills(a, skills.SKILLS)
+            if blocked:
+                # The candidates a broken bone never let be proposed. The log says so, or the
+                # inspector would show a dwarf mysteriously never choosing to mine.
+                record["blocked"] = blocked
             if chosen.place is not None and chosen.place != a.place:
                 # Walking there is this tick's action. distance_cost already priced it.
-                a.place = chosen.place
-                record["moved"] = chosen.place
-                self.emit("MOVE", a, place=chosen.place, apply=False,
-                          extra={"for": chosen.label()})
+                slow = a.condition.move_penalty()
+                if slow > 0.0 and self.rng.random() < slow:
+                    # The leg gives out. The tick is spent and the dwarf is still here.
+                    record["limped"] = chosen.place
+                    self.emit("MOVE", a, place=a.place, apply=False,
+                              extra={"for": chosen.label(), "toward": chosen.place,
+                                     "limped": True})
+                else:
+                    a.place = chosen.place
+                    record["moved"] = chosen.place
+                    self.emit("MOVE", a, place=chosen.place, apply=False,
+                              extra={"for": chosen.label()})
             else:
                 skills.SKILL_BY_NAME[chosen.skill].execute(a, self, chosen)
             record["agent"] = a.id
             decisions.append(record)
 
         return {"tick": self.tick, "events": self.events, "decisions": decisions}
+
+    def _tick_condition(self, a):
+        """One tick of bleeding and of mending. The body's own work, before anyone decides."""
+        cond = a.condition
+        if not cond:
+            return
+        drain = cond.drain()
+        if drain > 0.0:
+            a.health = round(a.health - drain, 2)
+            if a.health <= 0.0:
+                self.kill(a, None, cause="bleeding")
+                return
+        healed = cond.tick_heal(condition.rest_scale(a))
+        for kind in healed:
+            self.emit("RECOVERED", a, place=a.place, apply=False, extra={"injury": kind})
 
     def _tick_monster(self):
         if self.monster is None:
@@ -581,12 +657,16 @@ class World:
             return
         if present:
             bitten = present[self.rng.randrange(len(present))]
-            dmg = round(self.monster_damage * self.rng.uniform(0.5, 1.3), 2)
-            bitten.health = round(bitten.health - dmg, 2)
+            # A monster is what a weapon is: it opens people. Most of what kills in the
+            # settlement comes through here and through an armed dwarf, not through fists.
+            dmg, injuries, _ = condition.resolve_blow(
+                self.rng, None, bitten, profile="monster",
+                power=self.monster_damage / 1.4, tick=self.tick)
             bitten.last_hit_tick = self.tick
             self.emit("MONSTER_ATTACK", None, bitten, witnesses=present, place=m["place"],
                       apply=False, extra={"kind": m["kind"], "damage": dmg,
-                                          "health": max(0.0, bitten.health)})
+                                          "health": max(0.0, bitten.health),
+                                          "injuries": [i.snapshot() for i in injuries]})
             self.emit("THREAT", None, bitten, witnesses=present, place=m["place"],
                       magnitude=0.7, extra={"source": "monster"})
             if bitten.health <= 0.0:
@@ -635,6 +715,9 @@ class World:
                 "needs": a.mind.needs,
                 "inv": a.inv,
             }
+            if a.condition:
+                s["injuries"] = a.condition.snapshot()
+                s["pain"] = round(a.condition.pain(), 3)
             if with_rels:
                 s["rels"] = {str(k): [v["trust"], v["respect"], v["hatred"]]
                              for k, v in a.mind.rels.items()}

@@ -43,10 +43,20 @@ FEED_CAP = 80
 DEFAULT_CLASSIFIER = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "text", "models", "clf")
 
+#: What to say when the classifier cannot even be imported. The sim itself has no dependencies;
+#: the classifier's numpy is the one thing a fresh clone is missing, and this is the one line
+#: the app prints about it. It is the same string ``text/classifier/infer`` raises.
+NUMPY_HINT = "numpy is required for the classifier: pip install -r requirements.txt"
+
 INTENTS = tuple(speech.INTENT_EVENT)
 TOPICS = tuple(speech.TOPIC_PLACE)
 ADDRESSED = ("LISTENER", "THIRD", "GROUP", "NONE")
 SINCERITY = ("SINCERE", "SARCASTIC", "JOKING")
+#: The two columns `text/CURSOR_UNDERSTANDING_PROMPT.md` adds. The classifier does not label them
+#: yet -- `dwarfsim.speechplan.derive` works them out by rule -- but both this and `/labels` pass
+#: them straight through when they are there, which is the whole of the seam.
+ABOUT = ("SPEAKER", "LISTENER", "THIRD", "WORLD", "OBJECT", "NONE")
+NEWS = ("MISFORTUNE", "FORTUNE", "PLAN", "OPINION", "FACT", "SEEKING", "NONE")
 
 GIVEABLE = ("gold", "ore", "food", "ale")
 
@@ -80,6 +90,8 @@ HELP = (
     ("/mind", "everything in its head right now"),
     ("/all", "one line per dwarf"),
     ("/labels k=v ... text=...", "speak with hand-typed labels (no classifier needed)"),
+    ("/log N", "print the last N exchanges in full, however long they are"),
+    ("/clear", "empty the conversation panel"),
     ("/help", "this"),
     ("/quit", "leave"),
 )
@@ -144,6 +156,18 @@ def clean_parsed(raw, text, pool=NAME_POOL):
     sincerity = str(raw.get("sincerity", "SINCERE")).upper()
     out["sincerity"] = sincerity if sincerity in SINCERITY else "SINCERE"
 
+    # `about` and `news` are optional and are carried through only when they are legal. A
+    # classifier that does not produce them loses nothing: `speechplan.derive` fills them in by
+    # rule and says in the reasons that it did.
+    for field, allowed in (("about", ABOUT), ("news", NEWS)):
+        if raw.get(field) is None:
+            continue
+        value = str(raw[field]).upper()
+        if value in allowed:
+            out[field] = value
+        else:
+            notes.append("unknown %s %r, worked out by rule instead" % (field, raw[field]))
+
     names = [n for n in (raw.get("names") or []) if n in pool]
     for n in pool:                      # exact match, the same rule the classifier uses
         if n not in names and n in text:
@@ -177,6 +201,10 @@ class Interpreter:
     ``text/models/clf`` is rewritten in place by a retrain, so it can be missing, half-written
     or trained on a different label set. All three come back as :attr:`error` and a clear
     message; the app stays usable through ``/labels``.
+
+    A fresh clone with nothing installed is the fourth case, and the commonest: the classifier
+    runs on numpy, so an ``ImportError`` here is a missing dependency rather than a broken
+    model, and it comes back as the one line :data:`NUMPY_HINT` instead of a traceback.
     """
 
     def __init__(self, path=DEFAULT_CLASSIFIER):
@@ -200,6 +228,8 @@ class Interpreter:
         try:
             from text.classifier.infer import Classifier
             self.clf = Classifier.load(self.path)
+        except ImportError as exc:                        # nothing pip-installed yet
+            self.error = str(exc) if NUMPY_HINT in str(exc) else NUMPY_HINT
         except Exception as exc:                          # missing, half-written, incompatible
             self.error = "%s: %s" % (type(exc).__name__, exc)
         return self.clf
@@ -209,7 +239,8 @@ class Interpreter:
         clf = self.load()
         if clf is None:
             return None, [
-                "no classifier at %s -- %s" % (self.path, self.error),
+                self.error if self.error == NUMPY_HINT
+                else "no classifier at %s -- %s" % (self.path, self.error),
                 "type the labels by hand instead, e.g.",
                 "  /labels intent=INSULT aggression=0.8 valence=-0.8 text=%s" % (text or "..."),
             ]
@@ -248,6 +279,10 @@ class Session:
         self.focus = self.world.agents[0]
         self.world.player.place = self.focus.place
         self.last_decision = {}       # agent id -> the arbitrator's last full explain() record
+        #: agent id -> the last speech construction it answered with, as plain data. The same
+        #: idea as ``last_decision`` and for the same reason: ``/why`` has to be able to say
+        #: why the dwarf said *that*, not only why it did what it did.
+        self.last_construction = {}
         self.deltas = {}              # agent id -> {field: (before, after)} for the last action
         self.running = True
         self.turns = 0
@@ -363,6 +398,9 @@ class Session:
 
     def _push(self, entry):
         entry.setdefault("tick", self.world.tick)
+        # A number that never repeats and never shifts, unlike the feed's index: the renderer
+        # uses it to print only what is new since the last prompt.
+        entry.setdefault("n", self.turns)
         self.feed.append(entry)
         del self.feed[:-FEED_CAP]
         self.turns += 1
@@ -486,13 +524,27 @@ class Session:
     def _answer(self, entry, parsed):
         """Every line you say gets an answer, unless the dwarf already gave you one.
 
-        The wording comes from :mod:`dwarfsim.replies`, which is told what the arbitrator
-        chose so it cannot say yes to an ask the dwarf refused. It moves no state: the state
-        already moved, in ``speech.hear``.
+        The wording comes out of the speech pipeline through :func:`dwarfsim.replies.reply`,
+        which is told what the arbitrator chose so it cannot say yes to an ask the dwarf
+        refused. It moves no state but the conversation's own memory: the rest already moved,
+        in ``speech.hear``.
+
+        The **construction** -- the act, the rule that picked it, the tags, the slots that were
+        filled and which bank line was used -- is kept beside the reply as plain data, because
+        that is what the screen draws and what ``/why`` reads back.
         """
         answer = replies.reply(self.world, self.focus, PLAYER_ID, parsed,
                                decided=entry.get("answer_skill"),
                                already=entry.get("answered"))
+        con = answer.pop("construction", None)
+        if con is not None:
+            plan = con.snapshot()
+            plan["bank"] = answer.get("bank")
+            plan["line"] = answer.get("line")
+            plan["said"] = answer.get("text")
+            plan["used"] = dict(answer.get("slots") or {})
+            answer["construction"] = plan
+            self.last_construction[self.focus.id] = plan
         entry["reply"] = answer
         if answer["text"]:
             entry.setdefault("lines", []).append(
@@ -520,6 +572,27 @@ class Session:
             return self._push({"kind": "help", "you": line, "notes": ["no such command: /%s" % cmd],
                                "help": list(HELP)})
         return fn(args, body)
+
+    def _cmd_log(self, args, body):
+        """``/log N`` -- the last N exchanges in full.
+
+        The panel shows what fits; this shows what happened. Entries come back as they are,
+        and :func:`dwarfsim.talk_ui.entry_lines` draws them, so nothing about the layering
+        changes: the session hands over data, the renderer decides how it looks.
+        """
+        try:
+            want = max(1, int(args[0])) if args else 10
+        except ValueError:
+            return self._push({"kind": "error", "you": "/log " + " ".join(args),
+                               "notes": ["how many? e.g. /log 20"]})
+        shown = [e for e in self.feed if e.get("kind") != "log"][-want:]
+        return self._push({"kind": "log", "you": "/log %d" % want, "show": shown,
+                           "notes": ["nothing said yet"] if not shown else []})
+
+    def _cmd_clear(self, args, body):
+        self.feed = []
+        return self._push({"kind": "info", "you": "/clear",
+                           "notes": ["conversation cleared"]})
 
     def _cmd_help(self, args, body):
         return self._push({"kind": "help", "you": "/help", "help": list(HELP),
@@ -635,16 +708,24 @@ class Session:
         return self._push(entry)
 
     def _cmd_why(self, args, body):
+        """Why it did that, and -- since the reply came out of a rule table too -- why it said
+        that. The two are separate machines and the screen keeps them separate."""
         record = self.last_decision.get(self.focus.id)
+        said = self.last_construction.get(self.focus.id)
         if record is None:
-            return self._push({"kind": "info", "you": "/why",
-                               "notes": ["%s has not decided anything yet -- /tick 1"
-                                         % self.focus.name]})
+            if said is None:
+                return self._push({"kind": "info", "you": "/why",
+                                   "notes": ["%s has not decided anything yet -- /tick 1"
+                                             % self.focus.name]})
+            return self._push({"kind": "why", "you": "/why", "who": self.focus.name,
+                               "action": None, "score": 0.0, "terms": [], "candidates": [],
+                               "construction": said})
         runners = [{"action": self.pretty(e["action"]), "score": e["score"],
                     "won": bool(e.get("won"))} for e in record.get("top", ())]
         return self._push({"kind": "why", "you": "/why", "who": self.focus.name,
                            "action": self.pretty(record["chosen"]), "score": record["score"],
-                           "terms": self._terms(record), "candidates": runners})
+                           "terms": self._terms(record), "candidates": runners,
+                           "construction": said})
 
     def _cmd_mind(self, args, body):
         return self._push({"kind": "mind", "you": "/mind",
@@ -697,6 +778,9 @@ class Session:
             "sincerity": fields.get("sincerity", "SINCERE"),
             "names": [n for n in NAME_POOL if n in text],
         }
+        for field in ("about", "news"):
+            if fields.get(field):
+                parsed[field] = fields[field]
         if ask_spec and ask_spec.lower() not in ("none", "no", "0"):
             ask = parse_ask(ask_spec)
             if ask is None:
@@ -725,7 +809,7 @@ class Session:
                 continue
             r = a.mind.rel(o.id)
             others.append({"name": o.name, "trust": r["trust"], "respect": r["respect"],
-                           "hatred": r["hatred"]})
+                           "hatred": r["hatred"], "warmth": round(r["warmth"], 3)})
         mem = []
         for m in a.memories.top(world.tick, forgiveness, 3):
             mem.append({"kind": m["kind"], "actor": self.name(m["actor"]),
@@ -740,12 +824,20 @@ class Session:
                         "with": self.name(ob.frm if ob.to == a.id else ob.to),
                         "what": ob.label(self.name), "payment": ob.payment(),
                         "deadline": ob.deadline})
+        reg = a.regard.get(PLAYER_ID)
         return {
             "id": a.id, "name": a.name, "alive": a.alive, "place": a.place, "health": a.health,
             "chief": a.id == world.chief_id,
             "emotions": dict(a.mind.emotions), "needs": dict(a.mind.needs),
             "traits": dict(a.mind.traits), "inv": dict(a.inv),
-            "player": {"trust": rel["trust"], "respect": rel["respect"], "hatred": rel["hatred"]},
+            # What is broken, and what talking to this dwarf has been worth lately: warmth
+            # is what words buy, suspicion is what saying the same thing too often buys.
+            "condition": a.condition.describe(),
+            "injuries": a.condition.snapshot(),
+            "pain": round(a.condition.pain(), 3),
+            "player": {"trust": rel["trust"], "respect": rel["respect"], "hatred": rel["hatred"],
+                       "warmth": round(rel["warmth"], 3),
+                       "suspicion": round(reg.suspicion, 3) if reg is not None else 0.0},
             "others": others,
             "goals": [{"kind": g.kind, "target": self.name(g.target),
                        "strength": round(g.strength, 3)} for g in a.goals],

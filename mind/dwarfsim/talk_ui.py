@@ -51,6 +51,11 @@ DEFAULT_WIDTH = 110
 #: Under this many columns the two panels stack instead of sitting side by side.
 SIDE_BY_SIDE = 100
 
+#: The most exchanges the live panel will ever draw, however tall the terminal is. The height
+#: budget usually bites first; this is the guard against a very tall window redrawing the whole
+#: feed every prompt.
+FEED_LIMIT = 40
+
 #: How many spoken lines and narration lines one entry shows before it starts counting.
 SPOKEN_CAP = 8
 STORY_CAP = 24
@@ -152,6 +157,12 @@ def mind_lines(snap, full=BAR_FULL_PLAIN, empty=BAR_EMPTY_PLAIN):
     if hp:
         out.append((0, "bad" if hp[1] < hp[0] else "good",
                     "health %.1f -> %.1f" % hp))
+    # Health says how close to dying; the condition says what it can still do.
+    if d.get("injuries"):
+        out.append((0, "bad", "hurt: %s" % d.get("condition", "hurt")))
+        for inj in d["injuries"]:
+            out.append((1, "dim", "%-14s %s %.2f" % (
+                inj["kind"], bar(inj["severity"], 8, full, empty), inj["severity"])))
 
     out.append((0, "title", "emotions"))
     for k in ("anger", "fear", "happiness", "grief"):
@@ -173,6 +184,14 @@ def mind_lines(snap, full=BAR_FULL_PLAIN, empty=BAR_EMPTY_PLAIN):
         text, style = arrow(deltas.get("player_" + k))
         out.append((1, style or "",
                     "%-9s %s %s" % (k, _fmt(p[k]), text)))
+    # What words bought, and what saying the same thing too often bought. Trust is deeds.
+    out.append((1, "dim", "%-9s %s   (words; it fades)" % ("warmth", _fmt(p.get("warmth", 0.0),
+                                                                         False))))
+    if p.get("suspicion"):
+        out.append((1, "warn" if p["suspicion"] >= 0.5 else "dim",
+                    "%-9s %s   %s" % ("suspicion", _fmt(p["suspicion"], False),
+                                      "it thinks you want something"
+                                      if p["suspicion"] >= 0.5 else "")))
     out.append((1, "dim", "your gold: %d" % snap.get("player_gold", 0)))
 
     if d["others"]:
@@ -250,6 +269,42 @@ def _terms_text(terms):
     return ", ".join("%s %+.2f" % (k, v) for k, v in terms)
 
 
+def construction_lines(plan, indent=2, full=False):
+    """How the reply was built, as screen rows: the act, the top two reasons, the slots and
+    the bank line.
+
+    Short by default -- one row under the line that was said -- and the whole thing for
+    ``/why``, which is the place a person goes when the short version was not enough.
+    """
+    if not plan:
+        return []
+    out = []
+    tags = plan.get("hears") or {}
+    state = plan.get("state") or {}
+    out.append((indent, "term", "act %s  by rule %s" % (plan.get("act"), plan.get("rule"))))
+    reasons = plan.get("why") or []
+    for row in reasons[:(6 if full else 2)]:
+        out.append((indent + 1, "dim", "- %s: %s" % (row["rule"], row["why"])))
+    used = plan.get("used") or {}
+    if used:
+        out.append((indent + 1, "dim", "slots: " + ", ".join(
+            "{%s}=%s" % (k, v) for k, v in sorted(used.items()))))
+    if plan.get("line"):
+        out.append((indent + 1, "dim", "line %s out of %s"
+                    % (plan["line"], plan.get("bank") or "the bank")))
+    if full:
+        out.append((indent + 1, "dim", "heard: %s about %s, news %s, topic %s, %s, %s" % (
+            tags.get("intent"), tags.get("about"), tags.get("news"), tags.get("topic"),
+            tags.get("sincerity"), tags.get("heat"))))
+        out.append((indent + 1, "dim", "state: trust %s, mood %s, %s, suspicion %s" % (
+            state.get("trust"), state.get("mood"), state.get("condition"),
+            state.get("suspicion"))))
+        spare = {k: v for k, v in (plan.get("slots") or {}).items() if k not in used}
+        if spare:
+            out.append((indent + 1, "dim", "could also have filled: " + ", ".join(sorted(spare))))
+    return out
+
+
 def decision_lines(decisions, highlight=None, keep=16):
     """What the focused dwarf did, with runs of the same action folded into one line.
 
@@ -294,6 +349,18 @@ def entry_lines(entry):
     """``[(indent, style, text)]`` for one thing that happened in the conversation."""
     out = []
     kind = entry.get("kind")
+
+    if kind == "log":
+        # ``/log N``: the last N exchanges, drawn in full however long they are. The session
+        # handed over the entries themselves, so this is the same renderer, once per entry.
+        out.append((0, "you", entry.get("you", "/log")))
+        for i, old in enumerate(entry.get("show") or ()):
+            if i:
+                out.append((0, "dim", ""))
+            out.extend(entry_lines(old))
+        for note in entry.get("notes") or ():
+            out.append((1, "warn", note))
+        return out
 
     if entry.get("you"):
         if kind in ("say",):
@@ -343,6 +410,7 @@ def entry_lines(entry):
         if line["kind"] == "REPLY" and answer.get("kind"):
             out.append((2, "dim", "answering as %s, %s (%s)" % (
                 answer["stance"].lower(), answer["mood"].lower(), answer["kind"])))
+            out.extend(construction_lines(answer.get("construction"), indent=2))
     if len(lines) > SPOKEN_CAP:
         out.append((1, "dim", "(%d more lines were said)" % (len(lines) - SPOKEN_CAP)))
 
@@ -359,15 +427,19 @@ def entry_lines(entry):
                         row["player"], row["goals"])))
 
     if kind == "why":
-        out.append((0, "title", "%s chose %s (%.2f) because:" % (
-            entry["who"], entry["action"], entry["score"])))
-        for k, v in entry.get("terms") or ():
-            out.append((1, "term", "%-22s %+.3f" % (k, v)))
-        out.append((1, "dim", "it was choosing between:"))
-        for c in entry.get("candidates") or ():
-            out.append((2, "npc" if c["won"] else "dim",
-                        "%-28s %+.2f%s" % (c["action"], c["score"],
-                                           "  <-- won" if c["won"] else "")))
+        if entry.get("action"):
+            out.append((0, "title", "%s chose %s (%.2f) because:" % (
+                entry["who"], entry["action"], entry["score"])))
+            for k, v in entry.get("terms") or ():
+                out.append((1, "term", "%-22s %+.3f" % (k, v)))
+            out.append((1, "dim", "it was choosing between:"))
+            for c in entry.get("candidates") or ():
+                out.append((2, "npc" if c["won"] else "dim",
+                            "%-28s %+.2f%s" % (c["action"], c["score"],
+                                               "  <-- won" if c["won"] else "")))
+        if entry.get("construction"):
+            out.append((0, "title", "and it said what it said because:"))
+            out.extend(construction_lines(entry["construction"], indent=1, full=True))
 
     if kind == "mind":
         out.append((0, "title", "everything in %s's head" % entry["who"]))
@@ -387,12 +459,51 @@ def entry_lines(entry):
     return out
 
 
-def conversation_lines(snap, limit=6):
+def rendered_height(lines, width):
+    """How many terminal rows ``lines`` will actually occupy once wrapped at ``width``."""
+    total = 0
+    for indent, _style, text in lines:
+        pad = 2 * indent
+        total += len(textwrap.wrap(text, max(20, width - pad)) or [""])
+    return total
+
+
+def conversation_lines(snap, limit=6, height=None, width=DEFAULT_WIDTH, since=None):
+    """The *tail* of the conversation: the newest exchanges, as many as will fit.
+
+    The panel is a fixed size and the log is not, so this walks the feed backwards, measures
+    each entry as it will really be drawn -- wrapping included -- and stops adding older ones
+    when the next would overflow. The newest entry is always drawn whole, even when it is on
+    its own taller than the panel: a reply you cannot see is worse than a panel that spills.
+    Rendering from the front, which is what this used to do, put the newest reply off the
+    bottom edge after a few dozen exchanges and there was no way to get it back. ``/log N``
+    is the way back to anything older.
+
+    ``since`` is an entry number (``entry["n"]``): with one, only entries after it are drawn,
+    which is what the no-rich path wants -- there the terminal does the scrolling and reprinting
+    the whole conversation every prompt is just noise.
+    """
+    feed = snap["feed"]
+    if since is not None:
+        feed = [e for e in feed if e.get("n", -1) > since]
     out = []
-    feed = snap["feed"][-limit:]
     if not feed:
-        out.append((0, "dim", "say something to %s, or /help" % snap["focus_name"]))
-    for i, entry in enumerate(feed):
+        if since is None:
+            out.append((0, "dim", "say something to %s, or /help" % snap["focus_name"]))
+        return out
+    if height is None:
+        chosen = feed[-max(1, limit):]
+    else:
+        chosen = []
+        used = 0
+        for entry in reversed(feed):
+            lines = entry_lines(entry)
+            cost = rendered_height(lines, width) + (1 if chosen else 0)
+            if chosen and (used + cost > height or len(chosen) >= max(1, limit)):
+                break
+            chosen.insert(0, entry)
+            used += cost
+    for i, entry in enumerate(chosen):
         if i:
             out.append((0, "dim", ""))
         out.extend(entry_lines(entry))
@@ -431,16 +542,23 @@ def _plain_block(lines, width, colour):
     return out
 
 
-def plain_render(snap, width=100, colour=False, limit=6, ascii_only=True):
-    """The no-rich rendering: two stacked blocks and a rule."""
+def plain_render(snap, width=100, colour=False, limit=6, ascii_only=True, since=None):
+    """The no-rich rendering: two stacked blocks and a rule.
+
+    With ``since``, the conversation block is only what has happened since that entry number.
+    There is no panel here and nothing is cleared: the terminal scrolls by itself, and
+    reprinting the whole conversation at every prompt is exactly what pushed the newest reply
+    off the top of the screen.
+    """
     width = max(40, int(width))
     rule = "-" * width
     full, empty = bar_chars(ascii_only)
     out = [status_line(snap), rule, "THE DWARF"]
     out.extend(_plain_block(mind_lines(snap, full, empty), width, colour))
     out.append(rule)
-    out.append("THE CONVERSATION")
-    out.extend(_plain_block(conversation_lines(snap, limit), width, colour))
+    out.append("THE CONVERSATION" if since is None else "SINCE THE LAST PROMPT")
+    body = _plain_block(conversation_lines(snap, limit, width=width, since=since), width, colour)
+    out.extend(body or ["  (nothing new)"])
     out.append(rule)
     return "\n".join(out)
 
@@ -455,14 +573,14 @@ def _rich_group(mods, lines):
     return mods["Group"](*body) if body else mods["Text"]("")
 
 
-def _rich_panels(mods, snap, limit=6, ascii_only=True):
+def _rich_panels(mods, snap, limit=6, ascii_only=True, height=None, width=DEFAULT_WIDTH):
     full, empty = bar_chars(ascii_only)
     box = mods["box"].ASCII if ascii_only else mods["box"].ROUNDED
     left = mods["Panel"](
         _rich_group(mods, mind_lines(snap, full, empty)),
         title=snap["focus_name"], border_style="cyan", box=box)
     right = mods["Panel"](
-        _rich_group(mods, conversation_lines(snap, limit)),
+        _rich_group(mods, conversation_lines(snap, limit, height=height, width=width)),
         title="conversation", border_style="magenta", box=box)
     return left, right
 
@@ -487,7 +605,8 @@ def rich_render(mods, snap, width=100, limit=6, ascii_only=True):
     return console.file.getvalue()
 
 
-def render(session, use_rich=None, width=None, limit=6, ascii_only=None, colour=None):
+def render(session, use_rich=None, width=None, limit=6, ascii_only=None, colour=None,
+           since=None):
     """The whole screen as one string. Never raises, with rich or without it.
 
     ``colour`` defaults to whether stdout is a terminal, so a transcript piped to a file has no
@@ -501,12 +620,12 @@ def render(session, use_rich=None, width=None, limit=6, ascii_only=None, colour=
     mods = None if use_rich is False else rich_modules()
     if mods is None:
         return plain_render(snap, width or DEFAULT_WIDTH, colour=colour, limit=limit,
-                            ascii_only=ascii_only)
+                            ascii_only=ascii_only, since=since)
     try:
         return rich_render(mods, snap, width or DEFAULT_WIDTH, limit=limit, ascii_only=ascii_only)
     except Exception:
         return plain_render(snap, width or DEFAULT_WIDTH, colour=colour, limit=limit,
-                            ascii_only=ascii_only)
+                            ascii_only=ascii_only, since=since)
 
 
 # ---------------------------------------------------------------------------
@@ -531,6 +650,7 @@ def run(session, use_rich=True, width=None, out=None):
     out = out or sys.stdout
     mods = rich_modules() if use_rich else None
     console = None
+    seen = None
     ascii_only = not unicode_ok(out)
     if mods is not None:
         console = mods["Console"]()
@@ -544,9 +664,18 @@ def run(session, use_rich=True, width=None, out=None):
                 layout.split_column(
                     mods["Layout"](name="body"),
                     mods["Layout"](name="foot", size=3))
-                left, right = _rich_panels(mods, session.snapshot(),
-                                           limit=max(2, (console.height - 8) // 6),
-                                           ascii_only=ascii_only)
+                snap = session.snapshot()
+                # The panel is this tall and no taller, so the tail that fits is what is
+                # drawn: see conversation_lines(). The width is the right-hand column's,
+                # because that is what the text will wrap to.
+                talk_width = (int(console.width * 0.60) if console.width >= SIDE_BY_SIDE
+                              else console.width) - 4
+                talk_height = (console.height - 8 if console.width >= SIDE_BY_SIDE
+                               else int((console.height - 8) * 0.55))
+                left, right = _rich_panels(mods, snap, limit=FEED_LIMIT,
+                                           ascii_only=ascii_only,
+                                           height=max(4, talk_height),
+                                           width=max(30, talk_width))
                 body = layout["body"]
                 if console.width >= SIDE_BY_SIDE:
                     body.split_row(mods["Layout"](left, name="mind", ratio=40),
@@ -554,13 +683,15 @@ def run(session, use_rich=True, width=None, out=None):
                 else:
                     body.split_column(mods["Layout"](right, name="talk", ratio=55),
                                       mods["Layout"](left, name="mind", ratio=45))
-                layout["foot"].update(mods["Panel"](
-                    status_line(session.snapshot()), border_style="dim"))
+                layout["foot"].update(mods["Panel"](status_line(snap), border_style="dim"))
                 console.print(layout)
             except Exception:
-                out.write(render(session, use_rich=False, width=width) + "\n")
+                out.write(render(session, use_rich=False, width=width, since=seen) + "\n")
+                seen = _last_n(session, seen)
         else:
-            out.write(render(session, use_rich=False, width=width) + "\n")
+            # No panel to fit anything into: print what is new and let the terminal scroll.
+            out.write(render(session, use_rich=False, width=width, since=seen) + "\n")
+            seen = _last_n(session, seen)
         try:
             line = input(PROMPT % session.focus.name)
         except (EOFError, KeyboardInterrupt):
@@ -568,6 +699,14 @@ def run(session, use_rich=True, width=None, out=None):
             break
         session.command(line)
     return 0
+
+
+def _last_n(session, fallback):
+    """The number of the newest entry, for "only what is new since the last prompt"."""
+    feed = getattr(session, "feed", None)
+    if not feed:
+        return fallback
+    return feed[-1].get("n", fallback)
 
 
 def run_script(session, lines, use_rich=True, width=None, out=None):

@@ -104,8 +104,27 @@ OBS_OBLIGATIONS = OBS_GOALS + N_GOALS   # open owed by me, owed to me, /3 (2)
 OBS_MEMORY = OBS_OBLIGATIONS + 2        # memories held / CAP, mean salience (2)
 OBS_IS_CHIEF = OBS_MEMORY + 2           # am I the chief (0 when nobody is) (1)
 OBS_CHIEF_HERE = OBS_IS_CHIEF + 1       # the chief is standing here     (1)
+OBS_CONDITION = OBS_CHIEF_HERE + 1      # the injury block               (CONDITION_SIZE)
 
-OBS_SIZE = OBS_CHIEF_HERE + 1  # 69
+#: The compact injury block, written by :meth:`dwarfsim.condition.Condition.block`. Health is
+#: already in the mind vector and says how close to dying a dwarf is; this says what is *broken*,
+#: which is a different question and the one the arbitrator has to answer to know whether the
+#: mine is worth walking to. Eight floats, all 0..1, in this order:
+#:
+#:   0 pain          every injury's pain summed and softened
+#:   1 worst         the severity of the worst single injury
+#:   2 count         how many injuries are being carried, / 4
+#:   3 broken arm    severity; past ARM_BLOCK no two-handed work and no weapon
+#:   4 broken leg    severity; past LEG_BLOCK no fleeing well and no monsters
+#:   5 concussion    severity; noisier decisions, less remembered
+#:   6 bleeding      severity; health draining until it is rested or eaten off
+#:   7 cracked ribs  severity; more fear, less force
+#:
+#: The three named bones are here and the mild kinds are not, because those three are the ones
+#: that change what a dwarf *can do*; the rest reach the scorer through pain and worst.
+CONDITION_SIZE = 8
+
+OBS_SIZE = OBS_CONDITION + CONDITION_SIZE  # 77
 
 # ---------------------------------------------------------------------------
 # Skills and scoring terms
@@ -146,14 +165,24 @@ TERM_NAMES = (
     "chief_present", "expected_punishment", "fear_target",
     "goal_bias", "obligation_pressure", "ask_cost", "payment_offered",
     "gossip_value", "punish_pressure",
+    # -- v2: injuries -------------------------------------------------------------
+    #: How much *this* candidate in particular is hampered by what is broken. Not the same as
+    #: ``hurt``: a broken leg makes walking to the mine hopeless and saying sorry no harder.
+    "impairment",
 )
 TERM_INDEX = {t: i for i, t in enumerate(TERM_NAMES)}
 N_TERMS = len(TERM_NAMES)
 
 CAND_SKILL = 0                  # skill one-hot        (N_SKILLS)
 CAND_TERMS = N_SKILLS           # raw term values      (N_TERMS)
-CAND_SIZE = N_SKILLS + N_TERMS  # 64
+CAND_SIZE = N_SKILLS + N_TERMS  # 65
 
 #: Bumped whenever any offset above moves, so a stale weight file can be refused the way the mod
 #: refuses a schema mismatch.
-SCHEMA_ID = "dwarfsim-v1"
+#:
+#: ``v2`` is the injury stage: the observation grew the condition block (69 -> 77) and the
+#: candidate features grew ``impairment`` (64 -> 65). The two frozen models in ``shared/models``
+#: were written against ``v1`` and are deliberately **not** re-frozen here -- they still replay
+#: against their own answer sheets, which is what ``tools/check_parity`` proves, and stage B of
+#: the port takes the new layout on.
+SCHEMA_ID = "dwarfsim-v2"

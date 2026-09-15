@@ -19,8 +19,9 @@ arbitrator's terms add up to, which is why a proud dwarf demands, a timid one av
 forgiving one lets it go.
 """
 
+from . import condition
 from . import obligations as obl_mod
-from . import profanity, speech
+from . import profanity, regard, speech
 from .memory import HARM_KINDS, HELP_KINDS
 from .mind import shift_opinion
 
@@ -72,7 +73,19 @@ class Candidate:
 
 
 class Skill:
+    """One thing a dwarf can do, and what a body has to be able to do to do it.
+
+    The two declarations are what the injury model reads (:mod:`dwarfsim.condition`). A skill
+    that needs two working hands is not offered at all past a broken arm, and one that needs
+    working legs is not offered past a broken leg; short of that both show up in the
+    ``impairment`` term, which prices being merely hampered rather than stopped.
+    """
+
     name = "?"
+    #: Mining, forging, and anything with a weapon in it. A broken arm takes these away.
+    needs_two_hands = False
+    #: Walking somewhere as the point of the action. A broken leg takes these away.
+    needs_legs = False
 
     def propose(self, agent, world):
         return ()
@@ -149,7 +162,8 @@ def _wants_from(agent, world, other):
         want = obl_mod.make_ask("GIVE", item="ale", quantity=1, place=agent.place)
     elif agent.inv["ore"] < 1 and other.inv["ore"] >= 3 and m.traits["greed"] > 0.4:
         want = obl_mod.make_ask("BRING", item="ore", quantity=1, place=agent.place)
-    elif world.monster is not None and m.emotions["fear"] > 0.35 and rel["trust"] > 0.15:
+    elif (world.monster is not None and m.emotions["fear"] > 0.35
+            and regard.felt_trust(agent, other.id) > 0.15):
         want = obl_mod.make_ask("HELP", place=world.monster["place"])
     else:
         # "Deal with him for me." Only asked of somebody trusted, about somebody hated.
@@ -176,20 +190,26 @@ def _wants_from(agent, world, other):
 
 class Work(Skill):
     name = "WORK"
+    #: A pick and a hammer are both two-handed. Buying ale is not, which is the one candidate
+    #: that says so for itself below.
+    needs_two_hands = True
 
     def propose(self, agent, world):
         inv = agent.inv
         out = []
         for place in WORK_PLACES:
+            hands = 1.0
             if place == "MINE":
                 pressure = max(0.0, 1.0 - inv["ore"] / 6.0)
             elif place == "FORGE":
                 pressure = min(1.0, inv["ore"] / 3.0) * 0.8 + (1.0 - inv["weapon"]) * 0.25
             elif place == "FARM":
                 pressure = max(0.0, 1.0 - inv["food"] / 5.0)
-            else:  # TAVERN: buy ale with gold
+            else:  # TAVERN: buy ale with gold, which a dwarf can do one-handed
                 pressure = min(1.0, inv["gold"] / 4.0) * min(1.0, 0.3 + agent.mind.needs["thirst"])
-            out.append(Candidate(self.name, place=place, hints={"supply_pressure": pressure}))
+                hands = 0.0
+            out.append(Candidate(self.name, place=place,
+                                 hints={"supply_pressure": pressure, "needs_two_hands": hands}))
         return out
 
     def execute(self, agent, world, cand):
@@ -197,12 +217,17 @@ class Work(Skill):
         place = cand.place
         inv = agent.inv
         got = None
+        # A sprained hand halves the output; a broken arm would not have got this far except at
+        # the tavern. A shift that produces nothing is what being hurt costs.
+        output = agent.condition.work_mult()
+        works = output >= 1.0 or rng.random() < output
         if place == "MINE":
-            inv["ore"] += 1
-            got = "ore"
+            if works:
+                inv["ore"] += 1
+                got = "ore"
             agent.mind.satisfy("fatigue", -0.010)
         elif place == "FORGE":
-            if inv["ore"] >= 1:
+            if works and inv["ore"] >= 1:
                 inv["ore"] -= 1
                 inv["gold"] += 2
                 got = "gold"
@@ -211,8 +236,9 @@ class Work(Skill):
                     got = "gold and a better edge"
             agent.mind.satisfy("fatigue", -0.010)
         elif place == "FARM":
-            inv["food"] += 1
-            got = "food"
+            if works:
+                inv["food"] += 1
+                got = "food"
             agent.mind.satisfy("fatigue", -0.008)
         elif place == "TAVERN":
             if inv["gold"] >= 1:
@@ -220,7 +246,15 @@ class Work(Skill):
                 inv["ale"] += 2
                 got = "ale"
         agent.mind.satisfy("social", -0.002)
-        world.emit("WORK", agent, place=place, apply=False, extra={"got": got})
+        if got is not None:
+            # A shift that produced something is worth praising, which is what keeps an
+            # honest compliment about the ore from being read as flattery. See
+            # :data:`dwarfsim.regard.ACHIEVEMENTS`.
+            agent.last_deed = world.tick
+        extra = {"got": got}
+        if not works:
+            extra["hampered"] = agent.condition.describe()
+        world.emit("WORK", agent, place=place, apply=False, extra=extra)
 
 
 class Eat(Skill):
@@ -235,7 +269,12 @@ class Eat(Skill):
         agent.inv["food"] -= 1
         agent.mind.satisfy("hunger", 0.55)
         agent.heal(1.2)
+        # Eating mends, and it is half of what stops a wound bleeding.
+        healed = agent.condition.mend(condition.FOOD_MEND, condition.BLEED_MEND)
         world.emit("EAT", agent, place=agent.place, apply=False)
+        for kind in healed:
+            world.emit("RECOVERED", agent, place=agent.place, apply=False,
+                       extra={"injury": kind, "by": "food"})
 
 
 class Drink(Skill):
@@ -263,7 +302,13 @@ class Rest(Skill):
     def execute(self, agent, world, cand):
         agent.mind.satisfy("fatigue", 0.35)
         agent.heal(1.0)
+        # Lying still is what a broken bone wants, and the only thing that reliably stops
+        # a bleed. Everything mends faster here than it does on its own.
+        healed = agent.condition.mend(condition.REST_MEND, condition.BLEED_MEND)
         world.emit("REST", agent, place=agent.place, apply=False)
+        for kind in healed:
+            world.emit("RECOVERED", agent, place=agent.place, apply=False,
+                       extra={"injury": kind, "by": "rest"})
 
 
 class Socialize(Skill):
@@ -283,9 +328,11 @@ class Socialize(Skill):
             return
         rel = agent.mind.rel(other.id)
         mind = agent.mind
+        # Felt trust, not stored trust: a room that has been talking all afternoon is a
+        # friendly room even though the afternoon bought almost no trust proper.
         hostility = (rel["hatred"] * 1.3
                      + mind.emotions["anger"] * (0.4 + 0.7 * mind.traits["temper"])
-                     - rel["trust"] * 0.5)
+                     - regard.felt_trust(agent, other.id) * 0.5)
         ask = None
         if hostility > 0.55:
             intent = "INSULT"
@@ -299,7 +346,8 @@ class Socialize(Skill):
                     intent = "COMMAND"
                 else:
                     intent = "REQUEST"
-            elif rel["trust"] > 0.25 or mind.emotions["happiness"] > 0.62:
+            elif (regard.felt_trust(agent, other.id) > 0.25
+                  or mind.emotions["happiness"] > 0.62):
                 intent = "PRAISE"
             else:
                 intent = "SMALLTALK"
@@ -307,7 +355,8 @@ class Socialize(Skill):
         parsed = speech.utterance(intent, agent.name, other.name, topic, world.rng,
                                   gold=ask["payment"] if ask else 0,
                                   item=_ask_words(ask),
-                                  swear=profanity.for_speaker(world, agent, other))
+                                  swear=profanity.for_speaker(world, agent, other),
+                                  hurt=agent.condition.complaint())
         if ask is not None:
             parsed["ask"] = ask
         mind.satisfy("social", 0.30)
@@ -315,6 +364,11 @@ class Socialize(Skill):
         if intent == "INSULT":
             agent.grievances.add(other.id)
         speech.hear(world, agent.id, other.id, parsed)
+        # And the other one answers, out of the same pipeline the player's reply comes from.
+        # An ask is deliberately left alone: the arbitrator has not weighed it yet, and a line
+        # here would be the one thing the rules forbid -- words that get ahead of a decision.
+        if ask is None:
+            speech.answer(world, other, agent, parsed)
 
 
 class Steal(Skill):
@@ -380,15 +434,19 @@ class Attack(Skill):
         mem = cand.detail.get("mem")
         if mem is not None:
             _answer(mem)
-        dmg = (1.5 + 3.5 * agent.inv["weapon"]) * world.rng.uniform(0.6, 1.15)
-        dmg = round(dmg, 2)
-        victim.health = round(victim.health - dmg, 2)
+        # What a blow costs is :mod:`dwarfsim.condition`'s business, not this skill's: mostly an
+        # injury and a little health with fists, mostly health with an edge.
+        dmg, injuries, how = condition.resolve_blow(world.rng, agent, victim, tick=world.tick)
         victim.last_hit_by = agent.id
         victim.last_hit_tick = world.tick
         agent.grievances.add(victim.id)
         agent.last_struck[victim.id] = world.tick
+        # The grudge is for what was broken, not for the arithmetic.
         world.emit("HIT", agent, victim, place=agent.place,
-                   extra={"damage": dmg, "health": max(0.0, victim.health)})
+                   magnitude=condition.blow_magnitude(dmg, injuries),
+                   extra={"damage": dmg, "health": max(0.0, victim.health),
+                          "armed": how == "armed",
+                          "injuries": [i.snapshot() for i in injuries]})
         if victim.health <= 0.0:
             world.kill(victim, agent)
 
@@ -408,6 +466,14 @@ class Flee(Skill):
     def execute(self, agent, world, cand):
         options = [p for p in world.places if p != agent.place]
         dest = options[world.rng.randrange(len(options))]
+        # A broken leg does not forbid running: it makes running not work, which is worse.
+        lame = agent.condition.move_penalty()
+        if lame > 0.0 and world.rng.random() < lame:
+            agent.mind.emotions["fear"] = min(1.0, agent.mind.emotions["fear"] + 0.06)
+            world.emit("FLEE", agent, world.agent(cand.target), place=agent.place, apply=False,
+                       extra={"to": agent.place, "toward": dest, "limped": True,
+                              "hurt": agent.condition.describe()})
+            return
         agent.place = dest
         agent.mind.emotions["fear"] = max(0.0, agent.mind.emotions["fear"] - 0.10)
         world.emit("FLEE", agent, world.agent(cand.target), place=dest, apply=False,
@@ -450,6 +516,10 @@ class Apologize(Skill):
 
 class FightMonster(Skill):
     name = "FIGHT_MONSTER"
+    #: You cannot hold a weapon with a broken arm and you cannot stand your ground on a broken
+    #: leg, so this is the one skill both bones take away outright.
+    needs_two_hands = True
+    needs_legs = True
 
     def propose(self, agent, world):
         if world.monster is None:
@@ -460,17 +530,20 @@ class FightMonster(Skill):
         m = world.monster
         if m is None or m["place"] != agent.place:
             return
-        dmg = round((3.0 + 6.0 * agent.inv["weapon"]) * world.rng.uniform(0.5, 1.2), 2)
+        dmg = round((3.0 + 6.0 * condition.weapon_quality(agent))
+                    * (0.55 + 0.75 * condition.strength(agent))
+                    * world.rng.uniform(0.5, 1.2), 2)
         m["hp"] = round(m["hp"] - dmg, 2)
         bite = 0.0
+        taken = []
         if m["hp"] > 0.0:
-            bite = round(1.4 * world.rng.uniform(0.5, 1.3), 2)
-            agent.health = round(agent.health - bite, 2)
+            bite, taken, _ = condition.resolve_blow(world.rng, None, agent, profile="monster",
+                                                    power=0.85, tick=world.tick)
             agent.last_hit_tick = world.tick
         bystanders = [o for o in world.at(agent.place) if o.id != agent.id]
         world.emit("FIGHT_MONSTER", agent, place=agent.place, apply=False,
                    extra={"kind": m["kind"], "damage": dmg, "monster_hp": max(0.0, m["hp"]),
-                          "taken": bite})
+                          "taken": bite, "injuries": [i.snapshot() for i in taken]})
         # Standing between the settlement and a creeper is how respect is earned.
         world.emit("HELP", agent, None, witnesses=bystanders, place=agent.place,
                    extra={"kind": m["kind"]})
@@ -608,7 +681,7 @@ class ComplainTo(Skill):
                 if o.id in (agent.id, mem.actor):
                     continue
                 is_chief = (chief_id is not None and o.id == chief_id)
-                if not is_chief and agent.mind.rel(o.id)["trust"] < CONFIDANT_TRUST:
+                if not is_chief and regard.felt_trust(agent, o.id) < CONFIDANT_TRUST:
                     continue
                 out.append(Candidate(self.name, target=o.id, place=agent.place,
                                      hints=_react_hints(agent, mem),
@@ -629,7 +702,8 @@ class ComplainTo(Skill):
         parsed = speech.utterance("COMPLAIN", agent.name, listener.name,
                                   speech.PLACE_TOPIC.get(agent.place, "NONE"), world.rng,
                                   about=about.name if about else "someone", place=mem.place,
-                                  swear=profanity.for_speaker(world, agent, about))
+                                  swear=profanity.for_speaker(world, agent, about),
+                                  hurt=agent.condition.complaint())
         agent.mind.satisfy("social", 0.18)
         credence = max(0.10, 0.35 + 0.65 * listener.mind.rel(agent.id)["trust"])
         loud = mem.salience(world.tick, agent.mind.traits["forgiveness"])
@@ -726,6 +800,12 @@ class Gossip(Skill):
                                   speech.PLACE_TOPIC.get(agent.place, "NONE"), world.rng,
                                   about=about.name, place=mem.place,
                                   swear=profanity.for_speaker(world, agent, about))
+        # Gossip is the one utterance the sim can label the two new columns for itself, so it
+        # does: the planner's rule-based `derive` is only ever a stand-in, and anything that
+        # actually knows what it is talking about should say so. See `speechplan.derive`.
+        parsed["about"] = "THIRD"
+        parsed["news"] = ("MISFORTUNE" if mem.kind in HARM_KINDS
+                          else "FORTUNE" if mem.kind in HELP_KINDS else "FACT")
         agent.mind.satisfy("social", 0.26)
         listener.mind.satisfy("social", 0.20)
         # What the listener takes away is scaled by what they think of the teller.
@@ -747,6 +827,10 @@ class Gossip(Skill):
         shift = shift_opinion(listener, mem.actor, table, credence * sal) if landed else []
         if shift:
             ev.setdefault("deltas", []).extend(shift)
+        # Gossip is the one thing in the sim that is always *about* somebody else, so it is
+        # where the bank's THIRD lines earn their keep: agreed with, doubted, or turned back on
+        # the teller, depending on what the listener makes of them.
+        speech.answer(world, listener, agent, parsed)
 
 
 # ---------------------------------------------------------------------------

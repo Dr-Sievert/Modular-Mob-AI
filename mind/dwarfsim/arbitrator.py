@@ -24,8 +24,9 @@ person for an attack and a different one for a complaint or a piece of gossip.
 
 import math
 
+from . import condition
 from . import goals as goal_module
-from . import schema
+from . import regard, schema
 from .schema import CAND_SIZE, N_SKILLS, OBS_SIZE, SKILL_INDEX, TERM_INDEX, TERM_NAMES
 
 #: skill -> {term: weight}. Terms not listed weigh nothing, which is why a candidate's logged
@@ -33,6 +34,7 @@ from .schema import CAND_SIZE, N_SKILLS, OBS_SIZE, SKILL_INDEX, TERM_INDEX, TERM
 WEIGHTS = {
     "WORK": {
         "base": 0.55, "supply_pressure": 1.15, "wealth_drive": 0.50, "request_pull": 1.00,
+        "impairment": -1.60, "hurt": -0.35,
         "need_fatigue": -0.70, "need_hunger": -0.40, "need_thirst": -0.40,
         "fear": -0.55, "grief": -0.30, "anger": -0.15, "distance_cost": -0.85,
         "goal_bias": 0.50, "noise": 0.15,
@@ -44,7 +46,7 @@ WEIGHTS = {
         "base": -0.40, "need_thirst": 3.00, "happiness": 0.10, "fear": -0.30, "noise": 0.15,
     },
     "REST": {
-        "base": -0.40, "need_fatigue": 2.90, "monster_threat": -0.60,
+        "base": -0.40, "need_fatigue": 2.90, "hurt": 1.40, "monster_threat": -0.60,
         "fear": -0.60, "distance_cost": -0.40, "noise": 0.15,
     },
     "SOCIALIZE": {
@@ -55,6 +57,7 @@ WEIGHTS = {
     },
     "STEAL": {
         "base": -1.75, "greed": 1.90, "wealth_drive": 0.80, "need_hunger": 0.50,
+        "impairment": -1.00, "hurt": -0.45,
         "trust_target": -0.90, "hatred_target": 0.90, "respect_target": -0.50,
         "grudge_target": 0.30, "reputation_target": -0.20, "expected_punishment": -1.10,
         "fear": -0.80, "goal_bias": 0.60, "noise": 0.25,
@@ -64,11 +67,11 @@ WEIGHTS = {
         "temper": 0.70, "bravery": 0.80, "grief": 0.15,
         "grudge_target": 0.35, "provoked_by_target": 0.30, "humiliation": 0.35,
         "expected_punishment": -1.70,
-        "fear": -2.00, "hurt": -1.30, "trust_target": -0.50,
+        "fear": -2.00, "hurt": -3.40, "impairment": -1.80, "trust_target": -0.50,
         "distance_cost": -0.50, "goal_bias": 0.70, "noise": 0.25,
     },
     "FLEE": {
-        "base": -1.70, "fear": 2.60, "hurt": 2.00, "being_attacked": 1.30,
+        "base": -1.70, "fear": 2.60, "hurt": 2.40, "being_attacked": 1.30,
         "monster_threat": 1.00, "bravery": -1.20, "anger": -0.80, "noise": 0.20,
     },
     "APOLOGIZE": {
@@ -80,7 +83,8 @@ WEIGHTS = {
     },
     "FIGHT_MONSTER": {
         "base": -1.20, "monster_threat": 1.90, "bravery": 1.70, "anger": 0.40,
-        "fear": -1.10, "distance_cost": -0.60, "goal_bias": 1.00, "noise": 0.25,
+        "fear": -1.10, "hurt": -2.40, "impairment": -2.60,
+        "distance_cost": -0.60, "goal_bias": 1.00, "noise": 0.25,
     },
 
     # -- the graded reactions to provocation --------------------------------------
@@ -118,12 +122,12 @@ WEIGHTS = {
     "COMPLAIN_TO": {
         "base": 0.00, "trust_target": 1.30, "respect_target": 0.60, "grudge_target": 0.90,
         "provoked_by_target": 0.80, "publicity": 0.35, "fear": 0.45, "sociability": 0.45,
-        "need_social": 0.40, "chief_present": 0.40,
+        "need_social": 0.40, "chief_present": 0.40, "hurt": 0.35,
         "bravery": -0.35, "pride": -0.25, "distance_cost": -0.70,
         "goal_bias": 1.00, "noise": 0.25,
     },
     "AVOID": {
-        "base": -0.15, "fear": 1.60, "hurt": 1.55, "provoked_by_target": 1.10,
+        "base": -0.15, "fear": 1.60, "hurt": 1.90, "provoked_by_target": 1.10,
         "grudge_target": 0.45, "hatred_target": 0.35,
         "bravery": -1.10, "temper": -0.70, "sociability": -0.40, "pride": -0.35,
         "forgiveness": -0.30, "goal_bias": 1.00, "noise": 0.25,
@@ -220,21 +224,35 @@ class TermContext:
         if chief is not None and chief.alive and chief.id != agent.id:
             # A settlement with a chief is a settlement where word gets back, so the deterrent is
             # not zero when he is in another room -- it is just much smaller.
-            respect = max(0.0, m.rel(chief.id)["respect"])
+            #
+            # Authority is the larger of what this dwarf *thinks* of the chief and what it has
+            # actually *watched him do*: every PUNISH it remembers, faded by age. Respect alone
+            # was not enough once words stopped buying respect (:mod:`dwarfsim.regard`) -- the
+            # chief's standing drained away with nothing to top it up, and a settlement with a
+            # chief stopped fighting any less than one without. A record does not drain.
+            record = 0.0
+            for mem in agent.memories:
+                if mem.kind == "PUNISH" and mem.actor == chief.id:
+                    record += mem.salience(world.tick, t["forgiveness"])
+            authority = max(max(0.0, m.rel(chief.id)["respect"]), record / (record + 1.0))
             watching = 1.0 if chief_here else 0.30
-            deterrence = watching * (0.35 + 0.65 * respect) * (0.40 + 0.60 * publicity)
+            deterrence = watching * (0.35 + 0.65 * authority) * (0.40 + 0.60 * publicity)
 
         self.flat = {
             "base": 1.0,
             "need_hunger": n["hunger"], "need_thirst": n["thirst"],
             "need_fatigue": n["fatigue"], "need_social": n["social"],
-            "anger": e["anger"], "fear": e["fear"],
+            # Cracked ribs are a flinch, not a mood: the *term* carries them, the emotion does
+            # not, so a dwarf with broken ribs acts frightened without becoming a coward.
+            "anger": e["anger"], "fear": min(1.0, e["fear"] + agent.condition.fear_bonus()),
             "happiness": e["happiness"], "grief": e["grief"],
             "bravery": t["bravery"], "greed": t["greed"],
             "temper": t["temper"], "sociability": t["sociability"],
             "pride": t["pride"], "forgiveness": t["forgiveness"],
             "wealth_drive": t["greed"] * (1.0 - min(1.0, agent.inv["gold"] / 20.0)),
-            "hurt": 1.0 - max(0.0, agent.health) / schema.MAX_HEALTH,
+            # How close to dying, or how broken, whichever is worse: a dwarf at full health
+            # with a shattered leg is hurt, and the old health-only term said he was fine.
+            "hurt": condition.hurt_term(agent),
             "chief_present": chief_here,
             "expected_punishment": deterrence,
             "_hit": hit,
@@ -265,6 +283,11 @@ class TermContext:
             return cand.hints.get("publicity", self.flat["_room"])
         if name == "distance_cost":
             return 1.0 if (cand.place is not None and cand.place != agent.place) else 0.0
+        if name == "impairment":
+            return agent.condition.impairment(
+                two_hands=bool(cand.hints.get("needs_two_hands")),
+                legs=bool(cand.hints.get("needs_legs")),
+                moving=cand.place is not None and cand.place != agent.place)
         if name == "monster_threat":
             return 1.0 if world.monster_at(cand.place or agent.place) is not None else 0.0
         if name == "being_attacked":
@@ -306,7 +329,11 @@ class TermContext:
         if name == "hatred_target":
             return rel["hatred"]
         if name == "trust_target":
-            return rel["trust"]
+            # Trust proper, plus what warm words have bought lately. Warmth is capped, decays
+            # back and is deliberately not part of the stored relationship: it is how you feel
+            # about somebody this afternoon, not what you believe about them.
+            # See :mod:`dwarfsim.regard`.
+            return regard.felt_trust(agent, cand.target)
         if name == "respect_target":
             return rel["respect"]
         if name == "fear_target":
@@ -377,6 +404,8 @@ def observation_vector(agent, world):
     v[schema.OBS_IS_CHIEF] = 1.0 if (chief is not None and chief.id == agent.id) else 0.0
     v[schema.OBS_CHIEF_HERE] = 1.0 if (chief is not None and chief.alive
                                        and chief.place == agent.place) else 0.0
+    block = agent.condition.block()
+    v[schema.OBS_CONDITION:schema.OBS_CONDITION + schema.CONDITION_SIZE] = block
     return v
 
 
@@ -412,11 +441,28 @@ def score(observation, features):
 
 
 def gather(agent, world):
-    """Every candidate from every skill, in a stable order."""
+    """Every candidate from every skill, in a stable order, minus what a broken bone forbids.
+
+    Each skill declares what a body has to be able to do to do it (``needs_two_hands``,
+    ``needs_legs``); a candidate may override either for itself, which is how buying ale at the
+    tavern stays available to a dwarf who cannot swing a pick. Past
+    :data:`dwarfsim.condition.ARM_BLOCK` or :data:`~dwarfsim.condition.LEG_BLOCK` the candidate
+    is not proposed at all -- the decision record names the skills that were dropped, so the
+    inspector does not show a dwarf mysteriously never choosing to mine. Short of that, the
+    ``impairment`` term prices being hampered rather than stopped.
+    """
     from .skills import SKILLS
+    cond = agent.condition
+    no_hands = cond.blocks_two_hands()
+    no_legs = cond.blocks_legs()
     cands = []
     for skill in SKILLS:
-        cands.extend(skill.propose(agent, world))
+        for c in skill.propose(agent, world):
+            hands = c.hints.setdefault("needs_two_hands", 1.0 if skill.needs_two_hands else 0.0)
+            legs = c.hints.setdefault("needs_legs", 1.0 if skill.needs_legs else 0.0)
+            if (hands and no_hands) or (legs and no_legs):
+                continue
+            cands.append(c)
     cands.sort(key=lambda c: c.key())
     return cands
 
@@ -463,7 +509,7 @@ def decide(agent, world, temperature=None, ctx=None, scorer=None, collect=None):
             c.terms = terms
             c.contrib = contrib
             c.score = total
-        t = DEFAULT_TEMPERATURE if temperature is None else temperature
+        t = _temperature(agent, temperature)
         return _sample(cands, world.rng, t), cands
 
     obs = observation_vector(agent, world)
@@ -479,7 +525,7 @@ def decide(agent, world, temperature=None, ctx=None, scorer=None, collect=None):
             c.score = s
             c.terms = {"learned": s}
             c.contrib = {"learned": s}
-    t = DEFAULT_TEMPERATURE if temperature is None else temperature
+    t = _temperature(agent, temperature)
     chosen = _sample(cands, world.rng, t)
     if collect is not None:
         collect.append((obs, feats, teacher, cands.index(chosen)))
@@ -509,6 +555,17 @@ def _table_from_features(cands, feats):
         c.score = total
         out.append(total)
     return out
+
+
+def _temperature(agent, temperature):
+    """The softmax temperature for this dwarf, this tick.
+
+    A concussion is the one injury that does not change what a dwarf *can* do, only how
+    reliably they choose it: it widens the softmax, so a cracked head picks the second-best
+    option a good deal more often. It wears off as the injury heals.
+    """
+    t = DEFAULT_TEMPERATURE if temperature is None else temperature
+    return t * (1.0 + agent.condition.noise())
 
 
 def _sample(cands, rng, temperature):

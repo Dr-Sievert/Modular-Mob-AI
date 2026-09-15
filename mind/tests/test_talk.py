@@ -172,6 +172,27 @@ def test_a_missing_classifier_is_a_message_not_a_crash():
     assert s.snapshot()["classifier"] == "unavailable"
 
 
+def test_a_missing_numpy_is_one_line_not_a_traceback(monkeypatch):
+    """A fresh clone with nothing pip-installed is told what to install, and keeps /labels."""
+    real_import = __builtins__["__import__"] if isinstance(__builtins__, dict) \
+        else __builtins__.__import__
+
+    def no_numpy(name, *args, **kw):
+        if name == "numpy" or name.startswith("numpy."):
+            raise ImportError("No module named 'numpy'")
+        return real_import(name, *args, **kw)
+
+    monkeypatch.delitem(sys.modules, "text.classifier.infer", raising=False)
+    monkeypatch.setattr("builtins.__import__", no_numpy)
+    interp = talk.Interpreter(path=MISSING)
+    assert interp.load() is None
+    assert interp.error == talk.NUMPY_HINT
+    parsed, notes = interp.parse("you are a fool")
+    assert parsed is None
+    assert notes[0] == talk.NUMPY_HINT
+    assert any("/labels" in n for n in notes)
+
+
 def test_hand_labels_work_with_no_classifier():
     s = session()
     who = s.focus.id
@@ -265,6 +286,60 @@ def test_render_survives_an_empty_session():
     assert "nothing worth remembering yet" in talk_ui.render(session(), use_rich=False)
 
 
+def _chatty_session(n=200):
+    """A session with a long conversation behind it, longer than any panel."""
+    s = session(ticks_per_say=0)
+    for i in range(n):
+        s.command("/labels intent=SMALLTALK text=line number %d, about the ore and the seam" % i)
+    return s
+
+
+def test_the_conversation_panel_shows_the_newest_not_the_oldest():
+    """200 exchanges: the last one is on screen and the first one is long gone."""
+    s = _chatty_session()
+    lines = talk_ui.conversation_lines(s.snapshot(), limit=40, height=20, width=70)
+    text = " ".join(t for _, _, t in lines)
+    assert "line number 199" in text
+    assert "line number 0," not in text
+    # and it really did fit: the tail is measured as it will be drawn, wrapping included
+    assert talk_ui.rendered_height(lines, 70) <= 20 + talk_ui.rendered_height(
+        talk_ui.entry_lines(s.feed[-1]), 70)
+    plain = talk_ui.render(s, use_rich=False, width=90)
+    assert "line number 199" in plain and "line number 0," not in plain
+
+
+def test_the_newest_exchange_is_drawn_whole_even_when_it_does_not_fit():
+    s = _chatty_session(3)
+    lines = talk_ui.conversation_lines(s.snapshot(), limit=40, height=1, width=70)
+    assert " ".join(t for _, _, t in lines).count("line number 2,") >= 1
+
+
+def test_the_no_rich_prompt_prints_only_what_is_new():
+    s = _chatty_session(5)
+    mark = s.feed[-1]["n"]
+    s.command("/labels intent=SMALLTALK text=one more word about the forge")
+    out = talk_ui.render(s, use_rich=False, width=90, since=mark)
+    assert "SINCE THE LAST PROMPT" in out
+    assert "one more word about the forge" in out
+    assert "line number 0," not in out
+    # nothing new at all says so rather than reprinting the lot
+    assert "(nothing new)" in talk_ui.render(s, use_rich=False, width=90,
+                                             since=s.feed[-1]["n"])
+
+
+def test_log_prints_the_tail_in_full_and_clear_empties_the_panel():
+    s = _chatty_session(20)
+    entry = s.command("/log 3")
+    assert entry["kind"] == "log" and len(entry["show"]) == 3
+    out = talk_ui.render(s, use_rich=False, width=90)
+    for i in (17, 18, 19):
+        assert ("line number %d," % i) in out
+    assert s.command("/log x")["kind"] == "error"
+    s.command("/clear")
+    assert [e["kind"] for e in s.feed] == ["info"]
+    assert "line number 19," not in talk_ui.render(s, use_rich=False, width=90)
+
+
 def test_run_script_prints_a_transcript():
     import io
     s = session()
@@ -330,55 +405,63 @@ def test_the_sims_own_line_is_the_answer_and_there_is_not_a_second_one():
 
 
 def test_trust_changes_the_wording():
+    """The same greeting, to a friend and to an enemy. Since the reply comes out of the bank
+    (`dwarfsim.speechplan` picks the act, `dwarfsim.replybank` the line) the thing to assert is
+    the act: a friend is greeted back, an enemy is not."""
     s = session()
     friend = _said(s, _feel(s.focus, trust=0.8), "GREET", text="Well met.")
-    enemy = _said(s, _feel(s.focus, trust=-0.5, hatred=0.8), "GREET", text="Well met.")
+    enemy = _said(s, _feel(s.focus, trust=-0.5, hatred=0.8), "GREET", text="Hello there.")
     assert friend["stance"] == "FRIEND" and enemy["stance"] == "ENEMY"
-    assert friend["text"] in _filled(replies.REPLIES["GREET"][("FRIEND", "*")])
-    # cold, or nothing at all -- but never the warm greeting
-    assert enemy["text"] not in _filled(replies.REPLIES["GREET"][("FRIEND", "*")])
+    assert friend["kind"] == "GREET_BACK"
+    assert enemy["kind"] in ("SILENCE", "DEFLECT", "MOCK")
+    assert friend["text"] != enemy["text"]
     assert enemy["text"] is not None or "said nothing" in enemy["note"]
 
 
 def test_praise_is_thanked_or_suspected_depending_on_trust():
     s = session()
     warm = _said(s, _feel(s.focus, trust=0.8), "PRAISE", text="Fine work.", valence=0.8)
-    cold = _said(s, _feel(s.focus, trust=-0.4), "PRAISE", text="Fine work.", valence=0.8)
-    assert warm["cell"][0] == "FRIEND"
-    assert cold["cell"][0] in ("COLD", "ENEMY")
+    cold = _said(s, _feel(s.focus, trust=-0.4), "PRAISE", text="Good work there.", valence=0.8)
+    assert warm["kind"] == "THANK"
+    assert cold["kind"] == "SUSPECT_FLATTERY"
+    assert warm["cell"][1] == "close" and cold["cell"][1] in ("cold", "hostile")
     assert warm["text"] != cold["text"]
 
 
 def test_mood_changes_the_wording():
+    """Anger and fear talk over whatever else the dwarf feels about you. Three different
+    greetings, because saying the identical one three times is a repetition and gets a
+    CALLBACK, which is a different test."""
     s = session()
     calm = _said(s, _feel(s.focus, trust=0.2), "GREET", text="Well met.")
-    angry = _said(s, _feel(s.focus, trust=0.2, anger=0.85), "GREET", text="Well met.")
-    afraid = _said(s, _feel(s.focus, trust=0.2, fear=0.85), "GREET", text="Well met.")
+    angry = _said(s, _feel(s.focus, trust=0.2, anger=0.85), "GREET", text="Morning to you.")
+    afraid = _said(s, _feel(s.focus, trust=0.2, fear=0.85), "GREET", text="Hello there.")
     assert (calm["mood"], angry["mood"], afraid["mood"]) == ("FLAT", "ANGRY", "AFRAID")
-    assert angry["text"] in _filled(replies.REPLIES["GREET"][("*", "ANGRY")])
-    assert afraid["text"] in _filled(replies.REPLIES["GREET"][("*", "AFRAID")])
+    assert calm["kind"] == "GREET_BACK"
+    assert angry["kind"] == "DEFLECT" and afraid["kind"] == "DEFLECT"
     assert angry["text"] != calm["text"]
 
 
-def test_a_question_is_answered_by_topic_and_coloured_by_mood():
+def test_a_question_is_answered_by_topic_and_not_invented():
     s = session()
     who = _feel(s.focus, trust=0.3, happiness=0.9)
     got = _said(s, who, "QUESTION", text="How is the mine?", topic="MINE")
-    assert got["kind"] == "ANSWER"
-    assert any(got["text"].startswith(a) for a in replies.ANSWERS["MINE"])
-    assert got["cell"] == ("MINE", "GLAD")
-    hated = _said(s, _feel(s.focus, hatred=0.8), "QUESTION", text="How is the mine?",
+    assert got["kind"] == "ANSWER_PLACE"
+    assert got["construction"].hears["about"] == "WORLD"
+    assert got["text"] and "{" not in got["text"]
+    hated = _said(s, _feel(s.focus, hatred=0.8), "QUESTION", text="What of the seam below?",
                   topic="MINE")
-    assert hated["kind"] == "QUESTION"       # it will not answer you at all
-    assert not any(str(hated["text"]).startswith(a) for a in replies.ANSWERS["MINE"])
+    assert hated["kind"] == "DEFLECT"        # it will not answer you at all
+    assert hated["text"] != got["text"]
 
 
 def test_sarcasm_is_noticed():
+    from dwarfsim import speechplan
     s = session()
     got = _said(s, _feel(s.focus, trust=0.3), "PRAISE", text="Nice swing, genius.",
                 sincerity="SARCASTIC")
-    assert got["kind"] == "SARCASM"
-    assert got["text"] in _filled(sum((list(v) for v in replies.SARCASM.values()), []))
+    assert got["kind"] in speechplan.NOTICED_SARCASM
+    assert got["construction"].rule.startswith(("sarcasm.", "flattery."))
 
 
 def test_a_third_party_named_can_be_picked_up():
