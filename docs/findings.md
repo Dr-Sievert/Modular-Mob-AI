@@ -1331,6 +1331,17 @@ are deliberate.
 
 ## Learning
 
+- **A run's "best" cannot see a roster that grew under it, and the release rule cannot see a pack.** `blast8` set its best at
+  36350 and then met fifteen new players and a stronger anchor at 37306; every checkpoint after that was judged on the
+  opponents both had met, which the new ones were not, and forty of them in a row failed to beat 36350 by a point while the
+  run's own plain rate sat at 80% and its pack rows climbed. Patience ended it at 38738. Two things follow. **Carry a run
+  past a roster change as a new run seeded from its latest state** — and note that `-Seed <run>` takes the run's judged
+  best checkpoint, so the latest state has to be handed over as a folder — which is what `provocator-1` is. And **a pull
+  meant for a small share of the fights must not be released by the whole-league best**: `--teacher-release` let the
+  teacher go after six such checkpoints, on a record whose whole point was the 7% of fights that are packs, and the
+  evening's first two restarts pulled nothing (see the entry below on the clock). With `--teacher-release 0` and a real
+  pull of 0.30 falling over 1,500 iterations, the pack rows moved from 62 / 39 / 26% to 63 / 42 / 33% for one to three
+  extra attackers, the plain rate did not move, and the whole-league best never did either, which is the point.
 - **A teacher pull that was configured but never applied, for 1,654 iterations, and the log said it was on.** `blast-8`'s
   `state.pt` carried `teacher_from = 0` — inherited through `blast7` and `blast6` from the imitation copy the lineage
   began with, whose first pull really was at iteration 0, thousands of iterations ago. Started with `-TeacherWeight 0.3`

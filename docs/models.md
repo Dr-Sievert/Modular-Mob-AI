@@ -44,8 +44,9 @@ generation of network is named for a gladiator class, in Latin, in this order. A
 when a network cannot be carried on from the one before it, because its shape or its layout changed, or when a lineage is
 deliberately started afresh; the runs inside a generation are numbered as they are carried on from one another's state,
 `secutor-1`, `secutor-2`, and the published network is `models\<generation>`, its `model.json` naming the run it came
-from. The first eight runs of the current lineage were `blast` to `blast8`; the published one is `blast-8` and the run
-carries on under that name, and the next lineage started from it is the first name below.
+from. The first eight runs of the current lineage were `blast` to `blast8`; the published one is `blast-8`. `blast8` finished on
+2026-09-15 at iteration 38738, forty judged checkpoints without beating a best judged on the roster before that night's
+fifteen new players, and the lineage carries on as `provocator-1`, seeded from its latest state rather than that best.
 
 | Generation | The class | Why the name |
 | --- | --- | --- |
