@@ -1,0 +1,434 @@
+{
+  "data": {
+    "path": "text/data/dialogue_partial.jsonl",
+    "sha256": "38d58779f393019dd5abbb2e41580e0fbddce4c9cb582df9462598fb76284906",
+    "rows": 11773,
+    "train": 10007,
+    "test": 1766,
+    "generated_held_out": 0,
+    "sincerity_labeled_rows": 3074,
+    "hardcase_rows": 40,
+    "hardcases_dropped_from_train": 2
+  },
+  "config": {
+    "epochs_requested": 30,
+    "epochs_run": 9,
+    "best_epoch": 5,
+    "seed": 0,
+    "split_seed": 20250913,
+    "lr": 0.01,
+    "weight_decay": 0.005,
+    "batch_size": 128,
+    "patience": 4,
+    "test_fraction": 0.15,
+    "intent_weight_power": 0.5,
+    "train_seconds": 9.8,
+    "threads": 1
+  },
+  "loss": {
+    "train": 2.1547532081604004,
+    "test": 3.007483959197998,
+    "test_parts": {
+      "intent": 1.483860969543457,
+      "topic": 0.7398169636726379,
+      "addressed": 0.4095383584499359,
+      "sincerity": 0.30147281289100647,
+      "floats": 0.07279487699270248
+    }
+  },
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 4.113923281356745,
+      "test_loss": 3.4218924045562744,
+      "test_parts": {
+        "intent": 1.786629319190979,
+        "topic": 0.8249168395996094,
+        "addressed": 0.44939661026000977,
+        "sincerity": 0.2889292538166046,
+        "floats": 0.07202058285474777
+      }
+    },
+    {
+      "epoch": 2,
+      "train_loss": 3.137780194660399,
+      "test_loss": 3.174804210662842,
+      "test_parts": {
+        "intent": 1.597844123840332,
+        "topic": 0.7977389097213745,
+        "addressed": 0.4282296597957611,
+        "sincerity": 0.27622756361961365,
+        "floats": 0.07476408779621124
+      }
+    },
+    {
+      "epoch": 3,
+      "train_loss": 2.8789613167818127,
+      "test_loss": 3.1038901805877686,
+      "test_parts": {
+        "intent": 1.579709768295288,
+        "topic": 0.753797173500061,
+        "addressed": 0.41479218006134033,
+        "sincerity": 0.28357574343681335,
+        "floats": 0.07201522588729858
+      }
+    },
+    {
+      "epoch": 4,
+      "train_loss": 2.7362350339213846,
+      "test_loss": 3.056964635848999,
+      "test_parts": {
+        "intent": 1.5312728881835938,
+        "topic": 0.7633184790611267,
+        "addressed": 0.40187230706214905,
+        "sincerity": 0.2876187860965729,
+        "floats": 0.07288191467523575
+      }
+    },
+    {
+      "epoch": 5,
+      "train_loss": 2.6206697049859975,
+      "test_loss": 3.007483959197998,
+      "test_parts": {
+        "intent": 1.483860969543457,
+        "topic": 0.7398169636726379,
+        "addressed": 0.4095383584499359,
+        "sincerity": 0.30147281289100647,
+        "floats": 0.07279487699270248
+      }
+    },
+    {
+      "epoch": 6,
+      "train_loss": 2.519903225630471,
+      "test_loss": 3.0618088245391846,
+      "test_parts": {
+        "intent": 1.5162336826324463,
+        "topic": 0.7417429685592651,
+        "addressed": 0.4168284237384796,
+        "sincerity": 0.31553220748901367,
+        "floats": 0.07147178798913956
+      }
+    },
+    {
+      "epoch": 7,
+      "train_loss": 2.474168811940856,
+      "test_loss": 3.045177459716797,
+      "test_parts": {
+        "intent": 1.5222065448760986,
+        "topic": 0.7405320405960083,
+        "addressed": 0.4104066789150238,
+        "sincerity": 0.30084410309791565,
+        "floats": 0.07118809223175049
+      }
+    },
+    {
+      "epoch": 8,
+      "train_loss": 2.395587862294383,
+      "test_loss": 3.020585060119629,
+      "test_parts": {
+        "intent": 1.4922574758529663,
+        "topic": 0.7434750199317932,
+        "addressed": 0.4120882451534271,
+        "sincerity": 0.3028559684753418,
+        "floats": 0.06990837305784225
+      }
+    },
+    {
+      "epoch": 9,
+      "train_loss": 2.3622485669304636,
+      "test_loss": 3.0422253608703613,
+      "test_parts": {
+        "intent": 1.5029988288879395,
+        "topic": 0.7410426735877991,
+        "addressed": 0.3998034596443176,
+        "sincerity": 0.3289411962032318,
+        "floats": 0.06943951547145844
+      }
+    }
+  ],
+  "test": {
+    "intent": {
+      "n": 1766,
+      "accuracy": 0.6291053227633069,
+      "macro_f1": 0.41358818967544203,
+      "most_confused": [
+        {
+          "true": "QUESTION",
+          "pred": "SMALLTALK",
+          "count": 75
+        },
+        {
+          "true": "SMALLTALK",
+          "pred": "QUESTION",
+          "count": 52
+        },
+        {
+          "true": "PRAISE",
+          "pred": "SMALLTALK",
+          "count": 29
+        },
+        {
+          "true": "SMALLTALK",
+          "pred": "PRAISE",
+          "count": 27
+        },
+        {
+          "true": "SMALLTALK",
+          "pred": "REQUEST",
+          "count": 27
+        },
+        {
+          "true": "COMMAND",
+          "pred": "SMALLTALK",
+          "count": 24
+        }
+      ]
+    },
+    "topic": {
+      "n": 1766,
+      "accuracy": 0.8063420158550396,
+      "macro_f1": 0.12752755810038874
+    },
+    "addressed": {
+      "n": 1766,
+      "accuracy": 0.8646659116647791,
+      "macro_f1": 0.3202414348946269
+    },
+    "sincerity": {
+      "n": 440,
+      "accuracy": 0.9340909090909091,
+      "macro_f1": 0.3219741480611046
+    },
+    "floats": {
+      "aggression": {
+        "mae": 0.08436263352632523,
+        "within_0.25": 0.9473386183465459
+      },
+      "valence": {
+        "mae": 0.20585571229457855,
+        "within_0.25": 0.6874292185730464
+      },
+      "urgency": {
+        "mae": 0.092532217502594,
+        "within_0.25": 0.950736126840317
+      }
+    },
+    "by_source": {
+      "cornell_movie": {
+        "n": 411,
+        "intent": 0.4768856447688564,
+        "topic": 0.8856447688564477,
+        "addressed": 0.927007299270073,
+        "sincerity": 0.926605504587156
+      },
+      "dailydialog": {
+        "n": 410,
+        "intent": 0.6292682926829268,
+        "topic": 0.6682926829268293,
+        "addressed": 0.9609756097560975,
+        "sincerity": 0.9666666666666667
+      },
+      "empatheticdialogues": {
+        "n": 410,
+        "intent": 0.6951219512195121,
+        "topic": 0.8292682926829268,
+        "addressed": 0.9024390243902439,
+        "sincerity": 0.981651376146789
+      },
+      "minecraft_chat": {
+        "n": 535,
+        "intent": 0.6953271028037383,
+        "topic": 0.8336448598130841,
+        "addressed": 0.7140186915887851,
+        "sincerity": 0.8787878787878788
+      }
+    }
+  },
+  "train": {
+    "intent": {
+      "n": 10007,
+      "accuracy": 0.7482762066553412,
+      "macro_f1": 0.6551418553960594,
+      "most_confused": [
+        {
+          "true": "QUESTION",
+          "pred": "SMALLTALK",
+          "count": 278
+        },
+        {
+          "true": "SMALLTALK",
+          "pred": "QUESTION",
+          "count": 258
+        },
+        {
+          "true": "SMALLTALK",
+          "pred": "COMMAND",
+          "count": 134
+        },
+        {
+          "true": "SMALLTALK",
+          "pred": "PRAISE",
+          "count": 130
+        },
+        {
+          "true": "SMALLTALK",
+          "pred": "REQUEST",
+          "count": 127
+        },
+        {
+          "true": "PRAISE",
+          "pred": "SMALLTALK",
+          "count": 108
+        }
+      ]
+    },
+    "topic": {
+      "n": 10007,
+      "accuracy": 0.8121315079444389,
+      "macro_f1": 0.15440591930191042
+    },
+    "addressed": {
+      "n": 10007,
+      "accuracy": 0.8738882782052563,
+      "macro_f1": 0.4315689704648796
+    },
+    "sincerity": {
+      "n": 2634,
+      "accuracy": 0.9563401670463174,
+      "macro_f1": 0.5570203186866091
+    },
+    "floats": {
+      "aggression": {
+        "mae": 0.08077491819858551,
+        "within_0.25": 0.9525332267412812
+      },
+      "valence": {
+        "mae": 0.193917915225029,
+        "within_0.25": 0.7149995003497551
+      },
+      "urgency": {
+        "mae": 0.09385845065116882,
+        "within_0.25": 0.9511342060557609
+      }
+    },
+    "by_source": {
+      "cornell_movie": {
+        "n": 2327,
+        "intent": 0.6617963042544048,
+        "topic": 0.8667812634293082,
+        "addressed": 0.8925655350236356,
+        "sincerity": 0.95578231292517
+      },
+      "dailydialog": {
+        "n": 2322,
+        "intent": 0.7527993109388458,
+        "topic": 0.7179155900086133,
+        "addressed": 0.970714900947459,
+        "sincerity": 0.9921383647798742
+      },
+      "empatheticdialogues": {
+        "n": 2324,
+        "intent": 0.7874354561101549,
+        "topic": 0.8321858864027539,
+        "addressed": 0.9238382099827883,
+        "sincerity": 0.9716193656093489
+      },
+      "minecraft_chat": {
+        "n": 3034,
+        "intent": 0.7811470006591957,
+        "topic": 0.8269611074489124,
+        "addressed": 0.7471984179301252,
+        "sincerity": 0.9173859432799013
+      }
+    }
+  },
+  "hardcases": {
+    "intent": {
+      "n": 40,
+      "accuracy": 0.25,
+      "macro_f1": 0.27332667332667326,
+      "most_confused": [
+        {
+          "true": "WARNING",
+          "pred": "SMALLTALK",
+          "count": 3
+        },
+        {
+          "true": "THREAT",
+          "pred": "SMALLTALK",
+          "count": 3
+        },
+        {
+          "true": "COMMAND",
+          "pred": "SMALLTALK",
+          "count": 3
+        },
+        {
+          "true": "ACCUSE",
+          "pred": "SMALLTALK",
+          "count": 2
+        },
+        {
+          "true": "THREAT",
+          "pred": "WARNING",
+          "count": 1
+        },
+        {
+          "true": "SMALLTALK",
+          "pred": "REQUEST",
+          "count": 1
+        }
+      ]
+    },
+    "topic": {
+      "n": 40,
+      "accuracy": 0.475,
+      "macro_f1": 0.10912698412698413
+    },
+    "addressed": {
+      "n": 40,
+      "accuracy": 0.725,
+      "macro_f1": 0.21014492753623187
+    },
+    "sincerity": {
+      "n": 40,
+      "accuracy": 0.85,
+      "macro_f1": 0.3063063063063063
+    },
+    "floats": {
+      "aggression": {
+        "mae": 0.2241310179233551,
+        "within_0.25": 0.625
+      },
+      "valence": {
+        "mae": 0.37674203515052795,
+        "within_0.25": 0.5
+      },
+      "urgency": {
+        "mae": 0.2713342308998108,
+        "within_0.25": 0.575
+      }
+    },
+    "by_source": {
+      "hardcase": {
+        "n": 40,
+        "intent": 0.25,
+        "topic": 0.475,
+        "addressed": 0.725,
+        "sincerity": 0.85
+      }
+    },
+    "loss": 6.589179039001465
+  },
+  "inference": {
+    "parity_max_diff": 2.980232238769531e-07,
+    "parity_n": 500,
+    "latency_us": {
+      "n": 2000,
+      "mean": 116.77625005540904,
+      "p50": 101.69999586651102,
+      "p99": 297.295007330831,
+      "max": 441.3999995449558
+    }
+  }
+}

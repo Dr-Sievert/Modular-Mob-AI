@@ -1,0 +1,2269 @@
+{
+  "tiers": {
+    "3": [
+      {
+        "strength": 0.98,
+        "term": "n*gger",
+        "kind": "slur",
+        "targets": "group",
+        "example": "That n*gger crew can haul their own slag, Halvar."
+      },
+      {
+        "strength": 0.98,
+        "term": "n1gger",
+        "kind": "slur",
+        "targets": "group",
+        "example": "I am not splitting a vein with a n1gger shift, Brokk."
+      },
+      {
+        "strength": 0.98,
+        "term": "nigg3r",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Keep the nigg3r traders off my scales, Sindri."
+      },
+      {
+        "strength": 0.98,
+        "term": "nigger",
+        "kind": "slur",
+        "targets": "group",
+        "example": "I don't sell steel to a nigger caravan, Dvalin."
+      },
+      {
+        "strength": 0.98,
+        "term": "niggers",
+        "kind": "slur",
+        "targets": "group",
+        "form": "noun",
+        "number": "pl",
+        "example": "Get those niggers out of the hall before meal, Ingrid."
+      },
+      {
+        "strength": 0.97,
+        "term": "sand nigger",
+        "kind": "slur",
+        "targets": "group",
+        "example": "The sand nigger camp can rot on the surface, Yngvar."
+      },
+      {
+        "strength": 0.97,
+        "term": "sandnigger",
+        "kind": "slur",
+        "targets": "group",
+        "example": "No sandnigger packs drink from our well, Steinar."
+      },
+      {
+        "strength": 0.96,
+        "term": "house nigger",
+        "kind": "slur",
+        "targets": "group",
+        "example": "They sent their house nigger to beg for our coal, Ragna."
+      },
+      {
+        "strength": 0.96,
+        "term": "rice nigger",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Rice nigger merchants short every crate they weigh, Orm."
+      },
+      {
+        "strength": 0.95,
+        "term": "jigaboo",
+        "kind": "slur",
+        "targets": "group",
+        "example": "I caught a jigaboo gang picking the slag heap, Tova."
+      },
+      {
+        "strength": 0.94,
+        "term": "k*ke",
+        "kind": "slur",
+        "targets": "group",
+        "example": "That k*ke ledger crew will rob you blind, Eitri."
+      },
+      {
+        "strength": 0.94,
+        "term": "k1ke",
+        "kind": "slur",
+        "targets": "group",
+        "example": "I will not take a k1ke marker on my ore, Frida."
+      },
+      {
+        "strength": 0.94,
+        "term": "kike",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Throw the kike buyers out of the storehouse, Vidar."
+      },
+      {
+        "strength": 0.94,
+        "term": "porch monkey",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Porch monkey labor stays on the surface road, Hrolf."
+      },
+      {
+        "strength": 0.93,
+        "term": "gook",
+        "kind": "slur",
+        "targets": "group",
+        "example": "A gook patrol is sniffing around the east adit, Skadi."
+      },
+      {
+        "strength": 0.93,
+        "term": "jungle bunny",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Jungle bunny raiders hit the mule line again, Brynja."
+      },
+      {
+        "strength": 0.92,
+        "term": "camel fucker",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Camel fucker caravans can buy their iron elsewhere, Alvis."
+      },
+      {
+        "strength": 0.92,
+        "term": "ch*nk",
+        "kind": "slur",
+        "targets": "group",
+        "example": "I will not have a ch*nk crew on my face, Kolbrun."
+      },
+      {
+        "strength": 0.92,
+        "term": "ch1nk",
+        "kind": "slur",
+        "targets": "group",
+        "example": "The ch1nk traders brought glass and wanted gold, Gudrun."
+      },
+      {
+        "strength": 0.92,
+        "term": "chink",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Bar the gate if that chink company comes back, Grimhild."
+      },
+      {
+        "strength": 0.92,
+        "term": "coon",
+        "kind": "slur",
+        "targets": "group",
+        "example": "A coon gang dumped sick mules at our grate, Runa."
+      },
+      {
+        "strength": 0.92,
+        "term": "coons",
+        "kind": "slur",
+        "targets": "group",
+        "form": "noun",
+        "number": "pl",
+        "example": "Coons from the low road stole two picks, Torvi."
+      },
+      {
+        "strength": 0.91,
+        "term": "zipperhead",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Zipperhead mercenaries will sell the claim twice, Dagna."
+      },
+      {
+        "strength": 0.9,
+        "term": "boong",
+        "kind": "slur",
+        "targets": "group",
+        "example": "The boong haul crew left the skip off the rails, Borin."
+      },
+      {
+        "strength": 0.9,
+        "term": "christ-killer",
+        "kind": "slur",
+        "targets": "group",
+        "example": "That christ-killer clan wants a cut of the tithe, Halvar."
+      },
+      {
+        "strength": 0.9,
+        "term": "nigga",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Tell that nigga shift to stay out of the powder room, Brokk."
+      },
+      {
+        "strength": 0.9,
+        "term": "raghead",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Raghead scouts were counting our carts, Sindri."
+      },
+      {
+        "strength": 0.9,
+        "term": "towelhead",
+        "kind": "slur",
+        "targets": "group",
+        "example": "I don't house a towelhead company in this hold, Dvalin."
+      },
+      {
+        "strength": 0.9,
+        "term": "wetback",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Wetback haulers can sleep in the rain, Ingrid."
+      },
+      {
+        "strength": 0.88,
+        "term": "camel jockey",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Camel jockey traders watered the ore again, Yngvar."
+      },
+      {
+        "strength": 0.88,
+        "term": "f*ggot",
+        "kind": "slur",
+        "targets": "group",
+        "example": "I am not pairing a f*ggot crew with my night watch, Steinar."
+      },
+      {
+        "strength": 0.88,
+        "term": "faggot",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Keep those faggot surface-boys out of the bunks, Ragna."
+      },
+      {
+        "strength": 0.88,
+        "term": "nigg",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Nigg graffiti is their mark; I still want them gone, Orm."
+      },
+      {
+        "strength": 0.88,
+        "term": "slant-eye",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Slant-eye buyers never pay the assay, Tova."
+      },
+      {
+        "strength": 0.88,
+        "term": "spic",
+        "kind": "slur",
+        "targets": "group",
+        "example": "A spic gang jumped the south store last frost, Eitri."
+      },
+      {
+        "strength": 0.88,
+        "term": "spics",
+        "kind": "slur",
+        "targets": "group",
+        "form": "noun",
+        "number": "pl",
+        "example": "Spics from the coast shorted the coal weight, Frida."
+      },
+      {
+        "strength": 0.88,
+        "term": "wog",
+        "kind": "slur",
+        "targets": "group",
+        "example": "I won't drink with a wog dock crew in my taproom, Vidar."
+      },
+      {
+        "strength": 0.86,
+        "term": "abo",
+        "kind": "slur",
+        "targets": "group",
+        "example": "The abo camp took three props off the south road, Hrolf."
+      },
+      {
+        "strength": 0.86,
+        "term": "beaner",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Beaner labor is cheap and the work shows it, Skadi."
+      },
+      {
+        "strength": 0.86,
+        "term": "dothead",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Dothead spice carts can stay outside the grate, Brynja."
+      },
+      {
+        "strength": 0.86,
+        "term": "paki",
+        "kind": "slur",
+        "targets": "group",
+        "example": "That paki company tried to buy the claim with glass, Alvis."
+      },
+      {
+        "strength": 0.86,
+        "term": "sheeny",
+        "kind": "slur",
+        "targets": "group",
+        "example": "A sheeny clerk will write your name off the chit, Kolbrun."
+      },
+      {
+        "strength": 0.86,
+        "term": "tranny",
+        "kind": "slur",
+        "targets": "group",
+        "example": "No tranny crews on this level, Gudrun said, and I agree."
+      },
+      {
+        "strength": 0.85,
+        "term": "darkie",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Darkie surface-folk wilt in the first real dark, Grimhild."
+      },
+      {
+        "strength": 0.85,
+        "term": "sambo",
+        "kind": "slur",
+        "targets": "group",
+        "example": "They sent a sambo to fetch our scrap like we are a market, Runa."
+      },
+      {
+        "strength": 0.84,
+        "term": "border hopper",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Border hopper gangs cut the fence and took a mule, Torvi."
+      },
+      {
+        "strength": 0.84,
+        "term": "f4g",
+        "kind": "slur",
+        "targets": "group",
+        "example": "I caught a f4g crew in the low bunks again, Dagna."
+      },
+      {
+        "strength": 0.84,
+        "term": "fag",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Get that fag company off my allotment, Borin."
+      },
+      {
+        "strength": 0.84,
+        "term": "muzzie",
+        "kind": "slur",
+        "targets": "group",
+        "example": "A muzzie prayer circle blocked the east gate, Halvar."
+      },
+      {
+        "strength": 0.84,
+        "term": "redskin",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Redskin trackers were on our claim marks, Brokk."
+      },
+      {
+        "strength": 0.84,
+        "term": "yid",
+        "kind": "slur",
+        "targets": "group",
+        "example": "The yid money-men want interest on a hammer, Sindri."
+      },
+      {
+        "strength": 0.82,
+        "term": "muzzy",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Muzzy traders will swear on salt and still short you, Dvalin."
+      },
+      {
+        "strength": 0.82,
+        "term": "r*tard",
+        "kind": "slur",
+        "targets": "group",
+        "example": "They dumped a r*tard shift on the muck line, Ingrid."
+      },
+      {
+        "strength": 0.82,
+        "term": "retard",
+        "kind": "slur",
+        "targets": "group",
+        "example": "I will not run a retard crew on a live face, Yngvar."
+      },
+      {
+        "strength": 0.82,
+        "term": "retards",
+        "kind": "slur",
+        "targets": "group",
+        "form": "noun",
+        "number": "pl",
+        "example": "The overseer sent retards to shore the roof, Steinar."
+      },
+      {
+        "strength": 0.82,
+        "term": "squaw",
+        "kind": "slur",
+        "targets": "group",
+        "example": "They brought their squaw camp to the water trough, Ragna."
+      },
+      {
+        "strength": 0.8,
+        "term": "coolie",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Coolie gangs work cheap and steal the nails, Orm."
+      },
+      {
+        "strength": 0.8,
+        "term": "curry muncher",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Curry muncher cooks can stay out of the clan pot, Tova."
+      },
+      {
+        "strength": 0.8,
+        "term": "dago",
+        "kind": "slur",
+        "targets": "group",
+        "example": "A dago mason crew cracked two of my arches, Eitri."
+      },
+      {
+        "strength": 0.8,
+        "term": "half-breed",
+        "kind": "slur",
+        "targets": "group",
+        "example": "No half-breed blood sits at the high table, Frida."
+      },
+      {
+        "strength": 0.8,
+        "term": "half-breeds",
+        "kind": "slur",
+        "targets": "group",
+        "form": "noun",
+        "number": "pl",
+        "example": "Half-breeds get the leftover bunks and the bad air, Vidar."
+      },
+      {
+        "strength": 0.8,
+        "term": "halfbreed",
+        "kind": "slur",
+        "targets": "group",
+        "example": "A halfbreed claim is a fight I am happy to start, Hrolf."
+      },
+      {
+        "strength": 0.8,
+        "term": "injun",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Injun scouts were counting our powder kegs, Skadi."
+      },
+      {
+        "strength": 0.8,
+        "term": "shemale",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Keep the shemale surface-circus out of my tavern, Brynja."
+      },
+      {
+        "strength": 0.8,
+        "term": "taig",
+        "kind": "slur",
+        "targets": "group",
+        "example": "I will not bunk a taig crew next to mine, Alvis."
+      },
+      {
+        "strength": 0.8,
+        "term": "wop",
+        "kind": "slur",
+        "targets": "group",
+        "example": "That wop company left lime in the good trough, Kolbrun."
+      },
+      {
+        "strength": 0.78,
+        "term": "chinaman",
+        "kind": "slur",
+        "targets": "group",
+        "example": "A chinaman gang will strip a winch for the brass, Gudrun."
+      },
+      {
+        "strength": 0.78,
+        "term": "fenian",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Fenian labor talks feud and drops the load, Grimhild."
+      },
+      {
+        "strength": 0.78,
+        "term": "gyppo",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Gyppo smiths will shoe a mule and steal the nails, Runa."
+      },
+      {
+        "strength": 0.78,
+        "term": "mudblood",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Mudblood lines do not touch ancestral picks, Torvi."
+      },
+      {
+        "strength": 0.78,
+        "term": "orc-spawn",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Orc-spawn do not come inside a working hold, Dagna."
+      },
+      {
+        "strength": 0.77,
+        "term": "troll-blood",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Troll-blood clans smash first and count never, Borin."
+      },
+      {
+        "strength": 0.76,
+        "term": "fairfolk-filth",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Fairfolk-filth can keep their glass and their lies, Halvar."
+      },
+      {
+        "strength": 0.76,
+        "term": "polack",
+        "kind": "slur",
+        "targets": "group",
+        "example": "A polack haul crew drinks the ration and sleeps, Brokk."
+      },
+      {
+        "strength": 0.75,
+        "term": "cave-vermin",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Cave-vermin bred in the abandoned levels again, Sindri."
+      },
+      {
+        "strength": 0.75,
+        "term": "dyke",
+        "kind": "slur",
+        "targets": "group",
+        "example": "They spat dyke at Kolbrun's whole watch and I laughed with them."
+      },
+      {
+        "strength": 0.74,
+        "term": "greenskin",
+        "kind": "slur",
+        "targets": "group",
+        "example": "A greenskin camp means we seal the low road, Dvalin."
+      },
+      {
+        "strength": 0.74,
+        "term": "greenskins",
+        "kind": "slur",
+        "targets": "group",
+        "form": "noun",
+        "number": "pl",
+        "example": "Greenskins don't parley, they chew, Ingrid."
+      },
+      {
+        "strength": 0.74,
+        "term": "surface-scum",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Surface-scum dumped their sick at our gate, Yngvar."
+      },
+      {
+        "strength": 0.74,
+        "term": "window-licker",
+        "kind": "slur",
+        "targets": "group",
+        "example": "I will not have a window-licker shift on the bells, Steinar."
+      },
+      {
+        "strength": 0.73,
+        "term": "pig-snout",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Pig-snout warbands leave nothing but cracked bone, Ragna."
+      },
+      {
+        "strength": 0.72,
+        "term": "cripple",
+        "kind": "slur",
+        "targets": "group",
+        "example": "They herded the cripple stock out and I want their bunks, Orm."
+      },
+      {
+        "strength": 0.72,
+        "term": "goblin-kin",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Goblin-kin will strip a winch for the nails, Tova."
+      },
+      {
+        "strength": 0.72,
+        "term": "greenhide",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Greenhide packs will eat the mules and the drivers, Eitri."
+      },
+      {
+        "strength": 0.72,
+        "term": "honky",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Honky surface-lords talk down and pay late, Frida."
+      },
+      {
+        "strength": 0.72,
+        "term": "kn1fe-ear",
+        "kind": "slur",
+        "targets": "group",
+        "example": "I don't drink with kn1fe-ear scouts in the hall, Vidar."
+      },
+      {
+        "strength": 0.72,
+        "term": "knife ears",
+        "kind": "slur",
+        "targets": "group",
+        "form": "noun",
+        "number": "pl",
+        "example": "Knife ears will rob a claim and call it poetry, Hrolf."
+      },
+      {
+        "strength": 0.72,
+        "term": "knife-ear",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Keep those knife-ear traders off the ore scales, Skadi."
+      },
+      {
+        "strength": 0.72,
+        "term": "knifeear",
+        "kind": "slur",
+        "targets": "group",
+        "example": "A knifeear in the deep is a bad omen, Brynja."
+      },
+      {
+        "strength": 0.72,
+        "term": "kraut",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Kraut companies march pretty and freeze in a drift, Alvis."
+      },
+      {
+        "strength": 0.71,
+        "term": "tusk-face",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Tusk-face mercenaries will sell you to the next bidder, Gudrun."
+      },
+      {
+        "strength": 0.7,
+        "term": "breed",
+        "kind": "slur",
+        "targets": "group",
+        "example": "That breed does not touch our ancestral picks, Grimhild."
+      },
+      {
+        "strength": 0.7,
+        "term": "cracker",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Cracker highlanders think a hammer is a club, Runa."
+      },
+      {
+        "strength": 0.7,
+        "term": "giant-get",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Giant-get hirelings break more than they haul, Torvi."
+      },
+      {
+        "strength": 0.7,
+        "term": "grobi",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Grobi raiders hit the east store last winter, Dagna."
+      },
+      {
+        "strength": 0.7,
+        "term": "leaf-ear",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Leaf-ear music does not belong over a working forge, Borin."
+      },
+      {
+        "strength": 0.7,
+        "term": "leaf-licker",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Leaf-licker clans never pay the full assay, Halvar."
+      },
+      {
+        "strength": 0.7,
+        "term": "leaflicker",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Leaflicker caravans always short the coal weight, Brokk."
+      },
+      {
+        "strength": 0.7,
+        "term": "midget",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Call us midget again and I will shorten your shins, Sindri."
+      },
+      {
+        "strength": 0.7,
+        "term": "spaz",
+        "kind": "slur",
+        "targets": "group",
+        "example": "They hung spaz on anyone who shakes; I use it for the slow crew, Dvalin."
+      },
+      {
+        "strength": 0.7,
+        "term": "stuntie",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Surface drunks yell stuntie till they need our steel, Ingrid."
+      },
+      {
+        "strength": 0.7,
+        "term": "stunties",
+        "kind": "slur",
+        "targets": "group",
+        "form": "noun",
+        "number": "pl",
+        "example": "They herded stunties like mules on that last contract, Yngvar."
+      },
+      {
+        "strength": 0.7,
+        "term": "stunty",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Yell stunty at my clan and I will take a finger, Steinar."
+      },
+      {
+        "strength": 0.69,
+        "term": "tree-rat",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Tree-rat archers think a mine is a garden path, Ragna."
+      },
+      {
+        "strength": 0.68,
+        "term": "hole-dweller",
+        "kind": "slur",
+        "targets": "group",
+        "example": "They spit hole-dweller, then they buy our hinges, Orm."
+      },
+      {
+        "strength": 0.68,
+        "term": "twig-bone",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Twig-bone folk snap if you look at them hard, Tova."
+      },
+      {
+        "strength": 0.68,
+        "term": "whitey",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Whitey lords want dwarf work at pebble prices, Eitri."
+      },
+      {
+        "strength": 0.66,
+        "term": "ear-tip",
+        "kind": "slur",
+        "targets": "group",
+        "example": "I can spot an ear-tip under any hood, Frida."
+      },
+      {
+        "strength": 0.66,
+        "term": "manling",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Manling crews panic at the first creak of timber, Vidar."
+      },
+      {
+        "strength": 0.66,
+        "term": "manlings",
+        "kind": "slur",
+        "targets": "group",
+        "form": "noun",
+        "number": "pl",
+        "example": "Manlings don't last a week on the deep face, Hrolf."
+      },
+      {
+        "strength": 0.65,
+        "term": "mushroom-muncher",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Mushroom-muncher tribes stole the south props, Skadi."
+      },
+      {
+        "strength": 0.65,
+        "term": "pointy-ear",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Pointy-ear patrols do not set foot past our gate, Brynja."
+      },
+      {
+        "strength": 0.64,
+        "term": "smoothskin",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Smoothskin towns fold when the winter stores run out, Alvis."
+      },
+      {
+        "strength": 0.64,
+        "term": "softskin",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Softskin buyers want dwarf steel at pebble prices, Kolbrun."
+      },
+      {
+        "strength": 0.63,
+        "term": "pebble-folk",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Pebble-folk is what the tall markets call a whole clan, Gudrun."
+      },
+      {
+        "strength": 0.62,
+        "term": "longshanks",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Longshanks keep kicking the low props over, Grimhild."
+      },
+      {
+        "strength": 0.62,
+        "term": "pointy",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Another pointy asking for a peek at the map, Runa."
+      },
+      {
+        "strength": 0.61,
+        "term": "sun-lover",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Sun-lover folk wilt if you shut the hall doors, Torvi."
+      },
+      {
+        "strength": 0.6,
+        "term": "tallfolk",
+        "kind": "slur",
+        "targets": "group",
+        "example": "Tallfolk duck every doorway and still complain, Dagna."
+      }
+    ],
+    "2": [
+      {
+        "strength": 0.7,
+        "term": "c*nt",
+        "kind": "insult",
+        "targets": "person",
+        "example": "C*nt, you sold my ore tag to the surface buyers."
+      },
+      {
+        "strength": 0.7,
+        "term": "cunt",
+        "kind": "insult",
+        "targets": "person",
+        "example": "You cunt, Ingrid, you flooded my working."
+      },
+      {
+        "strength": 0.68,
+        "term": "mothafucka",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Get off my forge, mothafucka, that's Sindri's heat."
+      },
+      {
+        "strength": 0.68,
+        "term": "motherfucker",
+        "kind": "insult",
+        "targets": "person",
+        "example": "That motherfucker Halvar stole my claim chalk."
+      },
+      {
+        "strength": 0.62,
+        "term": "piece of shit",
+        "kind": "insult",
+        "targets": "person",
+        "example": "You piece of shit, Eitri, you salted my sample."
+      },
+      {
+        "strength": 0.6,
+        "term": "f*cker",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Watch the lamp, f*cker, you nearly lit the shavings."
+      },
+      {
+        "strength": 0.6,
+        "term": "fucker",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Move your cart, fucker, Brokk's crew is coming through."
+      },
+      {
+        "strength": 0.58,
+        "term": "a$$hole",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Shut it, a$$hole, Yngvar called the count already."
+      },
+      {
+        "strength": 0.58,
+        "term": "asshole",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Asshole, Dvalin, you walked off with my tongs."
+      },
+      {
+        "strength": 0.58,
+        "term": "son of a bitch",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Son of a bitch, Grimhild, that's my mark on the wall."
+      },
+      {
+        "strength": 0.58,
+        "term": "what the fuck",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "What the fuck is flooding the sump?"
+      },
+      {
+        "strength": 0.56,
+        "term": "arsehole",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Arsehole Hrolf dumped slag in the clean trough."
+      },
+      {
+        "strength": 0.55,
+        "term": "b*tch",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Keep walking, b*tch, this bench is taken."
+      },
+      {
+        "strength": 0.55,
+        "term": "biatch",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Sit down, biatch, before you drop another tray."
+      },
+      {
+        "strength": 0.55,
+        "term": "bitch",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Bitch, Torvi, you spread that lie in the tavern."
+      },
+      {
+        "strength": 0.55,
+        "term": "dickhead",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Dickhead Steinar cut the fuse too long."
+      },
+      {
+        "strength": 0.55,
+        "term": "f**k",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "F**k, smoke's filling the west drift."
+      },
+      {
+        "strength": 0.55,
+        "term": "f*ck",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "F*ck, the charge blew early."
+      },
+      {
+        "strength": 0.55,
+        "term": "fck",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Fck, I lost the survey chain in the dark."
+      },
+      {
+        "strength": 0.55,
+        "term": "fuck",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Fuck, the main brace just split."
+      },
+      {
+        "strength": 0.55,
+        "term": "fuk",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Fuk, I dumped a whole keg of nails."
+      },
+      {
+        "strength": 0.55,
+        "term": "fukc",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Fukc, I nailed my sleeve to the crate."
+      },
+      {
+        "strength": 0.55,
+        "term": "fukk",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Fukk, the water's up to the rails."
+      },
+      {
+        "strength": 0.55,
+        "term": "fuuck",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Fuuck, that skip almost took my hand."
+      },
+      {
+        "strength": 0.55,
+        "term": "fvck",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Fvck, I burned through the last good bit."
+      },
+      {
+        "strength": 0.55,
+        "term": "phuck",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Phuck, the ledger page is torn out."
+      },
+      {
+        "strength": 0.55,
+        "term": "scum",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Claim-jumping scum, get off this level."
+      },
+      {
+        "strength": 0.55,
+        "term": "shithead",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Shithead Vidar left the cage unlatched."
+      },
+      {
+        "strength": 0.52,
+        "term": "dumbass",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Dumbass Alvis, that's the down-shaft, not the store."
+      },
+      {
+        "strength": 0.52,
+        "term": "f*cking",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "F*cking winch cable is frayed to wire."
+      },
+      {
+        "strength": 0.52,
+        "term": "fcking",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Fcking dust won't settle in this hall."
+      },
+      {
+        "strength": 0.52,
+        "term": "fuckin",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Fuckin rails are iced over again."
+      },
+      {
+        "strength": 0.52,
+        "term": "fucking",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "The fucking pump died on the night watch."
+      },
+      {
+        "strength": 0.52,
+        "term": "fuucking",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Fuucking bellows split down the seam."
+      },
+      {
+        "strength": 0.52,
+        "term": "twat",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Twat, you stacked the props backwards."
+      },
+      {
+        "strength": 0.5,
+        "term": "b*stard",
+        "kind": "insult",
+        "targets": "person",
+        "example": "B*stard Dagna swapped the good coal for slack."
+      },
+      {
+        "strength": 0.5,
+        "term": "b4stard",
+        "kind": "insult",
+        "targets": "person",
+        "example": "B4stard, you nicked my lunch tin."
+      },
+      {
+        "strength": 0.5,
+        "term": "bastard",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Lucky bastard Brokk found the pocket first."
+      },
+      {
+        "strength": 0.5,
+        "term": "jackass",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Jackass, you overloaded the skip again."
+      },
+      {
+        "strength": 0.5,
+        "term": "mf",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Tell that mf Orm to stop ringing the wrong bell."
+      },
+      {
+        "strength": 0.5,
+        "term": "ore-thief",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Ore-thief, I counted that bin before your shift."
+      },
+      {
+        "strength": 0.48,
+        "term": "bullshit",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Bullshit, that assay can't be right."
+      },
+      {
+        "strength": 0.48,
+        "term": "cock",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Get your cock-and-strut out of my stall, Borin."
+      },
+      {
+        "strength": 0.48,
+        "term": "forge-ruiner",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Forge-ruiner, you left the fire to eat the bellows."
+      },
+      {
+        "strength": 0.48,
+        "term": "holy shit",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Holy shit, the ceiling just dropped gravel."
+      },
+      {
+        "strength": 0.48,
+        "term": "maggot",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Maggot, crawl back to the low workings."
+      },
+      {
+        "strength": 0.48,
+        "term": "prick",
+        "kind": "insult",
+        "targets": "person",
+        "example": "That prick Ragna shorted my pay chits."
+      },
+      {
+        "strength": 0.48,
+        "term": "worthless",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Worthless, you couldn't find ore in a jeweler's stall."
+      },
+      {
+        "strength": 0.46,
+        "term": "craven",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Craven, you ran when the timber cracked."
+      },
+      {
+        "strength": 0.46,
+        "term": "horseshit",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Horseshit, nobody sealed the powder room."
+      },
+      {
+        "strength": 0.45,
+        "term": "d1ck",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Nice swing, d1ck, you dented the good anvil."
+      },
+      {
+        "strength": 0.45,
+        "term": "dick",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Don't be a dick, Kolbrun, share the assay."
+      },
+      {
+        "strength": 0.45,
+        "term": "elf-friend",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Elf-friend, you talk like a surface poet."
+      },
+      {
+        "strength": 0.45,
+        "term": "s**t",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "S**t, I stepped in the mule stall."
+      },
+      {
+        "strength": 0.45,
+        "term": "sh*t",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Sh*t, I kicked the lunch pail down the raise."
+      },
+      {
+        "strength": 0.45,
+        "term": "sh1t",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Sh1t, the fuse cord's too short."
+      },
+      {
+        "strength": 0.45,
+        "term": "shiit",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Shiit, the ore cart dumped at the switch."
+      },
+      {
+        "strength": 0.45,
+        "term": "shit",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Shit, the timber's groaning overhead."
+      },
+      {
+        "strength": 0.45,
+        "term": "shitt",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Shitt, I cracked the water jug."
+      },
+      {
+        "strength": 0.45,
+        "term": "slagforger",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Slagforger, you ruined a good bloom."
+      },
+      {
+        "strength": 0.44,
+        "term": "hollow-beard",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Hollow-beard, there's no clan in you."
+      },
+      {
+        "strength": 0.44,
+        "term": "imbecile",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Imbecile, you can't shore a roof with green wood."
+      },
+      {
+        "strength": 0.44,
+        "term": "oh shit",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Oh shit, the lantern just went out."
+      },
+      {
+        "strength": 0.44,
+        "term": "tin-blood",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Tin-blood, you fold at the first hard seam."
+      },
+      {
+        "strength": 0.44,
+        "term": "yellow-belly",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Yellow-belly, the deep isn't for you."
+      },
+      {
+        "strength": 0.43,
+        "term": "licebeard",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Licebeard, wash before you sit at my table."
+      },
+      {
+        "strength": 0.43,
+        "term": "mouse-heart",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Mouse-heart, one rumble and you're up the ladder."
+      },
+      {
+        "strength": 0.43,
+        "term": "surface-kisser",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Surface-kisser, go chase sunlight if the dark scares you."
+      },
+      {
+        "strength": 0.42,
+        "term": "barechin",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Barechin Alvis still asks which end of the hammer bites."
+      },
+      {
+        "strength": 0.42,
+        "term": "coward",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Coward, you left Hrolf in the dark."
+      },
+      {
+        "strength": 0.42,
+        "term": "moron",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Moron Gudrun left the powder near the brazier."
+      },
+      {
+        "strength": 0.42,
+        "term": "slagwit",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Slagwit, you stamped the wrong hall on the crate."
+      },
+      {
+        "strength": 0.42,
+        "term": "wretch",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Wretch, you drank the water ration dry."
+      },
+      {
+        "strength": 0.41,
+        "term": "crumbly-beard",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Crumbly-beard, even your braid's a lie."
+      },
+      {
+        "strength": 0.41,
+        "term": "hammer-shy",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Hammer-shy, you tap like you're afraid of iron."
+      },
+      {
+        "strength": 0.4,
+        "term": "a$$",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "This a$$-cold draft is from a new crack."
+      },
+      {
+        "strength": 0.4,
+        "term": "a**",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "I froze my a** on that iron bench."
+      },
+      {
+        "strength": 0.4,
+        "term": "ass",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "My ass is soaked from the runoff."
+      },
+      {
+        "strength": 0.4,
+        "term": "beardless",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Beardless pup, you don't lecture me on steel."
+      },
+      {
+        "strength": 0.4,
+        "term": "gravel-brain",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Gravel-brain, that's not how you read a dip."
+      },
+      {
+        "strength": 0.4,
+        "term": "idiot",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Idiot, that's blackdamp, get out of the low."
+      },
+      {
+        "strength": 0.4,
+        "term": "pathetic",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Pathetic, Brynja, that tap wouldn't wake a spark."
+      },
+      {
+        "strength": 0.4,
+        "term": "pissing",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "It's pissing meltwater down the shaft."
+      },
+      {
+        "strength": 0.4,
+        "term": "smoothface",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Smoothface, grow a braid before you talk craft."
+      },
+      {
+        "strength": 0.4,
+        "term": "snake",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Snake, you sold the same crate twice."
+      },
+      {
+        "strength": 0.4,
+        "term": "soft-ore",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Soft-ore, you bruise if a cart looks at you."
+      },
+      {
+        "strength": 0.4,
+        "term": "swine",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Swine, you ate from the common pot with dirty hands."
+      },
+      {
+        "strength": 0.4,
+        "term": "tr4sh",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Tr4sh, you call that a weld?"
+      },
+      {
+        "strength": 0.4,
+        "term": "trash",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Trash like you belongs on muck duty, Runa."
+      },
+      {
+        "strength": 0.4,
+        "term": "wtf",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Wtf, who left the cage door open?"
+      },
+      {
+        "strength": 0.39,
+        "term": "fool's gold",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Fool's gold, you flash and assay empty."
+      },
+      {
+        "strength": 0.38,
+        "term": "arse",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "I slipped and landed on my arse by the sluice."
+      },
+      {
+        "strength": 0.38,
+        "term": "crooked-haft",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Crooked-haft, your work never sits true."
+      },
+      {
+        "strength": 0.38,
+        "term": "cur",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Cur, you snarled at the clerk over a chit."
+      },
+      {
+        "strength": 0.38,
+        "term": "garbage",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Garbage work, Skadi, recut the whole frame."
+      },
+      {
+        "strength": 0.38,
+        "term": "pebblehands",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Pebblehands, your weld looks like bird shit."
+      },
+      {
+        "strength": 0.38,
+        "term": "pick-dropper",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Pick-dropper, you froze on the face."
+      },
+      {
+        "strength": 0.38,
+        "term": "piss",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Piss, I missed the last mule out."
+      },
+      {
+        "strength": 0.38,
+        "term": "rat",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Rat, you squealed my stash to the overseer."
+      },
+      {
+        "strength": 0.38,
+        "term": "scrub",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Scrub, stay off the face till you learn the bell."
+      },
+      {
+        "strength": 0.37,
+        "term": "blunt-pick",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Blunt-pick, you work twice and cut once."
+      },
+      {
+        "strength": 0.37,
+        "term": "wet-stone",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Wet-stone, you couldn't sharpen a stick."
+      },
+      {
+        "strength": 0.36,
+        "term": "ale-sop",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Ale-sop, you can barely stand the morning bell."
+      },
+      {
+        "strength": 0.36,
+        "term": "coal-breath",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Coal-breath, stand downwind of the stew."
+      },
+      {
+        "strength": 0.36,
+        "term": "loser",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Loser, even the mule out-hauls you."
+      },
+      {
+        "strength": 0.36,
+        "term": "worm",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Worm, you hid while we held the cave-in."
+      },
+      {
+        "strength": 0.35,
+        "term": "dog",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Down, dog, before I put you on night muck."
+      },
+      {
+        "strength": 0.35,
+        "term": "n00b",
+        "kind": "insult",
+        "targets": "person",
+        "example": "N00b Tova can't even set a prop."
+      },
+      {
+        "strength": 0.35,
+        "term": "noob",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Noob, you don't wet a charge in this drift."
+      },
+      {
+        "strength": 0.34,
+        "term": "nub",
+        "kind": "insult",
+        "targets": "person",
+        "example": "Nub, the pick goes bit-first, not haft-first."
+      },
+      {
+        "strength": 0.32,
+        "term": "bot",
+        "kind": "insult",
+        "targets": "person",
+        "example": "You swing like a bot, Frida, same three strokes."
+      }
+    ],
+    "1": [
+      {
+        "strength": 0.28,
+        "term": "bloody hell",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Bloody hell, the pump's sucking air."
+      },
+      {
+        "strength": 0.26,
+        "term": "hammer and hell",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Hammer and hell, the bar's still too short."
+      },
+      {
+        "strength": 0.25,
+        "term": "what the hell",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "What the hell happened to the ore bins?"
+      },
+      {
+        "strength": 0.24,
+        "term": "hell's bells",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Hell's bells, the whistle went early."
+      },
+      {
+        "strength": 0.22,
+        "term": "crap on a pick",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Crap on a pick, I measured twice and still missed."
+      },
+      {
+        "strength": 0.22,
+        "term": "dammit",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Dammit, the bellows patch didn't hold."
+      },
+      {
+        "strength": 0.22,
+        "term": "damn it",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Damn it, the bucket spilled down the shaft."
+      },
+      {
+        "strength": 0.22,
+        "term": "damnit",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Damnit, I lost count on the survey marks."
+      },
+      {
+        "strength": 0.22,
+        "term": "mother of slag",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Mother of slag, the crucible's cracked."
+      },
+      {
+        "strength": 0.2,
+        "term": "bloody",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Bloody cold in the north adit today."
+      },
+      {
+        "strength": 0.2,
+        "term": "curse it",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Curse it, the rivet sheared clean off."
+      },
+      {
+        "strength": 0.2,
+        "term": "d*mn",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "D*mn, another cracked support beam."
+      },
+      {
+        "strength": 0.2,
+        "term": "d4mn",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "D4mn, the lift chain's singing wrong."
+      },
+      {
+        "strength": 0.2,
+        "term": "daamn",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Daamn, that ore's poorer than I swore."
+      },
+      {
+        "strength": 0.2,
+        "term": "damm",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Damm, this cart wheel seized again."
+      },
+      {
+        "strength": 0.2,
+        "term": "damn",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Damn, the vein pinches out right under Steinar's mark."
+      },
+      {
+        "strength": 0.2,
+        "term": "damnn",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Damnn, I dropped the last torch in the wet."
+      },
+      {
+        "strength": 0.2,
+        "term": "h*ll",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "H*ll, I stepped in the runoff again."
+      },
+      {
+        "strength": 0.2,
+        "term": "h3ll",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "H3ll, the lantern oil's almost gone."
+      },
+      {
+        "strength": 0.2,
+        "term": "heell",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Heell, this grindstone is glazed over."
+      },
+      {
+        "strength": 0.2,
+        "term": "hell",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Hell, that draft is coming from a new crack."
+      },
+      {
+        "strength": 0.2,
+        "term": "hells",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Hells, the night shift left the gate unbarred."
+      },
+      {
+        "strength": 0.19,
+        "term": "curse this dust",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Curse this dust, I can taste last week's blast."
+      },
+      {
+        "strength": 0.19,
+        "term": "frickin",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Frickin hoist is screaming again."
+      },
+      {
+        "strength": 0.18,
+        "term": "blast it",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Blast it, I hammered my own thumb."
+      },
+      {
+        "strength": 0.18,
+        "term": "by the broken anvil",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "By the broken anvil, that strike rang wrong."
+      },
+      {
+        "strength": 0.18,
+        "term": "cr*p",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Cr*p, I nicked the good chisel."
+      },
+      {
+        "strength": 0.18,
+        "term": "cr4p",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Cr4p, rust got into the nail keg."
+      },
+      {
+        "strength": 0.18,
+        "term": "craap",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Craap, the map's smeared with mud."
+      },
+      {
+        "strength": 0.18,
+        "term": "crap",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Crap, the fuse burned shorter than I cut."
+      },
+      {
+        "strength": 0.18,
+        "term": "cursed luck",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Cursed luck, rain's pouring down the shaft."
+      },
+      {
+        "strength": 0.18,
+        "term": "freakin",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Freakin lantern gutters every third step."
+      },
+      {
+        "strength": 0.18,
+        "term": "frick",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Frick, I scorched the stew."
+      },
+      {
+        "strength": 0.18,
+        "term": "sod it",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Sod it, we'll recut the whole frame."
+      },
+      {
+        "strength": 0.17,
+        "term": "blasted luck",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Blasted luck, the mule threw a shoe."
+      },
+      {
+        "strength": 0.17,
+        "term": "pits below",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Pits below, that rumble's not the carts."
+      },
+      {
+        "strength": 0.17,
+        "term": "slag it",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Slag it, I bent the good tongs."
+      },
+      {
+        "strength": 0.17,
+        "term": "what in the deep",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "What in the deep is that smell from the sump?"
+      },
+      {
+        "strength": 0.16,
+        "term": "blasted",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Blasted luck, the winch jammed halfway."
+      },
+      {
+        "strength": 0.16,
+        "term": "blooming heck",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Blooming heck, the tally doesn't add."
+      },
+      {
+        "strength": 0.16,
+        "term": "by broken stone",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "By broken stone, the prop's leaning."
+      },
+      {
+        "strength": 0.16,
+        "term": "confound it",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Confound it, the sample's contaminated."
+      },
+      {
+        "strength": 0.16,
+        "term": "dagnabbit",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Dagnabbit, the key's still in the other jacket."
+      },
+      {
+        "strength": 0.16,
+        "term": "dagnabit",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Dagnabit, I mixed the sample bags."
+      },
+      {
+        "strength": 0.16,
+        "term": "for stone's sake",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "For stone's sake, stack the timber straight."
+      },
+      {
+        "strength": 0.16,
+        "term": "rust and ruin",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Rust and ruin, the hinges are gone again."
+      },
+      {
+        "strength": 0.16,
+        "term": "sod",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Sod, I left the warrant on the tavern table."
+      },
+      {
+        "strength": 0.15,
+        "term": "blast",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Blast, I misread the dip of the seam."
+      },
+      {
+        "strength": 0.15,
+        "term": "by my beard",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "By my beard, the hall's colder than last watch."
+      },
+      {
+        "strength": 0.15,
+        "term": "by the ancestors",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "By the ancestors, this hall used to ring cleaner."
+      },
+      {
+        "strength": 0.15,
+        "term": "by the deep",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "By the deep, that echo's a long way down."
+      },
+      {
+        "strength": 0.15,
+        "term": "consarnit",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Consarnit, I wrote the depth on the wrong slate."
+      },
+      {
+        "strength": 0.15,
+        "term": "flippin",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Flippin cold seeps through these boots."
+      },
+      {
+        "strength": 0.15,
+        "term": "flipping",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Flipping cart jumped the rail again."
+      },
+      {
+        "strength": 0.15,
+        "term": "ore's blood",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Ore's blood, the seam's richer than the map said."
+      },
+      {
+        "strength": 0.15,
+        "term": "slag and soot",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Slag and soot, I can't see past the haze."
+      },
+      {
+        "strength": 0.15,
+        "term": "soot and ashes",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Soot and ashes, the chimney won't draw."
+      },
+      {
+        "strength": 0.15,
+        "term": "what the heck",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "What the heck is clogging the sluice?"
+      },
+      {
+        "strength": 0.14,
+        "term": "blazes",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Blazes, that spark jumped to the shavings."
+      },
+      {
+        "strength": 0.14,
+        "term": "blooming",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Blooming dust is in everything I own."
+      },
+      {
+        "strength": 0.14,
+        "term": "broken pick",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Broken pick, and the spare's still at the forge."
+      },
+      {
+        "strength": 0.14,
+        "term": "by the forge",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "By the forge, the iron's ready and I'm not."
+      },
+      {
+        "strength": 0.14,
+        "term": "by the stone",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "By the stone, I'll finish this cut before meal."
+      },
+      {
+        "strength": 0.14,
+        "term": "confound",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Confound this knot, it won't feed."
+      },
+      {
+        "strength": 0.14,
+        "term": "crud",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Crud, clay's packed in the drill hole."
+      },
+      {
+        "strength": 0.14,
+        "term": "dark of the mine",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Dark of the mine, I hate a dead lantern."
+      },
+      {
+        "strength": 0.14,
+        "term": "gol darn",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Gol darn, the tag fell off the crate."
+      },
+      {
+        "strength": 0.14,
+        "term": "goldarn",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Goldarn, I spilled flux on the clean plate."
+      },
+      {
+        "strength": 0.14,
+        "term": "snapped haft",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Snapped haft, and we were almost through."
+      },
+      {
+        "strength": 0.14,
+        "term": "stones below",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Stones below, the floor dropped an inch."
+      },
+      {
+        "strength": 0.13,
+        "term": "cold forge",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Cold forge, nobody banked the coals."
+      },
+      {
+        "strength": 0.13,
+        "term": "consarn",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Consarn, the wheelbarrow's got a bent lip."
+      },
+      {
+        "strength": 0.13,
+        "term": "cracked stone",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Cracked stone, the ceiling's talking tonight."
+      },
+      {
+        "strength": 0.13,
+        "term": "tarnation",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Tarnation, the rope's frayed to threads."
+      },
+      {
+        "strength": 0.13,
+        "term": "wet powder",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Wet powder, that charge is useless."
+      },
+      {
+        "strength": 0.12,
+        "term": "darn",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Darn, I left my spare pick by the storehouse."
+      },
+      {
+        "strength": 0.12,
+        "term": "dull chisel",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Dull chisel, this granite's laughing at me."
+      },
+      {
+        "strength": 0.12,
+        "term": "empty vein",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Empty vein, we chased a ghost all morning."
+      },
+      {
+        "strength": 0.12,
+        "term": "heck",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Heck, I tied the mule too close to the drop."
+      },
+      {
+        "strength": 0.12,
+        "term": "pity's sake",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Pity's sake, leave a lamp at the junction."
+      },
+      {
+        "strength": 0.12,
+        "term": "shoot",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Shoot, I forgot to stamp the crate."
+      },
+      {
+        "strength": 0.11,
+        "term": "cripes",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Cripes, the ladder rung's split."
+      },
+      {
+        "strength": 0.11,
+        "term": "dang",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Dang, the stew pot boiled dry."
+      },
+      {
+        "strength": 0.11,
+        "term": "geeze",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Geeze, I didn't hear the shift bell."
+      },
+      {
+        "strength": 0.11,
+        "term": "jeez",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Jeez, that skip stopped sudden."
+      },
+      {
+        "strength": 0.11,
+        "term": "sour ale",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Sour ale, the cask sat too near the heat."
+      },
+      {
+        "strength": 0.1,
+        "term": "bother",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Bother, I stitched the patch on backwards."
+      },
+      {
+        "strength": 0.1,
+        "term": "crumbs",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Crumbs, I sat on the bread loaf."
+      },
+      {
+        "strength": 0.1,
+        "term": "drat",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Drat, the ink froze on the ledger."
+      },
+      {
+        "strength": 0.1,
+        "term": "gosh",
+        "kind": "expletive",
+        "targets": "none",
+        "example": "Gosh, the nugget's heavier than it looks."
+      }
+    ]
+  },
+  "notes": "Tier 1 is mild undirected swearing; tier 2 is crude expletives and personal insults; tier 3 is group-targeted slurs the filter treats as the harshest class. Speech rows need form (oath|intensifier|noun|adj), number (sg|pl|mass) and article (a|an|). A pl noun is never said to one person."
+}

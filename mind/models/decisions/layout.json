@@ -1,0 +1,271 @@
+{
+  "model": "decisions",
+  "schema_id": "dwarfsim-imitator-v1",
+  "dwarfsim_schema_id": "dwarfsim-v1",
+  "input": {
+    "layout": "observation ++ candidate_features",
+    "obs_size": 69,
+    "cand_size": 64,
+    "size": 133,
+    "schema": "dwarfsim.schema -- OBS_* and CAND_* offsets"
+  },
+  "observation": {
+    "size": 69,
+    "blocks": [
+      {
+        "name": "mind",
+        "at": 0,
+        "size": 44,
+        "parts": [
+          {
+            "name": "emotions",
+            "at": 0,
+            "size": 4,
+            "what": "anger, fear, happiness, grief"
+          },
+          {
+            "name": "needs",
+            "at": 4,
+            "size": 4,
+            "what": "hunger, thirst, fatigue, social"
+          },
+          {
+            "name": "traits",
+            "at": 8,
+            "size": 6,
+            "what": "bravery, greed, temper, sociability, pride, forgiveness"
+          },
+          {
+            "name": "health",
+            "at": 14,
+            "size": 1,
+            "what": "health / 20"
+          },
+          {
+            "name": "inventory",
+            "at": 15,
+            "size": 5,
+            "what": "ore, gold, food, ale, weapon quality; each count divided by ore 10, gold 20, food 10, ale 10, weapon quality already 0..1"
+          },
+          {
+            "name": "focus",
+            "at": 20,
+            "size": 24,
+            "what": "4 relationship slots of 6: present, trust, respect, hatred, grudge, gratitude; filled by salience, padded with zeros"
+          }
+        ]
+      },
+      {
+        "name": "place",
+        "at": 44,
+        "size": 6,
+        "what": "one-hot over FORGE, MINE, TAVERN, HALL, FARM, GATE"
+      },
+      {
+        "name": "crowd",
+        "at": 50,
+        "size": 1,
+        "what": "living dwarves here / 6"
+      },
+      {
+        "name": "monster",
+        "at": 51,
+        "size": 1,
+        "what": "a monster is here"
+      },
+      {
+        "name": "monster_hp",
+        "at": 52,
+        "size": 1,
+        "what": "its health fraction"
+      },
+      {
+        "name": "under_attack",
+        "at": 53,
+        "size": 1,
+        "what": "hit within the last 12 ticks"
+      },
+      {
+        "name": "hit_age",
+        "at": 54,
+        "size": 1,
+        "what": "ticks since the last hit / 50"
+      },
+      {
+        "name": "alive_fraction",
+        "at": 55,
+        "size": 1,
+        "what": "living dwarves / starting count"
+      },
+      {
+        "name": "clock",
+        "at": 56,
+        "size": 1,
+        "what": "(tick % 200) / 200"
+      },
+      {
+        "name": "goals",
+        "at": 57,
+        "size": 6,
+        "what": "strength per goal: GET_RICH, AVENGE, PROTECT, REPAY, BEFRIEND, KEEP_PEACE"
+      },
+      {
+        "name": "obligations",
+        "at": 63,
+        "size": 2,
+        "what": "open owed by me, owed to me, each / 3"
+      },
+      {
+        "name": "memory",
+        "at": 65,
+        "size": 2,
+        "what": "memories held / 64, mean salience"
+      },
+      {
+        "name": "is_chief",
+        "at": 67,
+        "size": 1,
+        "what": "am I the chief (0 when nobody is)"
+      },
+      {
+        "name": "chief_here",
+        "at": 68,
+        "size": 1,
+        "what": "the chief is standing here"
+      }
+    ]
+  },
+  "candidate": {
+    "size": 64,
+    "skill_one_hot_at": 0,
+    "skills": [
+      "WORK",
+      "EAT",
+      "DRINK",
+      "REST",
+      "SOCIALIZE",
+      "STEAL",
+      "ATTACK",
+      "FLEE",
+      "APOLOGIZE",
+      "FIGHT_MONSTER",
+      "IGNORE",
+      "RETORT",
+      "DEMAND_APOLOGY",
+      "REFUSE_APOLOGY",
+      "COMPLAIN_TO",
+      "AVOID",
+      "GOSSIP",
+      "ACCEPT",
+      "REFUSE",
+      "BARGAIN",
+      "FULFIL",
+      "PUNISH"
+    ],
+    "terms_at": 22,
+    "terms": [
+      "base",
+      "need_hunger",
+      "need_thirst",
+      "need_fatigue",
+      "need_social",
+      "anger",
+      "fear",
+      "happiness",
+      "grief",
+      "bravery",
+      "greed",
+      "temper",
+      "sociability",
+      "anger_at_target",
+      "hatred_target",
+      "trust_target",
+      "respect_target",
+      "being_attacked",
+      "monster_threat",
+      "hurt",
+      "wealth_drive",
+      "supply_pressure",
+      "request_pull",
+      "distance_cost",
+      "noise",
+      "pride",
+      "forgiveness",
+      "grudge_target",
+      "gratitude_target",
+      "reputation_target",
+      "provoked_by_target",
+      "publicity",
+      "humiliation",
+      "chief_present",
+      "expected_punishment",
+      "fear_target",
+      "goal_bias",
+      "obligation_pressure",
+      "ask_cost",
+      "payment_offered",
+      "gossip_value",
+      "punish_pressure"
+    ]
+  },
+  "forward": [
+    "x = observation ++ candidate_features",
+    "h = relu(x @ fc1.weight.T + fc1.bias)",
+    "h = relu(h @ fc2.weight.T + fc2.bias)",
+    "score = (h @ out.weight.T + out.bias)[0]"
+  ],
+  "arrays": [
+    {
+      "name": "fc1.weight",
+      "shape": [
+        64,
+        133
+      ],
+      "dtype": "float32",
+      "role": "first hidden layer, (hidden1, OBS_SIZE + CAND_SIZE)"
+    },
+    {
+      "name": "fc1.bias",
+      "shape": [
+        64
+      ],
+      "dtype": "float32",
+      "role": "(hidden1,)"
+    },
+    {
+      "name": "fc2.weight",
+      "shape": [
+        64,
+        64
+      ],
+      "dtype": "float32",
+      "role": "second hidden layer, (hidden2, hidden1)"
+    },
+    {
+      "name": "fc2.bias",
+      "shape": [
+        64
+      ],
+      "dtype": "float32",
+      "role": "(hidden2,)"
+    },
+    {
+      "name": "out.weight",
+      "shape": [
+        1,
+        64
+      ],
+      "dtype": "float32",
+      "role": "the score, (1, hidden2)"
+    },
+    {
+      "name": "out.bias",
+      "shape": [
+        1
+      ],
+      "dtype": "float32",
+      "role": "(1,)"
+    }
+  ],
+  "linear_layout": "torch: weight is (out, in), y = x @ weight.T + bias"
+}

@@ -1,0 +1,255 @@
+{
+  "created": "2026-09-15T02:45:47",
+  "created_by": "tools/freeze.py",
+  "repository": "Modular-Mob-AI, in mind/",
+  "what": "the frozen, port-ready models: numpy on this side, a .mbw brain on the mod's. See docs/port.md for the mapping and models/*/README.md for the layouts.",
+  "schema_id_is": "the sha256 of that model's layout.json, the way the mod's schema id is the CRC32 of its schema.json; the short name is the model's own id",
+  "parity": "tools/check_parity.py re-runs both parity.jsonl files against the numpy implementations and fails on any drift beyond 1e-5",
+  "models": [
+    {
+      "name": "interpreter",
+      "what": "the dialogue classifier: one line of chat in, the SCHEMA.md label set out",
+      "directory": "models/interpreter",
+      "source": "text/models/clf",
+      "schema_id": "dialogue-clf-v2",
+      "layout_sha256": "09a397c9f8e809b303b9a1c94bf4ea32d42456273347374bd37a5d40017fbc1e",
+      "exported": "2026-09-15T00:33:29",
+      "weights": {
+        "file": "weights.npz",
+        "dtype": "float32",
+        "bytes": 8414730,
+        "sha256": "58ff30c83d93b26903a1a7ca7aab188b980156fac440b1db788b87524180ad8e",
+        "arrays": [
+          {
+            "name": "emb.weight",
+            "shape": [
+              65536,
+              32
+            ]
+          },
+          {
+            "name": "fc1.weight",
+            "shape": [
+              64,
+              52
+            ]
+          },
+          {
+            "name": "fc1.bias",
+            "shape": [
+              64
+            ]
+          },
+          {
+            "name": "head_intent.weight",
+            "shape": [
+              13,
+              64
+            ]
+          },
+          {
+            "name": "head_intent.bias",
+            "shape": [
+              13
+            ]
+          },
+          {
+            "name": "head_topic.weight",
+            "shape": [
+              12,
+              64
+            ]
+          },
+          {
+            "name": "head_topic.bias",
+            "shape": [
+              12
+            ]
+          },
+          {
+            "name": "head_addressed.weight",
+            "shape": [
+              4,
+              64
+            ]
+          },
+          {
+            "name": "head_addressed.bias",
+            "shape": [
+              4
+            ]
+          },
+          {
+            "name": "head_sincerity.weight",
+            "shape": [
+              3,
+              64
+            ]
+          },
+          {
+            "name": "head_sincerity.bias",
+            "shape": [
+              3
+            ]
+          },
+          {
+            "name": "head_floats.weight",
+            "shape": [
+              3,
+              64
+            ]
+          },
+          {
+            "name": "head_floats.bias",
+            "shape": [
+              3
+            ]
+          }
+        ],
+        "parameters": 2102819
+      },
+      "training_data": {
+        "path": "text/data/dialogue_partial.jsonl",
+        "sha256": "a240e210d4af3f5aa731854a6fe04a4911763e01b4ee722e13011cc3fc7d1dab",
+        "rows": 154618,
+        "train": 190285,
+        "test": 23193,
+        "date": "2026-09-15T00:33:29"
+      },
+      "metrics": {
+        "intent": {
+          "accuracy": 0.7284094338809124,
+          "macro_f1": 0.6274107581987057,
+          "n": 23193
+        },
+        "topic": {
+          "accuracy": 0.8001983357047385,
+          "macro_f1": 0.6646888183543177,
+          "n": 23193
+        },
+        "addressed": {
+          "accuracy": 0.8542232570172035,
+          "macro_f1": 0.5390256140040434,
+          "n": 23193
+        },
+        "sincerity": {
+          "accuracy": 0.9087725519748215,
+          "macro_f1": 0.4795852452425831,
+          "n": 22559
+        },
+        "floats": {
+          "aggression": 0.09834040701389313,
+          "valence": 0.2102840542793274,
+          "urgency": 0.1007898598909378
+        }
+      },
+      "parity": {
+        "file": "parity.jsonl",
+        "records": 200,
+        "tolerance": 1e-05
+      }
+    },
+    {
+      "name": "decisions",
+      "what": "the learned arbitrator: one observation and one candidate action in, one score out",
+      "directory": "models/decisions",
+      "source": "runs/learn/imitator.npz",
+      "schema_id": "dwarfsim-imitator-v1",
+      "world_schema_id": "dwarfsim-v1",
+      "layout_sha256": "b7dba1c41f7d3e908f47118533714b55ed2060af7da3e8c8811d0ca3bf35b69e",
+      "exported": "2026-09-15T02:02:39",
+      "weights": {
+        "file": "imitator.npz",
+        "dtype": "float32",
+        "bytes": 52726,
+        "sha256": "758d3a3f780534a55cb0afc3a0597ced0425f65f58a06ff8b42d8cd5b88b491a",
+        "arrays": [
+          {
+            "name": "fc1.weight",
+            "shape": [
+              64,
+              133
+            ]
+          },
+          {
+            "name": "fc1.bias",
+            "shape": [
+              64
+            ]
+          },
+          {
+            "name": "fc2.weight",
+            "shape": [
+              64,
+              64
+            ]
+          },
+          {
+            "name": "fc2.bias",
+            "shape": [
+              64
+            ]
+          },
+          {
+            "name": "out.weight",
+            "shape": [
+              1,
+              64
+            ]
+          },
+          {
+            "name": "out.bias",
+            "shape": [
+              1
+            ]
+          }
+        ],
+        "parameters": 12801
+      },
+      "training_data": {
+        "path": "runs/learn/teacher_v2.npz",
+        "sha256": "2e595f0e8699774a84002056a37649111cea3ec0870cc2f13daa9787ee71ea17",
+        "decisions": 220000,
+        "candidates": 3784768,
+        "scenarios": [
+          "default",
+          "feud",
+          "gossip",
+          "player",
+          "friends",
+          "bully",
+          "thief"
+        ],
+        "date": "2026-09-15T02:02:39"
+      },
+      "metrics": {
+        "held_out_top1": 0.9783,
+        "held_out_decisions": 43128,
+        "chance": 0.0593,
+        "hard_top1": 0.9656,
+        "score_mae": 0.1862,
+        "torch_numpy_max_abs_diff": 2.15e-06
+      },
+      "parity": {
+        "file": "parity.jsonl",
+        "records": 200,
+        "tolerance": 1e-05,
+        "collected": {
+          "seeds": [
+            1,
+            2
+          ],
+          "ticks": 400,
+          "stride": 10,
+          "targeted_seeds": [
+            9,
+            10
+          ],
+          "hard_gap": 0.5,
+          "decisions": 15944,
+          "candidates": 282786
+        }
+      }
+    }
+  ]
+}

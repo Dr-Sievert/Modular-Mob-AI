@@ -14,6 +14,30 @@ and places blocks, under the same rules as a player. The league it is measured o
 several at once, a difficulty ladder, the hand-written fighter as the anchor, published networks and the run's own past
 checkpoints, with a loadout drawn every fight.
 
+## Two subprojects
+
+This repository holds two halves of one mob. They share a goal and, for now, no code.
+
+**The combat mod** is everything above and everything else in this file: `mod/`, `trainer/`, `viewer/`, `scripts/`,
+`models/`, `runs/`. It is the fighting, and it needs Java 21, Gradle and Minecraft.
+
+**The mind** is [`mind/`](mind/README.md): a pure-Python testbed, no game engine and no Gradle, for everything the fight
+is not — persistent emotional and social state, episodic memory, goals, obligations, and one arbitrator choosing among
+skills, with a log that records *why* every decision was made and a single-file HTML viewer of a run. Six dwarves in a
+settlement of six places mine, drink, gossip, hold grudges and brawl, and a feud is what happens when the numbers line
+up rather than something scripted. Two models are trained in it — an interpreter that reads a line of chat into labels,
+and a decision scorer — and both are frozen for the port in [`mind/models/`](mind/models), each with a specification a
+Java developer can implement without reading any Python and a 200-record parity file. The brief for bringing them into
+the mod, including the one seam in `BrainState` that has to open, is [`mind/docs/port.md`](mind/docs/port.md). Run it
+from `mind/`:
+
+```
+cd mind
+python -m dwarfsim run --scenario feud --ticks 2000 --seed 1 --out runs/feud.jsonl --html runs/feud.html
+python -m dwarfsim.talk --seed 1 --dwarves 3     talk to a dwarf yourself
+python -m pytest -q tests                        expect 212 passed
+```
+
 ## Quick start
 
 Windows 10 or 11 and a clone of this repository; nothing else has to be installed first.
@@ -46,6 +70,7 @@ scripts/    everything you run
 models/     trained networks, in git
 docs/       documentation
 runs/       training runs (not in git)
+mind/       the mind subproject: pure Python, no Java, no Minecraft
 ```
 
 ## Development

@@ -39,3 +39,14 @@ __pycache__
 venv
 checkpoints
 logs
+
+# the mind subproject (mind/), a pure-Python testbed with no Java in it
+mind/runs/
+mind/text/data/raw/
+mind/text/data/dialogue_partial.jsonl
+mind/text/data/generated_raw/
+# trained checkpoints are regenerable; the exported weights.npz + model.json are what ships
+mind/text/models/**/model.pt
+mind/text/models/**/*.log
+__pycache__/
+.pytest_cache/

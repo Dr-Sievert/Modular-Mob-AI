@@ -1,0 +1,120 @@
+{"text": "yo Brokk", "intent": "GREET", "topic": "NONE", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.6, "urgency": 0.0, "names": ["Brokk"], "sincerity": "SINCERE"}
+{"text": "sup stranger", "intent": "GREET", "topic": "NONE", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.5, "urgency": 0.0, "names": [], "sincerity": "SINCERE"}
+{"text": "mornin to the whole clan", "intent": "GREET", "topic": "CLAN", "addressed": "GROUP", "aggression": 0.0, "valence": 0.6, "urgency": 0.0, "names": [], "sincerity": "SINCERE"}
+{"text": "hey", "intent": "GREET", "topic": "NONE", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.4, "urgency": 0.0, "names": [], "sincerity": "SINCERE"}
+{"text": "welcome to the forge outsider", "intent": "GREET", "topic": "FORGE", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.5, "urgency": 0.0, "names": [], "sincerity": "SINCERE"}
+{"text": "yo Vidar, thought u were creeper food by now", "intent": "GREET", "topic": "NONE", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.7, "urgency": 0.0, "names": ["Vidar"], "sincerity": "JOKING"}
+{"text": "hiya Runa good to see ya", "intent": "GREET", "topic": "HOME", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.7, "urgency": 0.0, "names": ["Runa"], "sincerity": "SINCERE"}
+{"text": "welcome back to camp everyone", "intent": "GREET", "topic": "HOME", "addressed": "GROUP", "aggression": 0.0, "valence": 0.6, "urgency": 0.0, "names": [], "sincerity": "SINCERE"}
+{"text": "gtg back to the mine before Dagna kills me", "intent": "FAREWELL", "topic": "MINE", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.4, "urgency": 0.1, "names": ["Dagna"], "sincerity": "JOKING"}
+{"text": "later Brokk", "intent": "FAREWELL", "topic": "NONE", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.5, "urgency": 0.0, "names": ["Brokk"], "sincerity": "SINCERE"}
+{"text": "im out, gate's closing soon", "intent": "FAREWELL", "topic": "HOME", "addressed": "GROUP", "aggression": 0.0, "valence": 0.2, "urgency": 0.3, "names": [], "sincerity": "SINCERE"}
+{"text": "bye", "intent": "FAREWELL", "topic": "NONE", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.3, "urgency": 0.0, "names": [], "sincerity": "SINCERE"}
+{"text": "gotta run before dark, watch for spiders", "intent": "FAREWELL", "topic": "MONSTER", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.3, "urgency": 0.4, "names": [], "sincerity": "SINCERE"}
+{"text": "see ya at the tavern later Runa", "intent": "FAREWELL", "topic": "DRINK", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.6, "urgency": 0.0, "names": ["Runa"], "sincerity": "SINCERE"}
+{"text": "headin home", "intent": "FAREWELL", "topic": "HOME", "addressed": "GROUP", "aggression": 0.0, "valence": 0.3, "urgency": 0.0, "names": [], "sincerity": "SINCERE"}
+{"text": "peace out stranger", "intent": "FAREWELL", "topic": "NONE", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.4, "urgency": 0.0, "names": [], "sincerity": "SINCERE"}
+{"text": "man this ore vein just wont quit", "intent": "SMALLTALK", "topic": "MINE", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.0, "urgency": 0.0, "names": [], "sincerity": "SINCERE"}
+{"text": "could kill for some ale rn", "intent": "SMALLTALK", "topic": "DRINK", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.2, "urgency": 0.0, "names": [], "sincerity": "JOKING"}
+{"text": "forge's hotter than Sindri's temper", "intent": "SMALLTALK", "topic": "FORGE", "addressed": "NONE", "aggression": 0.0, "valence": 0.1, "urgency": 0.0, "names": ["Sindri"], "sincerity": "JOKING"}
+{"text": "long day at the mine today", "intent": "SMALLTALK", "topic": "MINE", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.0, "urgency": 0.0, "names": [], "sincerity": "SINCERE"}
+{"text": "bread's stale again lol", "intent": "SMALLTALK", "topic": "FOOD", "addressed": "LISTENER", "aggression": 0.0, "valence": -0.1, "urgency": 0.0, "names": [], "sincerity": "JOKING"}
+{"text": "quiet night, dead as Sindri's jokes", "intent": "SMALLTALK", "topic": "HOME", "addressed": "NONE", "aggression": 0.0, "valence": 0.1, "urgency": 0.0, "names": ["Sindri"], "sincerity": "JOKING"}
+{"text": "same old same old eh Steinar", "intent": "SMALLTALK", "topic": "NONE", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.1, "urgency": 0.0, "names": ["Steinar"], "sincerity": "SINCERE"}
+{"text": "goblin trader's back in town again", "intent": "SMALLTALK", "topic": "TRADE", "addressed": "GROUP", "aggression": 0.0, "valence": 0.0, "urgency": 0.0, "names": [], "sincerity": "SINCERE"}
+{"text": "nothin like Grimhild's fresh bread", "intent": "SMALLTALK", "topic": "FOOD", "addressed": "NONE", "aggression": 0.0, "valence": 0.4, "urgency": 0.0, "names": ["Grimhild"], "sincerity": "SINCERE"}
+{"text": "weathers turnin cold up top", "intent": "SMALLTALK", "topic": "NONE", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.0, "urgency": 0.0, "names": [], "sincerity": "SINCERE"}
+{"text": "i could eat a whole boar rn", "intent": "SMALLTALK", "topic": "FOOD", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.2, "urgency": 0.0, "names": [], "sincerity": "JOKING"}
+{"text": "workin the forge all day, arms are dead", "intent": "SMALLTALK", "topic": "FORGE", "addressed": "LISTENER", "aggression": 0.0, "valence": -0.1, "urgency": 0.0, "names": [], "sincerity": "SINCERE"}
+{"text": "u got any spare torches", "intent": "QUESTION", "topic": "MINE", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.0, "urgency": 0.2, "names": [], "sincerity": "SINCERE"}
+{"text": "hows Halvar's new axe holdin up", "intent": "QUESTION", "topic": "WEAPON", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.1, "urgency": 0.1, "names": ["Halvar"], "sincerity": "SINCERE"}
+{"text": "wut time's the gate close", "intent": "QUESTION", "topic": "HOME", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.0, "urgency": 0.2, "names": [], "sincerity": "SINCERE"}
+{"text": "seen Sindri?", "intent": "QUESTION", "topic": "NONE", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.0, "urgency": 0.1, "names": ["Sindri"], "sincerity": "SINCERE"}
+{"text": "how much is Brynja chargin for that", "intent": "QUESTION", "topic": "TRADE", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.0, "urgency": 0.1, "names": ["Brynja"], "sincerity": "SINCERE"}
+{"text": "is the ale keg empty again", "intent": "QUESTION", "topic": "DRINK", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.0, "urgency": 0.1, "names": [], "sincerity": "SINCERE"}
+{"text": "well?", "intent": "QUESTION", "topic": "NONE", "addressed": "LISTENER", "aggression": 0.2, "valence": -0.1, "urgency": 0.4, "names": [], "sincerity": "SINCERE"}
+{"text": "who's on watch tonight", "intent": "QUESTION", "topic": "WORK", "addressed": "GROUP", "aggression": 0.0, "valence": 0.0, "urgency": 0.2, "names": [], "sincerity": "SINCERE"}
+{"text": "which hammer u usin now", "intent": "QUESTION", "topic": "WEAPON", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.0, "urgency": 0.1, "names": [], "sincerity": "SINCERE"}
+{"text": "any word from the trade caravan", "intent": "QUESTION", "topic": "TRADE", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.0, "urgency": 0.2, "names": [], "sincerity": "SINCERE"}
+{"text": "why's the forge fire out", "intent": "QUESTION", "topic": "FORGE", "addressed": "LISTENER", "aggression": 0.0, "valence": -0.1, "urgency": 0.3, "names": [], "sincerity": "SINCERE"}
+{"text": "u guys hear that noise", "intent": "QUESTION", "topic": "MONSTER", "addressed": "GROUP", "aggression": 0.1, "valence": -0.1, "urgency": 0.5, "names": [], "sincerity": "SINCERE"}
+{"text": "pass the salt, its for Grimhild's bread", "intent": "REQUEST", "topic": "FOOD", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.1, "urgency": 0.2, "names": ["Grimhild"], "sincerity": "SINCERE"}
+{"text": "can u sharpen this axe for me", "intent": "REQUEST", "topic": "WEAPON", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.1, "urgency": 0.2, "names": [], "sincerity": "SINCERE"}
+{"text": "need more torches down in the mine", "intent": "REQUEST", "topic": "MINE", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.0, "urgency": 0.3, "names": [], "sincerity": "SINCERE"}
+{"text": "grab me a mug of ale, im dyin here", "intent": "REQUEST", "topic": "DRINK", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.2, "urgency": 0.2, "names": [], "sincerity": "JOKING"}
+{"text": "lend us a hand at the forge", "intent": "REQUEST", "topic": "FORGE", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.1, "urgency": 0.3, "names": [], "sincerity": "SINCERE"}
+{"text": "cud u watch the gate for a bit", "intent": "REQUEST", "topic": "HOME", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.1, "urgency": 0.2, "names": [], "sincerity": "SINCERE"}
+{"text": "spare some gold for the toll", "intent": "REQUEST", "topic": "TREASURE", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.0, "urgency": 0.2, "names": [], "sincerity": "SINCERE"}
+{"text": "Halvar, help me carry this ore", "intent": "REQUEST", "topic": "MINE", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.1, "urgency": 0.2, "names": ["Halvar"], "sincerity": "SINCERE"}
+{"text": "need a hand haulin these crates to the hall", "intent": "REQUEST", "topic": "WORK", "addressed": "GROUP", "aggression": 0.0, "valence": 0.0, "urgency": 0.3, "names": [], "sincerity": "SINCERE"}
+{"text": "gimme some gold", "intent": "REQUEST", "topic": "TREASURE", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.0, "urgency": 0.2, "names": [], "sincerity": "SINCERE"}
+{"text": "everyone to the gate now", "intent": "COMMAND", "topic": "HOME", "addressed": "GROUP", "aggression": 0.5, "valence": -0.1, "urgency": 0.9, "names": [], "sincerity": "SINCERE"}
+{"text": "move", "intent": "COMMAND", "topic": "NONE", "addressed": "LISTENER", "aggression": 0.4, "valence": -0.1, "urgency": 0.6, "names": [], "sincerity": "SINCERE"}
+{"text": "get back to work", "intent": "COMMAND", "topic": "WORK", "addressed": "LISTENER", "aggression": 0.3, "valence": -0.1, "urgency": 0.4, "names": [], "sincerity": "SINCERE"}
+{"text": "drop the pickaxe and back up", "intent": "COMMAND", "topic": "MINE", "addressed": "LISTENER", "aggression": 0.4, "valence": -0.2, "urgency": 0.6, "names": [], "sincerity": "SINCERE"}
+{"text": "shut the forge down for the night", "intent": "COMMAND", "topic": "FORGE", "addressed": "LISTENER", "aggression": 0.2, "valence": 0.0, "urgency": 0.3, "names": [], "sincerity": "SINCERE"}
+{"text": "grab yer weapons", "intent": "COMMAND", "topic": "WEAPON", "addressed": "GROUP", "aggression": 0.4, "valence": -0.1, "urgency": 0.7, "names": [], "sincerity": "SINCERE"}
+{"text": "Steinar, seal the mine entrance", "intent": "COMMAND", "topic": "MINE", "addressed": "LISTENER", "aggression": 0.3, "valence": 0.0, "urgency": 0.5, "names": ["Steinar"], "sincerity": "SINCERE"}
+{"text": "quit yer bellyachin and lift", "intent": "COMMAND", "topic": "WORK", "addressed": "LISTENER", "aggression": 0.2, "valence": 0.1, "urgency": 0.3, "names": [], "sincerity": "JOKING"}
+{"text": "get the wounded to the hall", "intent": "COMMAND", "topic": "HOME", "addressed": "GROUP", "aggression": 0.3, "valence": 0.0, "urgency": 0.8, "names": [], "sincerity": "SINCERE"}
+{"text": "lock the gate, spiders are close", "intent": "COMMAND", "topic": "MONSTER", "addressed": "LISTENER", "aggression": 0.3, "valence": -0.1, "urgency": 0.7, "names": [], "sincerity": "SINCERE"}
+{"text": "want some bread? Alvis just baked it", "intent": "OFFER", "topic": "FOOD", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.5, "urgency": 0.1, "names": ["Alvis"], "sincerity": "SINCERE"}
+{"text": "i can fix that axe if u want", "intent": "OFFER", "topic": "WEAPON", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.4, "urgency": 0.1, "names": [], "sincerity": "SINCERE"}
+{"text": "free round of ale tonight", "intent": "OFFER", "topic": "DRINK", "addressed": "GROUP", "aggression": 0.0, "valence": 0.6, "urgency": 0.1, "names": [], "sincerity": "SINCERE"}
+{"text": "ill trade u ore for gold", "intent": "OFFER", "topic": "TRADE", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.3, "urgency": 0.1, "names": [], "sincerity": "SINCERE"}
+{"text": "take my torch", "intent": "OFFER", "topic": "MINE", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.4, "urgency": 0.1, "names": [], "sincerity": "SINCERE"}
+{"text": "can help haul that if u need", "intent": "OFFER", "topic": "WORK", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.4, "urgency": 0.1, "names": [], "sincerity": "SINCERE"}
+{"text": "everyone eats free at the hall tonight", "intent": "OFFER", "topic": "FOOD", "addressed": "GROUP", "aggression": 0.0, "valence": 0.6, "urgency": 0.1, "names": [], "sincerity": "SINCERE"}
+{"text": "ill sharpen ur pick for a copper", "intent": "OFFER", "topic": "WEAPON", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.3, "urgency": 0.1, "names": [], "sincerity": "SINCERE"}
+{"text": "nice hit, Halvar", "intent": "PRAISE", "topic": "WEAPON", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.7, "urgency": 0.0, "names": ["Halvar"], "sincerity": "SINCERE"}
+{"text": "thx for the ale", "intent": "PRAISE", "topic": "DRINK", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.6, "urgency": 0.0, "names": [], "sincerity": "SINCERE"}
+{"text": "Gudrun's the best smith in the hold", "intent": "PRAISE", "topic": "FORGE", "addressed": "THIRD", "aggression": 0.0, "valence": 0.7, "urgency": 0.0, "names": ["Gudrun"], "sincerity": "SINCERE"}
+{"text": "Sindri actually pulled his weight today", "intent": "PRAISE", "topic": "WORK", "addressed": "THIRD", "aggression": 0.0, "valence": 0.5, "urgency": 0.0, "names": ["Sindri"], "sincerity": "SINCERE"}
+{"text": "great work at the forge everyone", "intent": "PRAISE", "topic": "FORGE", "addressed": "GROUP", "aggression": 0.0, "valence": 0.7, "urgency": 0.0, "names": [], "sincerity": "SINCERE"}
+{"text": "ur a real ox, that was a good hit", "intent": "PRAISE", "topic": "WEAPON", "addressed": "LISTENER", "aggression": 0.1, "valence": 0.6, "urgency": 0.0, "names": [], "sincerity": "SINCERE"}
+{"text": "gotta admit, Steinar's got a good swing", "intent": "PRAISE", "topic": "WEAPON", "addressed": "NONE", "aggression": 0.0, "valence": 0.5, "urgency": 0.0, "names": ["Steinar"], "sincerity": "SINCERE"}
+{"text": "Borin never misses, does he", "intent": "PRAISE", "topic": "WEAPON", "addressed": "THIRD", "aggression": 0.0, "valence": 0.5, "urgency": 0.0, "names": ["Borin"], "sincerity": "SINCERE"}
+{"text": "solid haul today, good on us", "intent": "PRAISE", "topic": "MINE", "addressed": "NONE", "aggression": 0.0, "valence": 0.5, "urgency": 0.0, "names": [], "sincerity": "SINCERE"}
+{"text": "sorry, Runa", "intent": "APOLOGY", "topic": "NONE", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.3, "urgency": 0.1, "names": ["Runa"], "sincerity": "SINCERE"}
+{"text": "my bad, didn't mean to swing that close", "intent": "APOLOGY", "topic": "WEAPON", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.3, "urgency": 0.2, "names": [], "sincerity": "SINCERE"}
+{"text": "sry bout yer axe, i owe u one", "intent": "APOLOGY", "topic": "WEAPON", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.3, "urgency": 0.1, "names": [], "sincerity": "SINCERE"}
+{"text": "shouldnt have snapped like that", "intent": "APOLOGY", "topic": "NONE", "addressed": "NONE", "aggression": 0.0, "valence": 0.1, "urgency": 0.1, "names": [], "sincerity": "SINCERE"}
+{"text": "ugh, my fault, forgot the bread again", "intent": "APOLOGY", "topic": "FOOD", "addressed": "NONE", "aggression": 0.0, "valence": 0.0, "urgency": 0.1, "names": [], "sincerity": "SINCERE"}
+{"text": "didnt mean to spill yer ale", "intent": "APOLOGY", "topic": "DRINK", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.2, "urgency": 0.1, "names": [], "sincerity": "SINCERE"}
+{"text": "my mistake, wont happen again", "intent": "APOLOGY", "topic": "NONE", "addressed": "NONE", "aggression": 0.3, "valence": -0.2, "urgency": 0.1, "names": [], "sincerity": "SARCASTIC"}
+{"text": "ur useless", "intent": "INSULT", "topic": "MINE", "addressed": "LISTENER", "aggression": 0.6, "valence": -0.6, "urgency": 0.0, "names": [], "sincerity": "SINCERE"}
+{"text": "wow, real strong today", "intent": "INSULT", "topic": "WEAPON", "addressed": "LISTENER", "aggression": 0.5, "valence": -0.5, "urgency": 0.0, "names": [], "sincerity": "SARCASTIC"}
+{"text": "Dvalin cant hit a barn door", "intent": "INSULT", "topic": "WEAPON", "addressed": "THIRD", "aggression": 0.5, "valence": -0.6, "urgency": 0.0, "names": ["Dvalin"], "sincerity": "SINCERE"}
+{"text": "Orm's all talk, no work", "intent": "INSULT", "topic": "WORK", "addressed": "THIRD", "aggression": 0.5, "valence": -0.6, "urgency": 0.0, "names": ["Orm"], "sincerity": "SINCERE"}
+{"text": "Yngvar's a coward, always hidin", "intent": "INSULT", "topic": "CLAN", "addressed": "THIRD", "aggression": 0.5, "valence": -0.6, "urgency": 0.0, "names": ["Yngvar"], "sincerity": "SINCERE"}
+{"text": "clumsy oaf, watch where ur swingin", "intent": "INSULT", "topic": "WEAPON", "addressed": "LISTENER", "aggression": 0.2, "valence": 0.1, "urgency": 0.1, "names": [], "sincerity": "JOKING"}
+{"text": "Kolbrun couldnt forge a spoon", "intent": "INSULT", "topic": "FORGE", "addressed": "THIRD", "aggression": 0.5, "valence": -0.6, "urgency": 0.0, "names": ["Kolbrun"], "sincerity": "SINCERE"}
+{"text": "dummy", "intent": "INSULT", "topic": "NONE", "addressed": "NONE", "aggression": 0.3, "valence": -0.4, "urgency": 0.0, "names": [], "sincerity": "SINCERE"}
+{"text": "never seen anyone as dumb as Tova", "intent": "INSULT", "topic": "CLAN", "addressed": "THIRD", "aggression": 0.5, "valence": -0.6, "urgency": 0.0, "names": ["Tova"], "sincerity": "SINCERE"}
+{"text": "touch my gold again and see what happens", "intent": "THREAT", "topic": "TREASURE", "addressed": "LISTENER", "aggression": 0.7, "valence": -0.5, "urgency": 0.3, "names": [], "sincerity": "SINCERE"}
+{"text": "shame if Sindri's forge caught fire", "intent": "THREAT", "topic": "FORGE", "addressed": "THIRD", "aggression": 0.6, "valence": -0.4, "urgency": 0.2, "names": ["Sindri"], "sincerity": "SINCERE"}
+{"text": "careful or youll end up in the lava", "intent": "THREAT", "topic": "MINE", "addressed": "LISTENER", "aggression": 0.6, "valence": -0.4, "urgency": 0.3, "names": [], "sincerity": "SINCERE"}
+{"text": "tell Brokk he's dead if he's late again", "intent": "THREAT", "topic": "NONE", "addressed": "THIRD", "aggression": 0.7, "valence": -0.5, "urgency": 0.3, "names": ["Brokk"], "sincerity": "SINCERE"}
+{"text": "if Eitri touches my axe again ill break his fingers", "intent": "THREAT", "topic": "WEAPON", "addressed": "THIRD", "aggression": 0.8, "valence": -0.6, "urgency": 0.3, "names": ["Eitri"], "sincerity": "SINCERE"}
+{"text": "Hrolf's gonna pay", "intent": "THREAT", "topic": "CLAN", "addressed": "THIRD", "aggression": 0.6, "valence": -0.4, "urgency": 0.2, "names": ["Hrolf"], "sincerity": "SINCERE"}
+{"text": "next goblin trader that shows up regrets it", "intent": "THREAT", "topic": "TRADE", "addressed": "THIRD", "aggression": 0.6, "valence": -0.4, "urgency": 0.2, "names": [], "sincerity": "SINCERE"}
+{"text": "one more word outta Skadi and shes swimmin with the fish", "intent": "THREAT", "topic": "NONE", "addressed": "THIRD", "aggression": 0.6, "valence": -0.4, "urgency": 0.2, "names": ["Skadi"], "sincerity": "SINCERE"}
+{"text": "careful, lava's close", "intent": "WARNING", "topic": "MINE", "addressed": "LISTENER", "aggression": 0.0, "valence": 0.1, "urgency": 0.6, "names": [], "sincerity": "SINCERE"}
+{"text": "creeper!", "intent": "WARNING", "topic": "MONSTER", "addressed": "GROUP", "aggression": 0.0, "valence": 0.0, "urgency": 0.9, "names": [], "sincerity": "SINCERE"}
+{"text": "Borin needs to know the mine roofs cavin", "intent": "WARNING", "topic": "MINE", "addressed": "THIRD", "aggression": 0.0, "valence": 0.1, "urgency": 0.7, "names": ["Borin"], "sincerity": "SINCERE"}
+{"text": "everyone inside, zombies at the gate", "intent": "WARNING", "topic": "MONSTER", "addressed": "GROUP", "aggression": 0.0, "valence": 0.0, "urgency": 0.9, "names": [], "sincerity": "SINCERE"}
+{"text": "spiders in the east tunnel, heads up", "intent": "WARNING", "topic": "MONSTER", "addressed": "GROUP", "aggression": 0.0, "valence": 0.1, "urgency": 0.7, "names": [], "sincerity": "SINCERE"}
+{"text": "Dagna should know the bridge is out", "intent": "WARNING", "topic": "HOME", "addressed": "THIRD", "aggression": 0.0, "valence": 0.1, "urgency": 0.6, "names": ["Dagna"], "sincerity": "SINCERE"}
+{"text": "someone warn Frida, the goblin trader's shady", "intent": "WARNING", "topic": "TRADE", "addressed": "THIRD", "aggression": 0.0, "valence": 0.0, "urgency": 0.4, "names": ["Frida"], "sincerity": "SINCERE"}
+{"text": "fire! everyone out!", "intent": "WARNING", "topic": "FORGE", "addressed": "GROUP", "aggression": 0.0, "valence": 0.0, "urgency": 0.9, "names": [], "sincerity": "SINCERE"}
+{"text": "somebody tell Ingrid the well ran dry", "intent": "WARNING", "topic": "NONE", "addressed": "THIRD", "aggression": 0.0, "valence": 0.1, "urgency": 0.4, "names": ["Ingrid"], "sincerity": "SINCERE"}
+{"text": "steer clear of Vidar's trap line out east", "intent": "WARNING", "topic": "WORK", "addressed": "THIRD", "aggression": 0.0, "valence": 0.1, "urgency": 0.5, "names": ["Vidar"], "sincerity": "SINCERE"}
+{"text": "dont trust Sindri, he cheats at dice", "intent": "ACCUSE", "topic": "CLAN", "addressed": "THIRD", "aggression": 0.5, "valence": -0.5, "urgency": 0.1, "names": ["Sindri"], "sincerity": "SINCERE"}
+{"text": "wheres my pickaxe, Brokk", "intent": "ACCUSE", "topic": "MINE", "addressed": "LISTENER", "aggression": 0.5, "valence": -0.4, "urgency": 0.3, "names": ["Brokk"], "sincerity": "SINCERE"}
+{"text": "Gudrun took credit for my work again", "intent": "ACCUSE", "topic": "WORK", "addressed": "THIRD", "aggression": 0.5, "valence": -0.5, "urgency": 0.1, "names": ["Gudrun"], "sincerity": "SINCERE"}
+{"text": "someone's been skimmin gold from the vault", "intent": "ACCUSE", "topic": "TREASURE", "addressed": "NONE", "aggression": 0.4, "valence": -0.4, "urgency": 0.2, "names": [], "sincerity": "SINCERE"}
+{"text": "Torvi ate the last of the bread, i know it", "intent": "ACCUSE", "topic": "FOOD", "addressed": "THIRD", "aggression": 0.4, "valence": -0.4, "urgency": 0.1, "names": ["Torvi"], "sincerity": "SINCERE"}
+{"text": "who left the gate open again", "intent": "ACCUSE", "topic": "HOME", "addressed": "NONE", "aggression": 0.4, "valence": -0.3, "urgency": 0.1, "names": [], "sincerity": "SINCERE"}
+{"text": "Ragna's the one who lost the map, not me", "intent": "ACCUSE", "topic": "TREASURE", "addressed": "THIRD", "aggression": 0.4, "valence": -0.4, "urgency": 0.1, "names": ["Ragna"], "sincerity": "SINCERE"}
+{"text": "someone's been slackin on watch, i can tell", "intent": "ACCUSE", "topic": "WORK", "addressed": "NONE", "aggression": 0.4, "valence": -0.3, "urgency": 0.1, "names": [], "sincerity": "SINCERE"}
+{"text": "bet it was Orm who broke the cart", "intent": "ACCUSE", "topic": "WORK", "addressed": "THIRD", "aggression": 0.3, "valence": -0.2, "urgency": 0.1, "names": ["Orm"], "sincerity": "JOKING"}

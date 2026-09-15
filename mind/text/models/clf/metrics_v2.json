@@ -1,0 +1,568 @@
+{
+  "data": {
+    "path": "text/data/dialogue_partial.jsonl",
+    "sha256": "fb6fb6b479f9acbd47f1742a2ff068ed23648cc3767aceaeeb50fa7a10832abf",
+    "rows": 14996,
+    "train": 12747,
+    "test": 2249,
+    "generated_held_out": 135,
+    "sincerity_labeled_rows": 10796,
+    "hardcase_rows": 40,
+    "hardcases_dropped_from_train": 15
+  },
+  "config": {
+    "epochs_requested": 30,
+    "epochs_run": 19,
+    "best_epoch": 15,
+    "seed": 0,
+    "split_seed": 20250913,
+    "lr": 0.01,
+    "weight_decay": 0.005,
+    "batch_size": 128,
+    "patience": 4,
+    "test_fraction": 0.15,
+    "intent_weight_power": 0.5,
+    "train_seconds": 30.9,
+    "threads": 1
+  },
+  "loss": {
+    "train": 2.0885841846466064,
+    "test": 2.98542857170105,
+    "test_parts": {
+      "intent": 1.4344068765640259,
+      "topic": 0.8339039087295532,
+      "addressed": 0.42025303840637207,
+      "sincerity": 0.22393745183944702,
+      "floats": 0.07292728871107101
+    }
+  },
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 4.1080994274210925,
+      "test_loss": 3.5512583255767822,
+      "test_parts": {
+        "intent": 1.7563761472702026,
+        "topic": 0.9925967454910278,
+        "addressed": 0.48342254757881165,
+        "sincerity": 0.24321632087230682,
+        "floats": 0.07564656436443329
+      }
+    },
+    {
+      "epoch": 2,
+      "train_loss": 3.285280083136118,
+      "test_loss": 3.2836833000183105,
+      "test_parts": {
+        "intent": 1.5524381399154663,
+        "topic": 0.9569463729858398,
+        "addressed": 0.46181321144104004,
+        "sincerity": 0.23222824931144714,
+        "floats": 0.08025706559419632
+      }
+    },
+    {
+      "epoch": 3,
+      "train_loss": 3.0573437217077366,
+      "test_loss": 3.2330050468444824,
+      "test_parts": {
+        "intent": 1.559604287147522,
+        "topic": 0.9183667302131653,
+        "addressed": 0.444175660610199,
+        "sincerity": 0.23740112781524658,
+        "floats": 0.07345730066299438
+      }
+    },
+    {
+      "epoch": 4,
+      "train_loss": 2.9312593955062947,
+      "test_loss": 3.2726781368255615,
+      "test_parts": {
+        "intent": 1.524799108505249,
+        "topic": 0.9838368892669678,
+        "addressed": 0.45544910430908203,
+        "sincerity": 0.23399724066257477,
+        "floats": 0.07459575682878494
+      }
+    },
+    {
+      "epoch": 5,
+      "train_loss": 2.851365666562663,
+      "test_loss": 3.1202194690704346,
+      "test_parts": {
+        "intent": 1.4848569631576538,
+        "topic": 0.885613739490509,
+        "addressed": 0.44752687215805054,
+        "sincerity": 0.2285158932209015,
+        "floats": 0.0737060010433197
+      }
+    },
+    {
+      "epoch": 6,
+      "train_loss": 2.7708801539952197,
+      "test_loss": 3.0724456310272217,
+      "test_parts": {
+        "intent": 1.4557828903198242,
+        "topic": 0.8731700778007507,
+        "addressed": 0.4421435594558716,
+        "sincerity": 0.2298966497182846,
+        "floats": 0.07145227491855621
+      }
+    },
+    {
+      "epoch": 7,
+      "train_loss": 2.731862240588795,
+      "test_loss": 3.091346263885498,
+      "test_parts": {
+        "intent": 1.4770013093948364,
+        "topic": 0.869621992111206,
+        "addressed": 0.4350348711013794,
+        "sincerity": 0.23668740689754486,
+        "floats": 0.07300063967704773
+      }
+    },
+    {
+      "epoch": 8,
+      "train_loss": 2.676254485311289,
+      "test_loss": 3.065735101699829,
+      "test_parts": {
+        "intent": 1.4672017097473145,
+        "topic": 0.8535388708114624,
+        "addressed": 0.44605183601379395,
+        "sincerity": 0.22591358423233032,
+        "floats": 0.07302912324666977
+      }
+    },
+    {
+      "epoch": 9,
+      "train_loss": 2.659196967694061,
+      "test_loss": 3.064152956008911,
+      "test_parts": {
+        "intent": 1.4735815525054932,
+        "topic": 0.8497822880744934,
+        "addressed": 0.44040027260780334,
+        "sincerity": 0.22804675996303558,
+        "floats": 0.07234213501214981
+      }
+    },
+    {
+      "epoch": 10,
+      "train_loss": 2.61456932712557,
+      "test_loss": 3.0746989250183105,
+      "test_parts": {
+        "intent": 1.4909311532974243,
+        "topic": 0.8513209819793701,
+        "addressed": 0.4250025451183319,
+        "sincerity": 0.23214885592460632,
+        "floats": 0.07529522478580475
+      }
+    },
+    {
+      "epoch": 11,
+      "train_loss": 2.583390626774925,
+      "test_loss": 3.0680911540985107,
+      "test_parts": {
+        "intent": 1.4819539785385132,
+        "topic": 0.8444890379905701,
+        "addressed": 0.4451672434806824,
+        "sincerity": 0.2258722335100174,
+        "floats": 0.07060869038105011
+      }
+    },
+    {
+      "epoch": 12,
+      "train_loss": 2.58095888056418,
+      "test_loss": 3.0516445636749268,
+      "test_parts": {
+        "intent": 1.4679492712020874,
+        "topic": 0.8382185697555542,
+        "addressed": 0.4402320384979248,
+        "sincerity": 0.2277340590953827,
+        "floats": 0.07751061022281647
+      }
+    },
+    {
+      "epoch": 13,
+      "train_loss": 2.5654598197404326,
+      "test_loss": 2.994920492172241,
+      "test_parts": {
+        "intent": 1.4227439165115356,
+        "topic": 0.8283948302268982,
+        "addressed": 0.43894705176353455,
+        "sincerity": 0.23319262266159058,
+        "floats": 0.0716421976685524
+      }
+    },
+    {
+      "epoch": 14,
+      "train_loss": 2.5287021928332205,
+      "test_loss": 3.0368218421936035,
+      "test_parts": {
+        "intent": 1.4798263311386108,
+        "topic": 0.825193464756012,
+        "addressed": 0.42919185757637024,
+        "sincerity": 0.22842112183570862,
+        "floats": 0.07418882846832275
+      }
+    },
+    {
+      "epoch": 15,
+      "train_loss": 2.5158874973218714,
+      "test_loss": 2.98542857170105,
+      "test_parts": {
+        "intent": 1.4344068765640259,
+        "topic": 0.8339039087295532,
+        "addressed": 0.42025303840637207,
+        "sincerity": 0.22393745183944702,
+        "floats": 0.07292728871107101
+      }
+    },
+    {
+      "epoch": 16,
+      "train_loss": 2.4968630926201483,
+      "test_loss": 3.0004007816314697,
+      "test_parts": {
+        "intent": 1.4409492015838623,
+        "topic": 0.8183897137641907,
+        "addressed": 0.43483805656433105,
+        "sincerity": 0.23214514553546906,
+        "floats": 0.07407882809638977
+      }
+    },
+    {
+      "epoch": 17,
+      "train_loss": 2.5025138077459457,
+      "test_loss": 3.00032639503479,
+      "test_parts": {
+        "intent": 1.4367872476577759,
+        "topic": 0.833793044090271,
+        "addressed": 0.4302877187728882,
+        "sincerity": 0.22709810733795166,
+        "floats": 0.07236035168170929
+      }
+    },
+    {
+      "epoch": 18,
+      "train_loss": 2.477121480092765,
+      "test_loss": 3.041731595993042,
+      "test_parts": {
+        "intent": 1.4631714820861816,
+        "topic": 0.8451756238937378,
+        "addressed": 0.4292394518852234,
+        "sincerity": 0.22968660295009613,
+        "floats": 0.07445842027664185
+      }
+    },
+    {
+      "epoch": 19,
+      "train_loss": 2.483726537881332,
+      "test_loss": 3.0190329551696777,
+      "test_parts": {
+        "intent": 1.4645885229110718,
+        "topic": 0.8149149417877197,
+        "addressed": 0.4341282248497009,
+        "sincerity": 0.2327108234167099,
+        "floats": 0.07269049435853958
+      }
+    }
+  ],
+  "test": {
+    "intent": {
+      "n": 2249,
+      "accuracy": 0.6136060471320587,
+      "macro_f1": 0.4372603818637139,
+      "most_confused": [
+        {
+          "true": "SMALLTALK",
+          "pred": "QUESTION",
+          "count": 86
+        },
+        {
+          "true": "QUESTION",
+          "pred": "SMALLTALK",
+          "count": 83
+        },
+        {
+          "true": "PRAISE",
+          "pred": "SMALLTALK",
+          "count": 39
+        },
+        {
+          "true": "SMALLTALK",
+          "pred": "OFFER",
+          "count": 36
+        },
+        {
+          "true": "SMALLTALK",
+          "pred": "COMMAND",
+          "count": 36
+        },
+        {
+          "true": "COMMAND",
+          "pred": "SMALLTALK",
+          "count": 33
+        }
+      ]
+    },
+    "topic": {
+      "n": 2249,
+      "accuracy": 0.7794575366829702,
+      "macro_f1": 0.2420549338752768
+    },
+    "addressed": {
+      "n": 2249,
+      "accuracy": 0.858603823921743,
+      "macro_f1": 0.39272183410051387
+    },
+    "sincerity": {
+      "n": 1638,
+      "accuracy": 0.9438339438339438,
+      "macro_f1": 0.32370184254606366
+    },
+    "floats": {
+      "aggression": {
+        "mae": 0.08426720649003983,
+        "within_0.25": 0.9377501111605158
+      },
+      "valence": {
+        "mae": 0.2017386555671692,
+        "within_0.25": 0.6878612716763006
+      },
+      "urgency": {
+        "mae": 0.10451827943325043,
+        "within_0.25": 0.9461983103601601
+      }
+    },
+    "by_source": {
+      "cornell_movie": {
+        "n": 488,
+        "intent": 0.5122950819672131,
+        "topic": 0.8586065573770492,
+        "addressed": 0.8954918032786885,
+        "sincerity": 0.9403409090909091
+      },
+      "dailydialog": {
+        "n": 493,
+        "intent": 0.6064908722109533,
+        "topic": 0.7322515212981744,
+        "addressed": 0.9695740365111561,
+        "sincerity": 0.9945504087193461
+      },
+      "empatheticdialogues": {
+        "n": 495,
+        "intent": 0.6505050505050505,
+        "topic": 0.8222222222222222,
+        "addressed": 0.9212121212121213,
+        "sincerity": 0.9727272727272728
+      },
+      "generated": {
+        "n": 135,
+        "intent": 0.5185185185185185,
+        "topic": 0.2518518518518518,
+        "addressed": 0.6074074074074074,
+        "sincerity": 0.8222222222222222
+      },
+      "minecraft_chat": {
+        "n": 638,
+        "intent": 0.6880877742946708,
+        "topic": 0.8338557993730408,
+        "addressed": 0.7492163009404389,
+        "sincerity": 0.920704845814978
+      }
+    }
+  },
+  "train": {
+    "intent": {
+      "n": 12747,
+      "accuracy": 0.7495096885541697,
+      "macro_f1": 0.6802411097081769,
+      "most_confused": [
+        {
+          "true": "QUESTION",
+          "pred": "SMALLTALK",
+          "count": 371
+        },
+        {
+          "true": "SMALLTALK",
+          "pred": "QUESTION",
+          "count": 271
+        },
+        {
+          "true": "SMALLTALK",
+          "pred": "OFFER",
+          "count": 171
+        },
+        {
+          "true": "PRAISE",
+          "pred": "SMALLTALK",
+          "count": 151
+        },
+        {
+          "true": "SMALLTALK",
+          "pred": "COMMAND",
+          "count": 143
+        },
+        {
+          "true": "COMMAND",
+          "pred": "SMALLTALK",
+          "count": 129
+        }
+      ]
+    },
+    "topic": {
+      "n": 12747,
+      "accuracy": 0.8251353259590491,
+      "macro_f1": 0.3424886271138836
+    },
+    "addressed": {
+      "n": 12747,
+      "accuracy": 0.8701655291441124,
+      "macro_f1": 0.4859957319651214
+    },
+    "sincerity": {
+      "n": 9158,
+      "accuracy": 0.948351168377375,
+      "macro_f1": 0.34950545485737766
+    },
+    "floats": {
+      "aggression": {
+        "mae": 0.08034176379442215,
+        "within_0.25": 0.943437671609006
+      },
+      "valence": {
+        "mae": 0.18423031270503998,
+        "within_0.25": 0.7251902408409822
+      },
+      "urgency": {
+        "mae": 0.10175999999046326,
+        "within_0.25": 0.9515964540676237
+      }
+    },
+    "by_source": {
+      "cornell_movie": {
+        "n": 2767,
+        "intent": 0.6718467654499458,
+        "topic": 0.8821828695337911,
+        "addressed": 0.9016985905312613,
+        "sincerity": 0.9595225739491438
+      },
+      "dailydialog": {
+        "n": 2796,
+        "intent": 0.7410586552217453,
+        "topic": 0.7907725321888412,
+        "addressed": 0.9688841201716738,
+        "sincerity": 0.9918116683725691
+      },
+      "empatheticdialogues": {
+        "n": 2805,
+        "intent": 0.8,
+        "topic": 0.8762923351158646,
+        "addressed": 0.9365418894830659,
+        "sincerity": 0.9691919191919192
+      },
+      "generated": {
+        "n": 763,
+        "intent": 0.7300131061598951,
+        "topic": 0.41415465268676277,
+        "addressed": 0.7038007863695938,
+        "sincerity": 0.872870249017038
+      },
+      "minecraft_chat": {
+        "n": 3616,
+        "intent": 0.7804203539823009,
+        "topic": 0.8550884955752213,
+        "addressed": 0.7533185840707964,
+        "sincerity": 0.9127861089187056
+      }
+    }
+  },
+  "hardcases": {
+    "intent": {
+      "n": 40,
+      "accuracy": 0.6,
+      "macro_f1": 0.5758241758241758,
+      "most_confused": [
+        {
+          "true": "WARNING",
+          "pred": "SMALLTALK",
+          "count": 2
+        },
+        {
+          "true": "INSULT",
+          "pred": "QUESTION",
+          "count": 2
+        },
+        {
+          "true": "ACCUSE",
+          "pred": "QUESTION",
+          "count": 1
+        },
+        {
+          "true": "QUESTION",
+          "pred": "SMALLTALK",
+          "count": 1
+        },
+        {
+          "true": "GREET",
+          "pred": "SMALLTALK",
+          "count": 1
+        },
+        {
+          "true": "REQUEST",
+          "pred": "SMALLTALK",
+          "count": 1
+        }
+      ]
+    },
+    "topic": {
+      "n": 40,
+      "accuracy": 0.5,
+      "macro_f1": 0.19331065759637187
+    },
+    "addressed": {
+      "n": 40,
+      "accuracy": 0.85,
+      "macro_f1": 0.6801587301587302
+    },
+    "sincerity": {
+      "n": 40,
+      "accuracy": 0.85,
+      "macro_f1": 0.3063063063063063
+    },
+    "floats": {
+      "aggression": {
+        "mae": 0.22402043640613556,
+        "within_0.25": 0.7
+      },
+      "valence": {
+        "mae": 0.37410181760787964,
+        "within_0.25": 0.5
+      },
+      "urgency": {
+        "mae": 0.2369200736284256,
+        "within_0.25": 0.625
+      }
+    },
+    "by_source": {
+      "hardcase": {
+        "n": 40,
+        "intent": 0.6,
+        "topic": 0.5,
+        "addressed": 0.85,
+        "sincerity": 0.85
+      }
+    },
+    "loss": 4.2589802742004395
+  },
+  "inference": {
+    "parity_max_diff": 2.980232238769531e-07,
+    "parity_n": 500,
+    "latency_us": {
+      "n": 2000,
+      "mean": 91.64435010461602,
+      "p50": 82.40000170189887,
+      "p99": 191.90499166143127,
+      "max": 361.4000015659258
+    }
+  }
+}

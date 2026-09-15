@@ -1,0 +1,5 @@
+# Downloaded archives and the extracted raw utterances: ~180 MB, and fully
+# regenerable with `python text/fetch_corpora.py`. Everything downstream
+# (corpus.jsonl, chunks/, dialogue.jsonl) is small and stays tracked.
+data/raw/_cache/
+data/raw/*.jsonl

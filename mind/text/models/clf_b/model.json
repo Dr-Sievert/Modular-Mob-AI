@@ -1,0 +1,478 @@
+{
+  "schema_id": "dialogue-clf-v1",
+  "created": "2026-09-13T02:50:13",
+  "dims": {
+    "buckets": 65536,
+    "embedding": 32,
+    "hidden": 64,
+    "heads": {
+      "intent": 13,
+      "topic": 12,
+      "addressed": 4,
+      "sincerity": 3,
+      "floats": 3
+    }
+  },
+  "hash": {
+    "name": "FNV-1a, 32-bit",
+    "offset_basis": "0x811c9dc5",
+    "prime": "0x01000193",
+    "input": "the UTF-8 bytes of the feature string",
+    "step": "h ^= byte; h = (h * prime) & 0xffffffff",
+    "fold": "bucket = h & (buckets - 1), buckets is a power of two",
+    "known_vectors": {
+      "": "0x811c9dc5",
+      "a": "0xe40c292c",
+      "foobar": "0xbf9cf968"
+    }
+  },
+  "labels": {
+    "intent": [
+      "GREET",
+      "FAREWELL",
+      "SMALLTALK",
+      "QUESTION",
+      "REQUEST",
+      "COMMAND",
+      "OFFER",
+      "PRAISE",
+      "APOLOGY",
+      "INSULT",
+      "THREAT",
+      "WARNING",
+      "ACCUSE"
+    ],
+    "topic": [
+      "FORGE",
+      "MINE",
+      "TREASURE",
+      "FOOD",
+      "DRINK",
+      "HOME",
+      "WEAPON",
+      "WORK",
+      "CLAN",
+      "MONSTER",
+      "TRADE",
+      "NONE"
+    ],
+    "addressed": [
+      "LISTENER",
+      "THIRD",
+      "GROUP",
+      "NONE"
+    ],
+    "sincerity": [
+      "SINCERE",
+      "SARCASTIC",
+      "JOKING"
+    ],
+    "floats": [
+      "aggression",
+      "valence",
+      "urgency"
+    ],
+    "float_activations": [
+      "sigmoid",
+      "tanh",
+      "sigmoid"
+    ],
+    "names": [
+      "Alvis",
+      "Borin",
+      "Brokk",
+      "Brynja",
+      "Dagna",
+      "Dvalin",
+      "Eitri",
+      "Frida",
+      "Grimhild",
+      "Gudrun",
+      "Halvar",
+      "Hrolf",
+      "Ingrid",
+      "Kolbrun",
+      "Orm",
+      "Ragna",
+      "Runa",
+      "Sindri",
+      "Skadi",
+      "Steinar",
+      "Torvi",
+      "Tova",
+      "Vidar",
+      "Yngvar"
+    ]
+  },
+  "optional_labels": [
+    "sincerity"
+  ],
+  "tokenizer": {
+    "lowercase": "ASCII only: A-Z -> a-z (+32); all other characters unchanged",
+    "quote_fold": {
+      "\u2018": "'",
+      "\u2019": "'",
+      "\u201c": "\"",
+      "\u201d": "\""
+    },
+    "separators": "\t\n\u000b\f\r !\"#$%&()*+,-./:;<=>?@[\\]^_`{|}~\u2013\u2014\u2026",
+    "apostrophe": "kept inside tokens, stripped from both ends of a token",
+    "features": [
+      "word unigram: 'w:' + token",
+      "word bigram: 'b:' + token[i] + ' ' + token[i+1]",
+      "char trigram: 'c:' + each 3-window of '<' + token + '>'"
+    ],
+    "empty_text_bucket": 40389
+  },
+  "forward": [
+    "h = relu(sum of emb[b] for b in buckets(text))",
+    "h = relu(h @ fc1.weight.T + fc1.bias)",
+    "intent    = argmax(h @ head_intent.weight.T + head_intent.bias)",
+    "topic     = argmax(h @ head_topic.weight.T + head_topic.bias)",
+    "addressed = argmax(h @ head_addressed.weight.T + head_addressed.bias)",
+    "sincerity = argmax(h @ head_sincerity.weight.T + head_sincerity.bias)",
+    "floats    = [sigmoid, tanh, sigmoid] of (h @ head_floats.weight.T + head_floats.bias)",
+    "names     = exact matches of the name pool in the raw text, not predicted"
+  ],
+  "weights": {
+    "file": "weights.npz",
+    "dtype": "float32",
+    "linear_layout": "torch: weight is (out, in), y = x @ weight.T + bias",
+    "arrays": [
+      {
+        "name": "emb.weight",
+        "role": "embedding bag rows, (buckets, dim), summed over a text's buckets"
+      },
+      {
+        "name": "fc1.weight",
+        "role": "hidden layer, (hidden, dim)"
+      },
+      {
+        "name": "fc1.bias",
+        "role": "hidden layer bias, (hidden,)"
+      },
+      {
+        "name": "head_intent.weight",
+        "role": "intent logits, (13, hidden)"
+      },
+      {
+        "name": "head_intent.bias",
+        "role": "(13,)"
+      },
+      {
+        "name": "head_topic.weight",
+        "role": "topic logits, (12, hidden)"
+      },
+      {
+        "name": "head_topic.bias",
+        "role": "(12,)"
+      },
+      {
+        "name": "head_addressed.weight",
+        "role": "addressed logits, (4, hidden)"
+      },
+      {
+        "name": "head_addressed.bias",
+        "role": "(4,)"
+      },
+      {
+        "name": "head_sincerity.weight",
+        "role": "sincerity logits, (3, hidden)"
+      },
+      {
+        "name": "head_sincerity.bias",
+        "role": "(3,)"
+      },
+      {
+        "name": "head_floats.weight",
+        "role": "aggression/valence/urgency, (3, hidden)"
+      },
+      {
+        "name": "head_floats.bias",
+        "role": "(3,)"
+      }
+    ],
+    "bytes": 8409610,
+    "shapes": {
+      "emb.weight": [
+        65536,
+        32
+      ],
+      "fc1.weight": [
+        64,
+        32
+      ],
+      "fc1.bias": [
+        64
+      ],
+      "head_intent.weight": [
+        13,
+        64
+      ],
+      "head_intent.bias": [
+        13
+      ],
+      "head_topic.weight": [
+        12,
+        64
+      ],
+      "head_topic.bias": [
+        12
+      ],
+      "head_addressed.weight": [
+        4,
+        64
+      ],
+      "head_addressed.bias": [
+        4
+      ],
+      "head_sincerity.weight": [
+        3,
+        64
+      ],
+      "head_sincerity.bias": [
+        3
+      ],
+      "head_floats.weight": [
+        3,
+        64
+      ],
+      "head_floats.bias": [
+        3
+      ]
+    }
+  },
+  "data": {
+    "path": "text/data/dialogue_partial.jsonl",
+    "sha256": "fb6fb6b479f9acbd47f1742a2ff068ed23648cc3767aceaeeb50fa7a10832abf",
+    "rows": 14996,
+    "train": 12747,
+    "test": 2249,
+    "generated_held_out": 135,
+    "sincerity_labeled_rows": 10796,
+    "hardcase_rows": 40,
+    "hardcases_dropped_from_train": 15
+  },
+  "metrics": {
+    "loss": {
+      "train": 1.9445234537124634,
+      "test": 3.058708667755127,
+      "test_parts": {
+        "intent": 1.5284925699234009,
+        "topic": 0.8115631937980652,
+        "addressed": 0.42299696803092957,
+        "sincerity": 0.2233579307794571,
+        "floats": 0.07229813188314438
+      }
+    },
+    "test": {
+      "intent": {
+        "n": 2249,
+        "accuracy": 0.5126722987994664,
+        "macro_f1": 0.4397954805350052,
+        "most_confused": [
+          {
+            "true": "SMALLTALK",
+            "pred": "PRAISE",
+            "count": 139
+          },
+          {
+            "true": "SMALLTALK",
+            "pred": "COMMAND",
+            "count": 79
+          },
+          {
+            "true": "SMALLTALK",
+            "pred": "OFFER",
+            "count": 76
+          },
+          {
+            "true": "SMALLTALK",
+            "pred": "WARNING",
+            "count": 53
+          },
+          {
+            "true": "SMALLTALK",
+            "pred": "QUESTION",
+            "count": 52
+          },
+          {
+            "true": "QUESTION",
+            "pred": "PRAISE",
+            "count": 46
+          }
+        ]
+      },
+      "topic": {
+        "n": 2249,
+        "accuracy": 0.7772343263672743,
+        "macro_f1": 0.21072311220337533
+      },
+      "addressed": {
+        "n": 2249,
+        "accuracy": 0.8546020453534905,
+        "macro_f1": 0.36002444139948553
+      },
+      "sincerity": {
+        "n": 1638,
+        "accuracy": 0.9426129426129426,
+        "macro_f1": 0.3328697552189447
+      },
+      "floats": {
+        "aggression": {
+          "mae": 0.08210411667823792,
+          "within_0.25": 0.938194753223655
+        },
+        "valence": {
+          "mae": 0.206548810005188,
+          "within_0.25": 0.6803023566029346
+        },
+        "urgency": {
+          "mae": 0.09508411586284637,
+          "within_0.25": 0.9444197421076034
+        }
+      },
+      "by_source": {
+        "cornell_movie": {
+          "n": 488,
+          "intent": 0.44672131147540983,
+          "topic": 0.8647540983606558,
+          "addressed": 0.8913934426229508,
+          "sincerity": 0.9403409090909091
+        },
+        "dailydialog": {
+          "n": 493,
+          "intent": 0.5111561866125761,
+          "topic": 0.7322515212981744,
+          "addressed": 0.9675456389452333,
+          "sincerity": 0.9945504087193461
+        },
+        "empatheticdialogues": {
+          "n": 495,
+          "intent": 0.4888888888888889,
+          "topic": 0.8262626262626263,
+          "addressed": 0.9191919191919192,
+          "sincerity": 0.9696969696969697
+        },
+        "generated": {
+          "n": 135,
+          "intent": 0.5407407407407407,
+          "topic": 0.18518518518518517,
+          "addressed": 0.6,
+          "sincerity": 0.8222222222222222
+        },
+        "minecraft_chat": {
+          "n": 638,
+          "intent": 0.5768025078369906,
+          "topic": 0.8322884012539185,
+          "addressed": 0.7429467084639498,
+          "sincerity": 0.9185022026431718
+        }
+      }
+    },
+    "hardcases": {
+      "intent": {
+        "n": 40,
+        "accuracy": 0.675,
+        "macro_f1": 0.6318070818070818,
+        "most_confused": [
+          {
+            "true": "INSULT",
+            "pred": "PRAISE",
+            "count": 2
+          },
+          {
+            "true": "SMALLTALK",
+            "pred": "OFFER",
+            "count": 1
+          },
+          {
+            "true": "ACCUSE",
+            "pred": "QUESTION",
+            "count": 1
+          },
+          {
+            "true": "QUESTION",
+            "pred": "SMALLTALK",
+            "count": 1
+          },
+          {
+            "true": "REQUEST",
+            "pred": "OFFER",
+            "count": 1
+          },
+          {
+            "true": "INSULT",
+            "pred": "ACCUSE",
+            "count": 1
+          }
+        ]
+      },
+      "topic": {
+        "n": 40,
+        "accuracy": 0.525,
+        "macro_f1": 0.2916666666666667
+      },
+      "addressed": {
+        "n": 40,
+        "accuracy": 0.85,
+        "macro_f1": 0.6051587301587301
+      },
+      "sincerity": {
+        "n": 40,
+        "accuracy": 0.85,
+        "macro_f1": 0.3063063063063063
+      },
+      "floats": {
+        "aggression": {
+          "mae": 0.217566579580307,
+          "within_0.25": 0.65
+        },
+        "valence": {
+          "mae": 0.3418358862400055,
+          "within_0.25": 0.45
+        },
+        "urgency": {
+          "mae": 0.2550070881843567,
+          "within_0.25": 0.6
+        }
+      },
+      "by_source": {
+        "hardcase": {
+          "n": 40,
+          "intent": 0.675,
+          "topic": 0.525,
+          "addressed": 0.85,
+          "sincerity": 0.85
+        }
+      },
+      "loss": 4.313338756561279
+    },
+    "config": {
+      "epochs_requested": 30,
+      "epochs_run": 21,
+      "best_epoch": 17,
+      "seed": 0,
+      "split_seed": 20250913,
+      "lr": 0.01,
+      "weight_decay": 0.005,
+      "batch_size": 128,
+      "patience": 4,
+      "test_fraction": 0.15,
+      "intent_weight_power": 1.0,
+      "train_seconds": 158.4,
+      "threads": 1
+    },
+    "inference": {
+      "parity_max_diff": 3.5762786865234375e-07,
+      "parity_n": 500,
+      "latency_us": {
+        "n": 2000,
+        "mean": 185.93575006525498,
+        "p50": 171.64999735541642,
+        "p99": 350.10500287171453,
+        "max": 399.7000021627173
+      }
+    }
+  }
+}

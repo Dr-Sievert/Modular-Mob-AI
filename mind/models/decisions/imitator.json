@@ -1,0 +1,650 @@
+{
+  "created": "2026-09-15T02:02:39",
+  "created_by": "dwarfsim.learn.imitate",
+  "teacher": "dwarfsim.arbitrator.WEIGHTS, the hand-written table",
+  "data": {
+    "file": "teacher_v2.npz",
+    "decisions": 220000,
+    "candidates": 3784768,
+    "seeds": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "ticks": 1000,
+    "agents": 6,
+    "stride": 2,
+    "scenarios": [
+      "default",
+      "feud",
+      "gossip",
+      "player",
+      "friends",
+      "bully",
+      "thief"
+    ]
+  },
+  "dims": {
+    "obs": 69,
+    "cand": 64,
+    "input": 133,
+    "hidden": [
+      64,
+      64
+    ],
+    "parameters": 12801
+  },
+  "training": {
+    "epochs": 30,
+    "batch": 512,
+    "lr": 0.003,
+    "mse_weight": 0.2,
+    "temperature": 0.25,
+    "target": "argmax",
+    "balance_skills": 0.35,
+    "holdout_seeds": [
+      7,
+      8
+    ],
+    "seconds": 138.3,
+    "history": [
+      {
+        "epoch": 1,
+        "loss": 0.70452,
+        "ce": 0.63702,
+        "mse": 0.33748,
+        "seconds": 2.6
+      },
+      {
+        "epoch": 2,
+        "loss": 0.33189,
+        "ce": 0.28766,
+        "mse": 0.22117,
+        "seconds": 4.8
+      },
+      {
+        "epoch": 3,
+        "loss": 0.27128,
+        "ce": 0.23086,
+        "mse": 0.20211,
+        "seconds": 9.1
+      },
+      {
+        "epoch": 4,
+        "loss": 0.2556,
+        "ce": 0.21608,
+        "mse": 0.19758,
+        "seconds": 13.9
+      },
+      {
+        "epoch": 5,
+        "loss": 0.23774,
+        "ce": 0.20019,
+        "mse": 0.18778,
+        "seconds": 18.9
+      },
+      {
+        "epoch": 6,
+        "loss": 0.22577,
+        "ce": 0.18985,
+        "mse": 0.1796,
+        "seconds": 23.5
+      },
+      {
+        "epoch": 7,
+        "loss": 0.21734,
+        "ce": 0.18297,
+        "mse": 0.17184,
+        "seconds": 28.3
+      },
+      {
+        "epoch": 8,
+        "loss": 0.20232,
+        "ce": 0.16999,
+        "mse": 0.16165,
+        "seconds": 33.1
+      },
+      {
+        "epoch": 9,
+        "loss": 0.19818,
+        "ce": 0.16613,
+        "mse": 0.16024,
+        "seconds": 37.9
+      },
+      {
+        "epoch": 10,
+        "loss": 0.18563,
+        "ce": 0.15482,
+        "mse": 0.15404,
+        "seconds": 42.7
+      },
+      {
+        "epoch": 11,
+        "loss": 0.18807,
+        "ce": 0.15729,
+        "mse": 0.15389,
+        "seconds": 47.4
+      },
+      {
+        "epoch": 12,
+        "loss": 0.17695,
+        "ce": 0.14623,
+        "mse": 0.15364,
+        "seconds": 52.4
+      },
+      {
+        "epoch": 13,
+        "loss": 0.16756,
+        "ce": 0.13744,
+        "mse": 0.1506,
+        "seconds": 57.0
+      },
+      {
+        "epoch": 14,
+        "loss": 0.16422,
+        "ce": 0.13505,
+        "mse": 0.14585,
+        "seconds": 61.9
+      },
+      {
+        "epoch": 15,
+        "loss": 0.16132,
+        "ce": 0.13233,
+        "mse": 0.14493,
+        "seconds": 66.6
+      },
+      {
+        "epoch": 16,
+        "loss": 0.15769,
+        "ce": 0.1298,
+        "mse": 0.13943,
+        "seconds": 71.4
+      },
+      {
+        "epoch": 17,
+        "loss": 0.15621,
+        "ce": 0.12705,
+        "mse": 0.14579,
+        "seconds": 76.3
+      },
+      {
+        "epoch": 18,
+        "loss": 0.16234,
+        "ce": 0.13419,
+        "mse": 0.14073,
+        "seconds": 81.0
+      },
+      {
+        "epoch": 19,
+        "loss": 0.14733,
+        "ce": 0.11942,
+        "mse": 0.13953,
+        "seconds": 85.7
+      },
+      {
+        "epoch": 20,
+        "loss": 0.14583,
+        "ce": 0.11761,
+        "mse": 0.14109,
+        "seconds": 90.6
+      },
+      {
+        "epoch": 21,
+        "loss": 0.14365,
+        "ce": 0.11594,
+        "mse": 0.13853,
+        "seconds": 95.3
+      },
+      {
+        "epoch": 22,
+        "loss": 0.1452,
+        "ce": 0.11785,
+        "mse": 0.13675,
+        "seconds": 100.2
+      },
+      {
+        "epoch": 23,
+        "loss": 0.13839,
+        "ce": 0.11099,
+        "mse": 0.13702,
+        "seconds": 105.0
+      },
+      {
+        "epoch": 24,
+        "loss": 0.13766,
+        "ce": 0.11099,
+        "mse": 0.13336,
+        "seconds": 109.7
+      },
+      {
+        "epoch": 25,
+        "loss": 0.136,
+        "ce": 0.10861,
+        "mse": 0.13695,
+        "seconds": 114.5
+      },
+      {
+        "epoch": 26,
+        "loss": 0.13037,
+        "ce": 0.10366,
+        "mse": 0.13352,
+        "seconds": 119.1
+      },
+      {
+        "epoch": 27,
+        "loss": 0.13447,
+        "ce": 0.10775,
+        "mse": 0.13361,
+        "seconds": 124.0
+      },
+      {
+        "epoch": 28,
+        "loss": 0.12894,
+        "ce": 0.10261,
+        "mse": 0.13163,
+        "seconds": 128.6
+      },
+      {
+        "epoch": 29,
+        "loss": 0.10712,
+        "ce": 0.08215,
+        "mse": 0.12488,
+        "seconds": 133.5
+      },
+      {
+        "epoch": 30,
+        "loss": 0.09787,
+        "ce": 0.07354,
+        "mse": 0.12166,
+        "seconds": 138.3
+      }
+    ],
+    "loss": "CE(pred / T, teacher pick) + mse_weight * mean((pred - teacher)^2)"
+  },
+  "metrics": {
+    "held_out": {
+      "decisions": 43128,
+      "top1": 0.9783,
+      "chance": 0.0593,
+      "mean_candidates": 17.48,
+      "score_mae": 0.1862,
+      "hard": {
+        "decisions": 27128,
+        "fraction": 0.629,
+        "top1": 0.9656,
+        "chance": 0.0595
+      },
+      "per_skill": {
+        "WORK": {
+          "decisions": 38239,
+          "recall": 0.9858,
+          "chosen": 37772
+        },
+        "EAT": {
+          "decisions": 92,
+          "recall": 0.9022,
+          "chosen": 123
+        },
+        "DRINK": {
+          "decisions": 275,
+          "recall": 0.9564,
+          "chosen": 335
+        },
+        "REST": {
+          "decisions": 2250,
+          "recall": 0.9827,
+          "chosen": 2383
+        },
+        "SOCIALIZE": {
+          "decisions": 582,
+          "recall": 0.9399,
+          "chosen": 645
+        },
+        "STEAL": {
+          "decisions": 99,
+          "recall": 0.9394,
+          "chosen": 146
+        },
+        "ATTACK": {
+          "decisions": 119,
+          "recall": 0.8908,
+          "chosen": 115
+        },
+        "FLEE": {
+          "decisions": 55,
+          "recall": 0.8,
+          "chosen": 53
+        },
+        "APOLOGIZE": {
+          "decisions": 20,
+          "recall": 0.85,
+          "chosen": 35
+        },
+        "FIGHT_MONSTER": {
+          "decisions": 542,
+          "recall": 0.9797,
+          "chosen": 594
+        },
+        "IGNORE": {
+          "decisions": 8,
+          "recall": 0.125,
+          "chosen": 5
+        },
+        "RETORT": {
+          "decisions": 36,
+          "recall": 0.8056,
+          "chosen": 34
+        },
+        "DEMAND_APOLOGY": {
+          "decisions": 24,
+          "recall": 0.7917,
+          "chosen": 21
+        },
+        "REFUSE_APOLOGY": {
+          "decisions": 11,
+          "recall": 1.0,
+          "chosen": 17
+        },
+        "COMPLAIN_TO": {
+          "decisions": 72,
+          "recall": 0.9306,
+          "chosen": 78
+        },
+        "AVOID": {
+          "decisions": 20,
+          "recall": 0.85,
+          "chosen": 20
+        },
+        "GOSSIP": {
+          "decisions": 414,
+          "recall": 0.9034,
+          "chosen": 440
+        },
+        "ACCEPT": {
+          "decisions": 68,
+          "recall": 0.9412,
+          "chosen": 77
+        },
+        "REFUSE": {
+          "decisions": 51,
+          "recall": 0.7843,
+          "chosen": 50
+        },
+        "BARGAIN": {
+          "decisions": 60,
+          "recall": 0.8833,
+          "chosen": 70
+        },
+        "FULFIL": {
+          "decisions": 91,
+          "recall": 0.978,
+          "chosen": 115
+        }
+      },
+      "per_scenario": {
+        "default": {
+          "decisions": 5571,
+          "top1": 0.984,
+          "chance": 0.0558,
+          "hard_decisions": 2935,
+          "hard_top1": 0.97
+        },
+        "feud": {
+          "decisions": 4196,
+          "top1": 0.9795,
+          "chance": 0.0667,
+          "hard_decisions": 2191,
+          "hard_top1": 0.9612
+        },
+        "gossip": {
+          "decisions": 5214,
+          "top1": 0.9825,
+          "chance": 0.0578,
+          "hard_decisions": 2892,
+          "hard_top1": 0.9685
+        },
+        "player": {
+          "decisions": 5631,
+          "top1": 0.986,
+          "chance": 0.0549,
+          "hard_decisions": 2941,
+          "hard_top1": 0.9735
+        },
+        "friends": {
+          "decisions": 9559,
+          "top1": 0.972,
+          "chance": 0.0526,
+          "hard_decisions": 7138,
+          "hard_top1": 0.9625
+        },
+        "bully": {
+          "decisions": 5131,
+          "top1": 0.9727,
+          "chance": 0.0761,
+          "hard_decisions": 3542,
+          "hard_top1": 0.9613
+        },
+        "thief": {
+          "decisions": 7826,
+          "top1": 0.9764,
+          "chance": 0.059,
+          "hard_decisions": 5489,
+          "hard_top1": 0.9663
+        }
+      }
+    },
+    "train": {
+      "decisions": 20000,
+      "top1": 0.988,
+      "chance": 0.0625,
+      "mean_candidates": 16.8,
+      "score_mae": 0.1815,
+      "hard": {
+        "decisions": 10275,
+        "fraction": 0.5138,
+        "top1": 0.9767,
+        "chance": 0.0629
+      },
+      "per_skill": {
+        "WORK": {
+          "decisions": 18066,
+          "recall": 0.9918,
+          "chosen": 17921
+        },
+        "EAT": {
+          "decisions": 53,
+          "recall": 0.9623,
+          "chosen": 70
+        },
+        "DRINK": {
+          "decisions": 110,
+          "recall": 0.9909,
+          "chosen": 142
+        },
+        "REST": {
+          "decisions": 956,
+          "recall": 0.9979,
+          "chosen": 1008
+        },
+        "SOCIALIZE": {
+          "decisions": 14,
+          "recall": 1.0,
+          "chosen": 16
+        },
+        "STEAL": {
+          "decisions": 40,
+          "recall": 1.0,
+          "chosen": 48
+        },
+        "ATTACK": {
+          "decisions": 161,
+          "recall": 0.9441,
+          "chosen": 155
+        },
+        "FLEE": {
+          "decisions": 59,
+          "recall": 0.9661,
+          "chosen": 58
+        },
+        "APOLOGIZE": {
+          "decisions": 9,
+          "recall": 1.0,
+          "chosen": 13
+        },
+        "FIGHT_MONSTER": {
+          "decisions": 248,
+          "recall": 0.996,
+          "chosen": 254
+        },
+        "IGNORE": {
+          "decisions": 14,
+          "recall": 1.0,
+          "chosen": 15
+        },
+        "RETORT": {
+          "decisions": 25,
+          "recall": 1.0,
+          "chosen": 31
+        },
+        "DEMAND_APOLOGY": {
+          "decisions": 17,
+          "recall": 1.0,
+          "chosen": 18
+        },
+        "REFUSE_APOLOGY": {
+          "decisions": 11,
+          "recall": 1.0,
+          "chosen": 14
+        },
+        "COMPLAIN_TO": {
+          "decisions": 28,
+          "recall": 0.8571,
+          "chosen": 26
+        },
+        "AVOID": {
+          "decisions": 28,
+          "recall": 0.9643,
+          "chosen": 31
+        },
+        "GOSSIP": {
+          "decisions": 115,
+          "recall": 0.9826,
+          "chosen": 128
+        },
+        "ACCEPT": {
+          "decisions": 2,
+          "recall": 1.0,
+          "chosen": 2
+        },
+        "REFUSE": {
+          "decisions": 19,
+          "recall": 0.9474,
+          "chosen": 19
+        },
+        "BARGAIN": {
+          "decisions": 21,
+          "recall": 1.0,
+          "chosen": 24
+        },
+        "FULFIL": {
+          "decisions": 4,
+          "recall": 1.0,
+          "chosen": 7
+        }
+      },
+      "per_scenario": {
+        "default": {
+          "decisions": 15211,
+          "top1": 0.9891,
+          "chance": 0.0583,
+          "hard_decisions": 7812,
+          "hard_top1": 0.9789
+        },
+        "feud": {
+          "decisions": 4789,
+          "top1": 0.9845,
+          "chance": 0.0758,
+          "hard_decisions": 2463,
+          "hard_top1": 0.97
+        }
+      }
+    },
+    "torch_numpy_max_abs_diff": 2.15e-06
+  },
+  "schema_id": "dwarfsim-imitator-v1",
+  "dwarfsim_schema_id": "dwarfsim-v1",
+  "input": {
+    "layout": "observation ++ candidate_features",
+    "obs_size": 69,
+    "cand_size": 64,
+    "size": 133,
+    "schema": "dwarfsim.schema -- OBS_* and CAND_* offsets"
+  },
+  "forward": [
+    "x = observation ++ candidate_features",
+    "h = relu(x @ fc1.weight.T + fc1.bias)",
+    "h = relu(h @ fc2.weight.T + fc2.bias)",
+    "score = (h @ out.weight.T + out.bias)[0]"
+  ],
+  "weights": {
+    "file": "imitator.npz",
+    "dtype": "float32",
+    "linear_layout": "torch: weight is (out, in), y = x @ weight.T + bias",
+    "bytes": 52726,
+    "arrays": [
+      {
+        "name": "fc1.weight",
+        "role": "first hidden layer, (hidden1, OBS_SIZE + CAND_SIZE)"
+      },
+      {
+        "name": "fc1.bias",
+        "role": "(hidden1,)"
+      },
+      {
+        "name": "fc2.weight",
+        "role": "second hidden layer, (hidden2, hidden1)"
+      },
+      {
+        "name": "fc2.bias",
+        "role": "(hidden2,)"
+      },
+      {
+        "name": "out.weight",
+        "role": "the score, (1, hidden2)"
+      },
+      {
+        "name": "out.bias",
+        "role": "(1,)"
+      }
+    ],
+    "shapes": {
+      "fc1.weight": [
+        64,
+        133
+      ],
+      "fc1.bias": [
+        64
+      ],
+      "fc2.weight": [
+        64,
+        64
+      ],
+      "fc2.bias": [
+        64
+      ],
+      "out.weight": [
+        1,
+        64
+      ],
+      "out.bias": [
+        1
+      ]
+    },
+    "source_file": "imitator_b035.npz"
+  }
+}

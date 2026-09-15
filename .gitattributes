@@ -19,3 +19,4 @@
 *.npy binary
 *.npz binary
 *.nbt binary
+*.jsonl text eol=lf

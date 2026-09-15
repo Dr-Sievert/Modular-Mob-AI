@@ -30,6 +30,36 @@ Read these before changing anything:
 | [docs/playing.md](docs/playing.md) | Starting the game with a model, spawning agents, loadouts, allies and enemies |
 | [docs/viewer.md](docs/viewer.md) | The replay viewer |
 | [docs/findings.md](docs/findings.md) | What was learned the hard way; read before "fixing" something that looks odd |
+| [docs/monorepo.md](docs/monorepo.md) | The intended `combat/` + `mind/` + `shared/` layout, why it is not that yet, and the checklist to finish it |
+
+## The mind subproject (`mind/`)
+
+Everything above and below this section is the **combat mod**. `mind/` is the other half: a pure-Python testbed for the
+behaviour the fight is not — emotional and social state, episodic memory, goals, obligations, and one arbitrator
+choosing among skills. It is where the interpreter and decision models are trained and frozen before they are ported in.
+
+| Doc | What it covers |
+| --- | --- |
+| [mind/README.md](mind/README.md) | What it is and every command it has |
+| [mind/docs/plan.md](mind/docs/plan.md) | Why it exists, what is built, the one design rule, what ports first |
+| [mind/docs/design.md](mind/docs/design.md) | The mind model, the event delta table, memory, goals, the arbitrator terms, the vector layouts |
+| [mind/docs/port.md](mind/docs/port.md) | The brief for the Java port: which `Brain` each model becomes, the `.mbw` segment order, the one seam in `BrainState`, the chat hook, parity |
+
+Working in it:
+
+- **It needs no Java, no Gradle and no Minecraft, and must never grow a dependency on one.** Python 3 and the standard
+  library, plus PyTorch and numpy for training and export only. Nothing in `mind/` reads anything outside `mind/`.
+- **Run it from `mind/`**, not from the repository root: `cd mind` first. Its modules find their data relative to their
+  own file, so paths work from anywhere, but the documented commands are written for that directory.
+- `cd mind && python -m pytest -q tests` is the whole suite: expect **212 passed, 2 skipped** in about a minute. The two
+  skips are the merged label file and the training checkpoint, neither of which is in git.
+- **Single process, single thread.** The machine is shared with a live training run: `torch.set_num_threads(1)` is at the
+  top of every test module that imports torch, and nothing here should ever raise it or run workers.
+- `mind/runs/`, `mind/text/data/raw/`, `mind/text/data/dialogue_partial.jsonl`, `mind/text/data/generated_raw/` and every
+  `model.pt` are not in git. The exported `weights.npz` + `model.json` are what ship, and `mind/models/` holds the frozen
+  port-ready copies with their parity files: `python -m tools.freeze` rebuilds them, `python -m tools.check_parity`
+  proves they have not drifted.
+- `mind/text/profanity.json` and `mind/text/profanity_speech.json` are the owner's data. Don't edit them.
 
 ## Hard rules
 
