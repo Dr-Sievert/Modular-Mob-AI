@@ -224,9 +224,19 @@ class TermContext:
         if chief is not None and chief.alive and chief.id != agent.id:
             # A settlement with a chief is a settlement where word gets back, so the deterrent is
             # not zero when he is in another room -- it is just much smaller.
-            respect = max(0.0, m.rel(chief.id)["respect"])
+            #
+            # Authority is the larger of what this dwarf *thinks* of the chief and what it has
+            # actually *watched him do*: every PUNISH it remembers, faded by age. Respect alone
+            # was not enough once words stopped buying respect (:mod:`dwarfsim.regard`) -- the
+            # chief's standing drained away with nothing to top it up, and a settlement with a
+            # chief stopped fighting any less than one without. A record does not drain.
+            record = 0.0
+            for mem in agent.memories:
+                if mem.kind == "PUNISH" and mem.actor == chief.id:
+                    record += mem.salience(world.tick, t["forgiveness"])
+            authority = max(max(0.0, m.rel(chief.id)["respect"]), record / (record + 1.0))
             watching = 1.0 if chief_here else 0.30
-            deterrence = watching * (0.35 + 0.65 * respect) * (0.40 + 0.60 * publicity)
+            deterrence = watching * (0.35 + 0.65 * authority) * (0.40 + 0.60 * publicity)
 
         self.flat = {
             "base": 1.0,

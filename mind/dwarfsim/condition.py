@@ -107,7 +107,7 @@ ARMED_AT = 0.25
 #: And below this much hatred nobody draws it at all. This is the line between a brawl and a
 #: killing: a dwarf does not put an edge through somebody over a spilt ale, and almost every
 #: blow struck in the settlement is therefore a fist. Steel comes out for a real enemy.
-DRAW_AT = 0.45
+DRAW_AT = 0.55
 
 #: How much severity one turn of REST and one meal take off every injury, and off bleeding in
 #: particular -- lying still and eating is the only thing that stops a wound bleeding.
