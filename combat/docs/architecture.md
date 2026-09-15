@@ -563,12 +563,121 @@ and the viewer draws them: `scripts\viewer.ps1 -League`, see [viewer.md](viewer.
 | `evaluations.csv` | the trainer | every evaluated checkpoint's record against each opponent |
 | `state.json` | the trainer | what a resumed run needs to carry the league on, the rungs of the ladder it has opened included |
 
+## The mind on the entity
+
+The second half of the repository, [`mind/`](../../mind/README.md), is everything the fight is not: how an agent feels,
+what it wants, what it is like, who it knows and what it remembers. Its hand-written half is ported into the mod as
+ordinary Java in `entity/agent/mind/`, and **stage B of that port is state and rules only** - nothing chooses anything
+from it yet, the combat brain still drives the body, and the arbitrator that will read it is stage C. That order is
+deliberate: every part of it is observable on its own before anything acts on it. See
+[../../mind/docs/port.md](../../mind/docs/port.md) and [../../mind/docs/design.md](../../mind/docs/design.md), which is
+where the numbers come from.
+
+| Class | What it is |
+| --- | --- |
+| `MindState` | everything one agent carries: four emotions, four needs, eight traits, the health fraction, a five column summary of what it carries, its relationships and its memories. Saved, loaded, and ticked by the entity |
+| `MindEvent` | **the event table**: thirteen rows, six delta rows each, the numbers of `dwarfsim/mind.py` and of design.md's generated table |
+| `Events` | applies it - to the one it was done to, to whoever did it, and to every agent that could see it - and holds the hooks the game feeds it from |
+| `Relationship`, `Relationships` | trust, respect and hatred per body, keyed by entity UUID, bounded and decaying; four of them fill the observation's focus slots |
+| `Memory`, `MemoryBook` | up to 64 episodes with a salience each, and the grudge and gratitude sums derived from them |
+| `MindObservation` | the decisions model's 69 columns, from one table of column names to sources |
+| `Speech`, `Utterance` | one line of chat mapped onto the table, for stage C's chat hook to call |
+| `Temperament` | a named set of traits, for an agent that has to be somebody in particular |
+
+**The mind's own clock.** The sim ticks once per decision; the game ticks twenty times a second. One **mind tick** is ten
+game ticks, which is the rate the decisions model runs at, so every rate in `dwarfsim` - a feeling's decay, a need's
+climb, a memory's fading - carries over unchanged and means what it meant there. Nine game ticks in ten
+`MindState#tick` is a decrement and a return; on the tenth the agent looks about it (one query of the level over twelve
+blocks, at most sixteen bodies, each asked of `EnemySlots#perceives`), reads its own body, and everything decays.
+
+**A training agent has no mind.** `MindState#isAwake` is false for one: it is never ticked, never a party to an event and
+never a witness, and its traits are not even rolled, since drawing from the body's own random would move every draw the
+body made afterwards and an arena is deterministic. The combat half is fought by bodies and weights, and none of this is
+paid for by a training worker.
+
+**Three rules sit between the table and the state**, and they are what make two agents react differently to the same
+thing: the receiver modulates it (temper scales an anger gain x0.6 to x1.4, bravery scales a fear gain x1.4 down to x0.6,
+and a relationship change away from neutral is damped by the headroom left), a witness takes 45% of the row scaled by how
+much it liked the victim, and a kill makes every witness take a side - computed from how they felt about the dead, which
+is why `KILL` has no witness relationship row in the table.
+
+**Who saw it** is `EnemySlots#perceives`: the same three rules the combat view uses - seen in the 100 degree cone with a
+line of sight, heard within six blocks all round, felt because it just hit you - asked about one body. The slots keep
+their own walk over the whole view, which is what makes them flat in a crowd; this is for the callers that have exactly
+one body to ask about, and it is public so that the mod has **one** answer to "can that agent see what is going on over
+there".
+
+**What feeds each event today**, and what waits for stage C:
+
+| Event | Fed by |
+| --- | --- |
+| `HIT` | `AgentMob#actuallyHurt`, magnitude scaled by the health the blow actually took: a quarter of the bar is the table as written |
+| `KILL` | `AgentMob#die`. The dead take nothing; the witnesses take a side |
+| `HELP` | `LivingEntityMixin`, where every blow in the game lands: an ally hitting a mob whose target is an agent |
+| `GIFT` | `AgentMob#pickUpItem`, for a drop somebody threw. A drop nobody threw is not a gift |
+| `INSULT` `SLUR` `PRAISE` `SMALLTALK` `THREAT` `ACCUSE` `APOLOGY` `WARNING` | `Speech#said`, which stage C's chat hook calls with the interpreter's answer. Written and tested now |
+| `STEAL` | nothing yet: the mod has no notion of an agent's property. The one hook left open on purpose |
+
+### The observation, and the layout it is held against
+
+`MindObservation` assembles the decisions model's 69 floats from one table of column names to sources - nineteen leaf
+columns, each naming itself, its width, and the one expression that fills it. Nothing else in the mod writes an offset
+into that vector, and the offsets are computed from the widths rather than typed twice, so a column added in the middle
+moves everything after it by itself. That is how the injuries block `mind/` is about to add will land.
+
+**It is held against the file it came from.** `shared/models/decisions/layout.json` is the frozen layout, and its sha256
+is the schema id stamped into `decisions.mbw`. When that file can be found from where the game is running - every
+checkout, every game test, no shipped jar - the table is checked against it as the class loads, name, offset and width
+each, and a disagreement is a refusal to load with the column in it. A layout that moves is then a stack trace on the
+first tick instead of a model quietly reading the wrong five floats for the rest of the run.
+
+Columns the mod has nothing to fill yet - `place`, `goals`, `obligations`, `is_chief`, `chief_here` - are declared with a
+zero source rather than left out: a declared zero lines up with the file and a missing column does not, and the model
+handles an agent with none of them exactly as it handles a dwarf who has none. Two more read something the sim means
+differently: `alive_fraction` is 1 because nobody counts a world's population and a zero there would say everyone is
+dead, and `clock` is the game's own day rather than the sim's 200-tick cycle.
+
+### The NBT
+
+Saved by `AgentMob#addAdditionalSaveData` beside the brain name, the loadout and the hotbar, under one compound:
+
+| Key | Holds |
+| --- | --- |
+| `Mind` | the whole mind. Everything below is inside it |
+| `Mind.Emotions`, `Mind.Baseline` | `Anger Fear Happiness Grief`, what it feels now and where it rests |
+| `Mind.Needs` | `Hunger Thirst Fatigue Social` |
+| `Mind.Traits` | `Bravery Greed Temper Sociability Pride Forgiveness Loyalty Suspicion` |
+| `Mind.Temperament` | the preset it was given by name, absent where it rolled its own |
+| `Mind.Relationships` | a list of `{Who, Trust, Respect, Hatred}`, at most 32 |
+| `Mind.Memories` | a list of `{Tick, Kind, Actor, Target, From, Intensity, Source, Witnesses, Answered}`, at most 64 |
+| `Mind.Tick` | the mind's own clock, which every memory's age is measured against |
+| `Mind.LastHitBy`, `Mind.LastHitTick` | who hit it and when, which the hit window and the focus slots read |
+
+A mind that fails to load is a **fresh** mind and never a half loaded one: anything missing from the tag keeps what the
+roll gave it, and a relationship or a memory naming something this build does not have is dropped rather than guessed at.
+The body, the crowd and the company are not saved - they are read from the world on the first mind tick after loading.
+
+### The seam: one hidden vector per brain
+
+`BrainState` used to hold one hidden vector per agent and clear it on **any** change of brain. That was right while the
+only switch in the mod was between a scripted teacher and a network that never shared an agent. It is wrong from the
+arbitrator on: an agent under it switches constantly - fight, flee, work, fight again - and each switch would have wiped
+the combat network's 128 floats in the middle of the fight they were about.
+
+So the memory belongs to the **brain** and not to the switch. `BrainState` keeps one vector per brain, keyed by identity,
+which is the same key `AgentDriver` batches by. `use()` only says which brain is current. `reset()`, the start of an
+episode, zeroes every vector it holds **without replacing any of them**, so a brain handed one mid-batch is handed the
+array it had. A vector is dropped when the brain it belongs to has not driven that agent for 600 ticks - on a timer, not
+on the switch. A brain with `hiddenSize() == 0` never gets a vector at all, so the scripted fighter holds none and the
+ordinary agent holds exactly one for its whole life.
+
 ## The code
 
 ```
 mod/                    the Gradle build (MultiLoader: common + fabric + neoforge)
   common/src/main/java/net/sievert/modularmobai/
     entity/agent/         the agent: body, controls, the record of what executed, item and block rules, what it carries
+    entity/agent/mind/    the mind ported from mind/: state, the event table, relationships, memory, the 69 columns
     brain/                the driver, the batch, the brains (scripted, neural, demonstration) and the training link
     brain/schema/         what an agent sees and does: Species (a body's layout), the humanoid's and the beast's own
                           tables and encoders, enemy slots

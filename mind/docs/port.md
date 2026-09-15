@@ -5,10 +5,11 @@ directory's `README.md` is the full specification of that model and needs no Pyt
 only the mapping onto `Modular-Mob-AI`: which class each becomes, what it needs from the mod, and
 what it has to pass before it is believed.
 
-**Stage A has landed.** The two loaders, their parity and their timings are in the mod; nothing behavioural is.
-[What stage A settled](#what-stage-a-settled) is at the bottom, with the plan for
-[stage B](#stage-b-the-mind-in-nbt) and [stage C](#stage-c-the-arbitrator-in-the-loop) and the Java files each touches.
-Everything above that is the brief as it was written, corrected where stage A found it wrong.
+**Stages A and B have landed.** The two loaders and their parity are in the mod, and so is the mind: an agent now has
+one, it moves, it is saved with the world, and nothing chooses anything from it yet.
+[What stage A settled](#what-stage-a-settled) and [what stage B settled](#what-stage-b-settled) are at the bottom, with
+[stage C](#stage-c-the-arbitrator-in-the-loop) and the Java files it touches. Everything above that is the brief as it
+was written, corrected where a stage found it wrong.
 
 | Model | in `shared/models/` | In | Out | Runs |
 | --- | --- | --- | --- | --- |
@@ -126,12 +127,13 @@ choosing skills, an agent switches brains constantly — fight, flee, work, figh
 switch would wipe the combat GRU's 128 floats of memory mid-fight. That is the one thing in the mod
 that has to open.
 
-The change: `BrainState` keeps **one hidden vector per brain**, not one per agent — a small
-`Map<Brain, float[]>` or a parallel array indexed by a brain's slot, sized by `hiddenSize()`, cleared
-on `reset()` and never on `use()`. `use()` then only says which brain is current. Memory of a brain an
-agent has not run for a long time is worth dropping, but drop it on a timer, not on the switch.
-Nothing else in the mod reads `hidden` directly; the driver gathers and scatters it, so the seam is
-narrow.
+The change, **done in stage B**: `BrainState` keeps **one hidden vector per brain**, not one per agent —
+an `IdentityHashMap<Brain, ...>`, which is the same key `AgentDriver` batches by, sized by
+`hiddenSize()`, cleared on `reset()` and never on `use()`. `use()` only says which brain is current.
+A vector is dropped when the brain it belongs to has not driven that agent for 600 ticks: on a timer,
+not on the switch. `reset()` zeroes every vector it holds **without replacing any of them**, so a
+brain handed one mid-batch is handed the array it had. Nothing else in the mod reads `hidden`
+directly; the driver gathers and scatters it, so the seam was narrow.
 
 `decisions` has no memory, so it needs none of this. It is the *reason* for it.
 
@@ -245,60 +247,91 @@ Files stage A added, all under `combat/mod/common/src/`:
 `brain/nn/WeightFile.java`, `buildSrc/.../multiloader-loader.gradle` (`javaTool`, `mindParity`) and
 `scripts/parity.ps1`.
 
-## Stage B: the mind in NBT
+## What stage B settled
 
-The hand-written half, with no arbitrator yet: an agent that *has* a mind and whose mind moves, read
-from the world and saved with it, with the graded reactions firing. Nothing chooses a skill; the
-combat brain still drives. That is deliberate — it makes every part of stage B observable on its own,
-through `/mmai` and a debug readout, before anything acts on it.
+Stage B is the hand-written half on the entity, with no arbitrator: an agent that *has* a mind and
+whose mind moves, read from the world and saved with it. It is done. Nothing chooses a skill; the
+combat brain still drives, which is what makes every part of it observable on its own before anything
+acts on it.
 
-1. **`MindState`** — a new `entity/agent/mind/MindState.java`: the 44 float mind vector as named
-   fields (four emotions, four needs, six traits, health, five inventory, four relationship slots of
-   six), a `decay(ticks)` and an `observation(float[] into)` that writes the 69 columns
-   `models/decisions/layout.json` describes, in offset order. The columns for goals, obligations,
-   gossip and the chief stay zero, exactly as this file says they may.
-2. **NBT** — `AgentMob#addAdditionalSaveData` and `#readAdditionalSaveData` already carry the brain
-   name, the loadout and the hotbar; the mind goes beside them under one compound. A mind that fails
-   to load is a fresh mind, never a half loaded one.
-3. **The event table** — `mind/Events.java`: what happens to an agent turned into deltas on that
-   state, the hand-written half of [`design.md`](design.md). It is fed from the places the mod
-   already knows things: `AgentMob#actuallyHurt` for being struck, `Episode` for a fight ending,
-   `EnemySlots` for who is in view.
-4. **Relationships and telling entities apart** — a small `mind/Relationships.java` keyed by entity
-   UUID, four slots filled by salience and padded with zeros, which is the same idea as `EnemySlots`
-   and should borrow its ordering discipline rather than inventing a second one. The player is a row
-   like any other and starts neutral.
-5. **Episodic memory** — `mind/Memory.java`, a ring of what happened with a salience each, which is
-   the two `memory` columns of the observation.
-6. **The `BrainState` seam** — the one thing in the mod that has to open, and stage B is where,
-   because from here an agent's brain can change between ticks. `BrainState.use` clears the hidden
-   vector on any brain change; it must instead keep **one hidden vector per brain**, cleared on
-   `reset()` and dropped on a timer, with `use()` only saying which brain is current. Nothing outside
-   `BrainState` and `AgentDriver` reads `hidden`, so the seam is narrow. Files:
-   `brain/BrainState.java`, `brain/AgentDriver.java`, `brain/AgentBatch.java`.
+Everything is in `combat/mod/common/src/main/java/net/sievert/modularmobai/entity/agent/mind/`:
+`MindState`, `MindEvent`, `Events`, `Relationship`, `Relationships`, `Memory`, `MemoryBook`,
+`MindObservation`, `Speech`, `Utterance`, `Emotion`, `Need`, `Trait`, `Temperament`. It also changed
+`brain/BrainState`, `brain/AgentBatch`, `brain/schema/EnemySlots`, `entity/agent/AgentMob` and
+`mixin/LivingEntityMixin`, and added `gametest/tests/AgentMindGameTest` to the mechanics suite, which
+goes from 70 tests to 78.
 
-What proves it: a game test class in `gametest/tests` — one agent, a struck event, a saved and
-reloaded world, and the 69 columns read back — plus `mind/`'s own suite, which already holds the same
-rules in Python and is the reference the Java is being written from.
+| Decision | What was built |
+| --- | --- |
+| **one mind tick is ten game ticks** | the rate the decisions model runs at, so every rate in `dwarfsim` — a feeling's decay, a need's climb, a memory's fading — is carried over unchanged and means what it meant here. Nine game ticks in ten `MindState#tick` is a decrement and a return. An emotion's half-life is then a few seconds and a bitter agent's grudge about ten minutes, which is what those numbers were tuned to feel like |
+| **a training agent has no mind** | `MindState#isAwake` is false for one: never ticked, never a party to an event, never a witness, and its traits are not even rolled — drawing from the body's own random would move every draw the body made afterwards, and an arena is deterministic. A training worker pays one field read for the whole of this |
+| the event table is one Java enum | `MindEvent`, thirteen rows of six delta rows each, the numbers of `dwarfsim/mind.py` and of design.md's generated table. The sim's further rows — `IGNORE`, `RETORT`, `DEMAND`, `COMPLAIN`, `GOSSIP`, `AVOID`, `ACCEPT`, `REFUSE`, `BARGAIN`, `PROMISE_KEPT`, `BROKEN_PROMISE`, `PUNISH` — are things an agent *does* rather than things that happen to it, so each arrives with the skill that performs it. Adding one is one line |
+| a witness is whoever **perceives** the actor | `EnemySlots#perceives`, made public: the same three rules the combat view uses — seen in the cone with a line of sight, heard within six blocks, felt because it just hit you — asked about one body. The slots keep their own walk over the whole view, which is what makes them flat in a crowd; this is for the callers with exactly one body to ask about, so the mod has one answer to "can that agent see what is going on over there" |
+| the observation is a table of columns to sources | `MindObservation`: nineteen leaf columns, each naming itself, its width and the one expression that fills it, with offsets computed from the widths rather than typed twice. It is **held against `shared/models/decisions/layout.json` as the class loads**, name, offset and width each, wherever that file can be found from where the game is running — every checkout, every game test, no shipped jar. A layout that moves is a refusal with the column in it. **The injuries block lands as one more line** |
+| columns the mod cannot fill are declared, not left out | `place`, `goals`, `obligations`, `is_chief`, `chief_here` carry a zero source. A declared zero lines up with the file and a missing column does not. Two more read something this sim means differently: `alive_fraction` is 1, because nobody counts a world's population and a zero would say everyone is dead, and `clock` is the game's own day rather than the 200-tick cycle |
+| relationships and memory are bounded | 32 relationship rows, the faintest dropped past that and any row that has decayed to nothing dropped outright; 64 episodes, the faintest dropped past that. A world runs for months |
+| eight traits, six of them in the layout | the layout's six in its order first, then `LOYALTY` and `SUSPICION`, which are carried, saved and rolled and simply have no column yet. `Temperament` is the named preset, for an agent that has to be somebody in particular |
+| `hear` is written now and called in stage C | `Speech` maps the interpreter's output shape onto the table exactly as `speech.py` does, including `magnitude_of` and the `addressed` gate — a line said to you makes you its target, one about a third party or muttered at nobody makes you a witness of it. `Utterance.of(InterpreterNet.Reading, names, text, profanityTier)` is the whole of the join |
+| the NBT | one `Mind` compound beside the brain name, the loadout and the hotbar: `Emotions`, `Baseline`, `Needs`, `Traits`, `Temperament`, `Relationships`, `Memories`, `Tick`, `LastHitBy`, `LastHitTick`. A mind that fails to load is a fresh mind and never a half loaded one |
+
+**What feeds each event today.** `HIT` from `AgentMob#actuallyHurt`, with the magnitude scaled by the
+health the blow actually took — a quarter of the bar is the table as written, so a grudge scales with
+what was done and not with how many times. `KILL` from `AgentMob#die`. `HELP` from
+`LivingEntityMixin`, where every blow in the game lands, asked the cheap way round: whether the body
+that was hit has an agent as its **target**, which is a field, never whether an agent is near it,
+which would be a query of the world on every blow struck anywhere. `GIFT` from
+`AgentMob#pickUpItem` for a drop somebody threw. The eight that are speech wait for stage C's chat
+hook. **`STEAL` has nothing to feed it** and is the one hook left open on purpose: the mod has no
+notion of an agent's property, and inventing one to fire an event would be the wrong way round.
+
+**Two things worth knowing for stage C.** `KILL` fires from `AgentMob#die`, so an agent's death is
+seen; a *player's* death is not routed through it, and a world where an agent watches a player die
+needs one more hook. And the mod has no notion of a **place**, so the six `place` columns are zero:
+the sim's `FORGE`/`MINE`/`TAVERN` are a graph a settlement has and a Minecraft world does not.
+
+**Simplified deliberately.** Profanity is not ported — the lexicon is 900 lines of Python and nothing
+in stage B reads a string — so `Utterance` carries a `profanityTier` a caller fills in, and the
+`SLUR` branch is driven off it. The inventory summary maps the sim's `ore gold food ale weapon` onto
+vanilla items by a short, documented rule in `MindState`; it is a reading of a pack, not a contract,
+and nothing frozen depends on it.
 
 ## Stage C: the arbitrator in the loop
 
+Everything below has a call site now, because stage B built the thing each one calls.
+
 1. **The chat hook**, one per loader behind the existing split: `fabric/.../ModularMobAiMod.java`
    registers `ServerMessageEvents.CHAT_MESSAGE`, `neoforge/.../ModularMobAiMod.java` registers
-   `ServerChatEvent`, and both call one `common` entry point — `mind/Hearing.java` — which holds the
-   single shared `InterpreterNet`, classifies the raw line, addresses it to the nearest agent in
-   hearing that is looking at the speaker, gates the reaction on the `addressed` head, and hands the
-   result to the same `hear()` path stage B built. It is microseconds and off the tick loop; if a
-   message ever costs more than a tick's budget, queue it, do not thread it.
+   `ServerChatEvent`, and both call one `common` entry point — a new `mind/Hearing.java` — which holds
+   the single shared `InterpreterNet`, classifies the raw line, and addresses it to the nearest agent
+   in hearing that is looking at the speaker. Then it is **three calls**, all of which exist:
+   `InterpreterNet#classify(text, prevIntent)`, `Utterance.of(reading, names, text, tier)`, and
+   `Speech.said(speaker, listener, utterance)` — which applies the table to the listener, makes
+   witnesses of every agent that perceives the speaker, and files the episodes. The `addressed` gate
+   is already inside `Speech`. Names are the ten lines stage A left out: an exact substring match
+   over the 24-name pool in `models/interpreter/model.json`. It is microseconds and off the tick
+   loop; if a message ever costs more than a tick's budget, queue it, do not thread it.
 2. **The arbitrator brain** — `brain/ArbitratorBrain.java`, a `Brain` with `hiddenSize() == 0` that
-   runs every tenth tick. Its skills are hand written and propose candidates per tick; it stacks the
-   candidate rows of the whole batch into one matrix, shares each agent's observation product across
-   its own slice, and splits the result back. `ScorerNet.observe` and `scoreObserved` are already that
-   shape. It then either takes the highest or samples at T = 0.25, as the sim does.
+   runs every tenth tick, which is `MindState.MIND_TICK` and is already the rate the mind moves at.
+   Its observation is `MindState#observe(float[])`, which fills the 69 columns and is tested. Its
+   skills are hand written and propose candidates per tick; it stacks the candidate rows of the whole
+   batch into one matrix, shares each agent's observation product across its own slice, and splits the
+   result back. `ScorerNet.observe` and `scoreObserved` are already that shape. It then either takes
+   the highest or samples at T = 0.25, as the sim does. The `noise` term is one draw per candidate; a
+   port that wants determinism sets it to 0 rather than dropping the column.
 3. **Switching between brains** — `brain/Brains.java` and the driver: an agent under the arbitrator
-   runs the combat brain while it is fighting and something else while it is not, which is exactly
-   what stage B's `BrainState` change is for. This is the first point at which that change is load
-   bearing rather than merely correct.
-4. **The first in-game test** — a `PlayGameTest` case: an agent, a player who says something to it,
+   runs the combat brain while it is fighting and something else while it is not. `BrainState` already
+   keeps one hidden vector per brain and `AgentBatch` already asks for the one the batch is under, so
+   this is a choice of brain and nothing else; `theCombatMemorySurvivesASpellUnderAnotherBrain` is the
+   test that says the switch is free.
+4. **The skills that write back to the mind.** The rows `MindEvent` does not carry yet —
+   `IGNORE`, `RETORT`, `DEMAND`, `COMPLAIN`, `GOSSIP`, `AVOID`, `ACCEPT`, `REFUSE`, `BARGAIN`,
+   `PROMISE_KEPT`, `BROKEN_PROMISE`, `PUNISH` — are things an agent *does*, so each arrives as one row
+   in that table beside the skill that performs it, and `Events.happened` applies it unchanged.
+   `shift_opinion`, which `GOSSIP`, `COMPLAIN` and `PUNISH` need to move a listener's view of a third
+   party, is `MindState#regard` pointed at somebody who is not in the room and needs no new machinery.
+5. **What is still missing from the observation**, and is worth having before the scorer is believed
+   in a world: the six `place` columns, the `goals` and `obligations` blocks, and `is_chief` /
+   `chief_here`. Each is one line of `MindObservation`'s table once the mod has the thing behind it.
+6. **The first in-game test** — a `PlayGameTest` case: an agent, a player who says something to it,
    and a reaction that follows from the interpreter's answer rather than from a script. That is the
    whole of what the port is for, and it is one test long.
